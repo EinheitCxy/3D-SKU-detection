@@ -1,0 +1,176 @@
+# Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Python包分发/安装文件
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Python虚拟环境
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+*.md
+
+# IPython/Jupyter
+.ipynb_checkpoints
+
+# pytest缓存
+.pytest_cache/
+.coverage
+
+# PyCharm
+.idea/
+
+# VSCode
+.vscode/
+Open3DIS/
+
+# 系统文件
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# 机器学习模型文件
+*.ckpt
+*.pth
+*.pt
+*.h5
+*.safetensors
+checkpoints/
+model_weights/
+pretrained_models/
+
+# 训练日志和实验跟踪
+logs/
+wandb/
+mlruns/
+tb_logs/
+tensorboard_logs/
+lightning_logs/
+
+# 数据文件和数据集
+datasets/
+data/
+imdata/*.jpg
+imdata/*.png
+imdata/*.jpeg
+imdata/*.tiff
+imdata/*.tif
+imdata/sample/
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# 输出文件
+outputs/
+output/
+results/
+demo_outputs/
+sku_count/output/
+*.glb
+*.gltf
+*.ply
+*.obj
+*.mtl
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.log
+*.swp
+*.swo
+*~
+
+# COLMAP文件
+sparse/
+dense/
+database.db
+*.bin
+
+# GPU缓存
+.nv/
+
+# uv包管理器
+uv.lock
+
+# 特定项目文件
+# PDF文档（保留技术文档但忽略其他PDF）
+*.pdf
+!相关技术论文/*.pdf
+
+# 视频文件
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# 大型模型权重和HuggingFace缓存
+.cache/
+.huggingface/
+hub/
+
+# Fast3R特定
+fast3r/demo_outputs/
+fast3r/.venv/
+fast3r/logs/
+fast3r/wandb/
+fast3r/checkpoints/
+
+# VGGT特定
+vggt-main/.venv/
+vggt-main/checkpoints/
+vggt-main/outputs/
+
+# Open3DIS特定
+Open3DIS/.venv/
+Open3DIS/.git/
+Open3DIS/data/
+Open3DIS/checkpoints/
+
+# SKU检测输出
+sku_detection_*.json
+sku_cluster_analysis_*.json
+sku_analysis_report_*.txt
+sku_centers_3d_*.json
+sku_clusters_3d_*.glb
+clusters_3d_viz_*.png
+3d_visualization.png
+point_cloud.ply
+detection_report.json
+camera_poses.json
+
+# 开发日志
+development.log
+dev.log
