@@ -37,7 +37,7 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
     # 改进的过滤条件：更严格的质量控制
     valid_mask = (
         (depth_conf_region > config.depth_confidence_threshold) &
-        (world_points_conf_region > config.world_points_confidence_threshold) &
+        (world_points_conf_region > config.point_3d_confidence_threshold) &
         (depth_region > config.min_depth) &
         (depth_region < config.max_depth) &
         torch.isfinite(depth_region) &  # 确保深度值有限
@@ -65,7 +65,7 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
         
         # 获取有效像素的坐标
         valid_y_indices, valid_x_indices = torch.where(valid_mask)
-        for i in range(min(len(valid_y_indices), config.points_per_bbox_3d)):
+        for i in range(min(len(valid_y_indices), config.max_3d_points_per_bbox)):
             y_coord = valid_y_indices[i].item() + y1
             x_coord = valid_x_indices[i].item() + x1
             
@@ -87,7 +87,7 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
         
         # 随机采样指定数量的点
         device = consistent_points.device
-        num_points = min(len(consistent_points), config.points_per_bbox_3d)
+        num_points = min(len(consistent_points), config.max_3d_points_per_bbox)
         if len(consistent_points) > num_points:
             indices = torch.randperm(len(consistent_points), device=device)[:num_points]
             sampled_points = consistent_points[indices]

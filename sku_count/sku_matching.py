@@ -167,7 +167,7 @@ def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, confi
         if 'position' in obj:
             x1, y1, x2, y2 = obj['position']
             confidence = obj.get('confidences', {}).get('det', 0.0)
-            if confidence < config.det_conf_threshold:
+            if confidence < config.detection_confidence_threshold:
                 continue
             area = max(0.0, (x2 - x1) * (y2 - y1))
             if area < config.min_bbox_area:
@@ -903,7 +903,7 @@ def find_object_correspondences(
     logger.info("Starting object correspondence detection...")
     
     # 根据配置选择匹配算法
-    if config.use_3d_projection_matching:
+    if config.enable_3d_projection_matching:
         logger.info("Using 3D-2D projection matching algorithm")
         return find_correspondences_3d_projection(
             vggt_model, detections, images, config, reference_image_idx, transforms_info
@@ -1099,7 +1099,7 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
     # 过滤高置信度的3D点
     valid_mask = (
         (depth_conf_region > config.depth_confidence_threshold) &
-        (world_points_conf_region > config.world_points_confidence_threshold) &
+        (world_points_conf_region > config.point_3d_confidence_threshold) &
         (depth_region > config.min_depth) &
         (depth_region < config.max_depth)
     )
@@ -1111,7 +1111,7 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
     
     # 随机采样指定数量的点 - 确保在正确的设备上
     device = valid_world_points.device
-    num_points = min(len(valid_world_points), config.points_per_bbox_3d)
+    num_points = min(len(valid_world_points), config.max_3d_points_per_bbox)
     if len(valid_world_points) > num_points:
         indices = torch.randperm(len(valid_world_points), device=device)[:num_points]
         sampled_points = valid_world_points[indices]
@@ -1615,7 +1615,7 @@ if __name__ == '__main__':
             visibility_threshold=0.7,
             min_visible_points=10,
             output_dir="output_results_traditional",
-            use_3d_projection_matching=False  # 使用传统算法
+            enable_3d_projection_matching=False  # 使用传统算法
         )
         
         sku_system_traditional = SKUMatchingSystem(config_traditional)
@@ -1633,13 +1633,13 @@ if __name__ == '__main__':
         print("2. 使用新的3D-2D投影匹配算法（增强3D验证）:")
         config_3d = SKUMatchingConfig(
             output_dir="output_results_3d_projection",
-            use_3d_projection_matching=True,  # 使用新的3D-2D投影算法
+            enable_3d_projection_matching=True,  # 使用新的3D-2D投影算法
             # 3D相关参数（更严格的筛选）
             depth_confidence_threshold=0.15,
-            world_points_confidence_threshold=0.15,
+            point_3d_confidence_threshold=0.15,
             min_depth=0.1,
             max_depth=10.0,
-            points_per_bbox_3d=50,
+            max_3d_points_per_bbox=50,
             projection_match_threshold=0.7,  # 提高投影匹配阈值到70%
             # 3D几何验证参数
             max_3d_distance=1.0,            # 最大1米距离差异

@@ -89,12 +89,9 @@ class SKUMatchingConfig:
         # 创建输出目录
         os.makedirs(self.output_dir, exist_ok=True)
         
-        # 配置参数验证
         self._validate_config()
     
     def _validate_config(self):
-        """验证配置参数的一致性和合理性"""
-        # 基础参数验证
         if self.max_points_per_bbox <= 0:
             raise ValueError(f"max_points_per_bbox must be positive, got {self.max_points_per_bbox}")
         
@@ -124,7 +121,6 @@ class SKUMatchingConfig:
             warnings.warn(f"max_total_points ({self.max_total_points}) is less than max_points_per_bbox ({self.max_points_per_bbox}), may limit performance")
     
     def get_algorithm_name(self) -> str:
-        """获取当前配置使用的算法名称"""
         return "3D-2D Projection" if self.enable_3d_projection_matching else "Point Tracking"
     
     def to_dict(self) -> dict:
@@ -141,23 +137,22 @@ class SKUMatchingConfig:
         }
 
 
-# 默认配置常量
 DEFAULT_TRADITIONAL_CONFIG = {
     "max_points_per_bbox": 100,
     "visibility_threshold": 0.7,
     "min_visible_points": 10,
-    "output_dir": "output_results_traditional",
-    "use_3d_projection_matching": False
+    "output_dir": "output_point_tracking",
+    "enable_3d_projection_matching": False
 }
 
 DEFAULT_3D_PROJECTION_CONFIG = {
-    "output_dir": "output_results_3d_projection",
-    "use_3d_projection_matching": True,
+    "output_dir": "output_3d_projection",
+    "enable_3d_projection_matching": True,
     "depth_confidence_threshold": 0.15,
-    "world_points_confidence_threshold": 0.15,
+    "point_3d_confidence_threshold": 0.15,
     "min_depth": 0.1,
     "max_depth": 10.0,
-    "points_per_bbox_3d": 50,
+    "max_3d_points_per_bbox": 50,
     "projection_match_threshold": 0.7,
     "max_3d_distance": 1.0,
     "max_depth_difference": 2.0,

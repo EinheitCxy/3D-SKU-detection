@@ -299,13 +299,13 @@ class SKUMatchingSystem:
                 meta = {
                     "image_paths": image_paths,
                     "reference_image_idx": reference_image_idx,
-                    "algorithm": "3D-2D projection" if self.config.use_3d_projection_matching else "point tracking",
+                    "algorithm": "3D-2D projection" if self.config.enable_3d_projection_matching else "point tracking",
                     "config": {
                         "visibility_threshold": self.config.visibility_threshold,
                         "min_visible_points": self.config.min_visible_points,
                         "max_points_per_bbox": self.config.max_points_per_bbox,
                         "max_bboxes": self.config.max_bboxes,
-                        "use_3d_projection_matching": self.config.use_3d_projection_matching,
+                        "enable_3d_projection_matching": self.config.enable_3d_projection_matching,
                     },
                 }
                 save_correspondences_json(correspondences, points_per_object, self.config, meta)
@@ -315,7 +315,7 @@ class SKUMatchingSystem:
     def _print_results_summary(self, correspondences: Dict[int, List[Dict]]) -> None:
         """打印结果摘要"""
         total_matches = sum(len(matches) for matches in correspondences.values())
-        algorithm_name = "3D-2D Projection" if self.config.use_3d_projection_matching else "Point Tracking"
+        algorithm_name = "3D-2D Projection" if self.config.enable_3d_projection_matching else "Point Tracking"
         
         logger.info(f"\n=== {algorithm_name} Algorithm Results Summary ===")
         logger.info(f"Total matches found: {total_matches}")
@@ -337,7 +337,7 @@ class SKUMatchingSystem:
                 )
                 
                 # 3D算法的额外信息
-                if self.config.use_3d_projection_matching:
+                if self.config.enable_3d_projection_matching:
                     distance_3d = obj.get('3d_distance', 0.0)
                     depth_consistency = obj.get('depth_consistency', 0.0)
                     info_str += f", 3D_dist={distance_3d:.3f}m, depth_cons={depth_consistency:.3f}"
@@ -349,7 +349,7 @@ class SKUMatchingSystem:
         return {
             "initialized": self._is_initialized,
             "device": self.config.device,
-            "algorithm": "3D-2D projection" if self.config.use_3d_projection_matching else "point tracking",
+            "algorithm": "3D-2D projection" if self.config.enable_3d_projection_matching else "point tracking",
             "model_loaded": self.vggt_model is not None,
             "output_directory": self.config.output_dir
         }

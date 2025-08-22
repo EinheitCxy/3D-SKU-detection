@@ -152,7 +152,7 @@ def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, confi
         if 'position' in obj:
             x1, y1, x2, y2 = obj['position']
             confidence = obj.get('confidences', {}).get('det', 0.0)
-            if confidence < config.det_conf_threshold:
+            if confidence < config.detection_confidence_threshold:
                 continue
             area = max(0.0, (x2 - x1) * (y2 - y1))
             if area < config.min_bbox_area:

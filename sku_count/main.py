@@ -182,7 +182,7 @@ def demo():
             visibility_threshold=0.7,
             min_visible_points=10,
             output_dir="output_results_traditional",
-            use_3d_projection_matching=False
+            enable_3d_projection_matching=False
         )
         
         system_traditional = SKUMatchingSystem(config_traditional)
@@ -201,9 +201,9 @@ def demo():
         print("2. 使用新的3D-2D投影匹配算法:")
         config_3d = SKUMatchingConfig(
             output_dir="output_results_3d_projection",
-            use_3d_projection_matching=True,
+            enable_3d_projection_matching=True,
             depth_confidence_threshold=0.15,
-            world_points_confidence_threshold=0.15,
+            point_3d_confidence_threshold=0.15,
             projection_match_threshold=0.7,
             max_3d_distance=1.0,
             max_depth_difference=2.0,

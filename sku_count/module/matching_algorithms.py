@@ -64,7 +64,7 @@ def find_object_correspondences(
         raise ValueError(f"Mismatch: {len(detections)} detections vs {images.shape[0]} images")
     
     # 根据配置选择匹配算法
-    if config.use_3d_projection_matching:
+    if config.enable_3d_projection_matching:
         logger.info("Using 3D-2D projection matching algorithm")
         return find_correspondences_3d_projection(
             vggt_model, detections, images, config, reference_image_idx, transforms_info
