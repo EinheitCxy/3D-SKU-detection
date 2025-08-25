@@ -42,19 +42,17 @@ class SKUMatchingSystem:
     """
     
     def __init__(self, config: Optional[SKUMatchingConfig] = None):
-        """初始化SKU匹配系统
+        """初始化SKU匹配系统。
         
         Args:
-            config: 配置参数，如果为None则使用默认配置
+            config: 配置参数，为None则使用默认配置
         """
         self.config = config or SKUMatchingConfig()
         self.vggt_model = None
         self._is_initialized = False
         
-        logger.info(f"SKU Matching System initialized with config: {self.config}")
-        
     def initialize(self) -> None:
-        """初始化模型和系统组件"""
+        """初始化模型和系统组件。"""
         if self._is_initialized:
             logger.info("System already initialized")
             return
@@ -67,7 +65,6 @@ class SKUMatchingSystem:
                 self._set_random_seeds()
             
             # 加载VGGT模型
-            logger.info("Loading VGGT model...")
             self.vggt_model = VGGT.from_pretrained("facebook/VGGT-1B").to(self.config.device).eval()
             logger.info("VGGT model loaded successfully")
             
@@ -79,7 +76,7 @@ class SKUMatchingSystem:
             raise
     
     def _set_random_seeds(self) -> None:
-        """设置随机种子确保结果可复现"""
+        """设置随机种子确保结果可复现。"""
         try:
             import random
             random.seed(self.config.seed)
@@ -239,10 +236,7 @@ class SKUMatchingSystem:
             and (isinstance(self.config.device, str) and self.config.device.startswith("cuda"))
         )
         
-        if use_amp:
-            logger.info(f"Using automatic mixed precision with {self.config.dtype}")
-        
-        amp_ctx = torch.cuda.amp.autocast(dtype=self.config.dtype) if use_amp else nullcontext()
+        amp_ctx = torch.amp.autocast('cuda', dtype=self.config.dtype) if use_amp else nullcontext()
         
         try:
             with amp_ctx:
@@ -291,8 +285,8 @@ class SKUMatchingSystem:
             # 保存可视化摘要
             save_visualization_summary(correspondences, self.config)
             
-            # 打印结果摘要
-            self._print_results_summary(correspondences)
+            # # 打印结果摘要
+            # self._print_results_summary(correspondences)
             
             # 保存JSON结果（如果启用）
             if self.config.save_json:
@@ -328,11 +322,11 @@ class SKUMatchingSystem:
                 correspondence_ratio = obj.get('correspondence_ratio', 0.0)
                 matched_points = obj.get('matched_points', 0)
                 total_points = obj.get('total_points', 0)
-                target_bbox_id = obj.get('target_bbox_id', 'N/A')
+                target_obj_id = obj.get('target_obj_id', 'N/A')
                 
                 # 基本信息
                 info_str = (
-                    f"  - Ref {obj['object_id']} → Target {target_bbox_id}: "
+                    f"  - Ref {obj['object_id']} → Target {target_obj_id}: "
                     f"ratio={correspondence_ratio:.3f} ({matched_points}/{total_points})"
                 )
                 

@@ -11,7 +11,12 @@ from typing import Dict, List, Optional, Tuple
 # VGGT相关导入
 try:
     import sys
-    sys.path.insert(0, '../../vggt-main')
+    import os
+    # 获取当前文件的父目录的父目录，然后添加vggt-main路径
+    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    vggt_path = os.path.join(current_dir, '..', 'vggt-main')
+    if os.path.exists(vggt_path):
+        sys.path.insert(0, vggt_path)
     from vggt.models.vggt import VGGT
     from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 except ImportError as e:
@@ -54,7 +59,6 @@ def find_object_correspondences(
         tuple: (对应关系结果, 物体点映射)
     """
     algorithm_name = config.get_algorithm_name()
-    logger.info(f"Starting {algorithm_name} object correspondence detection...")
     
     # 输入验证
     if reference_image_idx >= images.shape[0]:
@@ -65,12 +69,10 @@ def find_object_correspondences(
     
     # 根据配置选择匹配算法
     if config.enable_3d_projection_matching:
-        logger.info("Using 3D-2D projection matching algorithm")
         return find_correspondences_3d_projection(
             vggt_model, detections, images, config, reference_image_idx, transforms_info
         )
     else:
-        logger.info("Using traditional point tracking matching algorithm")
         return find_correspondences_point_tracking(
             vggt_model, detections, images, config, reference_image_idx, transforms_info
         )
@@ -214,7 +216,7 @@ def find_correspondences_3d_projection(
                     
                     match_result = {
                         'object_id': match['ref_obj_id'],
-                        'target_bbox_id': target_bbox_info['object_id'],
+                        'target_obj_id': target_bbox_info['object_id'],
                         'box': original_bbox,
                         'vggt_box': target_bbox_info['bbox'],
                         'correspondence_ratio': match['match_ratio'],
@@ -287,7 +289,6 @@ def find_correspondences_point_tracking(
             b2['area'] = max(0.0, (mapped[2] - mapped[0]) * (mapped[3] - mapped[1]))
             mapped_bboxes.append(b2)
         ref_bboxes = mapped_bboxes
-        logger.info("Mapped detection bboxes to preprocessed input coordinates via transforms_info.")
 
         # 4. 生成查询点
         all_query_points_tensor, points_per_object = generate_points_from_bboxes(
@@ -298,11 +299,9 @@ def find_correspondences_point_tracking(
             logger.warning("Could not generate query points from bounding boxes.")
             return {}, None
 
-        logger.info(f"Generated {len(all_query_points_tensor)} query points")
         all_query_points_tensor = all_query_points_tensor.to(device)
 
         # 5. 使用VGGT执行点追踪
-        logger.info("Tracking points with VGGT...")
         start_time = time.time()
         
         with torch.no_grad():
@@ -320,7 +319,6 @@ def find_correspondences_point_tracking(
         logger.info(f"Tracking complete in {tracking_time:.1f}s")
 
         # 6. 使用基于对应关系的物体匹配逻辑
-        logger.info("Matching objects using correspondence-based logic...")
         object_correspondences = {}
         
         for s_idx in range(S):
@@ -379,8 +377,6 @@ def match_objects_by_correspondence(
     Returns:
         匹配的物体列表
     """
-    logger.info(f"Matching objects between reference image {reference_image_idx} and target image {target_image_idx}")
-    
     # 提取目标图像的检测框
     target_bboxes = extract_bboxes_from_detections([target_detections], 0, config)
     if not target_bboxes:
@@ -398,7 +394,6 @@ def match_objects_by_correspondence(
             bbox_info_mapped['bbox'] = mapped_bbox
             mapped_target_bboxes.append(bbox_info_mapped)
         target_bboxes = mapped_target_bboxes
-        logger.info(f"Mapped {len(target_bboxes)} target bboxes to VGGT input space")
     
     matched_objects = []
     
@@ -461,7 +456,7 @@ def match_objects_by_correspondence(
                 
                 best_match = {
                     'object_id': ref_object_id,
-                    'target_bbox_id': target_bbox_info['object_id'],
+                    'target_obj_id': target_bbox_info['object_id'],
                     'box': original_bbox,
                     'vggt_box': target_bbox,
                     'correspondence_ratio': overlap_ratio,
@@ -475,9 +470,13 @@ def match_objects_by_correspondence(
         # 如果找到匹配，添加到结果中
         if best_match:
             matched_objects.append(best_match)
-            logger.info(f"Matched ref {ref_object_id} → target {best_match['target_bbox_id']} (ratio: {best_overlap_ratio:.2f})")
+            logger.info(f"Matched ref {ref_object_id} → target {best_match['target_obj_id']} (hit ratio: {best_overlap_ratio:.2f})")
         else:
             logger.debug(f"❌ No match found for reference object {ref_object_id}")
     
-    logger.info(f"Found {len(matched_objects)} object matches in target image {target_image_idx}")
+    # 只在找到匹配时才输出详细信息
+    if len(matched_objects) > 0:
+        logger.info(f"\nMatching objects between reference image {reference_image_idx} and target image {target_image_idx}")
+        logger.info(f"Found {len(matched_objects)} object matches in target image {target_image_idx}")
+    
     return matched_objects

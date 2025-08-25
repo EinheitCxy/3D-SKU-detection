@@ -44,14 +44,6 @@ def visualize_results(
         ref_image_np = (images[reference_idx].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         ref_image_bgr = cv2.cvtColor(ref_image_np, cv2.COLOR_RGB2BGR)
         
-        # 【关键调试】检查图像实际尺寸与变换预期是否一致
-        actual_h, actual_w = ref_image_bgr.shape[:2]
-        if transforms_info and reference_idx < len(transforms_info):
-            expected_h, expected_w = transforms_info[reference_idx].padded_height, transforms_info[reference_idx].padded_width
-            logger.info(f"参考图像尺寸检查: 实际{actual_w}x{actual_h} vs 预期{expected_w}x{expected_h}")
-            if (actual_w, actual_h) != (expected_w, expected_h):
-                logger.warning(f"⚠️ 图像尺寸不匹配！这可能是坐标错乱的原因")
-        
         overlay = ref_image_bgr.copy()
         colors = {}
         
@@ -98,13 +90,6 @@ def visualize_results(
             target_image_np = (images[s_idx].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
             target_image_bgr = cv2.cvtColor(target_image_np, cv2.COLOR_RGB2BGR)
             
-            # 【关键调试】检查目标图像尺寸
-            actual_h, actual_w = target_image_bgr.shape[:2]
-            if transforms_info and s_idx < len(transforms_info):
-                expected_h, expected_w = transforms_info[s_idx].padded_height, transforms_info[s_idx].padded_width
-                logger.info(f"目标图像{s_idx}尺寸检查: 实际{actual_w}x{actual_h} vs 预期{expected_w}x{expected_h}")
-                if (actual_w, actual_h) != (expected_w, expected_h):
-                    logger.warning(f"⚠️ 目标图像{s_idx}尺寸不匹配！")
             
             # 获取目标图像的所有原始检测框
             if detections and s_idx < len(detections) and transforms_info and s_idx < len(transforms_info):
@@ -115,9 +100,9 @@ def visualize_results(
                 # 创建匹配框ID集合，用于区分匹配和未匹配的框
                 matched_target_bbox_ids = set()
                 for item in matched_boxes:
-                    matched_target_bbox_ids.add(item.get('target_bbox_id'))
+                    matched_target_bbox_ids.add(item.get('target_obj_id', item.get('target_bbox_id')))
                 
-                # 绘制所有原始检测框
+                # 绘制所有原始检测框（使用与reference一致的样式）
                 h, w = target_image_bgr.shape[:2]  # 应该是518x518
                 
                 for bbox_info in target_bboxes:
@@ -131,31 +116,51 @@ def visualize_results(
                     y1, y2 = min(y1, h-1), min(y2, h)
                     
                     if x1 < x2 and y1 < y2:  # 有效框
-                        # 区分匹配和未匹配的框
+                        # 区分匹配和未匹配的框，但使用统一的绘制样式
                         if target_bbox_id in matched_target_bbox_ids:
-                            # 匹配的框：使用绿色粗线
-                            cv2.rectangle(target_image_bgr, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            cv2.putText(target_image_bgr, f"{target_bbox_id}", 
-                                       (x1, max(y1 - 25, 15)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                            # 匹配的框：使用绿色，但采用与reference一致的样式
+                            color = (0, 255, 0)
+                            cv2.rectangle(target_image_bgr, (x1, y1), (x2, y2), color, 2)
+                            
+                            # 绘制中心点
+                            center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
+                            cv2.circle(target_image_bgr, (center_x, center_y), 3, color, -1)
+                            
+                            # 绘制ID标签（与reference一致的格式）
+                            label = f"{target_bbox_id}"
+                            (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                            cv2.rectangle(target_image_bgr, (x1, y1-label_h-10), (x1+label_w, y1), color, -1)
+                            cv2.putText(target_image_bgr, label, (x1, max(y1 - 5, 10)), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                         else:
-                            # 未匹配的框：使用灰色细线
-                            cv2.rectangle(target_image_bgr, (x1, y1), (x2, y2), (128, 128, 128), 2)
-                            cv2.putText(target_image_bgr, f"{target_bbox_id}", 
-                                       (x1, max(y1 - 10, 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (128, 128, 128), 2)
+                            # 未匹配的框：使用灰色，但采用与reference一致的样式
+                            color = (128, 128, 128)
+                            cv2.rectangle(target_image_bgr, (x1, y1), (x2, y2), color, 2)
+                            
+                            # 绘制中心点
+                            center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
+                            cv2.circle(target_image_bgr, (center_x, center_y), 3, color, -1)
+                            
+                            # 绘制ID标签（与reference一致的格式）
+                            label = f"{target_bbox_id}"
+                            (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                            cv2.rectangle(target_image_bgr, (x1, y1-label_h-10), (x1+label_w, y1), color, -1)
+                            cv2.putText(target_image_bgr, label, (x1, max(y1 - 5, 10)), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             
-            # 在匹配的框上添加详细的匹配信息
+            # 在匹配的框上添加参考对象的匹配信息
             for item in matched_boxes:
                 obj_id = item['object_id']
                 
                 # 获取VGGT坐标（而不是原图坐标）
                 vggt_box = item.get('vggt_box', [])
-                target_bbox_id = item.get('target_bbox_id', 'N/A')
+                target_bbox_id = item.get('target_obj_id', item.get('target_bbox_id', 'N/A'))
                 
                 if not vggt_box or len(vggt_box) != 4:
                     logger.warning(f"⚠️ 目标图像 {s_idx} 对象 {obj_id}: 无效的VGGT坐标 {vggt_box}")
                     continue
                 
-                # 使用预定义的颜色（与参考图像一致）
+                # 使用与参考图像一致的颜色
                 color = colors.get(obj_id, [255, 255, 255])
                 
                 # 转换为整数坐标并确保在VGGT图像范围内
@@ -165,24 +170,17 @@ def visualize_results(
                 y1, y2 = min(y1, h-1), min(y2, h)
                 
                 if x1 < x2 and y1 < y2:  # 有效框
-                    # 绘制匹配标签 - 只显示参考ID，字体适中粗细
-                    label = f"{obj_id}"
-                    cv2.putText(target_image_bgr, label, (x1, max(y1 - 40, 25)), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-                    
-                    # 绘制参考框的轮廓（使用参考框的颜色，虚线效果）
-                    for i in range(0, x2 - x1, 10):  # 虚线效果
-                        cv2.line(target_image_bgr, (x1 + i, y1), (min(x1 + i + 5, x2), y1), color, 2)
-                        cv2.line(target_image_bgr, (x1 + i, y2), (min(x1 + i + 5, x2), y2), color, 2)
-                    for i in range(0, y2 - y1, 10):
-                        cv2.line(target_image_bgr, (x1, y1 + i), (x1, min(y1 + i + 5, y2)), color, 2)
-                        cv2.line(target_image_bgr, (x2, y1 + i), (x2, min(y1 + i + 5, y2)), color, 2)
+                    # 绘制参考对象匹配标识（使用与reference一致的样式，但位置稍微偏移）
+                    label = f"ref{obj_id}"
+                    (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
+                    cv2.rectangle(target_image_bgr, (x1, y1-label_h-35), (x1+label_w, y1-25), color, -1)
+                    cv2.putText(target_image_bgr, label, (x1, max(y1 - 30, 25)), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 else:
                     logger.warning(f"Invalid target bbox {obj_id} in image {s_idx}")
             
             output_filename = Path(config.output_dir) / f"target_image_{s_idx}_all_bboxes_and_matches.jpg"
             cv2.imwrite(str(output_filename), target_image_bgr)
-            logger.info(f"Saved target image {s_idx} visualization")
             
     except Exception as e:
         logger.error(f"Failed to generate visualization: {e}")
@@ -299,7 +297,7 @@ def save_visualization_summary(
                 
                 for match in matches:
                     ref_id = match['object_id']
-                    target_id = match['target_bbox_id']
+                    target_id = match.get('target_obj_id', match.get('target_bbox_id', 'N/A'))
                     ratio = match['correspondence_ratio']
                     f.write(f"  - 参考对象 {ref_id} → 目标对象 {target_id} (匹配率: {ratio:.1%})\n")
                 

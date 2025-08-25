@@ -79,7 +79,7 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
             return None
         
         sampled_points = torch.stack(reconstructed_points)
-        logger.debug(f"使用enhanced_backproject重建了 {len(sampled_points)} 个3D点")
+        # logger.debug(f"使用enhanced_backproject重建了 {len(sampled_points)} 个3D点")  # 注释掉冗余调试信息
         
     else:
         # 使用深度一致的world_points
@@ -94,7 +94,7 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
         else:
             sampled_points = consistent_points
             
-        logger.debug(f"采样了 {len(sampled_points)} 个深度一致的3D点")
+        # logger.debug(f"采样了 {len(sampled_points)} 个深度一致的3D点")  # 注释掉过于冗余的调试信息
     
     return sampled_points
 
@@ -132,7 +132,7 @@ def enhanced_backproject_2d_to_3d(x: float, y: float, scene_data: Dict, img_idx:
     
     # 获取相机参数
     intrinsic = scene_data['intrinsic'][img_idx]  # (3, 3)
-    extrinsic = scene_data['extrinsic'][img_idx]  # (4, 4)
+    extrinsic = scene_data['extrinsic'][img_idx]  # 应该是(4, 4)，但可能是(3, 4)
     
     # 提取内参
     fx = intrinsic[0, 0].item()
@@ -148,8 +148,17 @@ def enhanced_backproject_2d_to_3d(x: float, y: float, scene_data: Dict, img_idx:
     point_cam = torch.tensor([u * depth, v * depth, depth], device=device)
     
     # 转换到世界坐标系
-    # 使用相机外参的逆变换
+    # 处理相机外参矩阵的逆变换
     point_cam_homo = torch.cat([point_cam, torch.ones(1, device=device)])
+    
+    # 确保extrinsic是4x4矩阵
+    if extrinsic.shape == (3, 4):
+        # 如果是3x4矩阵，添加[0, 0, 0, 1]行使其成为4x4
+        bottom_row = torch.tensor([0., 0., 0., 1.], device=device).unsqueeze(0)
+        extrinsic = torch.cat([extrinsic, bottom_row], dim=0)
+    elif extrinsic.shape != (4, 4):
+        raise ValueError(f"Unsupported extrinsic matrix shape: {extrinsic.shape}")
+    
     extrinsic_inv = torch.inverse(extrinsic)
     point_world = (extrinsic_inv @ point_cam_homo)[:3]
     
@@ -163,23 +172,30 @@ def project_3d_to_2d(points_3d: torch.Tensor, extrinsic: torch.Tensor, intrinsic
     extrinsic = extrinsic.to(device)
     intrinsic = intrinsic.to(device)
     
-    # 齐次坐标 - 确保ones张量在正确的设备上
+    # 处理extrinsic矩阵形状
+    if extrinsic.shape == (3, 4):
+        # 如果是3x4矩阵，直接用于投影
+        projection_matrix = intrinsic @ extrinsic
+    elif extrinsic.shape == (4, 4):
+        # 如果是4x4矩阵，取前3x4部分
+        projection_matrix = intrinsic @ extrinsic[:3, :]
+    else:
+        raise ValueError(f"Unsupported extrinsic matrix shape: {extrinsic.shape}")
+    
+    # 齐次坐标
     ones = torch.ones(len(points_3d), 1, device=device)
     points_3d_homo = torch.cat([points_3d, ones], dim=1)
     
-    # 世界坐标 → 相机坐标
-    points_cam = (extrinsic @ points_3d_homo.T).T[:, :3]
+    # 直接投影到图像坐标
+    points_2d_homo = (projection_matrix @ points_3d_homo.T).T
     
     # 过滤在相机前方的点
-    valid_depth_mask = points_cam[:, 2] > 0.1
+    valid_depth_mask = points_2d_homo[:, 2] > 0.1
     if not valid_depth_mask.any():
         return torch.empty(0, 2, device=device)
         
-    points_cam_valid = points_cam[valid_depth_mask]
-    
-    # 相机坐标 → 图像坐标
-    points_2d_homo = (intrinsic @ points_cam_valid.T).T
-    points_2d = points_2d_homo[:, :2] / points_2d_homo[:, 2:3]
+    points_2d_homo_valid = points_2d_homo[valid_depth_mask]
+    points_2d = points_2d_homo_valid[:, :2] / points_2d_homo_valid[:, 2:3]
     
     return points_2d
 

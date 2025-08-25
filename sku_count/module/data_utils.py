@@ -72,7 +72,7 @@ def load_detections(detection_dir: str) -> List[Dict]:
                 logger.error(f"Failed to load detection from {file_path.name}: {e}")
                 raise
         
-        logger.info(f"Loaded {len(detections)} detection files")
+        logger.info(f"Loaded {len(detections)} detection files\n")
         return detections
         
     except Exception as e:

@@ -8,7 +8,16 @@ logger = logging.getLogger(__name__)
 
 
 def get_optimal_device_config(verbose: bool = True):
-    """智能设备选择 - 基于advanced_3d_reconstruction.py优化"""
+    """智能设备选择。
+    
+    根据GPU架构自动选择最优数据类型。
+    
+    Args:
+        verbose: 是否输出详细信息
+    
+    Returns:
+        tuple: (device, dtype) 设备和数据类型
+    """
     if torch.cuda.is_available():
         device = torch.device("cuda")
         capability = torch.cuda.get_device_capability(0)
@@ -137,7 +146,7 @@ class SKUMatchingConfig:
         }
 
 
-DEFAULT_TRADITIONAL_CONFIG = {
+DEFAULT_POINT_TRACKING_CONFIG = {
     "max_points_per_bbox": 100,
     "visibility_threshold": 0.7,
     "min_visible_points": 10,

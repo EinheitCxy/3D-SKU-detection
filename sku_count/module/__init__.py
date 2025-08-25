@@ -5,7 +5,7 @@ SKU匹配系统工具模块
 """
 
 # 基础模块 - 不依赖VGGT
-from .config import SKUMatchingConfig, DEFAULT_TRADITIONAL_CONFIG, DEFAULT_3D_PROJECTION_CONFIG
+from .config import SKUMatchingConfig, DEFAULT_POINT_TRACKING_CONFIG, DEFAULT_3D_PROJECTION_CONFIG
 from .data_utils import load_detections, extract_bboxes_from_detections, save_correspondences_json
 from .transforms import VGGTImageTransform, build_vggt_transforms
 from .point_utils import generate_points_from_bboxes
@@ -20,6 +20,9 @@ from .geometry_3d import (
 # 延迟导入VGGT相关模块
 def _import_vggt_modules():
     """延迟导入依赖VGGT的模块"""
+    import sys
+    # 添加VGGT模块路径
+    sys.path.insert(0, '../vggt-main')
     try:
         from .matching_algorithms import find_object_correspondences, match_objects_by_correspondence
         from .sku_matching_system import SKUMatchingSystem
@@ -43,7 +46,7 @@ except ImportError:
 # 基础导出
 __all__ = [
     'SKUMatchingConfig',
-    'DEFAULT_TRADITIONAL_CONFIG', 
+    'DEFAULT_POINT_TRACKING_CONFIG', 
     'DEFAULT_3D_PROJECTION_CONFIG',
     'load_detections',
     'extract_bboxes_from_detections',
