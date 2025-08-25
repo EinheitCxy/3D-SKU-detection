@@ -340,7 +340,7 @@ def find_correspondences_point_tracking(
             
             if matched_objects:
                 object_correspondences[s_idx] = matched_objects
-                logger.info(f"Found {len(matched_objects)} matches in image {s_idx}")
+                logger.info(f"Found {len(matched_objects)} matches in image {s_idx}\n")
 
         logger.info(f"Point tracking complete. Found correspondences in {len(object_correspondences)} images.")
         return object_correspondences, points_per_object
@@ -381,9 +381,8 @@ def match_objects_by_correspondence(
     target_bboxes = extract_bboxes_from_detections([target_detections], 0, config)
     if not target_bboxes:
         logger.warning(f"No bounding boxes found in target image {target_image_idx}")
-        return []
+        raise
     
-    # 如果有变换信息，将目标图像的检测框映射到VGGT输入空间
     if transforms_info and target_image_idx < len(transforms_info):
         target_transform = transforms_info[target_image_idx]
         mapped_target_bboxes = []
@@ -421,14 +420,12 @@ def match_objects_by_correspondence(
             
         # 检查是否达到最小可见点数要求
         if len(valid_points) < config.min_visible_points:
-            logger.debug(f"Reference object {ref_object_id}: Only {len(valid_points)} valid points, below minimum {config.min_visible_points}")
+            logger.info(f"Reference object {ref_object_id}: Only {len(valid_points)} valid points, below minimum {config.min_visible_points}")
             continue
-            
-        logger.debug(f"Reference object {ref_object_id}: {len(valid_points)} valid correspondence points")
         
-        # 检查每个目标检测框
-        best_match = None
-        best_overlap_ratio = 0.0
+        # 收集最多2个接近的匹配（差距≤0.1）
+        matches = []
+        best_ratio = 0.0
         
         for target_bbox_info in target_bboxes:
             target_bbox = target_bbox_info['bbox']  # [x1, y1, x2, y2]
@@ -444,17 +441,16 @@ def match_objects_by_correspondence(
             # 计算重叠比例
             overlap_ratio = points_in_bbox / len(valid_points)
             
-            logger.debug(f"  Target bbox {target_bbox_info['object_id']}: {points_in_bbox}/{len(valid_points)} points inside ({overlap_ratio:.3f})")
+            logger.debug(f"Target bbox {target_bbox_info['object_id']}: {points_in_bbox}/{len(valid_points)} points inside ({overlap_ratio:.3f})")
             
-            # 如果重叠比例达到阈值且是当前最佳匹配
-            if overlap_ratio >= correspondence_threshold and overlap_ratio > best_overlap_ratio:
+            if overlap_ratio >= correspondence_threshold:
                 # 将VGGT坐标映射回原图坐标
                 if transforms_info and target_image_idx < len(transforms_info):
                     original_bbox = transforms_info[target_image_idx].map_bbox_to_original(target_bbox)
                 else:
                     original_bbox = target_bbox
                 
-                best_match = {
+                match = {
                     'object_id': ref_object_id,
                     'target_obj_id': target_bbox_info['object_id'],
                     'box': original_bbox,
@@ -465,18 +461,26 @@ def match_objects_by_correspondence(
                     'target_confidence': target_bbox_info['confidence'],
                     'reference_confidence': ref_data['confidence']
                 }
-                best_overlap_ratio = overlap_ratio
+                
+                if not matches:
+                    matches.append(match)  # 第一个匹配
+                    best_ratio = overlap_ratio
+                elif overlap_ratio > best_ratio:
+                    matches = [match]      # 更好的，替换全部
+                    best_ratio = overlap_ratio  
+                elif best_ratio - overlap_ratio <= 0.1 and len(matches) < 2:
+                    matches.append(match)  # 接近的，且有空间
         
-        # 如果找到匹配，添加到结果中
-        if best_match:
-            matched_objects.append(best_match)
-            logger.info(f"Matched ref {ref_object_id} → target {best_match['target_obj_id']} (hit ratio: {best_overlap_ratio:.2f})")
-        else:
+        # 添加到结果中
+        for match in matches:
+            matched_objects.append(match)
+            logger.info(f"Matched ref {ref_object_id} → target {match['target_obj_id']} (hit ratio: {match['correspondence_ratio']:.2f})")
+        
+        if not matches:
             logger.debug(f"❌ No match found for reference object {ref_object_id}")
     
     # 只在找到匹配时才输出详细信息
     if len(matched_objects) > 0:
-        logger.info(f"\nMatching objects between reference image {reference_image_idx} and target image {target_image_idx}")
-        logger.info(f"Found {len(matched_objects)} object matches in target image {target_image_idx}")
+        logger.info(f"Matching objects between reference image {reference_image_idx} and target image {target_image_idx}")
     
     return matched_objects
