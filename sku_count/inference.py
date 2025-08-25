@@ -14,7 +14,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 导入模块化组件
 try:
     from module import (
         SKUMatchingConfig, 
@@ -48,12 +47,11 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
     """
     base_config = DEFAULT_POINT_TRACKING_CONFIG if algorithm_type == "point_tracking" else DEFAULT_3D_PROJECTION_CONFIG
     
-    # 修改output_dir名称，加上reference_idx+1
-    reference_num = args.reference_idx + 1
+    # 修改output_dir名称，按算法类型分组，然后按索引分组
     if algorithm_type == "point_tracking":
-        output_dir = f"output_point_tracking_ref{reference_num}"
+        output_dir = f"output_pt/{args.reference_idx}"
     else:
-        output_dir = f"output_3d_projection_ref{reference_num}"
+        output_dir = f"output_3dmapping/{args.reference_idx}"
     
     config_dict = {
         "device": args.device,
@@ -184,16 +182,13 @@ def demo(image_folder: str = "../imdata/total",
     try:
         print("=== SKU匹配系统演示 ===\n")
         
-        # 计算reference图像编号（从1开始）
-        reference_num = reference_idx + 1
-        
         # 示例1: 点追踪算法
         print("1. 使用点追踪匹配算法:")
         config_point_tracking = SKUMatchingConfig(
             max_points_per_bbox=100,
             visibility_threshold=0.7,
             min_visible_points=10,
-            output_dir=f"output_results_point_tracking_ref{reference_num}",
+            output_dir=f"output/{reference_idx}/point_tracking",
             enable_3d_projection_matching=False
         )
         
@@ -212,7 +207,7 @@ def demo(image_folder: str = "../imdata/total",
         # 示例2: 3D-2D投影算法
         print("2. 使用新的3D-2D投影匹配算法:")
         config_3d = SKUMatchingConfig(
-            output_dir=f"output_results_3d_projection_ref{reference_num}",
+            output_dir=f"output/{reference_idx}/3d_projection",
             enable_3d_projection_matching=True,
             depth_confidence_threshold=0.15,
             point_3d_confidence_threshold=0.15,
@@ -278,7 +273,7 @@ def main() -> None:
     parser.add_argument("--image_folder", type=str, default="../imdata/total", help="图像文件夹路径")
     parser.add_argument("--detection_dir", type=str, default="../imdata/detections_results", help="检测结果目录路径")
     parser.add_argument("--reference_idx", type=int, default=0, help="参考图像索引")
-    parser.add_argument("--max_images", type=int, default=20, help="最大处理图像数量")
+    parser.add_argument("--max_images", type=int, default=50, help="最大处理图像数量")
     # 算法选择
     parser.add_argument("--algorithm", type=str, choices=["point_tracking", "3d", "both", "demo"], default="both", 
                        help="选择匹配算法: point_tracking(点追踪), 3d(3D投影), both(两种都运行), demo(演示模式)")
@@ -287,14 +282,13 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
     parser.add_argument("--save_json", action="store_true", help="保存结果为JSON文件")
     # 匹配参数
-    parser.add_argument("--max_points_per_bbox", type=int, default=100, help="每个检测框最大采样点数")
+    parser.add_argument("--max_points_per_bbox", type=int, default=200, help="每个检测框最大采样点数")
     parser.add_argument("--visibility_threshold", type=float, default=0.8, help="可见性阈值")
-    parser.add_argument("--min_visible_points", type=int, default=8, help="最小可见点数")
+    parser.add_argument("--min_visible_points", type=int, default=10, help="每个bbox的最小允许可见点数")
     parser.add_argument("--correspondence_threshold", type=float, default=0.5, help="对应关系阈值")
     args = parser.parse_args()
     
     try:
-        # 验证输入路径
         if not Path(args.image_folder).exists():
             raise FileNotFoundError(f"图像文件夹不存在: {args.image_folder}")
         if not Path(args.detection_dir).exists():
@@ -304,7 +298,6 @@ def main() -> None:
         print(f"图像文件夹: {args.image_folder}")
         print(f"检测结果目录: {args.detection_dir}")
         print(f"参考图像索引: {args.reference_idx}")
-        print(f"最大图像数量: {args.max_images}")
         print(f"算法选择: {args.algorithm}")
         print()
         

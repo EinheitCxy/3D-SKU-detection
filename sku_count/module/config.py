@@ -147,7 +147,7 @@ class SKUMatchingConfig:
 
 
 DEFAULT_POINT_TRACKING_CONFIG = {
-    "max_points_per_bbox": 100,
+    "max_points_per_bbox": 200,
     "visibility_threshold": 0.7,
     "min_visible_points": 10,
     "output_dir": "output_point_tracking",

@@ -301,12 +301,44 @@ def find_correspondences_point_tracking(
 
         all_query_points_tensor = all_query_points_tensor.to(device)
 
-        # 5. 使用VGGT执行点追踪
+        # 5. 重排图像序列：将参考图像移到第一位（VGGT模型要求）
+        if reference_image_idx != 0:
+            logger.info(f"Reordering images: moving reference image {reference_image_idx} to position 0")
+            # 重排图像：[ref_img, img_0, img_1, ..., img_(ref-1), img_(ref+1), ..., img_(S-1)]
+            reordered_images = torch.cat([
+                images[reference_image_idx:reference_image_idx+1],  # 参考图像
+                images[:reference_image_idx],                       # 参考图像之前的图像
+                images[reference_image_idx+1:]                      # 参考图像之后的图像
+            ], dim=0)
+            
+            # 创建原始索引到新索引的映射
+            index_mapping = {}
+            new_idx = 0
+            # 参考图像映射到位置0
+            index_mapping[reference_image_idx] = new_idx
+            new_idx += 1
+            # 参考图像之前的图像
+            for orig_idx in range(reference_image_idx):
+                index_mapping[orig_idx] = new_idx
+                new_idx += 1
+            # 参考图像之后的图像
+            for orig_idx in range(reference_image_idx + 1, S):
+                index_mapping[orig_idx] = new_idx
+                new_idx += 1
+            
+            # 创建新索引到原始索引的逆映射
+            reverse_mapping = {v: k for k, v in index_mapping.items()}
+        else:
+            # 参考图像已经在位置0，无需重排
+            reordered_images = images
+            reverse_mapping = {i: i for i in range(S)}
+
+        # 6. 使用VGGT执行点追踪（使用重排后的图像序列）
         start_time = time.time()
         
         with torch.no_grad():
             try:
-                predictions = vggt_model(images.unsqueeze(0), query_points=all_query_points_tensor.unsqueeze(0))
+                predictions = vggt_model(reordered_images.unsqueeze(0), query_points=all_query_points_tensor.unsqueeze(0))
             except RuntimeError as e:
                 if 'out of memory' in str(e).lower() and torch.cuda.is_available():
                     logger.error("CUDA out of memory during tracking. Trying to free cache and fail fast.")
@@ -318,29 +350,33 @@ def find_correspondences_point_tracking(
         tracking_time = time.time() - start_time
         logger.info(f"Tracking complete in {tracking_time:.1f}s")
 
-        # 6. 使用基于对应关系的物体匹配逻辑
+        # 7. 使用基于对应关系的物体匹配逻辑（映射回原始索引）
         object_correspondences = {}
         
-        for s_idx in range(S):
-            if s_idx == reference_image_idx:
+        for new_s_idx in range(S):
+            # 跳过参考图像（现在在位置0）
+            if new_s_idx == 0:
                 continue
+
+            # 获取原始图像索引
+            orig_s_idx = reverse_mapping[new_s_idx]
 
             # 使用对应关系匹配函数
             matched_objects = match_objects_by_correspondence(
                 tracks=tracks,
                 visibility=visibility,
                 points_per_object=points_per_object,
-                target_detections=detections[s_idx],
-                reference_image_idx=reference_image_idx,
-                target_image_idx=s_idx,
+                target_detections=detections[orig_s_idx],  # 使用原始索引获取检测结果
+                reference_image_idx=0,  # 在重排后的序列中，参考图像总是在位置0
+                target_image_idx=new_s_idx,  # 在重排后序列中的目标图像位置
                 config=config,
                 transforms_info=transforms_info,
                 correspondence_threshold=config.correspondence_threshold
             )
             
             if matched_objects:
-                object_correspondences[s_idx] = matched_objects
-                logger.info(f"Found {len(matched_objects)} matches in image {s_idx}\n")
+                object_correspondences[orig_s_idx] = matched_objects  # 用原始索引存储结果
+                logger.info(f"Found {len(matched_objects)} matches in image {orig_s_idx}\n")
 
         logger.info(f"Point tracking complete. Found correspondences in {len(object_correspondences)} images.")
         return object_correspondences, points_per_object
@@ -420,7 +456,7 @@ def match_objects_by_correspondence(
             
         # 检查是否达到最小可见点数要求
         if len(valid_points) < config.min_visible_points:
-            logger.info(f"Reference object {ref_object_id}: Only {len(valid_points)} valid points, below minimum {config.min_visible_points}")
+            logger.debug(f"Reference object {ref_object_id}: Only {len(valid_points)} valid points, below minimum {config.min_visible_points}")
             continue
         
         # 收集最多2个接近的匹配（差距≤0.1）
@@ -474,7 +510,7 @@ def match_objects_by_correspondence(
         # 添加到结果中
         for match in matches:
             matched_objects.append(match)
-            logger.info(f"Matched ref {ref_object_id} → target {match['target_obj_id']} (hit ratio: {match['correspondence_ratio']:.2f})")
+            logger.info(f"Matched ref {ref_object_id} → target {match['target_obj_id']} (hit ratio: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
         
         if not matches:
             logger.debug(f"❌ No match found for reference object {ref_object_id}")

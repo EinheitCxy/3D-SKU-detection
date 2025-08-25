@@ -66,7 +66,6 @@ class SKUMatchingSystem:
             
             # 加载VGGT模型
             self.vggt_model = VGGT.from_pretrained("facebook/VGGT-1B").to(self.config.device).eval()
-            logger.info("VGGT model loaded successfully")
             
             self._is_initialized = True
             logger.info("System initialization complete")
@@ -89,8 +88,6 @@ class SKUMatchingSystem:
         
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(self.config.seed)
-            
-        logger.info(f"Random seeds set to {self.config.seed}")
     
     def process_images(
         self, 

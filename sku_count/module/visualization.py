@@ -133,20 +133,9 @@ def visualize_results(
                             cv2.putText(target_image_bgr, label, (x1, max(y1 - 5, 10)), 
                                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                         else:
-                            # 未匹配的框：使用灰色，但采用与reference一致的样式
+                            # 未匹配的框：使用灰色细线，不绘制ID和中心点
                             color = (128, 128, 128)
-                            cv2.rectangle(target_image_bgr, (x1, y1), (x2, y2), color, 2)
-                            
-                            # 绘制中心点
-                            center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
-                            cv2.circle(target_image_bgr, (center_x, center_y), 3, color, -1)
-                            
-                            # 绘制ID标签（与reference一致的格式）
-                            label = f"{target_bbox_id}"
-                            (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                            cv2.rectangle(target_image_bgr, (x1, y1-label_h-10), (x1+label_w, y1), color, -1)
-                            cv2.putText(target_image_bgr, label, (x1, max(y1 - 5, 10)), 
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                            cv2.rectangle(target_image_bgr, (x1, y1), (x2, y2), color, 1)  # 细线
             
             # 在匹配的框上添加参考对象的匹配信息
             for item in matched_boxes:
@@ -171,7 +160,7 @@ def visualize_results(
                 
                 if x1 < x2 and y1 < y2:  # 有效框
                     # 绘制参考对象匹配标识（使用与reference一致的样式，但位置稍微偏移）
-                    label = f"ref{obj_id}"
+                    label = f"{obj_id}"
                     (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
                     cv2.rectangle(target_image_bgr, (x1, y1-label_h-35), (x1+label_w, y1-25), color, -1)
                     cv2.putText(target_image_bgr, label, (x1, max(y1 - 30, 25)), 
@@ -287,25 +276,37 @@ def save_visualization_summary(
         summary_path = Path(config.output_dir) / filename
         
         with open(summary_path, 'w', encoding='utf-8') as f:
-            f.write("SKU匹配结果摘要\n")
+            f.write("SKU匹配结果日志\n")
             f.write("=" * 50 + "\n\n")
             
             total_matches = 0
-            for target_idx, matches in correspondences.items():
-                f.write(f"目标图像 {target_idx}:\n")
-                f.write(f"  - 匹配数量: {len(matches)}\n")
+            
+            # 按目标图像索引排序处理
+            for target_idx in sorted(correspondences.keys()):
+                matches = correspondences[target_idx]
                 
-                for match in matches:
+                # 按参考对象id排序匹配结果
+                sorted_matches = sorted(matches, key=lambda x: x['object_id'])
+                
+                # 写入匹配详情
+                for match in sorted_matches:
                     ref_id = match['object_id']
                     target_id = match.get('target_obj_id', match.get('target_bbox_id', 'N/A'))
                     ratio = match['correspondence_ratio']
-                    f.write(f"  - 参考对象 {ref_id} → 目标对象 {target_id} (匹配率: {ratio:.1%})\n")
+                    matched_points = match.get('matched_points', 0)
+                    total_points = match.get('total_points', 0)
+                    
+                    f.write(f"Matched ref {ref_id} → target {target_id} (hit ratio: {ratio:.2f} {matched_points}/{total_points})\n")
+                
+                # 写入分组信息
+                f.write(f"Matching objects between reference image 0 and target image {target_idx}\n")
+                f.write(f"Found {len(matches)} matches in image {target_idx}\n\n")
                 
                 total_matches += len(matches)
-                f.write("\n")
             
-            f.write(f"总匹配数量: {total_matches}\n")
-            f.write(f"匹配图像数量: {len(correspondences)}\n")
+            # 写入汇总信息
+            f.write(f"Point tracking complete. Found correspondences in {len(correspondences)} images.\n")
+            f.write(f"Found {total_matches} matches across {len(correspondences)} images\n")
         
         logger.info(f"Saved matching summary to {summary_path}")
         
