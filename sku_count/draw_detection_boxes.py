@@ -22,11 +22,21 @@ def load_detection_results(json_path: str) -> dict:
         with open(json_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        # 检测结果格式：[{...}]，取第一个元素
+        # 处理不同格式的检测结果
         if isinstance(data, list) and len(data) > 0:
+            # floor_display1格式: [{...}]
             return data[0]
         elif isinstance(data, dict):
-            return data
+            if 'skus' in data:
+                # floor_display2格式: {"skus": [{...}]}
+                if isinstance(data['skus'], list) and len(data['skus']) > 0:
+                    return data['skus'][0]
+                else:
+                    logger.warning(f"Empty skus array in {json_path}")
+                    return {}
+            else:
+                # 直接的字典格式
+                return data
         else:
             logger.warning(f"Unexpected data format in {json_path}")
             return {}
@@ -138,14 +148,14 @@ def draw_detection_boxes(image_path: str, detection_data: dict,
 
 def main():
     parser = argparse.ArgumentParser(description="绘制检出框到图片上")
-    parser.add_argument("--image_dir", type=str, default="../imdata/total", 
-                       help="图片目录路径 (default: imdata/total)")
-    parser.add_argument("--detection_dir", type=str, default="../imdata/detections_results",
-                       help="检测结果目录路径 (default: imdata/detections_results)")
-    parser.add_argument("--output_dir", type=str, default="imdata_with_bbox",
-                       help="输出目录路径 (default: output_detection_visualization)")
+    parser.add_argument("--image_dir", type=str, default="../imdata/floor_display2/images", 
+                       help="图片目录路径 (default: ../imdata/floor_display2/images)")
+    parser.add_argument("--detection_dir", type=str, default="../imdata/floor_display2/detections_results",
+                       help="检测结果目录路径 (default: ../imdata/floor_display2/detections_results)")
+    parser.add_argument("--output_dir", type=str, default="../imdata/floor_display2/imdata_with_bbox",
+                       help="输出目录路径 (default: ../imdata/floor_display2/imdata_with_bbox)")
     parser.add_argument("--confidence_threshold", type=float, default=0.3,
-                       help="置信度阈值 (default: 0.5)")
+                       help="置信度阈值 (default: 0.3)")
     parser.add_argument("--no_confidence", action="store_true",
                        help="不显示置信度信息")
     parser.add_argument("--no_class", action="store_true", 

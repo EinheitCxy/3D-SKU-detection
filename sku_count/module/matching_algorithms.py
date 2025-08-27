@@ -510,12 +510,11 @@ def match_objects_by_correspondence(
         # 添加到结果中
         for match in matches:
             matched_objects.append(match)
-            logger.info(f"Matched ref {ref_object_id} → target {match['target_obj_id']} (hit ratio: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
+            logger.info(f"Matched ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
         
         if not matches:
             logger.debug(f"❌ No match found for reference object {ref_object_id}")
     
-    # 只在找到匹配时才输出详细信息
     if len(matched_objects) > 0:
         logger.info(f"Matching objects between reference image {reference_image_idx} and target image {target_image_idx}")
     
