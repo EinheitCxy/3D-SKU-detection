@@ -11,7 +11,7 @@ SKU计数分析器 - 统计去重前后的物体总数
 import json
 import re
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 from collections import defaultdict
 from datetime import datetime
 
@@ -65,6 +65,50 @@ class SKUCountAnalyzer:
             'num_images': len(per_image_count)
         }
     
+    def filter_optimal_matches(self, all_matched_pairs: List[Dict]) -> List[Dict]:
+        """
+        过滤得到最优匹配，解决一对多匹配问题
+        
+        策略：双向最优匹配
+        1. 每个ref只保留hit_ratio最高的匹配
+        2. 每个target只接受hit_ratio最高的ref
+        """
+        print("\n=== 应用最优匹配过滤 ===")
+        
+        # 按ref分组，每个ref选择最佳target
+        ref_to_best_target = {}
+        ref_groups = defaultdict(list)
+        
+        for match in all_matched_pairs:
+            ref_key = (match['ref_idx'], match['ref_id'])
+            ref_groups[ref_key].append(match)
+        
+        for ref_key, matches in ref_groups.items():
+            best_match = max(matches, key=lambda x: x['hit_ratio'])
+            ref_to_best_target[ref_key] = best_match
+        
+        # 按target分组，解决多个ref竞争同一target的冲突
+        target_conflicts = defaultdict(list)
+        for ref_key, match in ref_to_best_target.items():
+            target_key = (match['target_idx'], match['target_id'])
+            target_conflicts[target_key].append((ref_key, match))
+        
+        # 解决冲突，每个target只选择最佳ref
+        filtered_matches = []
+        for target_key, ref_matches in target_conflicts.items():
+            if len(ref_matches) > 1:
+                # 多个ref竞争，选择hit_ratio最高的
+                best_ref, best_match = max(ref_matches, key=lambda x: x[1]['hit_ratio'])
+                filtered_matches.append(best_match)
+                print(f"Target {target_key}: {len(ref_matches)}个ref竞争，选择最佳ref {best_ref} (hit_ratio={best_match['hit_ratio']:.3f})")
+            else:
+                filtered_matches.append(ref_matches[0][1])
+        
+        reduction = len(all_matched_pairs) - len(filtered_matches)
+        print(f"匹配过滤: {len(all_matched_pairs)} → {len(filtered_matches)} (减少{reduction}个)")
+        
+        return filtered_matches
+
     def analyze_all_matches(self) -> Dict:
         """分析所有参考索引的匹配摘要文件"""
         print("\n=== 分析所有匹配结果 ===")
@@ -133,15 +177,21 @@ class SKUCountAnalyzer:
             
         
         print(f"\n汇总统计:")
-        print(f"  总匹配对数: {len(all_matched_pairs)}")
+        print(f"  原始匹配对数: {len(all_matched_pairs)}")
+        
+        # 应用最优匹配过滤
+        filtered_pairs = self.filter_optimal_matches(all_matched_pairs)
+        
+        print(f"  过滤后匹配对数: {len(filtered_pairs)}")
         print(f"  参与匹配的唯一参考物体数: {len(all_unique_refs)}")
         print(f"  涉及的目标图像数: {len(all_target_images)}")
         
         return {
-            'matched_pairs': len(all_matched_pairs),
+            'original_pairs': len(all_matched_pairs),
+            'matched_pairs': len(filtered_pairs),
             'unique_refs': len(all_unique_refs),
             'target_images': len(all_target_images),
-            'pairs': all_matched_pairs,
+            'pairs': filtered_pairs,
             'summary_files_count': len(summary_files_found)
         }
     

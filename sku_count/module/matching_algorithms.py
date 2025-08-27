@@ -37,6 +37,81 @@ from .transforms import VGGTImageTransform
 logger = logging.getLogger(__name__)
 
 
+def analyze_tracking_scores(coords, vis_scores, conf_scores):
+    """
+    分析点追踪结果的质量统计
+    
+    Args:
+        coords: 点坐标轨迹 (S, N, 2)
+        vis_scores: 可见性分数 (S, N)
+        conf_scores: 置信度分数 (S, N)
+    """
+    S, N = vis_scores.shape  # S=帧数, N=点数
+    total_points = S * N
+    
+    # 展平所有帧的分数用于统计
+    vis_flat = vis_scores.flatten()
+    conf_flat = conf_scores.flatten()
+    
+    print("\n" + "="*50)
+    print("📊 点追踪质量统计分析")
+    print("="*50)
+    
+    print(f"🔢 基础统计:")
+    print(f"   总帧数: {S}")
+    print(f"   每帧点数: {N}")
+    print(f"   总追踪点数: {total_points}")
+    
+    print(f"\n👀 可见性分数特征:")
+    high_vis = vis_flat > 0.8
+    medium_vis = (vis_flat > 0.5) & (vis_flat <= 0.8)
+    low_vis = vis_flat <= 0.5
+    print(f"   高可见性点数 (>0.8): {high_vis.sum().item()} ({high_vis.float().mean()*100:.1f}%)")
+    print(f"   中等可见性点数 (0.5-0.8): {medium_vis.sum().item()} ({medium_vis.float().mean()*100:.1f}%)")
+    print(f"   低可见性点数 (<=0.5): {low_vis.sum().item()} ({low_vis.float().mean()*100:.1f}%)")
+    print(f"   平均可见性分数: {vis_flat.mean():.3f}")
+    print(f"   可见性分数标准差: {vis_flat.std():.3f}")
+    
+    print(f"\n🎯 置信度分数特征:")
+    high_conf = conf_flat > 0.8
+    medium_conf = (conf_flat > 0.5) & (conf_flat <= 0.8)
+    low_conf = conf_flat <= 0.5
+    print(f"   高置信度点数 (>0.8): {high_conf.sum().item()} ({high_conf.float().mean()*100:.1f}%)")
+    print(f"   中等置信度点数 (0.5-0.8): {medium_conf.sum().item()} ({medium_conf.float().mean()*100:.1f}%)")
+    print(f"   低置信度点数 (<=0.5): {low_conf.sum().item()} ({low_conf.float().mean()*100:.1f}%)")
+    print(f"   平均置信度分数: {conf_flat.mean():.3f}")
+    print(f"   置信度分数标准差: {conf_flat.std():.3f}")
+    
+    # 质量一致性分析
+    print(f"\n🔍 质量一致性分析:")
+    both_high = (vis_flat > 0.8) & (conf_flat > 0.8)
+    both_low = (vis_flat <= 0.5) & (conf_flat <= 0.5)
+    inconsistent_high_vis_low_conf = (vis_flat > 0.8) & (conf_flat <= 0.5)
+    inconsistent_low_vis_high_conf = (vis_flat <= 0.5) & (conf_flat > 0.8)
+    
+    print(f"   双高质量点数 (vis>0.8 & conf>0.8): {both_high.sum().item()} ({both_high.float().mean()*100:.1f}%)")
+    print(f"   双低质量点数 (vis<=0.5 & conf<=0.5): {both_low.sum().item()} ({both_low.float().mean()*100:.1f}%)")
+    print(f"   高可见低置信点数: {inconsistent_high_vis_low_conf.sum().item()} ({inconsistent_high_vis_low_conf.float().mean()*100:.1f}%)")
+    print(f"   低可见高置信点数: {inconsistent_low_vis_high_conf.sum().item()} ({inconsistent_low_vis_high_conf.float().mean()*100:.1f}%)")
+    
+    # 推荐阈值
+    print(f"\n💡 推荐过滤阈值:")
+    if both_high.float().mean() > 0.3:
+        print(f"   推荐使用严格过滤: vis>0.8 & conf>0.8 (保留 {both_high.sum().item()} 个高质量点)")
+    elif (high_conf & (vis_flat > 0.6)).sum().item() > total_points * 0.2:
+        print(f"   推荐使用中等过滤: conf>0.8 & vis>0.6 (保留 {(high_conf & (vis_flat > 0.6)).sum().item()} 个点)")
+    else:
+        print(f"   推荐使用宽松过滤: conf>0.5 & vis>0.6")
+    
+    print(f"\n🎯 当前配置: confidence_threshold > 0.5, min_confident_points >= 10")
+    confident_points = (conf_flat > 0.5).sum().item()
+    print(f"   满足当前置信度要求的点数: {confident_points} ({confident_points/total_points*100:.1f}%)")
+    
+    print("="*50 + "\n")
+    
+    return both_high, inconsistent_high_vis_low_conf, inconsistent_low_vis_high_conf
+
+
 def find_object_correspondences(
     vggt_model: VGGT,
     detections: List[Dict],
@@ -262,6 +337,10 @@ def find_correspondences_point_tracking(
         
         # 1. 从检测结果中提取参考图像的边界框
         logger.info(f"Processing reference image {reference_image_idx}")
+        
+        if reference_image_idx >= len(detections):
+            raise ValueError(f"Reference image index {reference_image_idx} out of range for {len(detections)} detections")
+        
         ref_bboxes = extract_bboxes_from_detections(detections, reference_image_idx, config)
 
         if not ref_bboxes:
@@ -347,8 +426,12 @@ def find_correspondences_point_tracking(
         
         tracks = predictions['track'].squeeze(0)      # 点轨迹 (S, N, 2)
         visibility = predictions['vis'].squeeze(0)    # 可见性分数 (S, N)
+        confidence = predictions['conf'].squeeze(0)   # 置信度分数 (S, N)
         tracking_time = time.time() - start_time
         logger.info(f"Tracking complete in {tracking_time:.1f}s")
+
+        # # 统计和分析点追踪结果质量
+        # analyze_tracking_scores(tracks, visibility, confidence)
 
         # 7. 使用基于对应关系的物体匹配逻辑（映射回原始索引）
         object_correspondences = {}
@@ -365,6 +448,7 @@ def find_correspondences_point_tracking(
             matched_objects = match_objects_by_correspondence(
                 tracks=tracks,
                 visibility=visibility,
+                confidence=confidence,
                 points_per_object=points_per_object,
                 target_detections=detections[orig_s_idx],  # 使用原始索引获取检测结果
                 reference_image_idx=0,  # 在重排后的序列中，参考图像总是在位置0
@@ -389,6 +473,7 @@ def find_correspondences_point_tracking(
 def match_objects_by_correspondence(
     tracks: torch.Tensor,
     visibility: torch.Tensor, 
+    confidence: torch.Tensor,
     points_per_object: Dict[int, Dict],
     target_detections: List[Dict],
     reference_image_idx: int,
@@ -402,6 +487,7 @@ def match_objects_by_correspondence(
     Args:
         tracks: 点轨迹 (S, N, 2)
         visibility: 可见性分数 (S, N)
+        confidence: 置信度分数 (S, N)
         points_per_object: 参考图像对象点信息
         target_detections: 目标图像检测结果
         reference_image_idx: 参考图像索引
@@ -438,11 +524,11 @@ def match_objects_by_correspondence(
         
         # 获取该物体在目标图像中的对应点
         ref_tracks_in_target = tracks[target_image_idx, start_idx:end_idx, :]  # (N_points, 2)
-        ref_visibility_in_target = visibility[target_image_idx, start_idx:end_idx]  # (N_points,)
+        ref_confidence_in_target = confidence[target_image_idx, start_idx:end_idx]  # (N_points,)
         
-        # 过滤可见且有效的点
-        visible_mask = ref_visibility_in_target > config.visibility_threshold
-        valid_points = ref_tracks_in_target[visible_mask]
+        # 过滤置信度高且有效的点
+        confident_mask = ref_confidence_in_target > config.confidence_threshold
+        valid_points = ref_tracks_in_target[confident_mask]
         
         if valid_points.numel() == 0:
             continue
@@ -454,9 +540,9 @@ def match_objects_by_correspondence(
         if len(valid_points) == 0:
             continue
             
-        # 检查是否达到最小可见点数要求
-        if len(valid_points) < config.min_visible_points:
-            logger.debug(f"Reference object {ref_object_id}: Only {len(valid_points)} valid points, below minimum {config.min_visible_points}")
+        # 检查是否达到最小置信点数要求
+        if len(valid_points) < config.min_confident_points:
+            logger.debug(f"Reference object {ref_object_id}: Only {len(valid_points)} confident points, below minimum {config.min_confident_points}")
             continue
         
         # 收集最多2个接近的匹配（差距≤0.1）

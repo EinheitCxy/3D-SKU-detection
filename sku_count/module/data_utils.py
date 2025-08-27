@@ -59,13 +59,33 @@ def load_detections(detection_dir: str) -> List[Dict]:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     file_detections = json.load(f)
                 
-                # 每个文件包含一个列表，取第一个元素
+                # 处理不同的检测结果格式
+                processed_data = None
+                
                 if isinstance(file_detections, list) and len(file_detections) > 0:
-                    detections.append(file_detections[0])
+                    # floor_display1 格式: [{"classes": {...}, "objects": [...]}]
+                    processed_data = file_detections[0]
                 elif isinstance(file_detections, dict):
-                    detections.append(file_detections)
+                    if 'skus' in file_detections:
+                        # floor_display2 格式: {"skus": [{"classes": {...}, "objects": [...]}]}
+                        if isinstance(file_detections['skus'], list) and len(file_detections['skus']) > 0:
+                            processed_data = file_detections['skus'][0]
+                        else:
+                            logger.warning(f"Empty skus array in {file_path.name}")
+                            continue
+                    else:
+                        # 直接的字典格式: {"classes": {...}, "objects": [...]}
+                        processed_data = file_detections
                 else:
                     logger.warning(f"Invalid format in file {file_path.name}, skipping")
+                    continue
+                
+                # 验证处理后的数据是否包含必要字段
+                if processed_data and 'objects' in processed_data and processed_data['objects']:
+                    detections.append(processed_data)
+                    logger.debug(f"Loaded {len(processed_data['objects'])} objects from {file_path.name}")
+                else:
+                    logger.warning(f"No valid objects found in {file_path.name}, skipping")
                     continue
                     
             except Exception as e:
@@ -90,16 +110,30 @@ def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, confi
         
     Returns:
         边界框列表
+        
+    Raises:
+        ValueError: 图像索引超出范围或检测数据无效时抛出
     """
+    if not detections:
+        raise ValueError("Detections list is empty")
+        
     if image_idx >= len(detections):
-        raise ValueError(f"Image index {image_idx} out of range")
+        raise ValueError(f"Image index {image_idx} out of range (max: {len(detections) - 1})")
     
     detection_data = detections[image_idx]
+    if not detection_data:
+        raise ValueError(f"Detection data for image {image_idx} is None or empty")
+        
     if 'objects' not in detection_data:
-        raise ValueError(f"No objects found in detection data")
+        raise ValueError(f"No 'objects' field found in detection data for image {image_idx}")
+        
+    objects = detection_data['objects']
+    if not objects:
+        logger.warning(f"No objects found in detection data for image {image_idx}")
+        return []
     
     bboxes = []
-    for obj_idx, obj in enumerate(detection_data['objects']):
+    for obj_idx, obj in enumerate(objects):
         if 'position' in obj:
             x1, y1, x2, y2 = obj['position']
             confidence = obj.get('confidences', {}).get('det', 0.0)

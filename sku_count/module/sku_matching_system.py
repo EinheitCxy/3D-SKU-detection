@@ -190,26 +190,60 @@ class SKUMatchingSystem:
         image_paths = [path for _, path in matched_files]
         image_numbers = [num for num, _ in matched_files]
         
-        # 按顺序加载检测结果
+        # 按顺序加载检测结果和匹配的图像路径
         detections = []
-        for img_number in image_numbers:
+        valid_image_paths = []
+        valid_image_numbers = []
+        
+        for i, img_number in enumerate(image_numbers):
             detection_file = Path(detection_dir) / f"{img_number}.json"
             if detection_file.exists():
-                with open(detection_file, 'r', encoding='utf-8') as f:
-                    file_detections = json.load(f)
-                
-                if isinstance(file_detections, list) and len(file_detections) > 0:
-                    detections.append(file_detections[0])
-                elif isinstance(file_detections, dict):
-                    detections.append(file_detections)
-                else:
-                    logger.error(f"Invalid detection format in {detection_file}")
-                    raise ValueError(f"Invalid detection format in {detection_file}")
+                try:
+                    with open(detection_file, 'r', encoding='utf-8') as f:
+                        file_detections = json.load(f)
+                    
+                    # 处理不同的检测结果格式
+                    processed_data = None
+                    
+                    if isinstance(file_detections, list) and len(file_detections) > 0:
+                        # floor_display1 格式: [{"classes": {...}, "objects": [...]}]
+                        processed_data = file_detections[0]
+                    elif isinstance(file_detections, dict):
+                        if 'skus' in file_detections:
+                            # floor_display2 格式: {"skus": [{"classes": {...}, "objects": [...]}]}
+                            if isinstance(file_detections['skus'], list) and len(file_detections['skus']) > 0:
+                                processed_data = file_detections['skus'][0]
+                            else:
+                                logger.warning(f"Empty skus array in {detection_file}, skipping image {img_number}")
+                                continue
+                        else:
+                            # 直接的字典格式: {"classes": {...}, "objects": [...]}
+                            processed_data = file_detections
+                    else:
+                        logger.warning(f"Invalid format in {detection_file}, skipping image {img_number}")
+                        continue
+                    
+                    # 验证处理后的数据是否包含必要字段
+                    if processed_data and 'objects' in processed_data and processed_data['objects']:
+                        detections.append(processed_data)
+                        valid_image_paths.append(image_paths[i])
+                        valid_image_numbers.append(img_number)
+                    else:
+                        logger.warning(f"No valid objects found in {detection_file}, skipping image {img_number}")
+                        continue
+                        
+                except Exception as e:
+                    logger.error(f"Failed to load detection from {detection_file}: {e}")
+                    logger.warning(f"Skipping image {img_number} due to detection loading error")
+                    continue
             else:
-                logger.error(f"Detection file not found: {detection_file}")
-                raise FileNotFoundError(f"Detection file not found: {detection_file}")
+                logger.warning(f"Detection file not found: {detection_file}, skipping image {img_number}")
+                continue
         
-        return image_paths, detections
+        if not detections:
+            raise ValueError(f"No valid detection files found in {detection_dir}")
+        
+        return valid_image_paths, detections
     
     def _run_matching(
         self, 

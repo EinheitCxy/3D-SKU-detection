@@ -46,17 +46,17 @@ class SKUMatchingConfig:
     
     # === 核心检测参数 ===
     detection_confidence_threshold: float = 0.0  # 检测置信度阈值
-    min_bbox_area: float = 100.0                 # 最小边界框面积
-    max_bboxes: int = 100                        # 最大检测框数量
+    min_bbox_area: float = 10.0                  # 最小边界框面积
+    max_bboxes: int = 500                        # 最大检测框数量
     
     # === 点采样参数 ===
     max_points_per_bbox: int = 100               # 每个2D检测框最大采样点数
     max_3d_points_per_bbox: int = 50             # 每个3D检测框最大采样点数
-    max_total_points: int = 5000                 # 全局最大采样点数上限
+    max_total_points: int = 100000               # 全局最大采样点数上限
     
     # === 匹配阈值参数 ===
-    visibility_threshold: float = 0.8            # 可见性阈值
-    min_visible_points: int = 8                  # 最小可见点数
+    confidence_threshold: float = 0.5            # 点追踪置信度阈值
+    min_confident_points: int = 10               # 最小置信点数
     correspondence_threshold: float = 0.5         # 2D对应关系阈值
     projection_match_threshold: float = 0.7       # 3D投影匹配阈值
     
@@ -104,11 +104,14 @@ class SKUMatchingConfig:
         if self.max_points_per_bbox <= 0:
             raise ValueError(f"max_points_per_bbox must be positive, got {self.max_points_per_bbox}")
         
-        if not (0.0 <= self.visibility_threshold <= 1.0):
-            raise ValueError(f"visibility_threshold must be in [0,1], got {self.visibility_threshold}")
+        if not (0.0 <= self.confidence_threshold <= 1.0):
+            raise ValueError(f"confidence_threshold must be in [0,1], got {self.confidence_threshold}")
         
-        if self.min_visible_points > self.max_points_per_bbox:
-            raise ValueError(f"min_visible_points ({self.min_visible_points}) cannot exceed max_points_per_bbox ({self.max_points_per_bbox})")
+        if self.min_confident_points > self.max_points_per_bbox:
+            raise ValueError(f"min_confident_points ({self.min_confident_points}) cannot exceed max_points_per_bbox ({self.max_points_per_bbox})")
+        
+        if self.min_bbox_area <= 0:
+            raise ValueError(f"min_bbox_area must be positive, got {self.min_bbox_area}")
         
         # 3D相关参数验证
         if self.enable_3d_projection_matching:
@@ -137,8 +140,9 @@ class SKUMatchingConfig:
         return {
             'algorithm': self.get_algorithm_name(),
             'max_points_per_bbox': self.max_points_per_bbox,
-            'visibility_threshold': self.visibility_threshold,
-            'min_visible_points': self.min_visible_points,
+            'confidence_threshold': self.confidence_threshold,
+            'min_confident_points': self.min_confident_points,
+            'min_bbox_area': self.min_bbox_area,
             'output_dir': self.output_dir,
             'enable_3d_projection_matching': self.enable_3d_projection_matching,
             'device': self.device,
@@ -148,13 +152,21 @@ class SKUMatchingConfig:
 
 DEFAULT_POINT_TRACKING_CONFIG = {
     "max_points_per_bbox": 200,
-    "visibility_threshold": 0.7,
-    "min_visible_points": 10,
+    "max_bboxes": 500,
+    "max_total_points": 100000,
+    "confidence_threshold": 0.5,
+    "min_confident_points": 10,
+    "min_bbox_area": 10.0,
     "output_dir": "output_point_tracking",
     "enable_3d_projection_matching": False
 }
 
 DEFAULT_3D_PROJECTION_CONFIG = {
+    "max_bboxes": 500,
+    "max_total_points": 100000,
+    "confidence_threshold": 0.5,
+    "min_confident_points": 10,
+    "min_bbox_area": 10.0,
     "output_dir": "output_3d_projection",
     "enable_3d_projection_matching": True,
     "depth_confidence_threshold": 0.15,
