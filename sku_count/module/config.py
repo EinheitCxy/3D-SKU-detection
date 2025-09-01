@@ -50,13 +50,13 @@ class SKUMatchingConfig:
     max_bboxes: int = 500                        # 最大检测框数量
     
     # === 点采样参数 ===
-    max_points_per_bbox: int = 100               # 每个2D检测框最大采样点数
-    max_3d_points_per_bbox: int = 50             # 每个3D检测框最大采样点数
+    max_points_per_bbox: int = 70                # 每个2D检测框最大采样点数
+    max_3d_points_per_bbox: int = 70             # 每个3D检测框最大采样点数
     max_total_points: int = 100000               # 全局最大采样点数上限
     
     # === 匹配阈值参数 ===
     confidence_threshold: float = 0.5            # 点追踪置信度阈值
-    min_confident_points: int = 10               # 最小置信点数
+    min_confident_points: int = 7                # 最小置信点数
     correspondence_threshold: float = 0.5         # 2D对应关系阈值
     projection_match_threshold: float = 0.7       # 3D投影匹配阈值
     
@@ -151,11 +151,11 @@ class SKUMatchingConfig:
 
 
 DEFAULT_POINT_TRACKING_CONFIG = {
-    "max_points_per_bbox": 200,
-    "max_bboxes": 500,
-    "max_total_points": 100000,
+    "max_points_per_bbox": 80,
+    "max_bboxes": 200,
+    "max_total_points": 20000,
     "confidence_threshold": 0.5,
-    "min_confident_points": 10,
+    "min_confident_points": 7,
     "min_bbox_area": 10.0,
     "output_dir": "output_point_tracking",
     "enable_3d_projection_matching": False
@@ -165,7 +165,7 @@ DEFAULT_3D_PROJECTION_CONFIG = {
     "max_bboxes": 500,
     "max_total_points": 100000,
     "confidence_threshold": 0.5,
-    "min_confident_points": 10,
+    "min_confident_points": 7,
     "min_bbox_area": 10.0,
     "output_dir": "output_3d_projection",
     "enable_3d_projection_matching": True,
@@ -173,7 +173,7 @@ DEFAULT_3D_PROJECTION_CONFIG = {
     "point_3d_confidence_threshold": 0.15,
     "min_depth": 0.1,
     "max_depth": 10.0,
-    "max_3d_points_per_bbox": 50,
+    "max_3d_points_per_bbox": 70,
     "projection_match_threshold": 0.7,
     "max_3d_distance": 1.0,
     "max_depth_difference": 2.0,

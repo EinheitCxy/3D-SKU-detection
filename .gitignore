@@ -81,16 +81,8 @@ lightning_logs/
 # 数据文件和数据集
 datasets/
 data/
-imdata/*.jpg
-imdata/*.png
-imdata/*.jpeg
-imdata/*.tiff
-imdata/*.tif
-imdata/sample/
-*.zip
-*.tar.gz
-*.rar
-*.7z
+imdata/*
+output*/
 
 # 输出文件
 outputs/
