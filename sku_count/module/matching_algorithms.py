@@ -599,9 +599,9 @@ def match_objects_by_correspondence(
             logger.info(f"Matched ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
         
         if not matches:
-            logger.debug(f"❌ No match found for reference object {ref_object_id}")
+            logger.debug(f"No match found for reference object {ref_object_id}")
     
     if len(matched_objects) > 0:
-        logger.info(f"Matching objects between reference image {reference_image_idx} and target image {target_image_idx}")
+        logger.info(f"Finish matching objects between reference image {reference_image_idx} and target image {target_image_idx}")
     
     return matched_objects
