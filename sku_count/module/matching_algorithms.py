@@ -593,7 +593,26 @@ def match_objects_by_correspondence(
                 elif best_ratio - overlap_ratio <= 0.1 and len(matches) < 2:
                     matches.append(match)  # 接近的，且有空间
         
-        # 添加到结果中
+        # 去重逻辑：如果一个框完全包含另一个框，移除较大的框（联包装）
+        if len(matches) > 1:
+            to_remove = set()
+            for i in range(len(matches)):
+                for j in range(i + 1, len(matches)):
+                    bbox_i = matches[i]['vggt_box']
+                    bbox_j = matches[j]['vggt_box']
+                    area_i = (bbox_i[2] - bbox_i[0]) * (bbox_i[3] - bbox_i[1])
+                    area_j = (bbox_j[2] - bbox_j[0]) * (bbox_j[3] - bbox_j[1])
+                    
+                    # 检查包含关系并移除较大的框
+                    if (bbox_i[0] <= bbox_j[0] and bbox_i[1] <= bbox_j[1] and 
+                        bbox_i[2] >= bbox_j[2] and bbox_i[3] >= bbox_j[3]):
+                        to_remove.add(i if area_i > area_j else j)
+                    elif (bbox_j[0] <= bbox_i[0] and bbox_j[1] <= bbox_i[1] and 
+                          bbox_j[2] >= bbox_i[2] and bbox_j[3] >= bbox_i[3]):
+                        to_remove.add(j if area_j > area_i else i)
+            
+            matches = [m for i, m in enumerate(matches) if i not in to_remove]
+
         for match in matches:
             matched_objects.append(match)
             logger.info(f"Matched ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
