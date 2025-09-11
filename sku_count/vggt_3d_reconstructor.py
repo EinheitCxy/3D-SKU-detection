@@ -22,6 +22,7 @@ from pathlib import Path
 from datetime import datetime
 import gc
 import time
+from contextlib import nullcontext
 
 # 添加VGGT模块路径
 sys.path.append("../vggt-main")
@@ -42,6 +43,14 @@ except ImportError:
     from vggt.utils.pose_enc import pose_encoding_to_extri_intri
     from vggt.utils.geometry import unproject_depth_map_to_point_map
 
+# 使用统一的设备与精度选择逻辑
+try:
+    from module.config import get_optimal_device_config
+except Exception:
+    # 兼容在不同工作目录下运行的情形
+    sys.path.insert(0, '.')
+    from module.config import get_optimal_device_config
+
 class VGGT3DReconstructor:
     """VGGT 3D重构器"""
     
@@ -53,14 +62,29 @@ class VGGT3DReconstructor:
             device: 计算设备 ("cuda" 或 "cpu")
             model_path: 预训练模型路径 (可选，默认从HuggingFace下载)
         """
-        self.device = device if device else ("cuda" if torch.cuda.is_available() else "cpu")
+        # 统一设备与dtype选择
+        optimal_device, optimal_dtype = get_optimal_device_config(verbose=True)
+
+        # 用户覆盖（若提供）
+        if device is not None:
+            if device == "cuda" and not torch.cuda.is_available():
+                print("警告: CUDA不可用，回退到CPU")
+                self.device = "cpu"
+                self.dtype = torch.float32
+            elif device == "cpu":
+                self.device = "cpu"
+                self.dtype = torch.float32
+            else:
+                self.device = device
+                self.dtype = optimal_dtype if str(optimal_device).startswith("cuda") else torch.float32
+        else:
+            self.device = optimal_device
+            self.dtype = optimal_dtype if str(optimal_device).startswith("cuda") else torch.float32
+
         self.model = None
         self.model_path = model_path
         
         print(f"使用设备: {self.device}")
-        if not torch.cuda.is_available() and device == "cuda":
-            print("警告: CUDA不可用，回退到CPU")
-            self.device = "cpu"
     
     def load_model(self):
         """加载VGGT模型"""
@@ -140,12 +164,11 @@ class VGGT3DReconstructor:
         print("开始3D重构推理...")
         start_time = time.time()
         
-        # 选择数据类型
-        dtype = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
-        
         try:
+            use_amp = torch.cuda.is_available() and str(self.device).startswith("cuda")
+            amp_ctx = torch.cuda.amp.autocast(dtype=self.dtype) if use_amp else nullcontext()
             with torch.no_grad():
-                with torch.cuda.amp.autocast(dtype=dtype):
+                with amp_ctx:
                     predictions = self.model(images)
             
             print("转换姿态编码为外参和内参矩阵...")
