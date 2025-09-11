@@ -8,6 +8,7 @@ import time
 import torch
 import logging
 from typing import Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 # VGGT相关导入
 try:
     import sys
@@ -35,6 +36,145 @@ from .geometry_3d import (
 from .transforms import VGGTImageTransform
 
 logger = logging.getLogger(__name__)
+
+
+def _process_single_ref_object(
+    ref_object_id: int,
+    ref_data: Dict,
+    target_bboxes: List[Dict],
+    tracks: torch.Tensor,
+    confidence: torch.Tensor,
+    target_image_idx: int,
+    config: SKUMatchingConfig,
+    correspondence_threshold: float = 0.5,
+    transforms_info: Optional[List] = None
+) -> List[Dict]:
+    """处理单个参考对象的匹配计算（用于并行化）
+    
+    Args:
+        ref_object_id: 参考对象ID
+        ref_data: 参考对象数据
+        target_bboxes: 目标检测框列表
+        tracks: 点轨迹张量
+        confidence: 置信度张量
+        target_image_idx: 目标图像索引
+        config: 配置参数
+        correspondence_threshold: 对应关系阈值
+        transforms_info: 坐标变换信息
+        
+    Returns:
+        匹配结果列表
+    """
+    try:
+        start_idx, end_idx = ref_data["point_indices"]
+        
+        # 获取该物体在目标图像中的对应点
+        ref_tracks_in_target = tracks[target_image_idx, start_idx:end_idx, :]  # (N_points, 2)
+        ref_confidence_in_target = confidence[target_image_idx, start_idx:end_idx]  # (N_points,)
+        
+        # 过滤置信度高且有效的点
+        confident_mask = ref_confidence_in_target > config.confidence_threshold
+        valid_points = ref_tracks_in_target[confident_mask]
+        
+        if valid_points.numel() == 0:
+            return []
+            
+        # 过滤非有限值
+        finite_mask = torch.isfinite(valid_points).all(dim=1)
+        valid_points = valid_points[finite_mask]
+        
+        if len(valid_points) == 0:
+            return []
+            
+        # 检查是否达到最小置信点数要求
+        if len(valid_points) < config.min_confident_points:
+            logger.debug(f"参考对象 {ref_object_id}: 只有 {len(valid_points)} 个置信点，低于最小值 {config.min_confident_points}")
+            return []
+        
+        # 收集所有符合条件的匹配
+        all_candidates = []
+        
+        for target_bbox_info in target_bboxes:
+            target_bbox = target_bbox_info['bbox']  # [x1, y1, x2, y2]
+            
+            # 计算有多少对应点落在这个检测框内
+            points_in_bbox = 0
+            for point in valid_points:
+                x, y = point[0].item(), point[1].item()
+                if (target_bbox[0] <= x <= target_bbox[2] and 
+                    target_bbox[1] <= y <= target_bbox[3]):
+                    points_in_bbox += 1
+            
+            # 计算重叠比例
+            overlap_ratio = points_in_bbox / len(valid_points)
+            
+            logger.debug(f"目标框 {target_bbox_info['object_id']}: {points_in_bbox}/{len(valid_points)} 点在内 ({overlap_ratio:.3f})")
+            
+            if overlap_ratio >= correspondence_threshold:
+                # 将VGGT坐标映射回原图坐标
+                if transforms_info and target_image_idx < len(transforms_info):
+                    original_bbox = transforms_info[target_image_idx].map_bbox_to_original(target_bbox)
+                else:
+                    original_bbox = target_bbox
+                
+                match = {
+                    'object_id': ref_object_id,
+                    'target_obj_id': target_bbox_info['object_id'],
+                    'box': original_bbox,
+                    'vggt_box': target_bbox,
+                    'correspondence_ratio': overlap_ratio,
+                    'matched_points': points_in_bbox,
+                    'total_points': len(valid_points),
+                    'target_confidence': target_bbox_info['confidence'],
+                    'reference_confidence': ref_data['confidence']
+                }
+                all_candidates.append(match)
+        
+        # 去重逻辑 - 如果一个框完全包含另一个框，移除包含者（较大的框）
+        if len(all_candidates) > 1:
+            to_remove = set()
+            for i in range(len(all_candidates)):
+                if i in to_remove:
+                    continue
+                for j in range(i + 1, len(all_candidates)):
+                    if j in to_remove:
+                        continue
+                    bbox_i = all_candidates[i]['vggt_box']
+                    bbox_j = all_candidates[j]['vggt_box']
+                    
+                    # 检查i是否完全包含j（i包含j，移除i）
+                    if (bbox_i[0] <= bbox_j[0] and bbox_i[1] <= bbox_j[1] and 
+                        bbox_i[2] >= bbox_j[2] and bbox_i[3] >= bbox_j[3] and
+                        not (bbox_i[0] == bbox_j[0] and bbox_i[1] == bbox_j[1] and 
+                             bbox_i[2] == bbox_j[2] and bbox_i[3] == bbox_j[3])):
+                        to_remove.add(i)
+                        logger.debug(f"移除包含框 {all_candidates[i]['target_obj_id']}，它包含 {all_candidates[j]['target_obj_id']}")
+                        break
+                    # 检查j是否完全包含i（j包含i，移除j）
+                    elif (bbox_j[0] <= bbox_i[0] and bbox_j[1] <= bbox_i[1] and 
+                          bbox_j[2] >= bbox_i[2] and bbox_j[3] >= bbox_i[3] and
+                          not (bbox_i[0] == bbox_j[0] and bbox_i[1] == bbox_j[1] and 
+                               bbox_i[2] == bbox_j[2] and bbox_i[3] == bbox_j[3])):
+                        to_remove.add(j)
+                        logger.debug(f"移除包含框 {all_candidates[j]['target_obj_id']}，它包含 {all_candidates[i]['target_obj_id']}")
+                        break
+            
+            filtered_candidates = [m for i, m in enumerate(all_candidates) if i not in to_remove]
+        else:
+            filtered_candidates = all_candidates
+        
+        # 按overlap_ratio降序排序，取前2个最好的匹配
+        filtered_candidates.sort(key=lambda x: x['correspondence_ratio'], reverse=True)
+        matches = filtered_candidates[:2]
+
+        for match in matches:
+            logger.info(f"🧵 并行匹配: ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
+        
+        return matches
+        
+    except Exception as e:
+        logger.error(f"处理参考对象 {ref_object_id} 失败: {e}")
+        return []
 
 
 def analyze_tracking_scores(coords, vis_scores, conf_scores):
@@ -518,107 +658,48 @@ def match_objects_by_correspondence(
     
     matched_objects = []
     
-    # 遍历参考图像中的每个物体
-    for ref_object_id, ref_data in points_per_object.items():
-        start_idx, end_idx = ref_data["point_indices"]
+    # 决定是否使用并行化
+    num_ref_objects = len(points_per_object)
+    use_parallel = num_ref_objects >= 3  # 至少3个参考对象才启用并行
+    max_workers = min(4, num_ref_objects)  # 最多4个线程
+    
+    if use_parallel:
+        logger.info(f"启用参考对象并行匹配: {num_ref_objects} 个对象，{max_workers} 线程")
         
-        # 获取该物体在目标图像中的对应点
-        ref_tracks_in_target = tracks[target_image_idx, start_idx:end_idx, :]  # (N_points, 2)
-        ref_confidence_in_target = confidence[target_image_idx, start_idx:end_idx]  # (N_points,)
-        
-        # 过滤置信度高且有效的点
-        confident_mask = ref_confidence_in_target > config.confidence_threshold
-        valid_points = ref_tracks_in_target[confident_mask]
-        
-        if valid_points.numel() == 0:
-            continue
-            
-        # 过滤非有限值
-        finite_mask = torch.isfinite(valid_points).all(dim=1)
-        valid_points = valid_points[finite_mask]
-        
-        if len(valid_points) == 0:
-            continue
-            
-        # 检查是否达到最小置信点数要求
-        if len(valid_points) < config.min_confident_points:
-            logger.debug(f"Reference object {ref_object_id}: Only {len(valid_points)} confident points, below minimum {config.min_confident_points}")
-            continue
-        
-        # 收集最多2个接近的匹配（差距≤0.1）
-        matches = []
-        best_ratio = 0.0
-        
-        for target_bbox_info in target_bboxes:
-            target_bbox = target_bbox_info['bbox']  # [x1, y1, x2, y2]
-            
-            # 计算有多少对应点落在这个检测框内
-            points_in_bbox = 0
-            for point in valid_points:
-                x, y = point[0].item(), point[1].item()
-                if (target_bbox[0] <= x <= target_bbox[2] and 
-                    target_bbox[1] <= y <= target_bbox[3]):
-                    points_in_bbox += 1
-            
-            # 计算重叠比例
-            overlap_ratio = points_in_bbox / len(valid_points)
-            
-            logger.debug(f"Target bbox {target_bbox_info['object_id']}: {points_in_bbox}/{len(valid_points)} points inside ({overlap_ratio:.3f})")
-            
-            if overlap_ratio >= correspondence_threshold:
-                # 将VGGT坐标映射回原图坐标
-                if transforms_info and target_image_idx < len(transforms_info):
-                    original_bbox = transforms_info[target_image_idx].map_bbox_to_original(target_bbox)
-                else:
-                    original_bbox = target_bbox
+        try:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有参考对象的处理任务
+                future_to_ref_id = {}
+                for ref_object_id, ref_data in points_per_object.items():
+                    future = executor.submit(
+                        _process_single_ref_object,
+                        ref_object_id, ref_data, target_bboxes, tracks, confidence,
+                        target_image_idx, config, correspondence_threshold, transforms_info
+                    )
+                    future_to_ref_id[future] = ref_object_id
                 
-                match = {
-                    'object_id': ref_object_id,
-                    'target_obj_id': target_bbox_info['object_id'],
-                    'box': original_bbox,
-                    'vggt_box': target_bbox,
-                    'correspondence_ratio': overlap_ratio,
-                    'matched_points': points_in_bbox,
-                    'total_points': len(valid_points),
-                    'target_confidence': target_bbox_info['confidence'],
-                    'reference_confidence': ref_data['confidence']
-                }
-                
-                if not matches:
-                    matches.append(match)  # 第一个匹配
-                    best_ratio = overlap_ratio
-                elif overlap_ratio > best_ratio:
-                    matches = [match]      # 更好的，替换全部
-                    best_ratio = overlap_ratio  
-                elif best_ratio - overlap_ratio <= 0.1 and len(matches) < 2:
-                    matches.append(match)  # 接近的，且有空间
-        
-        # 去重逻辑：如果一个框完全包含另一个框，移除较大的框（联包装）
-        if len(matches) > 1:
-            to_remove = set()
-            for i in range(len(matches)):
-                for j in range(i + 1, len(matches)):
-                    bbox_i = matches[i]['vggt_box']
-                    bbox_j = matches[j]['vggt_box']
-                    area_i = (bbox_i[2] - bbox_i[0]) * (bbox_i[3] - bbox_i[1])
-                    area_j = (bbox_j[2] - bbox_j[0]) * (bbox_j[3] - bbox_j[1])
-                    
-                    # 检查包含关系并移除较大的框
-                    if (bbox_i[0] <= bbox_j[0] and bbox_i[1] <= bbox_j[1] and 
-                        bbox_i[2] >= bbox_j[2] and bbox_i[3] >= bbox_j[3]):
-                        to_remove.add(i if area_i > area_j else j)
-                    elif (bbox_j[0] <= bbox_i[0] and bbox_j[1] <= bbox_i[1] and 
-                          bbox_j[2] >= bbox_i[2] and bbox_j[3] >= bbox_i[3]):
-                        to_remove.add(j if area_j > area_i else i)
-            
-            matches = [m for i, m in enumerate(matches) if i not in to_remove]
-
-        for match in matches:
-            matched_objects.append(match)
-            logger.info(f"Matched ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
-        
-        if not matches:
-            logger.debug(f"No match found for reference object {ref_object_id}")
+                # 收集结果
+                for future in as_completed(future_to_ref_id, timeout=60):
+                    ref_object_id = future_to_ref_id[future]
+                    try:
+                        matches = future.result()
+                        matched_objects.extend(matches)
+                    except Exception as e:
+                        logger.error(f"并行处理参考对象 {ref_object_id} 失败: {e}")
+                        
+        except Exception as e:
+            logger.warning(f"并行处理失败，回退到串行模式: {e}")
+            use_parallel = False
+    
+    if not use_parallel:
+        logger.info("使用串行匹配模式")
+        # 串行处理（原有逻辑）
+        for ref_object_id, ref_data in points_per_object.items():
+            matches = _process_single_ref_object(
+                ref_object_id, ref_data, target_bboxes, tracks, confidence,
+                target_image_idx, config, correspondence_threshold, transforms_info
+            )
+            matched_objects.extend(matches)
     
     if len(matched_objects) > 0:
         logger.info(f"Finish matching objects between reference image {reference_image_idx} and target image {target_image_idx}")

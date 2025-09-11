@@ -45,15 +45,26 @@ class SKUCountAnalyzer:
                 with open(detection_file, 'r', encoding='utf-8') as f:
                     detection_data = json.load(f)
                 
+                objects = []
+                # 处理不同的检测结果格式
                 if isinstance(detection_data, list) and len(detection_data) > 0:
+                    # floor_display1 格式: [{"classes": {...}, "objects": [...]}]
                     objects = detection_data[0].get('objects', [])
-                    object_count = len(objects)
-                    
-                    per_image_count[image_num] = object_count
-                    total_count += object_count
-                    
-                    print(f"图像 {image_num}: {object_count} 个物体")
-                    
+                elif isinstance(detection_data, dict):
+                    if 'skus' in detection_data:
+                        # floor_display2/5 格式: {"skus": [{"classes": {...}, "objects": [...]}]}
+                        if isinstance(detection_data['skus'], list) and len(detection_data['skus']) > 0:
+                            objects = detection_data['skus'][0].get('objects', [])
+                    else:
+                        # 直接的字典格式: {"classes": {...}, "objects": [...]}
+                        objects = detection_data.get('objects', [])
+                
+                object_count = len(objects)
+                per_image_count[image_num] = object_count
+                total_count += object_count
+                
+                print(f"图像 {image_num}: {object_count} 个物体")
+                
             except Exception as e:
                 print(f"读取文件 {detection_file} 出错: {e}")
                 per_image_count[image_num] = 0
@@ -322,8 +333,12 @@ class SKUCountAnalyzer:
         report_lines.append(f"   - 去重后唯一物体数: {duplicate_stats['total_after_dedup']}")
         report_lines.append(f"   - 重复检测数: {duplicate_stats['duplicate_count']}")
         
-        dedup_percentage = (duplicate_stats['duplicate_count'] / duplicate_stats['total_before_dedup']) * 100
-        report_lines.append(f"   - 去重率: {dedup_percentage:.1f}%")
+        if duplicate_stats['total_before_dedup'] > 0:
+            dedup_percentage = (duplicate_stats['duplicate_count'] / duplicate_stats['total_before_dedup']) * 100
+            report_lines.append(f"   - 去重率: {dedup_percentage:.1f}%")
+        else:
+            report_lines.append(f"   - 去重率: N/A (无数据)")
+        
         
         report_lines.append("")
         report_lines.append("4. 连通组件分析:")
@@ -346,8 +361,7 @@ class SKUCountAnalyzer:
         
         # 保存到文件
         if output_file is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            output_file = f"sku_count/sku_count_analysis_{timestamp}.txt"
+            output_file = f"sku_count/sku_count_analysis.txt"
         
         output_path = Path(output_file)
         output_path.parent.mkdir(exist_ok=True)
@@ -362,21 +376,43 @@ class SKUCountAnalyzer:
 def main():
     """主函数"""
     import argparse
+    import os
+    from datetime import datetime
     
     parser = argparse.ArgumentParser(description="SKU计数分析器")
-    parser.add_argument("--detection_dir", type=str, 
-                       default="../imdata/detections_results",
-                       help="检测结果目录路径")
-    parser.add_argument("--summary_dir", type=str,
-                       default="output_pt", 
-                       help="匹配摘要目录路径（包含多个参考索引子目录）")
-    parser.add_argument("--output_file", type=str,
-                       help="输出报告文件路径（可选）")
+    parser.add_argument("--floor_display", type=str, required=True,
+                       help="Floor display名称 (如: floor_display2, floor_display12)")
+    parser.add_argument("--output_file", type=str, default=None,
+                       help="输出报告文件路径（可选，默认为自动生成）")
     
     args = parser.parse_args()
     
+    # 根据floor_display自动构建路径
+    base_dir = f"../imdata/{args.floor_display}"
+    detection_dir = f"{base_dir}/detections_results"
+    summary_dir = f"{base_dir}/output_pt"
+    
+    # 检查路径是否存在
+    if not os.path.exists(detection_dir):
+        print(f"错误: 检测结果目录不存在: {detection_dir}")
+        return
+    
+    if not os.path.exists(summary_dir):
+        print(f"错误: 匹配摘要目录不存在: {summary_dir}")
+        return
+    
+    # 如果没有指定输出文件，自动生成到floor display目录下
+    if args.output_file is None:
+        args.output_file = f"{base_dir}/sku_count_analysis.txt"
+    
+    print(f"分析目标: {args.floor_display}")
+    print(f"检测结果目录: {detection_dir}")
+    print(f"匹配摘要目录: {summary_dir}")
+    print(f"输出报告: {args.output_file}")
+    print("=" * 50)
+    
     # 创建分析器
-    analyzer = SKUCountAnalyzer(args.detection_dir, args.summary_dir)
+    analyzer = SKUCountAnalyzer(detection_dir, summary_dir)
     
     # 生成报告
     analyzer.generate_report(args.output_file)

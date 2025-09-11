@@ -385,7 +385,7 @@ def main():
     parser.add_argument('--vggt-result', required=True,
                        help='VGGT系统输出的匹配结果文件路径')
     parser.add_argument('--dataset-filter', default=None,
-                       help='数据集过滤器，如floor_display2')
+                       help='数据集过滤器')
     parser.add_argument('--output', default=None,
                        help='输出报告文件路径')
     

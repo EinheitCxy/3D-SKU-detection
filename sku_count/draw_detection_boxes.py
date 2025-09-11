@@ -71,9 +71,8 @@ def draw_detection_boxes(image_path: str, detection_data: dict,
         (0, 255, 0),    # 绿色
         (255, 0, 0),    # 蓝色  
         (0, 0, 255),    # 红色
-        (255, 255, 0),  # 青色
+        (0, 255, 255),  # 青色
         (255, 0, 255),  # 洋红
-        (0, 255, 255),  # 黄色
         (128, 0, 128),  # 紫色
         (255, 165, 0),  # 橙色
         (0, 128, 128),  # 青绿色
@@ -112,13 +111,6 @@ def draw_detection_boxes(image_path: str, detection_data: dict,
         # 准备标签文本
         label_parts = []
         
-        # 添加类别信息
-        if show_class and classes:
-            class_idx = obj.get('classes', {}).get('det', 0)
-            if 0 <= class_idx < len(classes):
-                class_name = classes[class_idx].split('^')[-1] if '^' in classes[class_idx] else classes[class_idx]
-                label_parts.append(class_name)
-        
         # 添加置信度信息
         if show_confidence:
             label_parts.append(f"{confidence:.2f}")
@@ -126,7 +118,7 @@ def draw_detection_boxes(image_path: str, detection_data: dict,
         # 添加对象ID
         label_parts.append(f"ID:{idx}")
         
-        label = " | ".join(label_parts)
+        label = "-".join(label_parts)
         
         # 绘制标签背景
         (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
@@ -148,14 +140,14 @@ def draw_detection_boxes(image_path: str, detection_data: dict,
 
 def main():
     parser = argparse.ArgumentParser(description="绘制检出框到图片上")
-    parser.add_argument("--image_dir", type=str, default="../imdata/floor_display2/images", 
-                       help="图片目录路径 (default: ../imdata/floor_display2/images)")
-    parser.add_argument("--detection_dir", type=str, default="../imdata/floor_display2/detections_results",
-                       help="检测结果目录路径 (default: ../imdata/floor_display2/detections_results)")
-    parser.add_argument("--output_dir", type=str, default="../imdata/floor_display2/imdata_with_bbox",
-                       help="输出目录路径 (default: ../imdata/floor_display2/imdata_with_bbox)")
+    parser.add_argument("--image_dir", type=str, default="../imdata/floor_display12/images", 
+                       help="图片目录路径")
+    parser.add_argument("--detection_dir", type=str, default="../imdata/floor_display12/detections_results",
+                       help="检测结果目录路径")
+    parser.add_argument("--output_dir", type=str, default="../imdata/floor_display12/imdata_with_bbox",
+                       help="输出目录路径 ")
     parser.add_argument("--confidence_threshold", type=float, default=0.3,
-                       help="置信度阈值 (default: 0.3)")
+                       help="置信度阈值")
     parser.add_argument("--no_confidence", action="store_true",
                        help="不显示置信度信息")
     parser.add_argument("--no_class", action="store_true", 
