@@ -15,14 +15,16 @@ from .config import SKUMatchingConfig
 logger = logging.getLogger(__name__)
 
 
-def load_detections(detection_dir: str) -> List[Dict]:
+def load_detections(detection_dir: str, return_index_map: bool = False) -> List[Dict]:
     """加载检测结果文件
     
     Args:
         detection_dir: 检测结果目录路径，包含按数字命名的JSON文件(1.json, 2.json, ...)
+        return_index_map: 若为True，按 [(file_number, processed_data), ...] 返回，便于对齐图像编号
         
     Returns:
-        检测结果列表，按文件名数字顺序排列
+        - 当 return_index_map=False: 检测结果列表，按文件名数字顺序排列
+        - 当 return_index_map=True: [(文件编号, 检测结果)] 列表
         
     Raises:
         FileNotFoundError: 目录不存在时抛出
@@ -54,6 +56,7 @@ def load_detections(detection_dir: str) -> List[Dict]:
             raise ValueError(f"No valid JSON files found in {detection_dir}")
         
         detections = []
+        detections_with_numbers = []
         for file_number, file_path in json_files:
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -83,6 +86,7 @@ def load_detections(detection_dir: str) -> List[Dict]:
                 # 验证处理后的数据是否包含必要字段
                 if processed_data and 'objects' in processed_data and processed_data['objects']:
                     detections.append(processed_data)
+                    detections_with_numbers.append((file_number, processed_data))
                     logger.debug(f"Loaded {len(processed_data['objects'])} objects from {file_path.name}")
                 else:
                     logger.warning(f"No valid objects found in {file_path.name}, skipping")
@@ -93,6 +97,8 @@ def load_detections(detection_dir: str) -> List[Dict]:
                 continue
         
         logger.info(f"Loaded {len(detections)} detection files\n")
+        if return_index_map:
+            return detections_with_numbers
         return detections
         
     except Exception as e:
