@@ -22,7 +22,7 @@ except ImportError as e:
     raise ImportError(f"Failed to import VGGT modules: {e}")
 
 from .config import SKUMatchingConfig
-from .data_utils import save_correspondences_json
+from .data_utils import save_correspondences_json, load_detections
 from .transforms import build_vggt_transforms
 from .matching_algorithms import find_object_correspondences
 from .visualization import visualize_results, save_visualization_summary
@@ -149,12 +149,12 @@ class SKUMatchingSystem:
         detection_dir: str, 
         max_images: Optional[int]
     ) -> tuple[List[str], List[Dict]]:
-        """加载图像和检测数据"""
+        """加载图像和检测数据（解析委托给 data_utils.load_detections）"""
         image_folder_path = Path(image_folder)
         if not image_folder_path.exists():
             raise FileNotFoundError(f"Image folder not found: {image_folder}")
-        
-        # 按数字顺序加载图像文件
+
+        # 1) 收集图像（按数字）
         image_files = []
         for f in os.listdir(image_folder):
             if f.lower().endswith(('.jpg', '.png', '.jpeg')):
@@ -164,85 +164,31 @@ class SKUMatchingSystem:
                 except ValueError:
                     logger.warning(f"Skipping non-numeric image file: {f}")
                     continue
-        
         image_files.sort(key=lambda x: x[0])
-        
-        # 获取可用的检测文件
-        available_detection_numbers = set()
-        for detection_file in Path(detection_dir).glob("*.json"):
-            try:
-                detection_number = int(detection_file.stem)
-                available_detection_numbers.add(detection_number)
-            except ValueError:
-                continue
-        
-        # 匹配图像和检测文件
+
+        # 2) 加载检测（一次性）
+        detections_with_numbers = load_detections(detection_dir, return_index_map=True)
+        if not detections_with_numbers:
+            raise ValueError(f"No valid detection files found in {detection_dir}")
+        det_map = {num: det for num, det in detections_with_numbers}
+
+        # 3) 对齐图像与检测
         matched_files = []
         for file_number, image_path in image_files:
-            if file_number in available_detection_numbers:
+            if file_number in det_map:
                 matched_files.append((file_number, image_path))
             else:
                 logger.info(f"Skipping image {file_number}.jpg - no corresponding detection file")
-        
+
         if max_images is not None:
             matched_files = matched_files[:max_images]
-        
-        image_paths = [path for _, path in matched_files]
-        image_numbers = [num for num, _ in matched_files]
-        
-        # 按顺序加载检测结果和匹配的图像路径
-        detections = []
-        valid_image_paths = []
-        valid_image_numbers = []
-        
-        for i, img_number in enumerate(image_numbers):
-            detection_file = Path(detection_dir) / f"{img_number}.json"
-            if detection_file.exists():
-                try:
-                    with open(detection_file, 'r', encoding='utf-8') as f:
-                        file_detections = json.load(f)
-                    
-                    # 处理不同的检测结果格式
-                    processed_data = None
-                    
-                    if isinstance(file_detections, list) and len(file_detections) > 0:
-                        # floor_display1 格式: [{"classes": {...}, "objects": [...]}]
-                        processed_data = file_detections[0]
-                    elif isinstance(file_detections, dict):
-                        if 'skus' in file_detections:
-                            # floor_display2 格式: {"skus": [{"classes": {...}, "objects": [...]}]}
-                            if isinstance(file_detections['skus'], list) and len(file_detections['skus']) > 0:
-                                processed_data = file_detections['skus'][0]
-                            else:
-                                logger.warning(f"Empty skus array in {detection_file}, skipping image {img_number}")
-                                continue
-                        else:
-                            # 直接的字典格式: {"classes": {...}, "objects": [...]}
-                            processed_data = file_detections
-                    else:
-                        logger.warning(f"Invalid format in {detection_file}, skipping image {img_number}")
-                        continue
-                    
-                    # 验证处理后的数据是否包含必要字段
-                    if processed_data and 'objects' in processed_data and processed_data['objects']:
-                        detections.append(processed_data)
-                        valid_image_paths.append(image_paths[i])
-                        valid_image_numbers.append(img_number)
-                    else:
-                        logger.warning(f"No valid objects found in {detection_file}, skipping image {img_number}")
-                        continue
-                        
-                except Exception as e:
-                    logger.error(f"Failed to load detection from {detection_file}: {e}")
-                    logger.warning(f"Skipping image {img_number} due to detection loading error")
-                    continue
-            else:
-                logger.warning(f"Detection file not found: {detection_file}, skipping image {img_number}")
-                continue
-        
-        if not detections:
-            raise ValueError(f"No valid detection files found in {detection_dir}")
-        
+
+        if not matched_files:
+            raise ValueError("No images matched with detection files after alignment")
+
+        valid_image_paths = [path for _, path in matched_files]
+        detections = [det_map[num] for num, _ in matched_files]
+
         return valid_image_paths, detections
     
     def _run_matching(
