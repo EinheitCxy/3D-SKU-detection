@@ -263,6 +263,7 @@ def generate_colors_for_objects(object_ids: List[int]) -> Dict[int, tuple]:
 def save_visualization_summary(
     correspondences: Dict[int, List[Dict]],
     config: SKUMatchingConfig,
+    reference_image_idx: int,
     filename: str = "matching_summary.txt"
 ) -> None:
     """保存匹配结果的文本摘要
@@ -298,8 +299,8 @@ def save_visualization_summary(
                     
                     f.write(f"Matched ref {ref_id} → target {target_id} (hit ratio: {ratio:.2f} {matched_points}/{total_points})\n")
                 
-                # 写入分组信息
-                f.write(f"Matching objects between reference image 0 and target image {target_idx}\n")
+                # 写入分组信息（使用真实的参考图像索引）
+                f.write(f"Matching objects between reference image {reference_image_idx} and target image {target_idx}\n")
                 f.write(f"Found {len(matches)} matches in image {target_idx}\n\n")
                 
                 total_matches += len(matches)

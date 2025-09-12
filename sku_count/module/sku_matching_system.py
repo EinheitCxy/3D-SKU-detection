@@ -260,7 +260,7 @@ class SKUMatchingSystem:
             )
             
             # 保存可视化摘要
-            save_visualization_summary(correspondences, self.config)
+            save_visualization_summary(correspondences, self.config, reference_image_idx)
             
             # # 打印结果摘要
             # self._print_results_summary(correspondences)
