@@ -4,6 +4,31 @@ SKU匹配系统工具模块
 包含SKU匹配系统的所有核心功能模块
 """
 
+# 统一配置 VGGT 路径，其他模块无需自行注入 sys.path
+import sys
+from pathlib import Path
+
+
+def _resolve_vggt_root() -> Path:
+    """定位 vggt-main 目录（相对本包位置进行多级回溯）。"""
+    here = Path(__file__).resolve()
+    candidates = [
+        here.parents[3] / 'vggt-main',  # repo 根目录/vggt-main
+        here.parents[2] / 'vggt-main',  # sku_count/vggt-main（备用）
+        here.parents[1] / 'vggt-main',  # module/vggt-main（备用）
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]
+
+
+VGGT_ROOT = _resolve_vggt_root()
+if VGGT_ROOT.exists():
+    vg = str(VGGT_ROOT)
+    if vg not in sys.path:
+        sys.path.insert(0, vg)
+
 # 基础模块 - 不依赖VGGT
 from .config import SKUMatchingConfig, DEFAULT_POINT_TRACKING_CONFIG, DEFAULT_3D_PROJECTION_CONFIG
 from .data_utils import load_detections, extract_bboxes_from_detections, save_correspondences_json
@@ -13,16 +38,12 @@ from .geometry_3d import (
     sample_3d_points_from_bbox, 
     project_3d_to_2d,
     find_best_matching_bbox_with_3d_validation,
-    apply_uniqueness_constraint,
-    find_best_matching_bbox
+    apply_uniqueness_constraint
 )
 
 # 延迟导入VGGT相关模块
 def _import_vggt_modules():
-    """延迟导入依赖VGGT的模块"""
-    import sys
-    # 添加VGGT模块路径
-    sys.path.insert(0, '../vggt-main')
+    """延迟导入依赖VGGT的模块（路径已在本模块顶层设置）。"""
     try:
         from .matching_algorithms import find_object_correspondences, match_objects_by_correspondence
         from .sku_matching_system import SKUMatchingSystem
@@ -58,7 +79,6 @@ __all__ = [
     'project_3d_to_2d',
     'find_best_matching_bbox_with_3d_validation',
     'apply_uniqueness_constraint',
-    'find_best_matching_bbox',
 ]
 
 if _vggt_available:
@@ -80,3 +100,8 @@ def check_dependencies():
         'vggt_modules': _vggt_available,
         'visualization': _viz_available
     }
+
+
+def get_vggt_root() -> Path:
+    """返回 vggt-main 根目录（若未找到，返回预期路径）。"""
+    return VGGT_ROOT

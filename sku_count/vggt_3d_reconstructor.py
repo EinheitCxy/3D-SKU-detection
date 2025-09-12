@@ -24,9 +24,8 @@ import gc
 import time
 from contextlib import nullcontext
 
-# 添加VGGT模块路径
-sys.path.append("../vggt-main")
-sys.path.append("../vggt-main/vggt")
+# 先导入 module 以统一配置 VGGT 路径（由 module/__init__.py 负责）
+from module.config import get_optimal_device_config
 
 try:
     from visual_util import predictions_to_glb
@@ -35,21 +34,10 @@ try:
     from vggt.utils.pose_enc import pose_encoding_to_extri_intri
     from vggt.utils.geometry import unproject_depth_map_to_point_map
 except ImportError:
-    # 尝试相对导入
-    sys.path.insert(0, '../vggt-main')
-    from visual_util import predictions_to_glb
-    from vggt.models.vggt import VGGT
-    from vggt.utils.load_fn import load_and_preprocess_images
-    from vggt.utils.pose_enc import pose_encoding_to_extri_intri
-    from vggt.utils.geometry import unproject_depth_map_to_point_map
+    # 如果此处仍失败，说明 module/__init__.py 未被正确导入或 vggt-main 不存在
+    raise
 
-# 使用统一的设备与精度选择逻辑
-try:
-    from module.config import get_optimal_device_config
-except Exception:
-    # 兼容在不同工作目录下运行的情形
-    sys.path.insert(0, '.')
-    from module.config import get_optimal_device_config
+# 使用统一的设备与精度选择逻辑：已在顶部导入
 
 class VGGT3DReconstructor:
     """VGGT 3D重构器"""

@@ -9,15 +9,8 @@ import torch
 import logging
 from typing import Dict, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
-# VGGT相关导入
+# VGGT相关导入（路径由 module/__init__.py 统一配置）
 try:
-    import sys
-    import os
-    # 获取当前文件的父目录的父目录，然后添加vggt-main路径
-    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    vggt_path = os.path.join(current_dir, '..', 'vggt-main')
-    if os.path.exists(vggt_path):
-        sys.path.insert(0, vggt_path)
     from vggt.models.vggt import VGGT
     from vggt.utils.pose_enc import pose_encoding_to_extri_intri
 except ImportError as e:
@@ -30,8 +23,7 @@ from .geometry_3d import (
     sample_3d_points_from_bbox, 
     project_3d_to_2d,
     find_best_matching_bbox_with_3d_validation,
-    apply_uniqueness_constraint,
-    find_best_matching_bbox
+    apply_uniqueness_constraint
 )
 from .transforms import VGGTImageTransform
 
@@ -177,81 +169,6 @@ def _process_single_ref_object(
         return []
 
 
-def analyze_tracking_scores(coords, vis_scores, conf_scores):
-    """
-    分析点追踪结果的质量统计
-    
-    Args:
-        coords: 点坐标轨迹 (S, N, 2)
-        vis_scores: 可见性分数 (S, N)
-        conf_scores: 置信度分数 (S, N)
-    """
-    S, N = vis_scores.shape  # S=帧数, N=点数
-    total_points = S * N
-    
-    # 展平所有帧的分数用于统计
-    vis_flat = vis_scores.flatten()
-    conf_flat = conf_scores.flatten()
-    
-    print("\n" + "="*50)
-    print("📊 点追踪质量统计分析")
-    print("="*50)
-    
-    print(f"🔢 基础统计:")
-    print(f"   总帧数: {S}")
-    print(f"   每帧点数: {N}")
-    print(f"   总追踪点数: {total_points}")
-    
-    print(f"\n👀 可见性分数特征:")
-    high_vis = vis_flat > 0.8
-    medium_vis = (vis_flat > 0.5) & (vis_flat <= 0.8)
-    low_vis = vis_flat <= 0.5
-    print(f"   高可见性点数 (>0.8): {high_vis.sum().item()} ({high_vis.float().mean()*100:.1f}%)")
-    print(f"   中等可见性点数 (0.5-0.8): {medium_vis.sum().item()} ({medium_vis.float().mean()*100:.1f}%)")
-    print(f"   低可见性点数 (<=0.5): {low_vis.sum().item()} ({low_vis.float().mean()*100:.1f}%)")
-    print(f"   平均可见性分数: {vis_flat.mean():.3f}")
-    print(f"   可见性分数标准差: {vis_flat.std():.3f}")
-    
-    print(f"\n🎯 置信度分数特征:")
-    high_conf = conf_flat > 0.8
-    medium_conf = (conf_flat > 0.5) & (conf_flat <= 0.8)
-    low_conf = conf_flat <= 0.5
-    print(f"   高置信度点数 (>0.8): {high_conf.sum().item()} ({high_conf.float().mean()*100:.1f}%)")
-    print(f"   中等置信度点数 (0.5-0.8): {medium_conf.sum().item()} ({medium_conf.float().mean()*100:.1f}%)")
-    print(f"   低置信度点数 (<=0.5): {low_conf.sum().item()} ({low_conf.float().mean()*100:.1f}%)")
-    print(f"   平均置信度分数: {conf_flat.mean():.3f}")
-    print(f"   置信度分数标准差: {conf_flat.std():.3f}")
-    
-    # 质量一致性分析
-    print(f"\n🔍 质量一致性分析:")
-    both_high = (vis_flat > 0.8) & (conf_flat > 0.8)
-    both_low = (vis_flat <= 0.5) & (conf_flat <= 0.5)
-    inconsistent_high_vis_low_conf = (vis_flat > 0.8) & (conf_flat <= 0.5)
-    inconsistent_low_vis_high_conf = (vis_flat <= 0.5) & (conf_flat > 0.8)
-    
-    print(f"   双高质量点数 (vis>0.8 & conf>0.8): {both_high.sum().item()} ({both_high.float().mean()*100:.1f}%)")
-    print(f"   双低质量点数 (vis<=0.5 & conf<=0.5): {both_low.sum().item()} ({both_low.float().mean()*100:.1f}%)")
-    print(f"   高可见低置信点数: {inconsistent_high_vis_low_conf.sum().item()} ({inconsistent_high_vis_low_conf.float().mean()*100:.1f}%)")
-    print(f"   低可见高置信点数: {inconsistent_low_vis_high_conf.sum().item()} ({inconsistent_low_vis_high_conf.float().mean()*100:.1f}%)")
-    
-    # 推荐阈值
-    print(f"\n💡 推荐过滤阈值:")
-    if both_high.float().mean() > 0.3:
-        print(f"   推荐使用严格过滤: vis>0.8 & conf>0.8 (保留 {both_high.sum().item()} 个高质量点)")
-    elif (high_conf & (vis_flat > 0.6)).sum().item() > total_points * 0.2:
-        print(f"   推荐使用中等过滤: conf>0.8 & vis>0.6 (保留 {(high_conf & (vis_flat > 0.6)).sum().item()} 个点)")
-    else:
-        print(f"   推荐使用宽松过滤: conf>0.5 & vis>0.6")
-    
-    print(f"\n🎯 当前配置: confidence_threshold > 0.5, min_confident_points >= 10")
-    confident_points = (conf_flat > 0.5).sum().item()
-    print(f"   满足当前置信度要求的点数: {confident_points} ({confident_points/total_points*100:.1f}%)")
-    
-    print("="*50 + "\n")
-    
-    return both_high, inconsistent_high_vis_low_conf, inconsistent_low_vis_high_conf
-
-
 def find_object_correspondences(
     vggt_model: VGGT,
     detections: List[Dict],
@@ -376,9 +293,10 @@ def find_correspondences_3d_projection(
                 ref_obj_id = ref_bbox_info['object_id']
                 
                 # 从参考图像的检出框采样3D点
+                other_ref_bboxes = [other['bbox'] for other in ref_bboxes if other['object_id'] != ref_obj_id]
                 points_3d = sample_3d_points_from_bbox(
                     scene_data, reference_image_idx, ref_bbox_info['bbox'], 
-                    ref_transform, config
+                    ref_transform, config, other_ref_bboxes
                 )
                 
                 if points_3d is None or len(points_3d) < 10:
@@ -569,9 +487,6 @@ def find_correspondences_point_tracking(
         confidence = predictions['conf'].squeeze(0)   # 置信度分数 (S, N)
         tracking_time = time.time() - start_time
         logger.info(f"Tracking complete in {tracking_time:.1f}s")
-
-        # # 统计和分析点追踪结果质量
-        # analyze_tracking_scores(tracks, visibility, confidence)
 
         # 7. 使用基于对应关系的物体匹配逻辑（映射回原始索引）
         object_correspondences = {}

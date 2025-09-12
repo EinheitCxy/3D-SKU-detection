@@ -12,10 +12,8 @@ from typing import Dict, List, Optional
 from pathlib import Path
 from contextlib import nullcontext
 
-# VGGT相关导入
+# VGGT相关导入（路径由 module/__init__.py 统一配置）
 try:
-    import sys
-    sys.path.insert(0, '../../vggt-main')
     from vggt.models.vggt import VGGT
     from vggt.utils.load_fn import load_and_preprocess_images
 except ImportError as e:
