@@ -207,7 +207,7 @@ class SKUMatchingSystem:
         use_amp = (
             self.config.use_autocast
             and torch.cuda.is_available()
-            and isinstance(self.config.dtype, torch.dtype)
+            and (self.config.dtype in (torch.float16, torch.bfloat16))
             and (isinstance(self.config.device, str) and self.config.device.startswith("cuda"))
         )
         
