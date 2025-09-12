@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-检出框可视化脚本
-将 imdata/detections_results 中的检测结果绘制到 imdata/total 中对应的图片上
+检出框可视化脚本（统一使用公共数据与可视化模块）
+将 detections_results 中的检测结果绘制到对应的图片上
 """
 
 import os
-import json
 import cv2
 import numpy as np
 from pathlib import Path
@@ -16,127 +15,13 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def load_detection_results(json_path: str) -> dict:
-    """加载检测结果JSON文件"""
-    try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # 处理不同格式的检测结果
-        if isinstance(data, list) and len(data) > 0:
-            # floor_display1格式: [{...}]
-            return data[0]
-        elif isinstance(data, dict):
-            if 'skus' in data:
-                # floor_display2格式: {"skus": [{...}]}
-                if isinstance(data['skus'], list) and len(data['skus']) > 0:
-                    return data['skus'][0]
-                else:
-                    logger.warning(f"Empty skus array in {json_path}")
-                    return {}
-            else:
-                # 直接的字典格式
-                return data
-        else:
-            logger.warning(f"Unexpected data format in {json_path}")
-            return {}
-            
-    except Exception as e:
-        logger.error(f"Failed to load {json_path}: {e}")
-        return {}
-
-def draw_detection_boxes(image_path: str, detection_data: dict, 
-                        output_path: str, confidence_threshold: float = 0.5,
-                        show_confidence: bool = True, show_class: bool = True) -> bool:
-    """在图片上绘制检出框"""
-    
-    # 读取图片
-    image = cv2.imread(image_path)
-    if image is None:
-        logger.error(f"Failed to load image: {image_path}")
-        return False
-    
-    # 获取类别映射
-    classes = detection_data.get('classes', {}).get('det', [])
-    objects = detection_data.get('objects', [])
-    
-    if not objects:
-        logger.warning(f"No objects found in detection data for {image_path}")
-        return False
-    
-    logger.info(f"Drawing {len(objects)} detection boxes on {os.path.basename(image_path)}")
-    
-    # 为每个检测框生成颜色
-    colors = [
-        (0, 255, 0),    # 绿色
-        (255, 0, 0),    # 蓝色  
-        (0, 0, 255),    # 红色
-        (0, 255, 255),  # 青色
-        (255, 0, 255),  # 洋红
-        (128, 0, 128),  # 紫色
-        (255, 165, 0),  # 橙色
-        (0, 128, 128),  # 青绿色
-        (128, 128, 0),  # 橄榄色
-    ]
-    
-    drawn_count = 0
-    
-    for idx, obj in enumerate(objects):
-        confidence = obj.get('confidences', {}).get('det', 0.0)
-        
-        # 过滤低置信度的检测框
-        if confidence < confidence_threshold:
-            continue
-        
-        position = obj.get('position', [])
-        if len(position) != 4:
-            logger.warning(f"Invalid position data for object {idx}")
-            continue
-        
-        x1, y1, x2, y2 = map(int, position)
-        
-        # 确保坐标在图像范围内
-        h, w = image.shape[:2]
-        x1 = max(0, min(x1, w-1))
-        y1 = max(0, min(y1, h-1))
-        x2 = max(x1+1, min(x2, w))
-        y2 = max(y1+1, min(y2, h))
-        
-        # 选择颜色
-        color = colors[idx % len(colors)]
-        
-        # 绘制检测框
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, 5)
-        
-        # 准备标签文本
-        label_parts = []
-        
-        # 添加置信度信息
-        if show_confidence:
-            label_parts.append(f"{confidence:.2f}")
-        
-        # 添加对象ID
-        label_parts.append(f"ID:{idx}")
-        
-        label = "-".join(label_parts)
-        
-        # 绘制标签背景
-        (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-        cv2.rectangle(image, (x1, y1-label_h-10), (x1+label_w, y1), color, -1)
-        
-        # 绘制标签文本
-        cv2.putText(image, label, (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-        
-        drawn_count += 1
-    
-    # 保存结果
-    success = cv2.imwrite(output_path, image)
-    if success:
-        logger.info(f"Saved visualization with {drawn_count} boxes to: {output_path}")
-        return True
-    else:
-        logger.error(f"Failed to save image to: {output_path}")
-        return False
+# 统一复用模块能力
+from module import (
+    SKUMatchingConfig,
+    load_detections,
+    extract_bboxes_from_detections,
+)
+from module.visualization import draw_bbox_with_id, generate_colors_for_objects
 
 def main():
     parser = argparse.ArgumentParser(description="绘制检出框到图片上")
@@ -175,58 +60,93 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"Output directory: {output_dir}")
     
-    # 查找图片文件
+    # 查找图片文件（按数字排序）
     image_extensions = ['jpg', 'jpeg', 'png', 'bmp']
     image_files = []
     for ext in image_extensions:
         image_files.extend(image_dir.glob(f"*.{ext}"))
         image_files.extend(image_dir.glob(f"*.{ext.upper()}"))
     
-    image_files = sorted(image_files)
-    logger.info(f"Found {len(image_files)} images in {image_dir}")
+    # 仅保留数字文件名，避免无法对齐
+    numeric_images = []
+    for p in image_files:
+        try:
+            num = int(p.stem)
+            numeric_images.append((num, p))
+        except ValueError:
+            logger.warning(f"Skipping non-numeric image: {p.name}")
+    numeric_images.sort(key=lambda x: x[0])
+    logger.info(f"Found {len(numeric_images)} numeric images in {image_dir}")
     
     if not image_files:
         logger.error("No images found!")
         return
     
+    # 加载检测结果并建立编号映射
+    try:
+        detections_indexed = load_detections(str(detection_dir), return_index_map=True)
+    except Exception as e:
+        logger.error(f"Failed to load detections: {e}")
+        return
+
+    det_map = {num: det for num, det in detections_indexed}
+
+    # 构建配置（仅使用检测阈值相关项）
+    cfg = SKUMatchingConfig(
+        detection_confidence_threshold=float(args.confidence_threshold),
+        # 其余使用默认值
+    )
+
     # 处理每张图片
     success_count = 0
     total_count = 0
     
-    for image_path in image_files:
-        # 构造对应的检测结果文件名
-        image_name = image_path.stem  # 不带扩展名的文件名
-        detection_file = detection_dir / f"{image_name}.json"
-        
-        logger.info(f"\n--- Processing {image_name} ---")
-        
-        if not detection_file.exists():
-            logger.warning(f"Detection file not found: {detection_file}")
-            total_count += 1
-            continue
-        
-        # 加载检测结果
-        detection_data = load_detection_results(str(detection_file))
-        if not detection_data:
-            logger.warning(f"No valid detection data for {image_name}")
-            total_count += 1
-            continue
-        
-        # 输出文件路径
-        output_path = output_dir / f"{image_name}_with_boxes.{args.image_format}"
-        
-        # 绘制检出框
-        if draw_detection_boxes(
-            str(image_path), 
-            detection_data, 
-            str(output_path),
-            confidence_threshold=args.confidence_threshold,
-            show_confidence=not args.no_confidence,
-            show_class=not args.no_class
-        ):
-            success_count += 1
-        
+    for num, image_path in numeric_images:
+        logger.info(f"\n--- Processing {image_path.name} ---")
         total_count += 1
+
+        if num not in det_map:
+            logger.warning(f"Detection file not found for image index: {num}")
+            continue
+
+        # 读取图片
+        image = cv2.imread(str(image_path))
+        if image is None:
+            logger.error(f"Failed to load image: {image_path}")
+            continue
+
+        # 提取边界框（使用统一逻辑）
+        try:
+            bboxes = extract_bboxes_from_detections([det_map[num]], 0, cfg)
+        except Exception as e:
+            logger.error(f"Failed to extract bboxes for {image_path.name}: {e}")
+            continue
+
+        if not bboxes:
+            logger.info(f"No boxes above threshold for {image_path.name}")
+            continue
+
+        # 为对象生成稳定颜色
+        object_ids = [b['object_id'] for b in bboxes]
+        colors = generate_colors_for_objects(object_ids)
+
+        # 绘制
+        for bx in bboxes:
+            color = colors.get(bx['object_id'], (0, 255, 0))
+            draw_bbox_with_id(image, bx['bbox'], bx['object_id'], color, thickness=2, font_scale=0.6)
+            if not args.no_confidence:
+                conf = bx.get('confidence', 0.0)
+                # 在标签上方再加一行小字显示置信度（避免覆盖原有标签）
+                x1, y1, x2, y2 = [int(c) for c in bx['bbox']]
+                y_text = max(15, y1 - 18)
+                cv2.putText(image, f"{conf:.2f}", (x1, y_text), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
+        # 保存结果
+        output_path = output_dir / f"{image_path.stem}_with_boxes.{args.image_format}"
+        if cv2.imwrite(str(output_path), image):
+            success_count += 1
+        else:
+            logger.error(f"Failed to save image to: {output_path}")
     
     # 统计结果
     logger.info(f"\n=== 处理完成 ===")
