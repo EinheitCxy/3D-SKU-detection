@@ -272,8 +272,8 @@ class SKUMatchingSystem:
                     "reference_image_idx": reference_image_idx,
                     "algorithm": "3D-2D projection" if self.config.enable_3d_projection_matching else "point tracking",
                     "config": {
-                        "visibility_threshold": self.config.visibility_threshold,
-                        "min_visible_points": self.config.min_visible_points,
+                        "confidence_threshold": self.config.confidence_threshold,
+                        "min_confident_points": self.config.min_confident_points,
                         "max_points_per_bbox": self.config.max_points_per_bbox,
                         "max_bboxes": self.config.max_bboxes,
                         "enable_3d_projection_matching": self.config.enable_3d_projection_matching,
