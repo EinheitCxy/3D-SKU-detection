@@ -129,11 +129,18 @@ class SKUCountAnalyzer:
         all_target_images = set()
         summary_files_found = []
         
-        # 查找所有summary文件
-        for ref_idx in range(13):  # 0-12
-            summary_file = self.summary_dir / str(ref_idx) / "matching_summary.txt"
-            if summary_file.exists():
-                summary_files_found.append((ref_idx, summary_file))
+        # 动态查找所有参考索引目录（数字命名）并收集summary文件
+        if not self.summary_dir.exists():
+            print(f"警告: 匹配摘要目录不存在: {self.summary_dir}")
+        else:
+            ref_indices = []
+            for p in sorted(self.summary_dir.iterdir(), key=lambda x: x.name):
+                if p.is_dir() and p.name.isdigit():
+                    ref_indices.append(int(p.name))
+            for ref_idx in ref_indices:
+                summary_file = self.summary_dir / str(ref_idx) / "matching_summary.txt"
+                if summary_file.exists():
+                    summary_files_found.append((ref_idx, summary_file))
         
         print(f"找到 {len(summary_files_found)} 个匹配摘要文件")
         

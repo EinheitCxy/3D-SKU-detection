@@ -67,8 +67,14 @@ class ImprovedSKUCountAnalyzer:
         
         all_matched_pairs = []
         
-        # 收集所有匹配
-        for ref_idx in range(13):
+        # 收集所有匹配（动态发现参考索引目录）
+        ref_indices = []
+        if self.summary_dir.exists():
+            for p in sorted(self.summary_dir.iterdir(), key=lambda x: x.name):
+                if p.is_dir() and p.name.isdigit():
+                    ref_indices.append(int(p.name))
+        
+        for ref_idx in ref_indices:
             summary_file = self.summary_dir / str(ref_idx) / "matching_summary.txt"
             if summary_file.exists():
                 with open(summary_file, 'r', encoding='utf-8') as f:
