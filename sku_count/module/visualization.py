@@ -53,8 +53,8 @@ def visualize_results(
             vggt_bbox = data['bbox']  # 这已经是VGGT输入空间的坐标
             
             # 生成稳定的颜色
-            np.random.seed(obj_id)  # 确保颜色一致
-            colors[obj_id] = np.random.randint(50, 255, (3,)).tolist()
+            rng = np.random.default_rng(obj_id)  # 局部随机数生成器，避免污染全局seed
+            colors[obj_id] = rng.integers(50, 255, size=3).tolist()
             color = colors[obj_id]
             
             # 转换为整数坐标并确保在VGGT图像范围内
@@ -253,9 +253,9 @@ def generate_colors_for_objects(object_ids: List[int]) -> Dict[int, tuple]:
     """
     colors = {}
     for obj_id in object_ids:
-        # 使用固定种子确保颜色一致性
-        np.random.seed(obj_id)
-        color = tuple(np.random.randint(50, 255, (3,)).tolist())
+        # 使用本地RNG，确保稳定且不污染全局随机状态
+        rng = np.random.default_rng(obj_id)
+        color = tuple(rng.integers(50, 255, size=3).tolist())
         colors[obj_id] = color
     return colors
 
