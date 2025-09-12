@@ -83,41 +83,64 @@ def _process_single_ref_object(
             logger.debug(f"参考对象 {ref_object_id}: 只有 {len(valid_points)} 个置信点，低于最小值 {config.min_confident_points}")
             return []
         
-        # 收集所有符合条件的匹配
+        # 收集所有符合条件的匹配（向量化点落框统计）
         all_candidates = []
-        
-        for target_bbox_info in target_bboxes:
-            target_bbox = target_bbox_info['bbox']  # [x1, y1, x2, y2]
-            
-            # 计算有多少对应点落在这个检测框内
-            points_in_bbox = 0
-            for point in valid_points:
-                x, y = point[0].item(), point[1].item()
-                if (target_bbox[0] <= x <= target_bbox[2] and 
-                    target_bbox[1] <= y <= target_bbox[3]):
-                    points_in_bbox += 1
-            
-            # 计算重叠比例
-            overlap_ratio = points_in_bbox / len(valid_points)
-            
-            logger.debug(f"目标框 {target_bbox_info['object_id']}: {points_in_bbox}/{len(valid_points)} 点在内 ({overlap_ratio:.3f})")
-            
-            if overlap_ratio >= correspondence_threshold:
+
+        if len(target_bboxes) > 0:
+            # 组装 boxes 张量 [M, 4]
+            boxes_list = [tb['bbox'] for tb in target_bboxes]
+            boxes = torch.as_tensor(boxes_list, dtype=valid_points.dtype, device=valid_points.device)
+
+            # 点坐标 [N]
+            X = valid_points[:, 0]
+            Y = valid_points[:, 1]
+
+            # 框坐标 [M]
+            X1 = boxes[:, 0]
+            Y1 = boxes[:, 1]
+            X2 = boxes[:, 2]
+            Y2 = boxes[:, 3]
+
+            # 广播判断 [M, N]
+            in_x = (X1[:, None] <= X[None, :]) & (X[None, :] <= X2[:, None])
+            in_y = (Y1[:, None] <= Y[None, :]) & (Y[None, :] <= Y2[:, None])
+            in_mask = in_x & in_y
+
+            # 每个框命中点数与比例 [M]
+            counts = in_mask.sum(dim=1)
+            total_pts = max(1, len(valid_points))
+            ratios = counts.float() / float(total_pts)
+
+            # 保留满足阈值的框索引
+            keep_mask = ratios >= correspondence_threshold
+            kept_indices = torch.nonzero(keep_mask, as_tuple=False).flatten().tolist()
+
+            for idx in kept_indices:
+                target_bbox_info = target_bboxes[idx]
+                vggt_box = boxes[idx].tolist()
+
                 # 将VGGT坐标映射回原图坐标
                 if transforms_info and target_image_idx < len(transforms_info):
-                    original_bbox = transforms_info[target_image_idx].map_bbox_to_original(target_bbox)
+                    original_bbox = transforms_info[target_image_idx].map_bbox_to_original(vggt_box)
                 else:
-                    original_bbox = target_bbox
-                
+                    original_bbox = vggt_box
+
+                overlap_ratio = float(ratios[idx].item())
+                points_in_bbox = int(counts[idx].item())
+
+                logger.debug(
+                    f"目标框 {target_bbox_info['object_id']}: {points_in_bbox}/{total_pts} 点在内 ({overlap_ratio:.3f})"
+                )
+
                 match = {
                     'object_id': ref_object_id,
                     'target_obj_id': target_bbox_info['object_id'],
                     'box': original_bbox,
-                    'vggt_box': target_bbox,
+                    'vggt_box': vggt_box,
                     'correspondence_ratio': overlap_ratio,
                     'matched_points': points_in_bbox,
-                    'total_points': len(valid_points),
-                    'target_confidence': target_bbox_info['confidence'],
+                    'total_points': total_pts,
+                    'target_confidence': target_bbox_info.get('confidence', 0.0),
                     'reference_confidence': ref_data['confidence']
                 }
                 all_candidates.append(match)
