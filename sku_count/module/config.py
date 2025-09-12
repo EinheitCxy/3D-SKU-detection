@@ -8,13 +8,11 @@ logger = logging.getLogger(__name__)
 
 
 def get_optimal_device_config(verbose: bool = True):
-    """智能设备选择。
-    
+    """
     根据GPU架构自动选择最优数据类型。
     
     Args:
         verbose: 是否输出详细信息
-    
     Returns:
         tuple: (device, dtype) 设备和数据类型
     """
@@ -54,6 +52,11 @@ class SKUMatchingConfig:
     max_3d_points_per_bbox: int = 70             # 每个3D检测框最大采样点数
     max_total_points: int = 100000               # 全局最大采样点数上限
     
+    # === 非重合区域采样参数 ===
+    enable_non_overlap_sampling: bool = True     # 是否启用非重合区域采样
+    overlap_threshold: float = 0.1               # 检出框重合阈值
+    min_non_overlap_area: float = 20.0           # 非重合区域最小面积
+    
     # === 匹配阈值参数 ===
     confidence_threshold: float = 0.5            # 点追踪置信度阈值
     min_confident_points: int = 7                # 最小置信点数
@@ -91,9 +94,6 @@ class SKUMatchingConfig:
                 self.device = str(optimal_device)
             if self.dtype is None:
                 self.dtype = optimal_dtype
-        elif self.dtype is None:
-            # 回退到原有逻辑
-            self.dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8 else torch.float16
         
         # 创建输出目录
         os.makedirs(self.output_dir, exist_ok=True)
@@ -123,6 +123,13 @@ class SKUMatchingConfig:
             
             if self.max_3d_distance <= 0:
                 raise ValueError(f"max_3d_distance must be positive, got {self.max_3d_distance}")
+        
+        # 非重合区域采样参数验证
+        if self.overlap_threshold < 0 or self.overlap_threshold > 1:
+            raise ValueError(f"overlap_threshold must be in [0,1], got {self.overlap_threshold}")
+        
+        if self.min_non_overlap_area <= 0:
+            raise ValueError(f"min_non_overlap_area must be positive, got {self.min_non_overlap_area}")
         
         # 性能相关验证
         if self.max_total_points <= 0:
