@@ -26,6 +26,13 @@ except ImportError as e:
     sys.exit(1)
 
 
+def _compute_output_dir(base: str, algorithm_type: str, ref_idx: int) -> str:
+    if algorithm_type == "point_tracking":
+        return f"{base}/output_pt/{ref_idx}"
+    else:
+        return f"{base}/output_3dmapping/{ref_idx}"
+
+
 def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKUMatchingConfig:
     """根据命令行参数创建 SKUMatchingConfig 配置实例。
     
@@ -47,10 +54,7 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
     base_config = DEFAULT_POINT_TRACKING_CONFIG if algorithm_type == "point_tracking" else DEFAULT_3D_PROJECTION_CONFIG
     
     # 从parser获取基础output_dir，然后按算法类型和索引分组
-    if algorithm_type == "point_tracking":
-        output_dir = f"{args.output_dir}/output_pt/{args.reference_idx}"
-    else:
-        output_dir = f"{args.output_dir}/output_3dmapping/{args.reference_idx}"
+    output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx)
     
     config_dict = {
         "device": args.device,
@@ -65,6 +69,19 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
     }
     
     return SKUMatchingConfig(**config_dict)
+
+
+def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
+    from utils import build_matching_config_from_yaml
+
+    cfg = build_matching_config_from_yaml(args.config, algorithm=args.algorithm)
+    # Always route outputs to per-ref subdir like CLI path does
+    cfg.output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx)
+    # Override a few runtime knobs from CLI
+    cfg.device = args.device
+    cfg.save_json = bool(args.save_json)
+    cfg.seed = args.seed
+    return cfg
 
 
 def run_point_tracking_algorithm(args) -> dict:
@@ -150,6 +167,42 @@ def run_3d_projection_algorithm(args) -> dict:
     return correspondences
 
 
+def run_point_tracking(args) -> dict:
+    if args.config:
+        config = _create_config_from_yaml(args, "point_tracking")
+        system = SKUMatchingSystem(config)
+        correspondences = system.process_images(
+            image_folder=args.image_folder,
+            detection_dir=args.detection_dir,
+            reference_image_idx=args.reference_idx,
+            max_images=args.max_images
+        )
+        total_matches = sum(len(matches) for matches in correspondences.values())
+        logger.info(f"点追踪算法找到 {total_matches} 个匹配")
+        system.cleanup()
+        return correspondences
+    else:
+        return run_point_tracking_algorithm(args)
+
+
+def run_3d_projection(args) -> dict:
+    if args.config:
+        config = _create_config_from_yaml(args, "3d_projection")
+        system = SKUMatchingSystem(config)
+        correspondences = system.process_images(
+            image_folder=args.image_folder,
+            detection_dir=args.detection_dir,
+            reference_image_idx=args.reference_idx,
+            max_images=args.max_images
+        )
+        total_matches = sum(len(matches) for matches in correspondences.values())
+        logger.info(f"3D-2D投影算法找到 {total_matches} 个匹配")
+        system.cleanup()
+        return correspondences
+    else:
+        return run_3d_projection_algorithm(args)
+
+
 def main() -> None:
     """主函数，处理命令行参数并执行相应的SKU匹配算法。
     
@@ -182,6 +235,7 @@ def main() -> None:
         
     """
     parser = argparse.ArgumentParser(description="SKU匹配系统 - 物体跨图像匹配")
+    parser.add_argument("--config", type=str, default=None, help="YAML 配置文件路径（可选）")
     # 基本参数
     parser.add_argument("--image_folder", type=str, default="../imdata/floor_display2/images", help="图像文件夹路径")
     parser.add_argument("--detection_dir", type=str, default="../imdata/floor_display2/detections_results", help="检测结果目录路径")
@@ -220,11 +274,11 @@ def main() -> None:
         
         # 根据选择运行算法
         if args.algorithm in ["point_tracking", "both"]:
-            correspondences_point_tracking = run_point_tracking_algorithm(args)
+            correspondences_point_tracking = run_point_tracking(args)
             logger.info("")
         
         if args.algorithm in ["3d", "both"]:
-            correspondences_3d = run_3d_projection_algorithm(args)
+            correspondences_3d = run_3d_projection(args)
             logger.info("")
         
         # 总结比较结果
