@@ -290,6 +290,62 @@ class SKUDetectionMain:
             logger.error(f"准确性评估失败: {e}")
             return {"success": False, "error": str(e), "duration_s": duration}
 
+    def run_reconstruction(
+        self,
+        dataset_path: str,
+        *,
+        device: str | None = None,
+        output_filename: str = "reconstruction.glb",
+        conf_thres: float = 50.0,
+        show_cam: bool = True,
+        mask_black_bg: bool = False,
+        mask_white_bg: bool = False,
+        mask_sky: bool = False,
+    ) -> StepResult:
+        """使用 VGGT 生成3D点云/GLB。
+
+        - 输入图片目录：<dataset>/images
+        - 输出GLB：<save_root>/<dataset_name>/reconstruction.glb（或 <dataset>/reconstruction.glb）
+        """
+        start = perf_counter()
+        try:
+            from modules.vggt_3d_reconstructor import VGGT3DReconstructor
+
+            dataset = Path(dataset_path)
+            image_dir = dataset / "images"
+            if not image_dir.exists():
+                msg = f"图片目录不存在: {image_dir}"
+                logger.error(msg)
+                return {"success": False, "error": msg, "duration_s": 0.0}
+
+            # 选择输出位置
+            output_dir = (self.save_root / dataset.name) if self.save_root else dataset
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_file = output_dir / output_filename
+
+            logger.info("开始VGGT 3D重建")
+            logger.info(f"输入图片目录: {image_dir}")
+            logger.info(f"输出GLB文件: {output_file}")
+
+            recon = VGGT3DReconstructor(device=device)
+            result_path = recon.reconstruct_from_directory(
+                input_dir=str(image_dir),
+                output_path=str(output_file),
+                conf_thres=conf_thres,
+                show_cam=show_cam,
+                mask_black_bg=mask_black_bg,
+                mask_white_bg=mask_white_bg,
+                mask_sky=mask_sky,
+            )
+
+            duration = perf_counter() - start
+            logger.info(f"VGGT 3D重建完成: {result_path}")
+            return {"success": True, "duration_s": duration, "details": {"output_file": str(result_path)}}
+        except Exception as e:
+            duration = perf_counter() - start
+            logger.error(f"VGGT 3D重建失败: {e}")
+            return {"success": False, "error": str(e), "duration_s": duration}
+
     def run_dedup_sequence(self, dataset_path: str) -> StepResult:
         """顺序去重：对 1..N（或指定上界）生成去重后的检测 JSON。"""
         start = perf_counter()
@@ -393,9 +449,10 @@ class SKUDetectionMain:
             print("5. 改进的SKU计数分析")
             print("6. 准确性评估")
             print("7. 更改数据集路径")
+            print("8. 3D重建 (VGGT)")
             print("0. 退出")
 
-            choice = input(f"\n当前数据集: {self.default_dataset}\n请输入选择 (0-7): ").strip()
+            choice = input(f"\n当前数据集: {self.default_dataset}\n请输入选择 (0-8): ").strip()
 
             if choice == '0':
                 logger.info("退出程序")
@@ -423,6 +480,9 @@ class SKUDetectionMain:
                 if new_path and self.validate_dataset(new_path):
                     self.default_dataset = new_path
                     logger.info(f"数据集已更改为: {new_path}")
+            elif choice == '8':
+                res = self.run_reconstruction(self.default_dataset)
+                print(f"3D重建: {'成功' if res.get('success') else '失败'}，耗时 {res.get('duration_s', 0):.2f}s")
             else:
                 print("无效选择，请重试")
 
@@ -432,8 +492,8 @@ def main() -> None:
     parser.add_argument('--dataset', type=str, default=str(PROJECT_ROOT / "imdata" / "floor_display2"),
                        help="数据集目录路径")
     parser.add_argument('--mode', type=str, default="interactive",
-                       choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup'],
-                       help="运行模式: interactive(交互), pipeline(完整流水线), concise(精简流水线), analyzer(仅分析), dedup(顺序去重)")
+                       choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'reconstruct'],
+                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), reconstruct(3D重建)")
     parser.add_argument('--algorithm', type=str, default="both",
                        choices=['point_tracking', '3d', 'both'],
                        help="匹配算法选择")
@@ -444,6 +504,9 @@ def main() -> None:
     parser.add_argument('--save_json', action='store_true', help="保存匹配结果为 JSON")
     parser.add_argument('--save_root', type=str, default='Output',
                         help="输出保存根目录。例如：/path/to/outputs")
+    # 3D重建专用可选参数（使用默认值即可）
+    parser.add_argument('--recon_conf_thres', type=float, default=50.0, help="3D导出置信度阈值(0-100)")
+    parser.add_argument('--recon_output', type=str, default='reconstruction.glb', help="3D重建输出文件名")
     # 顺序去重输出目录即为 save_root（不再单独提供参数）
 
     args = parser.parse_args()
@@ -473,6 +536,13 @@ def main() -> None:
         app.run_improved_sku_analysis(args.dataset)
     elif args.mode == 'dedup':
         app.run_dedup_sequence(args.dataset)
+    elif args.mode == 'reconstruct':
+        app.run_reconstruction(
+            args.dataset,
+            device=args.device,
+            output_filename=args.recon_output,
+            conf_thres=args.recon_conf_thres,
+        )
 
 
 if __name__ == "__main__":
