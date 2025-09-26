@@ -1,5 +1,7 @@
 # SKU匹配与顺序去重（模块化版本）
 
+[English Version](README_EN.md)
+
 重构后的 SKU 匹配与顺序去重系统，提供统一 CLI 入口、鲁棒的匹配日志解析、序列去重与全局 ID 聚合（global_mapping）。
 
 ## 📁 项目结构（已对目录调整后）
