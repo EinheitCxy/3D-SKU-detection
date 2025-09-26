@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-3D SKU Detection 系统主交互程序
-整合所有SKU计数和匹配功能的统一入口
-"""
-
 import sys
 import argparse
 import logging
@@ -15,37 +9,45 @@ from typing import Optional, Dict, Any, TypedDict
 
 # 项目路径
 PROJECT_ROOT = Path(__file__).parent.parent
-SKU_COUNT_DIR = Path(__file__).parent
+CODE_DIR = Path(__file__).parent
 
 # 确保可以从仓库根或任意 CWD 导入本目录模块
-if str(SKU_COUNT_DIR) not in sys.path:
-    sys.path.append(str(SKU_COUNT_DIR))
+if str(CODE_DIR) not in sys.path:
+    sys.path.append(str(CODE_DIR))
 
 
-def _configure_logging() -> logging.Logger:
-    """配置日志到 output_logs，并避免重复 handler。"""
-    logger = logging.getLogger(__name__)
-    if logger.handlers:
-        return logger
+def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
+    """配置全局日志，使每次运行仅在 save_root 中生成一个日志文件。
 
-    logger.setLevel(logging.INFO)
-    logs_dir = SKU_COUNT_DIR / "output_logs"
-    logs_dir.mkdir(parents=True, exist_ok=True)
+    - 文件: <save_root>/run_YYYYMMDD_HHMMSS.log
+    - 同时输出到控制台
+    - 清理已存在的 root handlers，避免重复日志
+    """
+    save_root.mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_file = logs_dir / f"sku_detection_main_{ts}.log"
+    log_file = save_root / f"run_{ts}.log"
 
+    root_logger = logging.getLogger()
+    for h in list(root_logger.handlers):
+        root_logger.removeHandler(h)
+
+    root_logger.setLevel(logging.INFO)
     fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    fh = RotatingFileHandler(str(log_file), maxBytes=5_000_000, backupCount=3)
+
+    fh = RotatingFileHandler(str(log_file), maxBytes=10_000_000, backupCount=1)
     fh.setFormatter(fmt)
     sh = logging.StreamHandler(sys.stdout)
     sh.setFormatter(fmt)
 
-    logger.addHandler(fh)
-    logger.addHandler(sh)
+    root_logger.addHandler(fh)
+    root_logger.addHandler(sh)
+
+    logger = logging.getLogger(__name__)
+    logger.info(f"日志已写入: {log_file}")
     return logger
 
 
-logger = _configure_logging()
+logger = logging.getLogger(__name__)
 
 
 class StepResult(TypedDict, total=False):
@@ -166,7 +168,7 @@ class SKUDetectionMain:
             # 输出目录：若指定 save_root，则写到 save_root/output_viz/<dataset_name>
             output_viz_dir = (
                 (self.save_root / "output_viz" / dataset.name)
-                if self.save_root else (SKU_COUNT_DIR / "output_viz" / dataset.name)
+                if self.save_root else (CODE_DIR / "output_viz" / dataset.name)
             ).resolve()
             output_viz_dir.mkdir(parents=True, exist_ok=True)
 
@@ -216,7 +218,7 @@ class SKUDetectionMain:
             # 报告目录：若指定 save_root，则保存到 save_root/output_reports/<dataset_name>
             reports_dir = (
                 self.save_root / "output_reports" / dataset.name
-                if self.save_root else SKU_COUNT_DIR / "output_reports" / dataset.name
+                if self.save_root else CODE_DIR / "output_reports" / dataset.name
             )
             reports_dir.mkdir(parents=True, exist_ok=True)
             report_file = reports_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
@@ -264,7 +266,7 @@ class SKUDetectionMain:
                 duration = perf_counter() - start
                 return {"success": False, "error": msg, "duration_s": duration}
 
-            script_path = SKU_COUNT_DIR / "batch_accuracy_evaluation.sh"
+            script_path = CODE_DIR / "batch_accuracy_evaluation.sh"
             if script_path.exists():
                 import subprocess
                 result = subprocess.run(
@@ -355,13 +357,13 @@ class SKUDetectionMain:
 
             dataset_dir = Path(dataset_path)
             if not dataset_dir.exists():
-                candidate = SKU_COUNT_DIR.parent / dataset_path
+                candidate = CODE_DIR.parent / dataset_path
                 if candidate.exists():
                     dataset_dir = candidate
 
             paths = resolve_dataset_paths(dataset_dir)
 
-            output_root = self.save_root if self.save_root is not None else (SKU_COUNT_DIR / "output_dedup")
+            output_root = self.save_root if self.save_root is not None else (CODE_DIR / "output_dedup")
 
             result = deduplicate_sequence(
                 paths,
@@ -511,10 +513,13 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # 基于 save_root 配置统一日志（单一文件）
+    save_root_path = Path(args.save_root).expanduser().resolve() if args.save_root else (PROJECT_ROOT / 'Output').resolve()
+    _configure_logging_to_save_root(save_root_path)
+
     app = SKUDetectionMain()
     app.default_dataset = args.dataset
-    if args.save_root:
-        app.save_root = Path(args.save_root).expanduser().resolve()
+    app.save_root = save_root_path
 
     if args.mode == 'interactive':
         app.interactive_mode()

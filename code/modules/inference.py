@@ -3,16 +3,13 @@ import logging
 import sys
 from pathlib import Path
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(message)s',
-    handlers=[
-        logging.FileHandler('sku_matching.log'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
+# 使用主程序配置的日志；若独立运行且无处理器，则退回到控制台输出
 logger = logging.getLogger(__name__)
+if not logger.handlers and not logging.getLogger().handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 try:
     # 添加父目录到路径以便导入utils模块
@@ -24,8 +21,8 @@ try:
         SKUMatchingSystem
     )
 except ImportError as e:
-    print(f"模块导入错误: {e}")
-    print("请确保VGGT模块已正确安装和配置")
+    logger.error(f"模块导入错误: {e}")
+    logger.error("请确保VGGT模块已正确安装和配置")
     sys.exit(1)
 
 
@@ -92,7 +89,7 @@ def run_point_tracking_algorithm(args) -> dict:
     Note:
         传统算法速度快、内存消耗低，但在大视角变化时可能不够稳定。
     """
-    print("=== 运行点追踪匹配算法 ===")
+    logger.info("=== 运行点追踪匹配算法 ===")
     
     config = create_config_from_args(args, "point_tracking")
     system = SKUMatchingSystem(config)
@@ -105,7 +102,7 @@ def run_point_tracking_algorithm(args) -> dict:
     )
     
     total_matches = sum(len(matches) for matches in correspondences.values())
-    print(f"点追踪算法找到 {total_matches} 个匹配")
+    logger.info(f"点追踪算法找到 {total_matches} 个匹配")
     
     system.cleanup()
     return correspondences
@@ -134,7 +131,7 @@ def run_3d_projection_algorithm(args) -> dict:
         3D算法计算复杂度更高，但在复杂场景和大视角变化下
         表现更优。需要更多的GPU内存和计算时间。
     """
-    print("=== 运行3D-2D投影匹配算法 ===")
+    logger.info("=== 运行3D-2D投影匹配算法 ===")
     
     config = create_config_from_args(args, "3d_projection")
     system = SKUMatchingSystem(config)
@@ -147,7 +144,7 @@ def run_3d_projection_algorithm(args) -> dict:
     )
     
     total_matches = sum(len(matches) for matches in correspondences.values())
-    print(f"3D-2D投影算法找到 {total_matches} 个匹配")
+    logger.info(f"3D-2D投影算法找到 {total_matches} 个匹配")
     
     system.cleanup()
     return correspondences
@@ -211,12 +208,12 @@ def main() -> None:
         if not Path(args.detection_dir).exists():
             raise FileNotFoundError(f"检测结果目录不存在: {args.detection_dir}")
         
-        print(f"=== SKU匹配系统 ===")
-        print(f"图像文件夹: {args.image_folder}")
-        print(f"检测结果目录: {args.detection_dir}")
-        print(f"参考图像索引: {args.reference_idx}")
-        print(f"算法选择: {args.algorithm}")
-        print()
+        logger.info("=== SKU匹配系统 ===")
+        logger.info(f"图像文件夹: {args.image_folder}")
+        logger.info(f"检测结果目录: {args.detection_dir}")
+        logger.info(f"参考图像索引: {args.reference_idx}")
+        logger.info(f"算法选择: {args.algorithm}")
+        logger.info("")
         
         correspondences_point_tracking = None
         correspondences_3d = None
@@ -224,22 +221,22 @@ def main() -> None:
         # 根据选择运行算法
         if args.algorithm in ["point_tracking", "both"]:
             correspondences_point_tracking = run_point_tracking_algorithm(args)
-            print()
+            logger.info("")
         
         if args.algorithm in ["3d", "both"]:
             correspondences_3d = run_3d_projection_algorithm(args)
-            print()
+            logger.info("")
         
         # 总结比较结果
         if args.algorithm == "both" and correspondences_point_tracking and correspondences_3d:
             point_tracking_total = sum(len(matches) for matches in correspondences_point_tracking.values())
             projection_total = sum(len(matches) for matches in correspondences_3d.values())
             
-            print("=== 算法比较结果 ===")
-            print(f"点追踪算法: {point_tracking_total} 个匹配")
-            print(f"3D-2D投影算法: {projection_total} 个匹配")
-            print(f"差异: {abs(point_tracking_total - projection_total)} 个匹配")        
-        print("=== 处理完成 ===")
+            logger.info("=== 算法比较结果 ===")
+            logger.info(f"点追踪算法: {point_tracking_total} 个匹配")
+            logger.info(f"3D-2D投影算法: {projection_total} 个匹配")
+            logger.info(f"差异: {abs(point_tracking_total - projection_total)} 个匹配")        
+        logger.info("=== 处理完成 ===")
             
     except Exception as e:
         logger.error(f"执行过程中发生错误: {e}")

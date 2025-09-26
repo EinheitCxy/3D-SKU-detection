@@ -120,6 +120,14 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 - 顺序去重（同名输出）：`<save_root>/<dataset_name>/1.json..X.json`
 - 全局ID聚合：`<save_root>/<dataset_name>/global_mapping.json`
 
+## 🧾 日志输出（统一）
+
+- 每次运行只生成一个日志文件，位于：`<save_root>/run_YYYYMMDD_HHMMSS.log`
+- 通过 `--save_root` 控制日志与产物的根目录（所有模式一致：interactive/pipeline/concise/analyzer/dedup/reconstruct）
+- 子模块不再各自写独立日志文件；控制台与文件同步输出相同内容
+- 示例：
+  - `tail -f ./Output/run_20250101_101530.log`
+
 ## 🔄 顺序去重与 Global ID
 
 - 解析器采用“Found N matches in image T”锚点，回溯分配最近 N 条 `Matched`，适配“匹配在前、分组在后”的日志格式

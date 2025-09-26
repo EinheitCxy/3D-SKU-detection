@@ -15,6 +15,7 @@ import os
 import sys
 import glob
 import argparse
+import logging
 import numpy as np
 import torch
 import cv2
@@ -26,6 +27,13 @@ from contextlib import nullcontext
 
 # 添加父目录到路径以便导入utils模块
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+logger = logging.getLogger(__name__)
+if not logger.handlers and not logging.getLogger().handlers:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter('%(message)s'))
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
 
 # 先导入 utils 以统一配置 VGGT 路径（由 utils/__init__.py 负责）
 from utils.config import get_optimal_device_config
@@ -59,7 +67,7 @@ class VGGT3DReconstructor:
         # 用户覆盖（若提供）
         if device is not None:
             if device == "cuda" and not torch.cuda.is_available():
-                print("警告: CUDA不可用，回退到CPU")
+                logger.warning("警告: CUDA不可用，回退到CPU")
                 self.device = "cpu"
                 self.dtype = torch.float32
             elif device == "cpu":
@@ -75,11 +83,11 @@ class VGGT3DReconstructor:
         self.model = None
         self.model_path = model_path
         
-        print(f"使用设备: {self.device}")
+        logger.info(f"使用设备: {self.device}")
     
     def load_model(self):
         """加载VGGT模型"""
-        print("正在加载VGGT模型...")
+        logger.info("正在加载VGGT模型...")
         
         try:
             self.model = VGGT()
@@ -88,20 +96,20 @@ class VGGT3DReconstructor:
                 # 从本地加载
                 state_dict = torch.load(self.model_path, map_location=self.device)
                 self.model.load_state_dict(state_dict)
-                print(f"从本地加载模型: {self.model_path}")
+                logger.info(f"从本地加载模型: {self.model_path}")
             else:
                 # 从HuggingFace下载
                 _URL = "https://huggingface.co/facebook/VGGT-1B/resolve/main/model.pt"
                 state_dict = torch.hub.load_state_dict_from_url(_URL, map_location=self.device)
                 self.model.load_state_dict(state_dict)
-                print("从HuggingFace下载并加载模型")
+                logger.info("从HuggingFace下载并加载模型")
             
             self.model.eval()
             self.model = self.model.to(self.device)
-            print("模型加载完成")
+            logger.info("模型加载完成")
             
         except Exception as e:
-            print(f"模型加载失败: {e}")
+            logger.error(f"模型加载失败: {e}")
             raise
     
     def load_images(self, input_dir):
@@ -115,7 +123,7 @@ class VGGT3DReconstructor:
             images: 预处理后的图片张量
             image_paths: 图片文件路径列表
         """
-        print(f"从目录加载图片: {input_dir}")
+        logger.info(f"从目录加载图片: {input_dir}")
         
         # 支持的图片格式
         extensions = ['*.jpg', '*.jpeg', '*.png', '*.JPG', '*.JPEG', '*.PNG']
@@ -125,21 +133,21 @@ class VGGT3DReconstructor:
             image_paths.extend(glob.glob(os.path.join(input_dir, ext)))
         
         image_paths = sorted(image_paths)
-        print(f"找到 {len(image_paths)} 张图片")
+        logger.info(f"找到 {len(image_paths)} 张图片")
         
         if len(image_paths) == 0:
             raise ValueError(f"在目录 {input_dir} 中未找到图片")
         
         if len(image_paths) < 2:
-            print("警告: 图片数量少于2张，3D重构效果可能不佳")
+            logger.warning("警告: 图片数量少于2张，3D重构效果可能不佳")
         
         # 预处理图片
         try:
             images = load_and_preprocess_images(image_paths).to(self.device)
-            print(f"图片预处理完成，张量形状: {images.shape}")
+            logger.info(f"图片预处理完成，张量形状: {images.shape}")
             return images, image_paths
         except Exception as e:
-            print(f"图片预处理失败: {e}")
+            logger.error(f"图片预处理失败: {e}")
             raise
     
     def run_inference(self, images):
@@ -152,7 +160,7 @@ class VGGT3DReconstructor:
         Returns:
             predictions: 模型预测结果
         """
-        print("开始3D重构推理...")
+        logger.info("开始3D重构推理...")
         start_time = time.time()
         
         try:
@@ -162,7 +170,7 @@ class VGGT3DReconstructor:
                 with amp_ctx:
                     predictions = self.model(images)
             
-            print("转换姿态编码为外参和内参矩阵...")
+            logger.info("转换姿态编码为外参和内参矩阵...")
             extrinsic, intrinsic = pose_encoding_to_extri_intri(
                 predictions["pose_enc"], 
                 images.shape[-2:]
@@ -178,7 +186,7 @@ class VGGT3DReconstructor:
             predictions['pose_enc_list'] = None
             
             # 从深度图生成世界坐标点
-            print("从深度图计算3D点云...")
+            logger.info("从深度图计算3D点云...")
             depth_map = predictions["depth"]
             world_points = unproject_depth_map_to_point_map(
                 depth_map, 
@@ -188,12 +196,12 @@ class VGGT3DReconstructor:
             predictions["world_points_from_depth"] = world_points
             
             end_time = time.time()
-            print(f"推理完成，耗时: {end_time - start_time:.2f}秒")
+            logger.info(f"推理完成，耗时: {end_time - start_time:.2f}秒")
             
             return predictions
             
         except Exception as e:
-            print(f"推理过程出错: {e}")
+            logger.error(f"推理过程出错: {e}")
             raise
     
     def export_glb(self, predictions, output_path, 
@@ -216,7 +224,7 @@ class VGGT3DReconstructor:
             mask_sky: 是否遮罩天空
             prediction_mode: 预测模式
         """
-        print(f"导出GLB文件: {output_path}")
+        logger.info(f"导出GLB文件: {output_path}")
         
         try:
             # 创建输出目录
@@ -239,15 +247,15 @@ class VGGT3DReconstructor:
             
             # 导出GLB文件
             glb_scene.export(file_obj=output_path)
-            print(f"GLB文件成功导出到: {output_path}")
+            logger.info(f"GLB文件成功导出到: {output_path}")
             
             # 文件信息
             if os.path.exists(output_path):
                 file_size = os.path.getsize(output_path) / (1024 * 1024)
-                print(f"文件大小: {file_size:.2f} MB")
+                logger.info(f"文件大小: {file_size:.2f} MB")
             
         except Exception as e:
-            print(f"GLB导出失败: {e}")
+            logger.error(f"GLB导出失败: {e}")
             raise
     
     def reconstruct_from_directory(self, input_dir, output_path, **kwargs):
@@ -259,9 +267,9 @@ class VGGT3DReconstructor:
             output_path: 输出GLB文件路径
             **kwargs: 导出参数
         """
-        print("="*60)
-        print("开始VGGT 3D重构流程")
-        print("="*60)
+        logger.info("="*60)
+        logger.info("开始VGGT 3D重构流程")
+        logger.info("="*60)
         
         total_start = time.time()
         
@@ -272,7 +280,7 @@ class VGGT3DReconstructor:
             
             # 2. 加载图片
             images, image_paths = self.load_images(input_dir)
-            print(f"处理图片: {[os.path.basename(p) for p in image_paths]}")
+            logger.info(f"处理图片: {[os.path.basename(p) for p in image_paths]}")
             
             # 3. 运行推理
             predictions = self.run_inference(images)
@@ -281,13 +289,13 @@ class VGGT3DReconstructor:
             self.export_glb(predictions, output_path, **kwargs)
             
             total_time = time.time() - total_start
-            print(f"\n总流程耗时: {total_time:.2f}秒")
-            print("3D重构完成!")
+            logger.info(f"\n总流程耗时: {total_time:.2f}秒")
+            logger.info("3D重构完成!")
             
             return output_path
             
         except Exception as e:
-            print(f"3D重构失败: {e}")
+            logger.error(f"3D重构失败: {e}")
             raise
         finally:
             # 清理GPU内存
@@ -320,7 +328,7 @@ def main():
     
     # 验证输入目录
     if not os.path.isdir(args.input_dir):
-        print(f"错误: 输入目录不存在: {args.input_dir}")
+        logger.error(f"错误: 输入目录不存在: {args.input_dir}")
         return
     
     # 自动生成输出文件名
@@ -333,8 +341,8 @@ def main():
     if not args.output_file.endswith('.glb'):
         args.output_file += '.glb'
     
-    print(f"输入目录: {args.input_dir}")
-    print(f"输出文件: {args.output_file}")
+    logger.info(f"输入目录: {args.input_dir}")
+    logger.info(f"输出文件: {args.output_file}")
     
     # 创建重构器
     reconstructor = VGGT3DReconstructor(
@@ -353,10 +361,10 @@ def main():
             mask_white_bg=args.mask_white_bg,
             mask_sky=args.mask_sky
         )
-        print(f"\n✅ 成功! GLB文件已保存到: {result_path}")
+        logger.info(f"\n✅ 成功! GLB文件已保存到: {result_path}")
         
     except Exception as e:
-        print(f"\n❌ 失败: {e}")
+        logger.error(f"\n❌ 失败: {e}")
         return 1
     
     return 0

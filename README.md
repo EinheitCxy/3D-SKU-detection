@@ -61,6 +61,12 @@ bash code/batch_run_inference.sh floor_display2 4
 
 更多细节（参数、输出路径、测试命令）参考 `code/README.md` 与 `code/README_EN.md`。
 
+## 日志
+
+- 每次运行仅生成一个日志文件，位于 `<save_root>/run_YYYYMMDD_HHMMSS.log`
+- 使用 `--save_root` 统一控制日志与所有产物的根目录
+- 控制台输出与文件内容一致，便于实时查看与追溯
+
 ## 使用方法
 
 更多命令与参数请见 `code/README.md`；核心脚本位于 `code/modules/`，算法与工具位于 `code/utils/`。
