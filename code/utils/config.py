@@ -2,7 +2,8 @@ import os
 import torch
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any, Dict
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,150 @@ def get_optimal_device_config(verbose: bool = True):
             logger.info("🖥️ 使用CPU计算")
     
     return device, dtype
+
+
+# ============ YAML config helpers ============
+
+
+def load_yaml_config(path: str | Path) -> Dict[str, Any]:
+    """Load a YAML config file with PyYAML into a Python dict.
+
+    Args:
+        path: Path to the YAML file
+    Returns:
+        Dict with config content (empty dict if file is empty)
+    Raises:
+        FileNotFoundError: when path does not exist
+        ImportError: when PyYAML is not available
+        ValueError: when loaded content is not a mapping
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"Config file not found: {p}")
+
+    try:
+        import yaml  # type: ignore
+    except ModuleNotFoundError as e:
+        raise ImportError("PyYAML is required to load YAML configs. Install 'pyyaml'.") from e
+
+    with p.open("r", encoding="utf-8") as f:
+        data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError("YAML root must be a mapping (dict)")
+    logger.info(f"Loaded YAML config: {p}")
+    return data
+
+
+def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = None) -> "SKUMatchingConfig":
+    """Build SKUMatchingConfig from a YAML file.
+
+    Expected schema (example):
+    matching:
+      algorithm: point_tracking  # or '3d'/'3d_projection'
+      device: cuda
+      max_points_per_bbox: 50
+      confidence_threshold: 0.5
+      min_confident_points: 7
+      correspondence_threshold: 0.5
+      output_dir: ./Output/floor_display2
+      save_json: true
+
+    Args:
+        path: YAML path
+        algorithm: optional override of matching.algorithm
+    Returns:
+        SKUMatchingConfig
+    """
+    data = load_yaml_config(path)
+    section = data.get("matching", data)
+
+    algo = (algorithm or section.get("algorithm") or "point_tracking").lower()
+    if algo in ("3d", "3d_projection", "projection", "3d-2d"):
+        base = DEFAULT_3D_PROJECTION_CONFIG.copy()
+    else:
+        base = DEFAULT_POINT_TRACKING_CONFIG.copy()
+
+    # Map allowed fields into dataclass
+    cfg_dict: Dict[str, Any] = {
+        **base,
+    }
+    for key in (
+        "device",
+        "max_points_per_bbox",
+        "confidence_threshold",
+        "min_confident_points",
+        "correspondence_threshold",
+        "seed",
+        "save_json",
+        "output_dir",
+        "max_bboxes",
+        "max_total_points",
+        "min_bbox_area",
+        # 3D-specific (safe to include; unused for PT)
+        "depth_confidence_threshold",
+        "point_3d_confidence_threshold",
+        "min_depth",
+        "max_depth",
+        "max_3d_points_per_bbox",
+        "projection_match_threshold",
+        "max_3d_distance",
+        "max_depth_difference",
+        "min_depth_consistency",
+        "enable_3d_projection_matching",
+    ):
+        if key in section:
+            cfg_dict[key] = section[key]
+
+    # Construct dataclass; device/dtype resolved in __post_init__
+    return SKUMatchingConfig(**cfg_dict)  # type: ignore[arg-type]
+
+
+def extract_main_settings(data_or_path: Dict[str, Any] | str | Path) -> Dict[str, Any]:
+    """Extract top-level main settings from YAML or dict.
+
+    Returns a flat dict with keys commonly used by main.py: dataset, mode, algorithm,
+    reference_idx, max_images, device, save_json, save_root.
+    """
+    data = load_yaml_config(data_or_path) if not isinstance(data_or_path, dict) else data_or_path
+    main = data.get("main", data)
+    out: Dict[str, Any] = {}
+    for k in (
+        "dataset",
+        "mode",
+        "algorithm",
+        "reference_idx",
+        "max_images",
+        "device",
+        "save_json",
+        "save_root",
+    ):
+        if k in main:
+            out[k] = main[k]
+    return out
+
+
+def extract_reconstruction_settings(data_or_path: Dict[str, Any] | str | Path) -> Dict[str, Any]:
+    """Extract reconstruction settings section as a dict.
+
+    Keys may include: device, conf_thres, output (filename), model_path, show_cam,
+    mask_black_bg, mask_white_bg, mask_sky.
+    """
+    data = load_yaml_config(data_or_path) if not isinstance(data_or_path, dict) else data_or_path
+    rec = data.get("reconstruction", data)
+    out: Dict[str, Any] = {}
+    for k in (
+        "device",
+        "conf_thres",
+        "output",
+        "model_path",
+        "show_cam",
+        "mask_black_bg",
+        "mask_white_bg",
+        "mask_sky",
+    ):
+        if k in rec:
+            out[k] = rec[k]
+    return out
 
 
 @dataclass

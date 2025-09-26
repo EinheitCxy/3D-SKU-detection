@@ -26,11 +26,6 @@ from typing import Dict, List, Tuple, Set
 
 
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    logger.setLevel(logging.INFO)
-    _h = logging.StreamHandler()
-    _h.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(_h)
 
 
 @dataclass(frozen=True)

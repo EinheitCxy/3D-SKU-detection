@@ -64,24 +64,46 @@ class SKUDetectionMain:
         # 以仓库根为基准，避免依赖当前工作目录
         self.default_dataset = str(PROJECT_ROOT / "imdata" / "floor_display2")
         self.save_root: Optional[Path] = None  # 可选的输出保存根目录
-        # 顺序去重配置（可由 CLI 注入）
-        self.dedup_output_dir: Optional[Path] = None
         logger.info("初始化3D SKU Detection主程序")
 
     def show_banner(self) -> None:
         """显示程序横幅"""
-        banner = """
-╔══════════════════════════════════════════════════════════════╗
-║                    3D SKU Detection 系统                     ║
-║                  RetailEye 商品计数分析平台                    ║
-╠══════════════════════════════════════════════════════════════╣
-║  功能模块:                                                    ║
-║  1. SKU匹配推理 (点追踪 + 3D投影)                              ║
-║  2. 检出框可视化                                               ║
-║  3. SKU聚类分析                                               ║
-║  4. 匹配准确性评估                                             ║
-║  5. 改进的SKU计数 (去重优化)                                   ║
-╚══════════════════════════════════════════════════════════════╝
+        from datetime import datetime
+        import sys
+        
+        # 获取运行时信息
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        
+        # 安全获取torch信息
+        try:
+            import torch
+            torch_version = torch.__version__
+            cuda_available = "Yes" if torch.cuda.is_available() else "No"
+        except ImportError:
+            torch_version = "N/A"
+            cuda_available = "N/A"
+        
+        banner = f"""
+╔════════════════════════════════════════════════════════════════════════╗
+║                        3D SKU Detection System                         ║
+║                     RetailEye 商品计数分析平台 v2.0                       ║
+╠════════════════════════════════════════════════════════════════════════╣
+║  核心功能:                                                              ║
+║  1. SKU匹配推理 (点追踪 + 3D投影)     2. 检出框可视化                       ║
+║  3. SKU聚类分析                      4. 匹配准确性评估                     ║
+║  5. 改进的SKU计数 (去重优化)          6. 3D场景重建                        ║
+╠════════════════════════════════════════════════════════════════════════╣
+║  运行环境:                                                               ║
+║  时间: {current_time:<20} Python: {python_version}                      ║
+║  PyTorch: {torch_version:<12} CUDA: {cuda_available}                   ║
+╠════════════════════════════════════════════════════════════════════════╣
+║  快速开始:                                                              ║
+║  • 完整流水线: --mode pipeline --dataset imdata/floor_display2          ║
+║  • 仅匹配推理: --mode concise --algorithm both                          ║
+║  • 交互模式:   --mode interactive (当前模式)                             ║
+║  • 帮助文档:   --help                                                   ║
+╚════════════════════════════════════════════════════════════════════════╝
         """
         print(banner)
 
