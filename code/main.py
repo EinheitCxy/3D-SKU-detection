@@ -23,7 +23,7 @@ if str(SKU_COUNT_DIR) not in sys.path:
 
 
 def _configure_logging() -> logging.Logger:
-    """配置日志到 sku_count/output_logs，并避免重复 handler。"""
+    """配置日志到 output_logs，并避免重复 handler。"""
     logger = logging.getLogger(__name__)
     if logger.handlers:
         return logger
@@ -63,7 +63,6 @@ class SKUDetectionMain:
         self.default_dataset = str(PROJECT_ROOT / "imdata" / "floor_display2")
         self.save_root: Optional[Path] = None  # 可选的输出保存根目录
         # 顺序去重配置（可由 CLI 注入）
-        self.dedup_max_image: Optional[int] = None
         self.dedup_output_dir: Optional[Path] = None
         logger.info("初始化3D SKU Detection主程序")
 
@@ -117,7 +116,7 @@ class SKUDetectionMain:
         try:
             logger.info(f"开始SKU匹配推理 - 算法: {algorithm}")
 
-            from inference import main as inference_main
+            from modules.inference import main as inference_main
 
             dataset = Path(dataset_path)
             image_folder = dataset / "images"
@@ -152,13 +151,13 @@ class SKUDetectionMain:
             sys.argv = original_argv
 
     def run_detection_visualization(self, dataset_path: str) -> StepResult:
-        """运行检出框可视化，输出到 sku_count/output_viz/<dataset_name>/"""
+        """运行检出框可视化，输出到 output_viz/<dataset_name>/（或 --save_root）"""
         start = perf_counter()
         original_argv = sys.argv.copy()
         try:
             logger.info("开始检出框可视化")
 
-            from draw_detection_boxes import main as viz_main
+            from modules.draw_detection_boxes import main as viz_main
 
             dataset = Path(dataset_path)
             image_dir = dataset / "images"
@@ -191,12 +190,12 @@ class SKUDetectionMain:
             sys.argv = original_argv
 
     def run_improved_sku_analysis(self, dataset_path: str) -> StepResult:
-        """运行改进的SKU计数分析 (去重优化)，报告写入 sku_count/output_reports/<dataset_name>/report_*.txt"""
+        """运行改进的SKU计数分析 (去重优化)，报告写入 output_reports/<dataset_name>/report_*.txt（或 --save_root）"""
         start = perf_counter()
         try:
             logger.info("开始改进的SKU计数分析")
 
-            from improved_sku_analyzer import ImprovedSKUCountAnalyzer
+            from modules.improved_sku_analyzer import ImprovedSKUCountAnalyzer
 
             dataset = Path(dataset_path)
             detection_dir = dataset / "detections_results"
@@ -296,7 +295,7 @@ class SKUDetectionMain:
         start = perf_counter()
         try:
             logger.info("开始顺序去重 (1..N)")
-            from deduplicate_detections import DatasetPaths, resolve_dataset_paths, deduplicate_sequence
+            from modules.deduplicate_detections import DatasetPaths, resolve_dataset_paths, deduplicate_sequence
 
             dataset_dir = Path(dataset_path)
             if not dataset_dir.exists():
@@ -306,18 +305,12 @@ class SKUDetectionMain:
 
             paths = resolve_dataset_paths(dataset_dir)
 
-            output_root = self.dedup_output_dir
-            if output_root is None:
-                # 优先使用 save_root/output_dedup，再退回到默认 sku_count/output_dedup
-                if self.save_root is not None:
-                    output_root = self.save_root / "output_dedup"
-                else:
-                    output_root = SKU_COUNT_DIR / "output_dedup"
+            output_root = self.save_root if self.save_root is not None else (SKU_COUNT_DIR / "output_dedup")
 
             result = deduplicate_sequence(
                 paths,
                 output_root=output_root,
-                max_image=self.dedup_max_image,
+                max_image=None,           # 处理所有图片
                 same_names=True,          # 默认同名输出 (1.json, 2.json, ...)
                 dedup_mode='any',         # 默认使用所有匹配进行去重
                 min_hit_ratio=0.0,        # 默认不过滤命中率
@@ -442,7 +435,7 @@ def main() -> None:
                        choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup'],
                        help="运行模式: interactive(交互), pipeline(完整流水线), concise(精简流水线), analyzer(仅分析), dedup(顺序去重)")
     parser.add_argument('--algorithm', type=str, default="both",
-                       choices=['point_tracking', '3d', 'both', 'demo'],
+                       choices=['point_tracking', '3d', 'both'],
                        help="匹配算法选择")
     # 透传给 inference.py 的关键参数
     parser.add_argument('--reference_idx', type=int, default=0, help="参考图像索引")
@@ -451,9 +444,7 @@ def main() -> None:
     parser.add_argument('--save_json', action='store_true', help="保存匹配结果为 JSON")
     parser.add_argument('--save_root', type=str, default='Output',
                         help="输出保存根目录。例如：/path/to/outputs")
-    # 顺序去重参数（用于 --mode dedup 或 pipeline 中的去重步骤）
-    parser.add_argument('--dedup_max_image', type=int, default=None, help="顺序去重处理到的最大图片编号(含)")
-    parser.add_argument('--dedup_output_dir', type=str, default=None, help="去重输出根目录 (默认 sku_count/output_dedup/<dataset_name>)")
+    # 顺序去重输出目录即为 save_root（不再单独提供参数）
 
     args = parser.parse_args()
 
@@ -461,9 +452,6 @@ def main() -> None:
     app.default_dataset = args.dataset
     if args.save_root:
         app.save_root = Path(args.save_root).expanduser().resolve()
-    # 注入去重参数
-    app.dedup_max_image = args.dedup_max_image
-    app.dedup_output_dir = Path(args.dedup_output_dir).expanduser().resolve() if args.dedup_output_dir else None
 
     if args.mode == 'interactive':
         app.interactive_mode()

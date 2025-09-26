@@ -13,9 +13,9 @@ def _resolve_vggt_root() -> Path:
     """定位 vggt-main 目录（相对本包位置进行多级回溯）。"""
     here = Path(__file__).resolve()
     candidates = [
-        here.parents[3] / 'vggt-main',  # repo 根目录/vggt-main
-        here.parents[2] / 'vggt-main',  # sku_count/vggt-main（备用）
-        here.parents[1] / 'vggt-main',  # module/vggt-main（备用）
+        here.parents[3] / 'vggt-main',  # 仓库根目录/vggt-main
+        here.parents[2] / 'vggt-main',  # code/vggt-main（备用）
+        here.parents[1] / 'vggt-main',  # code/utils/vggt-main（备用）
     ]
     for c in candidates:
         if c.exists():

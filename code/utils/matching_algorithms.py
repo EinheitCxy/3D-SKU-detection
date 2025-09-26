@@ -9,7 +9,7 @@ import torch
 import logging
 from typing import Dict, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
-# VGGT相关导入（路径由 module/__init__.py 统一配置）
+# VGGT相关导入（路径由 utils/__init__.py 统一配置）
 try:
     from vggt.models.vggt import VGGT
     from vggt.utils.pose_enc import pose_encoding_to_extri_intri
