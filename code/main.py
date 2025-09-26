@@ -64,6 +64,7 @@ class SKUDetectionMain:
         # 以仓库根为基准，避免依赖当前工作目录
         self.default_dataset = str(PROJECT_ROOT / "imdata" / "floor_display2")
         self.save_root: Optional[Path] = None  # 可选的输出保存根目录
+        self.config_path: Optional[Path] = None
         logger.info("初始化3D SKU Detection主程序")
 
     def show_banner(self) -> None:
@@ -100,7 +101,7 @@ class SKUDetectionMain:
 ╠════════════════════════════════════════════════════════════════════════╣
 ║  快速开始:                                                              ║
 ║  • 完整流水线: --mode pipeline --dataset imdata/floor_display2          ║
-║  • 仅匹配推理: --mode concise --algorithm both                          ║
+║  • 仅匹配推理: --mode concise --algorithm point_tracking                         ║
 ║  • 交互模式:   --mode interactive (当前模式)                             ║
 ║  • 帮助文档:   --help                                                   ║
 ╚════════════════════════════════════════════════════════════════════════╝
@@ -127,7 +128,7 @@ class SKUDetectionMain:
     def run_sku_matching(
         self,
         dataset_path: str,
-        algorithm: str = "both",
+        algorithm: str = "point_tracking",
         *,
         reference_idx: int = 0,
         max_images: int = 50,
@@ -160,6 +161,8 @@ class SKUDetectionMain:
             ]
             if save_json:
                 argv.append('--save_json')
+            if self.config_path is not None:
+                argv.extend(['--config', str(self.config_path)])
 
             sys.argv = argv
             inference_main()
@@ -321,6 +324,7 @@ class SKUDetectionMain:
         device: str | None = None,
         output_filename: str = "reconstruction.glb",
         conf_thres: float = 50.0,
+        model_path: str | None = None,
         show_cam: bool = True,
         mask_black_bg: bool = False,
         mask_white_bg: bool = False,
@@ -351,7 +355,7 @@ class SKUDetectionMain:
             logger.info(f"输入图片目录: {image_dir}")
             logger.info(f"输出GLB文件: {output_file}")
 
-            recon = VGGT3DReconstructor(device=device)
+            recon = VGGT3DReconstructor(device=device, model_path=model_path)
             result_path = recon.reconstruct_from_directory(
                 input_dir=str(image_dir),
                 output_path=str(output_file),
@@ -375,7 +379,7 @@ class SKUDetectionMain:
         start = perf_counter()
         try:
             logger.info("开始顺序去重 (1..N)")
-            from modules.deduplicate_detections import DatasetPaths, resolve_dataset_paths, deduplicate_sequence
+            from modules.deduplicate_detections import resolve_dataset_paths, deduplicate_sequence
 
             dataset_dir = Path(dataset_path)
             if not dataset_dir.exists():
@@ -417,7 +421,7 @@ class SKUDetectionMain:
         viz = self.run_detection_visualization(dataset_path)
         summary['visualization'] = bool(viz.get('success', False))
 
-        match = self.run_sku_matching(dataset_path, 'both')
+        match = self.run_sku_matching(dataset_path, 'point_tracking') # TODO: algorithm is hardcoding now
         summary['matching'] = bool(match.get('success', False))
 
         analysis = self.run_improved_sku_analysis(dataset_path)
@@ -438,7 +442,7 @@ class SKUDetectionMain:
 
         return summary
 
-    def run_concise_pipeline(self, dataset_path: str, algorithm: str = "both") -> Dict[str, bool]:
+    def run_concise_pipeline(self, dataset_path: str, algorithm: str = "point_tracking") -> Dict[str, bool]:
         """运行精简流水线 - 仅SKU匹配和准确性评估"""
         logger.info("开始精简流水线 - SKU匹配 + 准确性评估")
         summary: Dict[str, bool] = {}
@@ -512,36 +516,61 @@ class SKUDetectionMain:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="3D SKU Detection系统主程序")
-    parser.add_argument('--dataset', type=str, default=str(PROJECT_ROOT / "imdata" / "floor_display2"),
+    # 预解析 --config
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument('--config', type=str, default=None, help='YAML 配置文件路径（默认 code/config.yaml，如存在）')
+    known, _ = pre.parse_known_args()
+
+    # 从 YAML 读取默认值
+    from utils import load_yaml_config, extract_main_settings, extract_reconstruction_settings
+    yaml_main = {}
+    yaml_recon = {}
+    config_path = None
+    default_cfg = CODE_DIR / 'config.yaml'
+    try:
+        if known.config:
+            config_path = Path(known.config)
+        elif default_cfg.exists():
+            config_path = default_cfg
+        if config_path and config_path.exists():
+            data = load_yaml_config(config_path)
+            yaml_main = extract_main_settings(data)
+            yaml_recon = extract_reconstruction_settings(data)
+    except Exception:
+        yaml_main = {}
+        yaml_recon = {}
+
+    parser = argparse.ArgumentParser(description="3D SKU Detection系统主程序", parents=[pre])
+    parser.add_argument('--dataset', type=str, default=yaml_main.get('dataset', str(PROJECT_ROOT / "imdata" / "floor_display2")),
                        help="数据集目录路径")
-    parser.add_argument('--mode', type=str, default="interactive",
+    parser.add_argument('--mode', type=str, default=yaml_main.get('mode', "interactive"),
                        choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'reconstruct'],
                        help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), reconstruct(3D重建)")
-    parser.add_argument('--algorithm', type=str, default="both",
+    parser.add_argument('--algorithm', type=str, default=yaml_main.get('algorithm', "both"),
                        choices=['point_tracking', '3d', 'both'],
                        help="匹配算法选择")
     # 透传给 inference.py 的关键参数
-    parser.add_argument('--reference_idx', type=int, default=0, help="参考图像索引")
-    parser.add_argument('--max_images', type=int, default=50, help="最大处理图像数量")
-    parser.add_argument('--device', type=str, default='cuda', help="计算设备 (cuda/cpu)")
-    parser.add_argument('--save_json', action='store_true', help="保存匹配结果为 JSON")
-    parser.add_argument('--save_root', type=str, default='Output',
+    parser.add_argument('--reference_idx', type=int, default=int(yaml_main.get('reference_idx', 0)), help="参考图像索引")
+    parser.add_argument('--max_images', type=int, default=int(yaml_main.get('max_images', 50)), help="最大处理图像数量")
+    parser.add_argument('--device', type=str, default=yaml_main.get('device', 'cuda'), help="计算设备 (cuda/cpu)")
+    parser.add_argument('--save_json', action='store_true', default=bool(yaml_main.get('save_json', False)), help="保存匹配结果为 JSON")
+    parser.add_argument('--save_root', type=str, default=yaml_main.get('save_root', 'Output'),
                         help="输出保存根目录。例如：/path/to/outputs")
-    # 3D重建专用可选参数（使用默认值即可）
-    parser.add_argument('--recon_conf_thres', type=float, default=50.0, help="3D导出置信度阈值(0-100)")
-    parser.add_argument('--recon_output', type=str, default='reconstruction.glb', help="3D重建输出文件名")
-    # 顺序去重输出目录即为 save_root（不再单独提供参数）
+    # 3D重建专用参数
+    parser.add_argument('--recon_conf_thres', type=float, default=float(yaml_recon.get('conf_thres', 50.0)), help="3D导出置信度阈值(0-100)")
+    parser.add_argument('--recon_output', type=str, default=yaml_recon.get('output', 'reconstruction.glb'), help="3D重建输出文件名")
+    parser.add_argument('--recon_model_path', type=str, default=yaml_recon.get('model_path', None), help="3D重建模型权重路径")
 
     args = parser.parse_args()
 
-    # 基于 save_root 配置统一日志（单一文件）
+    # 统一日志
     save_root_path = Path(args.save_root).expanduser().resolve() if args.save_root else (PROJECT_ROOT / 'Output').resolve()
     _configure_logging_to_save_root(save_root_path)
 
     app = SKUDetectionMain()
     app.default_dataset = args.dataset
     app.save_root = save_root_path
+    app.config_path = Path(args.config).resolve() if args.config else (config_path.resolve() if config_path else None)
 
     if args.mode == 'interactive':
         app.interactive_mode()
@@ -569,6 +598,7 @@ def main() -> None:
             device=args.device,
             output_filename=args.recon_output,
             conf_thres=args.recon_conf_thres,
+            model_path=args.recon_model_path,
         )
 
 

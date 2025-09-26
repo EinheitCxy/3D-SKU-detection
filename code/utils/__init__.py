@@ -30,7 +30,15 @@ if VGGT_ROOT.exists():
         sys.path.insert(0, vg)
 
 # 基础模块 - 不依赖VGGT
-from .config import SKUMatchingConfig, DEFAULT_POINT_TRACKING_CONFIG, DEFAULT_3D_PROJECTION_CONFIG
+from .config import (
+    SKUMatchingConfig,
+    DEFAULT_POINT_TRACKING_CONFIG,
+    DEFAULT_3D_PROJECTION_CONFIG,
+    load_yaml_config,
+    build_matching_config_from_yaml,
+    extract_main_settings,
+    extract_reconstruction_settings,
+)
 from .data_utils import load_detections, extract_bboxes_from_detections, save_correspondences_json
 from .transforms import VGGTImageTransform, build_vggt_transforms
 from .point_utils import generate_points_from_bboxes
@@ -105,3 +113,11 @@ def check_dependencies():
 def get_vggt_root() -> Path:
     """返回 vggt-main 根目录（若未找到，返回预期路径）。"""
     return VGGT_ROOT
+
+# Export config helpers
+__all__.extend([
+    'load_yaml_config',
+    'build_matching_config_from_yaml',
+    'extract_main_settings',
+    'extract_reconstruction_settings',
+])

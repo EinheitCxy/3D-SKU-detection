@@ -152,6 +152,49 @@ uv run python -c "from utils import SKUMatchingConfig; print('ok')"
 uv run python modules/inference.py --algorithm both --max_images 2
 ```
 
+## ⚙️ 使用 YAML 配置（可选）
+
+- 在 `code/config.yaml` 中集中管理参数（示例结构）：
+```
+main:
+  dataset: imdata/floor_display2
+  mode: concise
+  algorithm: both
+  save_root: ./Output
+  device: cuda
+  reference_idx: 0
+  max_images: 20
+  save_json: true
+
+matching:
+  algorithm: point_tracking  # 或 3d / 3d_projection
+  max_points_per_bbox: 50
+  confidence_threshold: 0.5
+  min_confident_points: 7
+  correspondence_threshold: 0.5
+  output_dir: ./Output/floor_display2
+
+reconstruction:
+  conf_thres: 50.0
+  output: reconstruction.glb
+  model_path: /path/to/model.pt  # 无网环境建议指定
+```
+
+- 读取与使用（示例）：
+```python
+from utils import load_yaml_config, build_matching_config_from_yaml, extract_main_settings
+
+cfg = load_yaml_config('code/config.yaml')
+main_args = extract_main_settings(cfg)
+matching_cfg = build_matching_config_from_yaml('code/config.yaml', algorithm=main_args.get('algorithm'))
+print(main_args)
+print(matching_cfg)
+```
+
+- 主入口自动加载（CLI 参数优先覆盖）：
+  - 如果存在 `code/config.yaml`，`code/main.py` 会自动使用其中的 `main` 和 `reconstruction` 参数作为默认值；命令行显式传入的参数会覆盖 YAML 值。
+  - 也可通过 `--config /path/to/config.yaml` 指定其它配置文件。
+
 ## 📝 开发说明
 
 - `main.py` - 命令行入口，保持在根目录
