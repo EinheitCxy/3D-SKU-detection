@@ -1,52 +1,49 @@
-# 3D货架重建与SKU聚类分析（含顺序去重）
+# 3D货架重建与SKU匹配（含顺序去重）
 
 [English Version](README_EN.md) | [Code README](code/README.md)
 
-这个项目实现了将多张货架图片进行3D重建，并在生成的3D点云上显示物体检测的中心点，支持跨图片SKU聚类分析。
+项目聚焦两部分核心能力：
+- 跨图片 SKU 匹配（点追踪与 3D→2D 投影两种算法）
+- 顺序去重与全局 ID 聚合（global_mapping）
 
 ## 功能特性
 
-- 🏗️ **高质量3D重建**: 使用Fast3R进行真实3D重建，自动回退到COLMAP
-- 🎯 **物体检测映射**: 将2D检测结果精确映射到3D空间
-- 🔍 **智能SKU聚类**: 仅对不同图片中的物体进行聚类，识别相同SKU
-- 📦 **GLB/GLTF导出**: 自动导出GLB格式3D文件，兼容Blender、Three.js等
-- 🚀 **智能设备选择**: 自动选择最优计算设备 (CUDA → MPS → CPU)
-- 📊 **详细报告**: 生成完整的分析报告和3D可视化
+- 🎯 跨图像 SKU 匹配：点追踪与 3D 投影两套实现，可独立或同时运行
+- 🔄 顺序去重：按顺序移除重复检测，生成统一的全局 ID 映射
+- 👀 可视化与摘要：检出框可视化、匹配日志解析与汇总
+- 📊 批量评估：与标注对照的准确性评估与汇总
+- 🧩 模块化：`modules/` 可执行脚本 + `utils/` 复用库，便于拓展与集成
 
-## 项目结构
+## 项目结构（精简）
 
 ```
 3D_SKU_Detection/
-├── imdata/                         # 货架图片目录
-├── sku_count/                      # 主要技术文件目录
-│   ├── sku_cluster_analyzer.py     # SKU聚类分析 (主要工具)
-│   ├── 3d_detection_visualization.py # 基础3D可视化
-│   ├── advanced_3d_reconstruction.py # 高级3D重建
-│   ├── device_utils.py             # 智能设备选择
-│   ├── gltf_export_utils.py        # GLB/GLTF导出工具
-│   └── ...                         # 其他技术文件
-├── fast3r/                         # Fast3R 3D重建模型
-├── vggt-main/                      # VGGT模型 (备选)
-├── requirements.txt                # 依赖文件
-└── README.md                       # 说明文档
+├── code/                          # 主要代码目录
+│   ├── main.py                    # 统一 CLI（interactive/pipeline/concise/analyzer/dedup）
+│   ├── modules/                   # 可执行脚本（匹配/去重/可视化/评估/3D重建）
+│   ├── utils/                     # 复用库模块（算法/工具/可视化等）
+│   ├── batch_run_inference.sh     # 批量匹配
+│   └── batch_accuracy_evaluation.sh # 批量评估
+├── imdata/                        # 数据集（images/ + detections_results/）
+├── vggt-main/                     # VGGT 依赖（已 vendor，可选）
+├── ultralytics/                   # 其他 vendor 依赖（可选）
+├── requirements.txt               # 根依赖
+└── README.md, README_EN.md        # 顶层说明
 ```
 
 ## 安装依赖
 
-使用uv安装依赖：
+推荐使用 uv：
 
 ```bash
-# 安装主要依赖
+# 根依赖（如有）
 uv pip install -r requirements.txt
 
-# 安装Fast3R依赖 (可选，用于高质量3D重建)
-pip install -r fast3r/requirements.txt
-
-# 安装GLB导出依赖 (可选，用于3D文件导出)
-uv pip install trimesh pygltflib
+# 进入 code/ 并同步项目依赖
+cd code && uv sync
 ```
 
-## 快速使用（统一 CLI）
+## 快速开始（统一 CLI）
 
 ```bash
 # 顺序去重（默认同名输出），并生成全局ID映射
@@ -54,53 +51,19 @@ uv run python code/main.py --mode dedup --dataset imdata/floor_display2 --save_r
 
 # 完整流水线（校验→可视化→匹配→分析→顺序去重→评估）
 uv run python code/main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Output
+
+# 仅匹配（点追踪+3D 两者）
+uv run python code/main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output
+
+# 批量匹配（参考索引 0..N）
+bash code/batch_run_inference.sh floor_display2 4
 ```
 
-更多说明见 `code/README.md` 与 `README_EN.md`。
+更多细节（参数、输出路径、测试命令）参考 `code/README.md` 与 `code/README_EN.md`。
 
 ## 使用方法
 
-### 🎯 SKU聚类分析 (推荐)
-
-**主要功能**，用于识别不同图片中的相同SKU：
-
-```bash
-# 进入sku_count目录
-cd sku_count
-
-# 基本使用
-uv run python sku_cluster_analyzer.py
-
-# 自定义参数
-uv run python sku_cluster_analyzer.py --eps 0.8 --min_samples 3 --output_dir ../results
-
-# 跳过可视化 (加快处理速度)
-uv run python sku_cluster_analyzer.py --no_viz
-```
-
-**关键特性**：
-
-- ✅ 只对不同图片中的物体进行聚类
-- ❌ 同一图片内的物体绝不会被聚类
-- 📍 基于3D空间距离识别相同SKU
-
-### 🏗️ 基础3D可视化
-
-简单的3D重建和可视化：
-
-```bash
-cd sku_count
-uv run python 3d_detection_visualization.py --image_dir ../imdata --detection_file ../sku_detection.json --output_dir ../output
-```
-
-### 🚀 高级3D重建
-
-使用Fast3R进行高质量3D重建：
-
-```bash
-cd sku_count
-uv run python advanced_3d_reconstruction.py --image_dir ../imdata --detection_file ../sku_detection.json --output_dir ../output
-```
+更多命令与参数请见 `code/README.md`；核心脚本位于 `code/modules/`，算法与工具位于 `code/utils/`。
 
 ## 参数说明
 

@@ -41,27 +41,23 @@ This repository implements a pipeline to reconstruct shelves in 3D from multiple
 - Object entry fields:
   - `position: [x1, y1, x2, y2]`, `confidences.det: float`, `classes.det: int or label`.
 
-### Usage
+### Usage (CLI modes)
 - Matching (point tracking + 3D projection):
-  - `cd sku_count`
-  - `uv run python inference.py --algorithm both \
-      --image_folder ../imdata/floor_display2/images \
-      --detection_dir ../imdata/floor_display2/detections_results \
-      --output_dir ../imdata/floor_display2`
+  - `uv run python code/main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output`
   - Common flags: `--max_points_per_bbox`, `--confidence_threshold`, `--min_confident_points`, `--save_json`
 - Draw boxes (reuses data/visualization modules):
-  - `uv run python draw_detection_boxes.py \
-      --image_dir ../imdata/floor_display12/images \
-      --detection_dir ../imdata/floor_display12/detections_results \
-      --output_dir ../imdata/floor_display12/imdata_with_bbox \
+  - `uv run python code/draw_detection_boxes.py \
+      --image_dir imdata/floor_display12/images \
+      --detection_dir imdata/floor_display12/detections_results \
+      --output_dir code/output_viz/floor_display12 \
       --confidence_threshold 0.3`
 - 3D reconstruction (GLB):
-  - `uv run python vggt_3d_reconstructor.py \
-      --input_dir ../imdata/floor_display2/images \
-      --output_file ../imdata/floor_display2/reconstruction.glb`
+  - `uv run python code/vggt_3d_reconstructor.py \
+      --input_dir imdata/floor_display2/images \
+      --output_file imdata/floor_display2/reconstruction.glb`
 - Analyze results:
-  - Count/uniqueness report: `uv run python sku_count_analyzer.py --floor_display floor_display2`
-  - Filter one-to-many: `uv run python improved_sku_analyzer.py`
+  - One-to-one filtering: `uv run python code/improved_sku_analyzer.py`
+  - Sequential dedup + global IDs: `uv run python code/main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output`
 
 ### Key Configuration (SKUMatchingConfig)
 - Detection: `detection_confidence_threshold`, `min_bbox_area`, `max_bboxes`
@@ -78,7 +74,11 @@ This repository implements a pipeline to reconstruct shelves in 3D from multiple
 - Tips: reduce `max_points_per_bbox`; filter with `detection_confidence_threshold` to shrink N and M.
 
 ### Outputs
-- Visualizations and summaries under `output*/` within `output_dir`.
+- Matching summaries under `<dataset>/output_pt/<ref_idx>/` (produced by the engine).
+- Visualizations under `code/output_viz/<dataset_name>/`.
+- Analysis reports under `code/output_reports/<dataset_name>/`.
+- Sequential dedup under `<save_root>/<dataset_name>/1.json..X.json`.
+- Global object mapping under `<save_root>/<dataset_name>/global_mapping.json`.
 - Matching summary lines include the real `reference_image_idx`.
 - GLB exports (e.g., `reconstruction.glb`) compatible with Blender/Three.js.
 

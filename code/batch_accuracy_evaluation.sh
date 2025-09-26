@@ -1,7 +1,4 @@
-#!/bin/bash
-# SKU匹配准确性批量评估脚本
-#
-# 该脚本用于批量处理floor_display2数据集中的所有图片对匹配结果，
+# 该脚本用于批量处理floor_display数据集中的所有图片对匹配结果，
 # 自动运行准确性评估并生成详细的报告。
 
 # 设置脚本参数
@@ -18,9 +15,10 @@ NC='\033[0m' # No Color
 # 配置路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+FD="${1:-floor_display3}"  # 支持命令行参数，默认floor_display3
 BENCHMARK_CSV="$PROJECT_ROOT/imdata/picture_mapping_benchmark.csv"
-OUTPUT_BASE_DIR="$PROJECT_ROOT/imdata/floor_display2/output_pt"
-RESULT_BASE_DIR="$PROJECT_ROOT/imdata/floor_display2/accuracy_evaluation"
+OUTPUT_BASE_DIR="$PROJECT_ROOT/imdata/$FD/output_pt"
+RESULT_BASE_DIR="$PROJECT_ROOT/imdata/$FD/accuracy_evaluation"
 
 
 # 创建结果目录
@@ -87,7 +85,7 @@ for ref_dir in "$OUTPUT_BASE_DIR"/*/; do
             total_pairs=$((total_pairs + 1))
             
             # 运行准确性评估到临时文件
-            echo "  执行命令: uv run python accuracy_annotation.py --benchmark-csv '$BENCHMARK_CSV' --vggt-result '$matching_summary' --dataset-filter floor_display2 --output '$temp_report'"
+            echo "  执行命令: uv run python accuracy_annotation.py --benchmark-csv '$BENCHMARK_CSV' --vggt-result '$matching_summary' --dataset-filter "$FD" --output '$temp_report'"
             
             # 切换到脚本目录并运行
             cd "$SCRIPT_DIR"
@@ -95,7 +93,7 @@ for ref_dir in "$OUTPUT_BASE_DIR"/*/; do
             if uv run python accuracy_annotation.py \
                 --benchmark-csv "$BENCHMARK_CSV" \
                 --vggt-result "$matching_summary" \
-                --dataset-filter floor_display2 \
+                --dataset-filter "$FD" \
                 --output "$temp_report" 2>&1; then
                 
                 successful_pairs=$((successful_pairs + 1))

@@ -1,25 +1,88 @@
 [project]
-name = "3d-count"
+name = "3d-sku-detection"
 version = "0.1.0"
 description = "3D SKU Detection and Clustering Analysis System"
 readme = "README.md"
-requires-python = ">=3.8,<3.13"
+requires-python = ">=3.8.1,<3.13"
 dependencies = [
-    "gradio>=4.44.1",
+    # Core scientific computing
+    "numpy>=1.21.0",
     "scipy>=1.10.1",
-    "torch>=2.5.1",
-    "torchaudio>=2.5.1",
-    "torchvision>=0.20.1",
-    "pygltflib==1.15.0",
-    "matplotlib>=3.7.5",
+    "pandas>=1.5.0",
+    
+    # Machine learning
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "torchaudio>=2.0.0",
     "scikit-learn>=1.3.2",
-    "trimesh>=4.7.1",
-    "opencv-python>=4.12.0.88",
-    "open3d>=0.19.0",
-    "viser>=0.2.11",
-    "lightning>=2.3.3",
-    "einops>=0.8.1",
-    "pycolmap>=3.12.3",
-    "hydra-core>=1.3.2",
-    "pydantic==2.10.6",
+    "lightning>=2.0.0",
+    
+    # Computer vision
+    "opencv-python>=4.8.0",
+    "Pillow>=9.0.0",
+    
+    # 3D processing and visualization  
+    "open3d>=0.16.0",
+    "trimesh>=4.0.0",
+    "matplotlib>=3.7.0",
+    "viser>=0.2.0",
+    
+    # 3D file formats
+    "pygltflib>=1.15.0",
+    
+    # SLAM and reconstruction
+    "pycolmap>=0.6.0",
+    
+    # Deep learning utilities
+    "einops>=0.6.0",
+    "hydra-core>=1.3.0",
+    
+    # Configuration and validation
+    "pydantic>=2.0.0",
+    "omegaconf>=2.3.0",
+    
+    # Utilities
+    "tqdm>=4.60.0",
+    "pathlib2>=2.3.0; python_version<'3.9'",
 ]
+
+[project.optional-dependencies]
+demo = [
+    "gradio>=4.0.0",
+]
+
+vggt = [
+    "huggingface_hub>=0.22.0",
+    "roma>=1.3.0",
+]
+
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.1.0; python_version>='3.8.1'",
+]
+
+all = [
+    "3d-sku-detection[demo,vggt,dev]"
+]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["modules*", "utils*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38', 'py39', 'py310', 'py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[project.scripts]
+sku-detection = "main:main"
