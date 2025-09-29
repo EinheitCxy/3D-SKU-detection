@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from time import perf_counter
 from typing import Optional, Dict, Any, TypedDict
+import colorlog
 
 # 项目路径
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -33,9 +34,29 @@ def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
 
     # Root logger at DEBUG so file captures debug-only details.
     root_logger.setLevel(logging.DEBUG)
-    # 文件日志保留完整格式，控制台去掉时间戳
+    # 文件日志保留完整格式，控制台使用彩色格式
     file_fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    console_fmt = logging.Formatter('%(levelname)s - %(message)s')
+    
+    # 创建彩色控制台格式器
+    console_fmt = colorlog.ColoredFormatter(
+        '%(log_color)s%(levelname)s%(reset)s - %(message_log_color)s%(message)s',
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'white',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'bold_red',
+        },
+        secondary_log_colors={
+            'message': {
+                'START': 'bold_blue',
+                'END': 'bold_green',
+                'ERROR': 'red',
+                'FAIL': 'bold_red',
+                'OK': 'green',
+            }
+        }
+    )
 
     fh = RotatingFileHandler(str(log_file), maxBytes=10_000_000, backupCount=1, encoding='utf-8')
     fh.setLevel(logging.DEBUG)

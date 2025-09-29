@@ -33,28 +33,35 @@ code/
 ### CLI 模式
 ```bash
 # 交互模式
-uv run python main.py --mode interactive
+uv run main.py --mode interactive
 
 # 完整流水线（校验→可视化→匹配→分析→顺序去重→评估）
 uv run main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Output
 
-# 仅匹配
-uv run python main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output
+# 仅匹配（默认：对每张图片都作为参考图跑一遍）
+uv run main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output
+
+# 仅跑单个参考图（直接调用引擎）
+uv run modules/inference.py --algorithm point_tracking \
+  --image_folder imdata/floor_display2/images \
+  --detection_dir imdata/floor_display2/detections_results \
+  --output_dir imdata/floor_display2 \
+  --reference_idx 0 --max_images 50 --device cuda --save_json
 
 # 仅分析（一对一过滤报告）
-uv run python main.py --mode analyzer --dataset imdata/floor_display2 --save_root ./Output
+uv run main.py --mode analyzer --dataset imdata/floor_display2 --save_root ./Output
 
 # 仅顺序去重（默认同名输出为 1.json..X.json）
-uv run python main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output
+uv run main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output
 
-# 批量匹配（参考索引 0..N）
+# 批量匹配（参考索引 0..N，等价于 main.py concise）
 bash batch_run_inference.sh floor_display2 4
 ```
 
 ### 重要参数
 ```bash
 # 匹配参数透传（由 modules/inference.py 接收）
-uv run python main.py \
+uv run main.py \
   --mode concise \
   --dataset imdata/floor_display2 \
   --algorithm both \
@@ -67,7 +74,7 @@ uv run python main.py \
 
 ### 查看帮助
 ```bash
-uv run python main.py --help
+uv run main.py --help
 ```
 
 ## 📦 模块说明（utils/）
@@ -122,10 +129,20 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 
 ## 🧾 日志输出（统一）
 
-- 每次运行只生成一个日志文件，位于：`<save_root>/run_YYYYMMDD_HHMMSS.log`
-- 通过 `--save_root` 控制日志与产物的根目录（所有模式一致：interactive/pipeline/concise/analyzer/dedup/reconstruct）
-- 子模块不再各自写独立日志文件；控制台与文件同步输出相同内容
-- 示例：
+- 每次运行生成一个日志文件：`<save_root>/run_YYYYMMDD_HHMMSS.log`
+- 控制台输出 INFO 级简报；文件记录 DEBUG 级诊断（更详细）
+- 每个高阶步骤都有成对日志：
+  - `START visualization|matching|improved_analysis|evaluation|dedup_sequence|reconstruct`
+  - `END <stage> duration=Ns result=ok|fail [output=…|count=…]`
+- 匹配阶段（modules/inference.py）额外输出：
+  - 开始：`stage=match algo=point_tracking|3d ref=R images=N detections=M`
+  - 结束：`matched_total=T saved_json=True|False output_dir=… duration=…s`
+- 调试细节（仅在日志文件中）：
+  - 检测加载汇总：`load_detections summary: skipped_non_numeric=K empty_objects=L`
+  - BBox 过滤：`bbox_filter image_idx=… total=… below_det_conf=… below_min_area=… kept=… max_bboxes=…`
+  - 每个 target 聚合：`target=t matched_objs=X skipped_low_overlap=Y top_hit=Z(hit=0.82)`
+  
+示例：
   - `tail -f ./Output/run_20250101_101530.log`
 
 ## 🔄 顺序去重与 Global ID
@@ -146,10 +163,10 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 
 ```bash
 # 基础导入
-uv run python -c "from utils import SKUMatchingConfig; print('ok')"
+uv run -c "from utils import SKUMatchingConfig; print('ok')"
 
 # 快速烟测
-uv run python modules/inference.py --algorithm both --max_images 2
+uv run modules/inference.py --algorithm both --max_images 2
 ```
 
 ## ⚙️ 使用 YAML 配置（可选）

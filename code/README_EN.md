@@ -34,26 +34,33 @@ Sample datasets and results are expected under `imdata/` (not versioned). See `i
   - In `code/`: `uv sync`
 
 - Interactive mode:
-  - `uv run python code/main.py --mode interactive`
+  - `uv run code/main.py --mode interactive`
 
 - Full pipeline (validate → visualize → match → analyze → dedup → evaluate):
-  - `uv run python code/main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Output`
+  - `uv run code/main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Output`
 
-- Concise run (match only):
-  - `uv run python code/main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output`
+- Concise run (match only; by default iterates all images as reference):
+  - `uv run code/main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output`
+
+- Run a single reference only (call engine directly):
+  - `uv run code/modules/inference.py --algorithm point_tracking \
+      --image_folder imdata/floor_display2/images \
+      --detection_dir imdata/floor_display2/detections_results \
+      --output_dir imdata/floor_display2 \
+      --reference_idx 0 --max_images 50 --device cuda --save_json`
 
 - Analyzer only (one-to-one filtering report):
-  - `uv run python code/main.py --mode analyzer --dataset imdata/floor_display2 --save_root ./Output`
+  - `uv run code/main.py --mode analyzer --dataset imdata/floor_display2 --save_root ./Output`
 
 - Dedup only (same-named outputs 1.json..X.json):
-  - `uv run python code/main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output`
+  - `uv run code/main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output`
 
 - Batch matching (reference idx 0..N):
   - `bash code/batch_run_inference.sh floor_display2 4`
 
 Key passthrough params (to `modules/inference.py`):
 ```
-uv run python code/main.py \
+uv run code/main.py \
   --mode concise \
   --dataset imdata/floor_display2 \
   --algorithm both \
@@ -71,6 +78,21 @@ uv run python code/main.py \
 - Analyzer reports: `code/output_reports/<dataset_name>/report_*.txt` (or `--save_root/output_reports/<dataset_name>/`)
 - Sequence dedup (same-named): `<save_root>/<dataset_name>/1.json..X.json`
 - Global IDs (union-find on matches): `<save_root>/<dataset_name>/global_mapping.json`
+
+## Logs (unified)
+
+- Each run writes a single file: `<save_root>/run_YYYYMMDD_HHMMSS.log`
+- Console logs at INFO (concise); log file at DEBUG (diagnostics)
+- Every high-level step emits paired logs:
+  - `START visualization|matching|improved_analysis|evaluation|dedup_sequence|reconstruct`
+  - `END <stage> duration=Ns result=ok|fail [output=…|count=…]`
+- Matching stage (modules/inference.py) additionally logs:
+  - Begin: `stage=match algo=point_tracking|3d ref=R images=N detections=M`
+  - End: `matched_total=T saved_json=True|False output_dir=… duration=…s`
+- Debug-only details (file only):
+  - Detection loader summary: `load_detections summary: skipped_non_numeric=K empty_objects=L`
+  - BBox filtering: `bbox_filter image_idx=… total=… below_det_conf=… below_min_area=… kept=… max_bboxes=…`
+  - Per-target aggregation: `target=t matched_objs=X skipped_low_overlap=Y top_hit=Z(hit=0.82)`
 
 ## Algorithms
 
@@ -102,12 +124,11 @@ print(check_dependencies())  # {'vggt_modules': False, 'visualization': True}
 
 ## Testing
 
-- Import check: `uv run python -c "from utils import SKUMatchingConfig; print('ok')"`
-- Smoke test: `uv run python code/modules/inference.py --algorithm both --max_images 2`
+- Import check: `uv run -c "from utils import SKUMatchingConfig; print('ok')"`
+- Smoke test: `uv run code/modules/inference.py --algorithm both --max_images 2`
 
 ## Notes
 
 - Keep inputs under `imdata/`; outputs under `code/output*/` or the `--save_root` you provide.
 - Avoid committing datasets or large binaries.
 - Prefer `pathlib.Path`, keep configs out of the code, and use logging (no prints in libraries).
-
