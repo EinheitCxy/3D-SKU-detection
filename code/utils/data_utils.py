@@ -40,13 +40,15 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
     try:
         # 获取所有JSON文件并按数字顺序排序
         json_files = []
+        skipped_non_numeric = 0
         for file_path in detection_path.glob("*.json"):
             try:
                 # 尝试提取文件名中的数字
                 file_number = int(file_path.stem)
                 json_files.append((file_number, file_path))
             except ValueError:
-                logger.warning(f"Skipping non-numeric JSON file: {file_path.name}")
+                skipped_non_numeric += 1
+                logger.debug(f"Skipping non-numeric JSON file: {file_path.name}")
                 continue
         
         # 按数字顺序排序
@@ -57,6 +59,7 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
         
         detections = []
         detections_with_numbers = []
+        empty_objects_count = 0
         for file_number, file_path in json_files:
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
@@ -74,13 +77,14 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
                         if isinstance(file_detections['skus'], list) and len(file_detections['skus']) > 0:
                             processed_data = file_detections['skus'][0]
                         else:
-                            logger.warning(f"Empty skus array in {file_path.name}")
+                            logger.debug(f"Empty skus array in {file_path.name}")
+                            empty_objects_count += 1
                             continue
                     else:
                         # 直接的字典格式: {"classes": {...}, "objects": [...]}
                         processed_data = file_detections
                 else:
-                    logger.warning(f"Invalid format in file {file_path.name}, skipping")
+                    logger.debug(f"Invalid format in file {file_path.name}, skipping")
                     continue
                 
                 # 验证处理后的数据是否包含必要字段
@@ -89,14 +93,18 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
                     detections_with_numbers.append((file_number, processed_data))
                     logger.debug(f"Loaded {len(processed_data['objects'])} objects from {file_path.name}")
                 else:
-                    logger.warning(f"No valid objects found in {file_path.name}, skipping")
+                    logger.debug(f"No valid objects found in {file_path.name}, skipping")
+                    empty_objects_count += 1
                     continue
                     
             except Exception as e:
                 logger.error(f"Failed to load detection from {file_path.name}: {e}")
                 continue
         
-        logger.info(f"Loaded {len(detections)} detection files\n")
+        logger.info(f"Loaded {len(detections)} detection files")
+        logger.debug(
+            f"load_detections summary: skipped_non_numeric={skipped_non_numeric} empty_objects={empty_objects_count}"
+        )
         if return_index_map:
             return detections_with_numbers
         return detections
@@ -139,14 +147,20 @@ def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, confi
         return []
     
     bboxes = []
+    total_with_position = 0
+    below_conf = 0
+    below_area = 0
     for obj_idx, obj in enumerate(objects):
         if 'position' in obj:
+            total_with_position += 1
             x1, y1, x2, y2 = obj['position']
             confidence = obj.get('confidences', {}).get('det', 0.0)
             if confidence < config.detection_confidence_threshold:
+                below_conf += 1
                 continue
             area = max(0.0, (x2 - x1) * (y2 - y1))
             if area < config.min_bbox_area:
+                below_area += 1
                 continue
             bbox_info = {
                 'bbox': [x1, y1, x2, y2],
@@ -159,8 +173,27 @@ def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, confi
     
     # 按面积排序并限制数量
     bboxes.sort(key=lambda x: x['area'], reverse=True)
+    kept_before_cap = len(bboxes)
+    truncated = 0
     if len(bboxes) > config.max_bboxes:
+        truncated = len(bboxes) - config.max_bboxes
         bboxes = bboxes[:config.max_bboxes]
+
+    logger.debug(
+        "bbox_filter image_idx=%d total=%d with_position=%d below_det_conf=%d below_min_area=%d "
+        "kept_before_max=%d truncated_by_max_bboxes=%d kept=%d min_bbox_area=%.1f det_conf_thres=%.2f max_bboxes=%d",
+        image_idx,
+        len(objects),
+        total_with_position,
+        below_conf,
+        below_area,
+        kept_before_cap,
+        truncated,
+        len(bboxes),
+        config.min_bbox_area,
+        config.detection_confidence_threshold,
+        config.max_bboxes,
+    )
     
     return bboxes
 

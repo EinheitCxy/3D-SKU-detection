@@ -31,13 +31,18 @@ def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
     for h in list(root_logger.handlers):
         root_logger.removeHandler(h)
 
-    root_logger.setLevel(logging.INFO)
-    fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    # Root logger at DEBUG so file captures debug-only details.
+    root_logger.setLevel(logging.DEBUG)
+    # 文件日志保留完整格式，控制台去掉时间戳
+    file_fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    console_fmt = logging.Formatter('%(levelname)s - %(message)s')
 
-    fh = RotatingFileHandler(str(log_file), maxBytes=10_000_000, backupCount=1)
-    fh.setFormatter(fmt)
+    fh = RotatingFileHandler(str(log_file), maxBytes=10_000_000, backupCount=1, encoding='utf-8')
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(file_fmt)
     sh = logging.StreamHandler(sys.stdout)
-    sh.setFormatter(fmt)
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(console_fmt)
 
     root_logger.addHandler(fh)
     root_logger.addHandler(sh)
@@ -134,12 +139,70 @@ class SKUDetectionMain:
         max_images: int = 50,
         device: str = "cuda",
         save_json: bool = False,
+        batch_all_refs: bool = True,
     ) -> StepResult:
-        """运行SKU匹配推理，透传参数到 inference.py。"""
+        """运行SKU匹配推理，支持批量将每张图片作为参考图像运行。
+
+        - 当 batch_all_refs=True 时：遍历 images/ 中数字命名且在 detections_results/ 有有效 objects 的每个图片，依次作为参考图运行。
+        - 否则：仅以 reference_idx 指定的单张图片作为参考图运行。
+        """
         start = perf_counter()
         original_argv = sys.argv.copy()
         try:
-            logger.info(f"开始SKU匹配推理 - 算法: {algorithm}")
+            logger.info("START matching")
+            if batch_all_refs:
+                # 批量处理所有有效图片作为参考图片
+                import json
+                dataset = Path(dataset_path)
+                image_folder = dataset / "images"
+                detection_dir = dataset / "detections_results"
+
+                # 检测有效图片索引（文件名为纯数字且 JSON 含非空 objects）
+                valid_indices: list[int] = []
+                for img_file in image_folder.glob("*"):
+                    if img_file.is_file() and img_file.stem.isdigit():
+                        detection_file = detection_dir / f"{img_file.stem}.json"
+                        if detection_file.exists():
+                            try:
+                                with detection_file.open('r', encoding='utf-8') as f:
+                                    data = json.load(f)
+                                if ((isinstance(data, list) and data and isinstance(data[0], dict) and data[0].get('objects')) or
+                                    (isinstance(data, dict) and ((isinstance(data.get('skus'), list) and data['skus'] and data['skus'][0].get('objects')) or data.get('objects')))):
+                                    valid_indices.append(int(img_file.stem))
+                            except Exception:
+                                continue
+
+                valid_indices.sort()
+                logger.info(f"找到 {len(valid_indices)} 个有效图片作为参考图片")
+
+                # 依次以每个有效图片为参考图片运行推理
+                for i, filename_idx in enumerate(valid_indices):
+                    # 文件名从1开始，但系统内部索引从0开始，所以需要减1
+                    system_ref_idx = filename_idx - 1
+                    logger.info(f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {system_ref_idx}")
+                    self._run_single_matching(dataset_path, algorithm, system_ref_idx, max_images, device, save_json)
+
+                duration = perf_counter() - start
+                logger.info(f"END matching duration={duration:.2f}s result=ok processed_refs={len(valid_indices)}")
+                return {"success": True, "duration_s": duration}
+            else:
+                # 单个参考图片处理
+                return self._run_single_matching(dataset_path, algorithm, reference_idx, max_images, device, save_json)
+
+        except Exception as e:
+            duration = perf_counter() - start
+            logger.error(f"END matching duration={duration:.2f}s result=fail error={e}", exc_info=True)
+            return {"success": False, "error": str(e), "duration_s": duration}
+        finally:
+            sys.argv = original_argv
+
+    def _run_single_matching(self, dataset_path: str, algorithm: str, reference_idx: int,
+                           max_images: int, device: str, save_json: bool) -> StepResult:
+        """运行单个参考图片的SKU匹配推理（内部使用）。"""
+        start = perf_counter()
+        original_argv = sys.argv.copy()
+        try:
+            logger.info(f"START matching_single algo={algorithm} ref={reference_idx}")
 
             from modules.inference import main as inference_main
 
@@ -168,21 +231,23 @@ class SKUDetectionMain:
             inference_main()
 
             duration = perf_counter() - start
-            logger.info("SKU匹配推理完成")
+            logger.info(f"END matching_single duration={duration:.2f}s result=ok")
             return {"success": True, "duration_s": duration}
         except Exception as e:
             duration = perf_counter() - start
-            logger.error(f"SKU匹配推理失败: {e}")
+            logger.error(f"END matching_single duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
         finally:
             sys.argv = original_argv
+
+    
 
     def run_detection_visualization(self, dataset_path: str) -> StepResult:
         """运行检出框可视化，输出到 output_viz/<dataset_name>/（或 --save_root）"""
         start = perf_counter()
         original_argv = sys.argv.copy()
         try:
-            logger.info("开始检出框可视化")
+            logger.info("START visualization")
 
             from modules.draw_detection_boxes import main as viz_main
 
@@ -192,8 +257,8 @@ class SKUDetectionMain:
 
             # 输出目录：若指定 save_root，则写到 save_root/output_viz/<dataset_name>
             output_viz_dir = (
-                (self.save_root / "output_viz" / dataset.name)
-                if self.save_root else (CODE_DIR / "output_viz" / dataset.name)
+                (self.save_root / dataset.name / "imgs_w_bboxes")
+                if self.save_root else (CODE_DIR / dataset.name / "imgs_w_bboxes")
             ).resolve()
             output_viz_dir.mkdir(parents=True, exist_ok=True)
 
@@ -207,20 +272,20 @@ class SKUDetectionMain:
             viz_main()
 
             duration = perf_counter() - start
-            logger.info("检出框可视化完成")
+            logger.info(f"END visualization duration={duration:.2f}s result=ok")
             return {"success": True, "duration_s": duration, "details": {"output_dir": str(output_viz_dir)}}
         except Exception as e:
             duration = perf_counter() - start
-            logger.error(f"检出框可视化失败: {e}")
+            logger.error(f"END visualization duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
         finally:
             sys.argv = original_argv
 
     def run_improved_sku_analysis(self, dataset_path: str) -> StepResult:
-        """运行改进的SKU计数分析 (去重优化)，报告写入 output_reports/<dataset_name>/report_*.txt（或 --save_root）"""
+        """运行改进的SKU计数分析 (去重优化)，报告写入 <dataset_name>/output_reports/report_*.txt（或 --save_root）"""
         start = perf_counter()
         try:
-            logger.info("开始改进的SKU计数分析")
+            logger.info("START improved_analysis")
 
             from modules.improved_sku_analyzer import ImprovedSKUCountAnalyzer
 
@@ -242,8 +307,8 @@ class SKUDetectionMain:
 
             # 报告目录：若指定 save_root，则保存到 save_root/output_reports/<dataset_name>
             reports_dir = (
-                self.save_root / "output_reports" / dataset.name
-                if self.save_root else CODE_DIR / "output_reports" / dataset.name
+                self.save_root / dataset.name / "output_reports"
+                if self.save_root else CODE_DIR / dataset.name / "output_reports" 
             )
             reports_dir.mkdir(parents=True, exist_ok=True)
             report_file = reports_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
@@ -262,19 +327,19 @@ class SKUDetectionMain:
                     )
 
             duration = perf_counter() - start
-            logger.info(f"改进的SKU计数分析完成，报告已保存: {report_file}")
+            logger.info(f"END improved_analysis duration={duration:.2f}s result=ok output={report_file}")
             logger.info(f"最终SKU匹配数: {result['filtered_matches']}")
             return {"success": True, "duration_s": duration, "details": {"report_file": str(report_file)}}
         except Exception as e:
             duration = perf_counter() - start
-            logger.error(f"改进的SKU计数分析失败: {e}")
+            logger.error(f"END improved_analysis duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
 
     def run_accuracy_evaluation(self, dataset_path: str) -> StepResult:
         """运行准确性评估；缺少匹配结果时提示先运行匹配。"""
         start = perf_counter()
         try:
-            logger.info("开始准确性评估")
+            logger.info("START evaluation")
 
             benchmark_csv = PROJECT_ROOT / "imdata" / "picture_mapping_benchmark.csv"
             if not benchmark_csv.exists():
@@ -302,19 +367,19 @@ class SKUDetectionMain:
                 )
                 if result.returncode == 0:
                     duration = perf_counter() - start
-                    logger.info("批量准确性评估完成")
+                    logger.info(f"END evaluation duration={duration:.2f}s result=ok (batch)")
                     return {"success": True, "duration_s": duration}
                 else:
                     duration = perf_counter() - start
-                    logger.error(f"批量评估失败: {result.stderr}")
+                    logger.error(f"END evaluation duration={duration:.2f}s result=fail error={result.stderr}")
                     return {"success": False, "error": result.stderr, "duration_s": duration}
 
             duration = perf_counter() - start
-            logger.info("准确性评估完成")
+            logger.info(f"END evaluation duration={duration:.2f}s result=ok")
             return {"success": True, "duration_s": duration}
         except Exception as e:
             duration = perf_counter() - start
-            logger.error(f"准确性评估失败: {e}")
+            logger.error(f"END evaluation duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
 
     def run_reconstruction(
@@ -351,7 +416,7 @@ class SKUDetectionMain:
             output_dir.mkdir(parents=True, exist_ok=True)
             output_file = output_dir / output_filename
 
-            logger.info("开始VGGT 3D重建")
+            logger.info("START reconstruct")
             logger.info(f"输入图片目录: {image_dir}")
             logger.info(f"输出GLB文件: {output_file}")
 
@@ -367,18 +432,18 @@ class SKUDetectionMain:
             )
 
             duration = perf_counter() - start
-            logger.info(f"VGGT 3D重建完成: {result_path}")
+            logger.info(f"END reconstruct duration={duration:.2f}s result=ok output={result_path}")
             return {"success": True, "duration_s": duration, "details": {"output_file": str(result_path)}}
         except Exception as e:
             duration = perf_counter() - start
-            logger.error(f"VGGT 3D重建失败: {e}")
+            logger.error(f"END reconstruct duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
 
     def run_dedup_sequence(self, dataset_path: str) -> StepResult:
         """顺序去重：对 1..N（或指定上界）生成去重后的检测 JSON。"""
         start = perf_counter()
         try:
-            logger.info("开始顺序去重 (1..N)")
+            logger.info("START dedup_sequence")
             from modules.deduplicate_detections import resolve_dataset_paths, deduplicate_sequence
 
             dataset_dir = Path(dataset_path)
@@ -402,11 +467,11 @@ class SKUDetectionMain:
 
             duration = perf_counter() - start
             dataset_name = Path(dataset_path).name
-            logger.info(f"顺序去重完成，生成 {len(result)} 个JSON文件，目录: {output_root / dataset_name}")
+            logger.info(f"END dedup_sequence duration={duration:.2f}s result=ok output_dir={output_root / dataset_name} count={len(result)}")
             return {"success": True, "duration_s": duration, "details": {"count": len(result), "output_root": str(output_root)}}
         except Exception as e:
             duration = perf_counter() - start
-            logger.error(f"顺序去重失败: {e}")
+            logger.error(f"END dedup_sequence duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
 
     def run_complete_pipeline(self, dataset_path: str) -> Dict[str, bool]:
@@ -421,7 +486,7 @@ class SKUDetectionMain:
         viz = self.run_detection_visualization(dataset_path)
         summary['visualization'] = bool(viz.get('success', False))
 
-        match = self.run_sku_matching(dataset_path, 'point_tracking') # TODO: algorithm is hardcoding now
+        match = self.run_sku_matching(dataset_path, 'point_tracking', batch_all_refs=True)  # TODO: algorithm is hardcoded now
         summary['matching'] = bool(match.get('success', False))
 
         analysis = self.run_improved_sku_analysis(dataset_path)
