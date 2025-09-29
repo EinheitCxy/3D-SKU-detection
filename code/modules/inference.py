@@ -2,6 +2,7 @@ import argparse
 import logging
 import sys
 from pathlib import Path
+import time
 
 # 使用主程序配置的日志；若独立运行且无处理器，则退回到控制台输出
 logger = logging.getLogger(__name__)
@@ -31,6 +32,35 @@ def _compute_output_dir(base: str, algorithm_type: str, ref_idx: int) -> str:
         return f"{base}/output_pt/{ref_idx}"
     else:
         return f"{base}/output_3dmapping/{ref_idx}"
+
+
+def _count_images_and_detections(image_folder: str, detection_dir: str) -> tuple[int, int]:
+    """Count total images and numeric detection JSON files with valid structure.
+
+    Returns (num_images, num_detections)."""
+    exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+    img_dir = Path(image_folder)
+    det_dir = Path(detection_dir)
+    n_img = sum(1 for p in img_dir.iterdir() if p.is_file() and p.suffix.lower() in exts)
+    n_det = 0
+    try:
+        import json
+        for p in det_dir.glob("*.json"):
+            if not p.stem.isdigit():
+                continue
+            try:
+                data = json.loads(p.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if isinstance(data, list) and data and isinstance(data[0], dict):
+                if data[0].get("objects"):
+                    n_det += 1
+            elif isinstance(data, dict):
+                if (isinstance(data.get("skus"), list) and data["skus"] and data["skus"][0].get("objects")) or data.get("objects"):
+                    n_det += 1
+    except Exception:
+        pass
+    return n_img, n_det
 
 
 def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKUMatchingConfig:
@@ -107,19 +137,26 @@ def run_point_tracking_algorithm(args) -> dict:
         传统算法速度快、内存消耗低，但在大视角变化时可能不够稳定。
     """
     logger.info("=== 运行点追踪匹配算法 ===")
-    
+    num_images, num_dets = _count_images_and_detections(args.image_folder, args.detection_dir)
+    logger.info(
+        f"stage=match algo=point_tracking ref={args.reference_idx} images={num_images} detections={num_dets}"
+    )
+
     config = create_config_from_args(args, "point_tracking")
     system = SKUMatchingSystem(config)
-    
+
+    t0 = time.time()
     correspondences = system.process_images(
         image_folder=args.image_folder,
         detection_dir=args.detection_dir,
         reference_image_idx=args.reference_idx,
         max_images=args.max_images
     )
-    
+    duration = time.time() - t0
     total_matches = sum(len(matches) for matches in correspondences.values())
-    logger.info(f"点追踪算法找到 {total_matches} 个匹配")
+    logger.info(
+        f"matched_total={total_matches} saved_json={bool(config.save_json)} output_dir={config.output_dir} duration={duration:.2f}s"
+    )
     
     system.cleanup()
     return correspondences
@@ -149,19 +186,26 @@ def run_3d_projection_algorithm(args) -> dict:
         表现更优。需要更多的GPU内存和计算时间。
     """
     logger.info("=== 运行3D-2D投影匹配算法 ===")
-    
+    num_images, num_dets = _count_images_and_detections(args.image_folder, args.detection_dir)
+    logger.info(
+        f"stage=match algo=3d ref={args.reference_idx} images={num_images} detections={num_dets}"
+    )
+
     config = create_config_from_args(args, "3d_projection")
     system = SKUMatchingSystem(config)
-    
+
+    t0 = time.time()
     correspondences = system.process_images(
         image_folder=args.image_folder,
         detection_dir=args.detection_dir,
         reference_image_idx=args.reference_idx,
         max_images=args.max_images
     )
-    
+    duration = time.time() - t0
     total_matches = sum(len(matches) for matches in correspondences.values())
-    logger.info(f"3D-2D投影算法找到 {total_matches} 个匹配")
+    logger.info(
+        f"matched_total={total_matches} saved_json={bool(config.save_json)} output_dir={config.output_dir} duration={duration:.2f}s"
+    )
     
     system.cleanup()
     return correspondences
@@ -171,14 +215,22 @@ def run_point_tracking(args) -> dict:
     if args.config:
         config = _create_config_from_yaml(args, "point_tracking")
         system = SKUMatchingSystem(config)
+        num_images, num_dets = _count_images_and_detections(args.image_folder, args.detection_dir)
+        logger.info(
+            f"stage=match algo=point_tracking ref={args.reference_idx} images={num_images} detections={num_dets}"
+        )
+        t0 = time.time()
         correspondences = system.process_images(
             image_folder=args.image_folder,
             detection_dir=args.detection_dir,
             reference_image_idx=args.reference_idx,
             max_images=args.max_images
         )
+        duration = time.time() - t0
         total_matches = sum(len(matches) for matches in correspondences.values())
-        logger.info(f"点追踪算法找到 {total_matches} 个匹配")
+        logger.info(
+            f"matched_total={total_matches} saved_json={bool(config.save_json)} output_dir={config.output_dir} duration={duration:.2f}s"
+        )
         system.cleanup()
         return correspondences
     else:
@@ -189,14 +241,22 @@ def run_3d_projection(args) -> dict:
     if args.config:
         config = _create_config_from_yaml(args, "3d_projection")
         system = SKUMatchingSystem(config)
+        num_images, num_dets = _count_images_and_detections(args.image_folder, args.detection_dir)
+        logger.info(
+            f"stage=match algo=3d ref={args.reference_idx} images={num_images} detections={num_dets}"
+        )
+        t0 = time.time()
         correspondences = system.process_images(
             image_folder=args.image_folder,
             detection_dir=args.detection_dir,
             reference_image_idx=args.reference_idx,
             max_images=args.max_images
         )
+        duration = time.time() - t0
         total_matches = sum(len(matches) for matches in correspondences.values())
-        logger.info(f"3D-2D投影算法找到 {total_matches} 个匹配")
+        logger.info(
+            f"matched_total={total_matches} saved_json={bool(config.save_json)} output_dir={config.output_dir} duration={duration:.2f}s"
+        )
         system.cleanup()
         return correspondences
     else:

@@ -40,7 +40,7 @@ def _process_single_ref_object(
     config: SKUMatchingConfig,
     correspondence_threshold: float = 0.5,
     transforms_info: Optional[List] = None
-) -> List[Dict]:
+) -> Tuple[List[Dict], Dict]:
     """处理单个参考对象的匹配计算（用于并行化）
     
     Args:
@@ -67,25 +67,55 @@ def _process_single_ref_object(
         # 过滤置信度高且有效的点
         confident_mask = ref_confidence_in_target > config.confidence_threshold
         valid_points = ref_tracks_in_target[confident_mask]
-        
+        valid_points_count = int(valid_points.shape[0]) if valid_points.ndim == 2 else int(valid_points.numel() // 2)
+
         if valid_points.numel() == 0:
-            return []
+            return [], {
+                'ref_object_id': ref_object_id,
+                'valid_points': 0,
+                'below_min_conf_points': True,
+                'num_target_bboxes': len(target_bboxes),
+                'num_candidates': 0,
+                'num_below_threshold': 0,
+                'top_hit_ratio': 0.0,
+                'produced_matches': 0,
+            }
             
         # 过滤非有限值
         finite_mask = torch.isfinite(valid_points).all(dim=1)
         valid_points = valid_points[finite_mask]
-        
+        valid_points_count = int(valid_points.shape[0])
+
         if len(valid_points) == 0:
-            return []
+            return [], {
+                'ref_object_id': ref_object_id,
+                'valid_points': 0,
+                'below_min_conf_points': True,
+                'num_target_bboxes': len(target_bboxes),
+                'num_candidates': 0,
+                'num_below_threshold': 0,
+                'top_hit_ratio': 0.0,
+                'produced_matches': 0,
+            }
             
         # 检查是否达到最小置信点数要求
         if len(valid_points) < config.min_confident_points:
             logger.debug(f"参考对象 {ref_object_id}: 只有 {len(valid_points)} 个置信点，低于最小值 {config.min_confident_points}")
-            return []
+            return [], {
+                'ref_object_id': ref_object_id,
+                'valid_points': valid_points_count,
+                'below_min_conf_points': True,
+                'num_target_bboxes': len(target_bboxes),
+                'num_candidates': 0,
+                'num_below_threshold': 0,
+                'top_hit_ratio': 0.0,
+                'produced_matches': 0,
+            }
         
         # 收集所有符合条件的匹配（向量化点落框统计）
         all_candidates = []
 
+        top_hit_ratio = 0.0
         if len(target_bboxes) > 0:
             # 组装 boxes 张量 [M, 4]
             boxes_list = [tb['bbox'] for tb in target_bboxes]
@@ -114,6 +144,8 @@ def _process_single_ref_object(
             # 保留满足阈值的框索引
             keep_mask = ratios >= correspondence_threshold
             kept_indices = torch.nonzero(keep_mask, as_tuple=False).flatten().tolist()
+            below_mask = (ratios > 0) & (ratios < correspondence_threshold)
+            num_below_threshold = int(below_mask.sum().item())
 
             for idx in kept_indices:
                 target_bbox_info = target_bboxes[idx]
@@ -126,6 +158,8 @@ def _process_single_ref_object(
                     original_bbox = vggt_box
 
                 overlap_ratio = float(ratios[idx].item())
+                if overlap_ratio > top_hit_ratio:
+                    top_hit_ratio = overlap_ratio
                 points_in_bbox = int(counts[idx].item())
 
                 logger.debug(
@@ -185,11 +219,29 @@ def _process_single_ref_object(
         for match in matches:
             logger.info(f"🧵 并行匹配: ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
         
-        return matches
+        return matches, {
+            'ref_object_id': ref_object_id,
+            'valid_points': valid_points_count,
+            'below_min_conf_points': False,
+            'num_target_bboxes': len(target_bboxes),
+            'num_candidates': len(all_candidates),
+            'num_below_threshold': int(num_below_threshold) if len(target_bboxes) > 0 else 0,
+            'top_hit_ratio': float(top_hit_ratio),
+            'produced_matches': len(matches),
+        }
         
     except Exception as e:
         logger.error(f"处理参考对象 {ref_object_id} 失败: {e}")
-        return []
+        return [], {
+            'ref_object_id': ref_object_id,
+            'valid_points': 0,
+            'below_min_conf_points': True,
+            'num_target_bboxes': len(target_bboxes),
+            'num_candidates': 0,
+            'num_below_threshold': 0,
+            'top_hit_ratio': 0.0,
+            'produced_matches': 0,
+        }
 
 
 def find_object_correspondences(
@@ -388,8 +440,26 @@ def find_correspondences_3d_projection(
                     logger.info(f"3D match: ref {match['ref_obj_id']} → target {target_bbox_info['object_id']} (ratio: {match['match_ratio']:.1%})")
                 
                 correspondences[target_img_idx] = matched_objects
+            # DEBUG 聚合：每个 target 汇总（3D）
+            top_hit_ratio = 0.0
+            top_hit_ref = None
+            if 'final_matches' in locals() and final_matches:
+                for m in final_matches:
+                    r = float(m.get('match_ratio', 0.0))
+                    if r > top_hit_ratio:
+                        top_hit_ratio = r
+                        top_hit_ref = m.get('ref_obj_id')
+            logger.debug(
+                f"target={target_img_idx} matched_objs={len(final_matches) if 'final_matches' in locals() and final_matches else 0} "
+                f"skipped_low_overlap=0 top_hit={top_hit_ref}(hit={top_hit_ratio:.2f})"
+            )
         
-        logger.info(f"3D-2D projection complete. Found correspondences in {len(correspondences)} images.")
+        matched_targets = len(correspondences)
+        matched_pairs = sum(len(v) for v in correspondences.values())
+        logger.debug(
+            f"ref={reference_image_idx} matched_targets={matched_targets} matched_pairs={matched_pairs}"
+        )
+        logger.info(f"3D-2D projection complete. Found correspondences in {matched_targets} images.")
         return correspondences, points_per_object
         
     except Exception as e:
@@ -540,7 +610,12 @@ def find_correspondences_point_tracking(
                 object_correspondences[orig_s_idx] = matched_objects  # 用原始索引存储结果
                 logger.info(f"Found {len(matched_objects)} matches in image {orig_s_idx}\n")
 
-        logger.info(f"Point tracking complete. Found correspondences in {len(object_correspondences)} images.")
+        matched_targets = len(object_correspondences)
+        matched_pairs = sum(len(v) for v in object_correspondences.values())
+        logger.debug(
+            f"ref={reference_image_idx} matched_targets={matched_targets} matched_pairs={matched_pairs}"
+        )
+        logger.info(f"Point tracking complete. Found correspondences in {matched_targets} images.")
         return object_correspondences, points_per_object
         
     except Exception as e:
@@ -595,6 +670,7 @@ def match_objects_by_correspondence(
         target_bboxes = mapped_target_bboxes
     
     matched_objects = []
+    stats_list: List[Dict] = []
     
     # 决定是否使用并行化
     num_ref_objects = len(points_per_object)
@@ -620,8 +696,9 @@ def match_objects_by_correspondence(
                 for future in as_completed(future_to_ref_id, timeout=60):
                     ref_object_id = future_to_ref_id[future]
                     try:
-                        matches = future.result()
+                        matches, stats = future.result()
                         matched_objects.extend(matches)
+                        stats_list.append(stats)
                     except Exception as e:
                         logger.error(f"并行处理参考对象 {ref_object_id} 失败: {e}")
                         
@@ -633,12 +710,31 @@ def match_objects_by_correspondence(
         logger.info("使用串行匹配模式")
         # 串行处理（原有逻辑）
         for ref_object_id, ref_data in points_per_object.items():
-            matches = _process_single_ref_object(
+            matches, stats = _process_single_ref_object(
                 ref_object_id, ref_data, target_bboxes, tracks, confidence,
                 target_image_idx, config, correspondence_threshold, transforms_info
             )
             matched_objects.extend(matches)
+            stats_list.append(stats)
     
+    # DEBUG 聚合：每个 target 的汇总
+    skipped_low_overlap = 0
+    for s in stats_list:
+        if not s.get('below_min_conf_points', False) and s.get('valid_points', 0) > 0 and s.get('produced_matches', 0) == 0 and s.get('num_below_threshold', 0) > 0:
+            skipped_low_overlap += 1
+
+    top_hit_ratio = 0.0
+    top_hit_ref = None
+    for m in matched_objects:
+        r = float(m.get('correspondence_ratio', 0.0))
+        if r > top_hit_ratio:
+            top_hit_ratio = r
+            top_hit_ref = m.get('object_id')
+    logger.debug(
+        f"target={target_image_idx} matched_objs={len(matched_objects)} skipped_low_overlap={skipped_low_overlap} "
+        f"top_hit={top_hit_ref}(hit={top_hit_ratio:.2f})"
+    )
+
     if len(matched_objects) > 0:
         logger.info(f"Finish matching objects between reference image {reference_image_idx} and target image {target_image_idx}")
     
