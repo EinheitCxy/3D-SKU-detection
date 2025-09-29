@@ -36,7 +36,7 @@ code/
 uv run python main.py --mode interactive
 
 # 完整流水线（校验→可视化→匹配→分析→顺序去重→评估）
-uv run python main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Output
+uv run main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Output
 
 # 仅匹配
 uv run python main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output
