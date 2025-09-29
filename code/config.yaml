@@ -1,0 +1,77 @@
+# 3D SKU Detection 系统完整配置文件
+# 基于实际模块参数扫描结果，确保100%准确
+
+# 主程序配置 (main.py)
+main:
+  dataset: "imdata/floor_display2"
+  mode: "interactive"  # interactive, pipeline, concise, analyzer, dedup, reconstruct
+  algorithm: "both"  # point_tracking, 3d, both
+  reference_idx: 0
+  max_images: 50
+  device: "cuda"
+  save_json: true
+  save_root: "Output"
+  batch_all_refs: true  # 批量处理所有图片作为参考图片
+
+# 3D重建配置 (modules/vggt_3d_reconstructor.py)
+reconstruction:
+  input_dir: "images"  # 相对于数据集目录
+  output_file: "reconstruction.glb"
+  device: "cuda"  # cuda, cpu
+  model_path: null  # 预训练模型路径，null表示从HuggingFace下载
+  conf_thres: 50.0  # 置信度阈值 (0-100)
+  show_cam: true
+  mask_black_bg: false
+  mask_white_bg: false
+  mask_sky: false
+
+# SKU匹配推理配置 (modules/inference.py)
+inference:
+  config: null  # YAML配置文件路径
+  image_folder: "images"
+  detection_dir: "detections_results" 
+  output_dir: "."  # 输出根目录，相对于数据集
+  reference_idx: 0
+  max_images: 50
+  algorithm: "point_tracking"  # point_tracking, 3d, both
+  device: "cuda"
+  seed: 42
+  save_json: true
+  # 匹配参数
+  max_points_per_bbox: 30
+  confidence_threshold: 0.5
+  min_confident_points: 10
+  correspondence_threshold: 0.5
+
+# 检出框可视化配置 (modules/draw_detection_boxes.py) 
+visualization:
+  image_dir: "images"
+  detection_dir: "detections_results"
+  output_dir: "imdata_with_bbox"
+  confidence_threshold: 0.3
+  no_confidence: false  # 是否不显示置信度
+  no_class: false      # 是否不显示类别信息
+  image_format: "jpg"
+
+# 顺序去重配置 (modules/deduplicate_detections.py)
+deduplication:
+  dataset: "imdata/floor_display2"
+  summary: null  # matching_summary.txt路径，null使用默认
+  keep: null     # 保留图片编号，逗号分隔
+  dedup: null    # 去重图片编号
+  max_image: null # 最大图片编号
+  output_dir: null # 输出目录
+  same_names: true # 输出文件名与原始一致
+  dedup_mode: "any"  # any, best
+  min_hit_ratio: 0.0
+
+# 准确性评估配置 (accuracy_annotation.py)
+accuracy:
+  benchmark_csv: "imdata/picture_mapping_benchmark.csv"  # required
+  vggt_result: null    # required，VGGT输出文件路径
+  dataset_filter: null # 数据集过滤器
+  output: null         # 输出报告文件路径
+
+# 批量准确性分析配置 (modules/analyze_accuracy_metrics.py)
+batch_accuracy:
+  base_dir: "imdata"  # 包含floor_display*目录的根目录
