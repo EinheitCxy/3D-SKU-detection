@@ -39,22 +39,13 @@ def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
     
     # 创建彩色控制台格式器
     console_fmt = colorlog.ColoredFormatter(
-        '%(log_color)s%(levelname)s%(reset)s - %(message_log_color)s%(message)s',
+        '%(log_color)s%(levelname)s - %(message)s%(reset)s',
         log_colors={
             'DEBUG': 'cyan',
             'INFO': 'white',
-            'WARNING': 'yellow',
+            'WARNING': 'yellow', 
             'ERROR': 'red',
             'CRITICAL': 'bold_red',
-        },
-        secondary_log_colors={
-            'message': {
-                'START': 'bold_blue',
-                'END': 'bold_green',
-                'ERROR': 'red',
-                'FAIL': 'bold_red',
-                'OK': 'green',
-            }
         }
     )
 

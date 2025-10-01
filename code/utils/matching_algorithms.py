@@ -217,7 +217,7 @@ def _process_single_ref_object(
         matches = filtered_candidates[:2]
 
         for match in matches:
-            logger.info(f"🧵 并行匹配: ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
+            logger.debug(f"🧵 并行匹配: ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
         
         return matches, {
             'ref_object_id': ref_object_id,

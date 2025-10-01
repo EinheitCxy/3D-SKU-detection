@@ -401,7 +401,7 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
             new_objects = [obj for idx, obj in enumerate(objects) if idx not in drop_ids]
             survivors_by_image[i] = set(idx for idx in range(len(objects)) if idx not in drop_ids)
             objects_by_image[i] = objects
-            logger.info(
+            logger.debug(
                 f"Image {i}: drop {len(drop_ids)} boxes from {len(objects)} "
                 f"(targets:{len(drop_from_targets)}, refs:{len(drop_from_refs)})"
             )
