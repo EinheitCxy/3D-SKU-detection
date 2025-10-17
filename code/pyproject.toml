@@ -57,8 +57,13 @@ dev = [
     "flake8>=6.1.0; python_version>='3.8.1'",
 ]
 
+viewer = [
+    "plotly>=5.14.1",
+    "dash>=2.14.0",
+]
+
 all = [
-    "3d-sku-detection[demo,vggt,dev]"
+    "3d-sku-detection[demo,vggt,dev,viewer]"
 ]
 
 [build-system]

@@ -142,17 +142,23 @@ class SKUMatchingSystem:
             raise
     
     def _load_data(
-        self, 
-        image_folder: str, 
-        detection_dir: str, 
+        self,
+        image_folder: str,
+        detection_dir: str,
         max_images: Optional[int]
     ) -> tuple[List[str], List[Dict]]:
-        """加载图像和检测数据（解析委托给 data_utils.load_detections）"""
+        """
+        加载图像和检测数据，并使用VGGTDetectionAligner进行严格对齐验证
+
+        该方法确保图像编号与检测编号严格对应，并自动处理顺序不一致的情况。
+        """
+        from utils.frame_alignment import VGGTDetectionAligner
+
         image_folder_path = Path(image_folder)
         if not image_folder_path.exists():
             raise FileNotFoundError(f"Image folder not found: {image_folder}")
 
-        # 1) 收集图像（按数字）
+        # 1) 收集图像（按数字排序）
         image_files = []
         for f in os.listdir(image_folder):
             if f.lower().endswith(('.jpg', '.png', '.jpeg')):
@@ -164,30 +170,74 @@ class SKUMatchingSystem:
                     continue
         image_files.sort(key=lambda x: x[0])
 
-        # 2) 加载检测（一次性）
+        if not image_files:
+            raise ValueError(f"No valid image files found in {image_folder}")
+
+        # 2) 加载检测（带索引映射）
         detections_with_numbers = load_detections(detection_dir, return_index_map=True)
         if not detections_with_numbers:
             raise ValueError(f"No valid detection files found in {detection_dir}")
-        det_map = {num: det for num, det in detections_with_numbers}
 
-        # 3) 对齐图像与检测
-        matched_files = []
-        for file_number, image_path in image_files:
-            if file_number in det_map:
-                matched_files.append((file_number, image_path))
+        # 分离索引和数据
+        detection_indices = [item[0] for item in detections_with_numbers]
+        detections = [item[1] for item in detections_with_numbers]
+        image_ids = [num for num, _ in image_files]
+
+        logger.info(f"Found {len(image_files)} images and {len(detections)} detection files")
+        logger.info(f"Image IDs: {image_ids}")
+        logger.info(f"Detection IDs: {detection_indices}")
+
+        # 3) 使用VGGTDetectionAligner进行帧对齐验证
+        # 构建占位vggt_data（仅用于对齐验证，不需要真实的world_points）
+        import numpy as np
+        dummy_vggt_data = {
+            "world_points": np.zeros((len(image_ids), 1, 1, 3), dtype=np.float32)
+        }
+
+        # 严格模式=False：允许自动修复顺序不一致和缺失图像
+        _, aligned_detections, alignment_report = VGGTDetectionAligner.validate_and_align(
+            vggt_data=dummy_vggt_data,
+            detections=detections,
+            detection_indices=detection_indices,
+            vggt_image_ids=image_ids,
+            strict_mode=False  # 允许自动修复
+        )
+
+        # 4) 根据对齐结果重新排列图像路径
+        aligned_image_ids = alignment_report.get('repaired_image_ids', alignment_report['common_ids'])
+
+        # 构建image_id到路径的映射
+        image_id_to_path = {num: path for num, path in image_files}
+
+        # 按对齐后的ID顺序构建图像路径列表
+        aligned_image_paths = []
+        for img_id in aligned_image_ids:
+            if img_id in image_id_to_path:
+                aligned_image_paths.append(image_id_to_path[img_id])
             else:
-                logger.info(f"Skipping image {file_number}.jpg - no corresponding detection file")
+                logger.warning(f"Missing image for ID {img_id} after alignment")
 
+        # 验证对齐结果
+        if len(aligned_image_paths) != len(aligned_detections):
+            raise ValueError(
+                f"Alignment failed: {len(aligned_image_paths)} images vs {len(aligned_detections)} detections"
+            )
+
+        # 5) 应用max_images限制
         if max_images is not None:
-            matched_files = matched_files[:max_images]
+            aligned_image_paths = aligned_image_paths[:max_images]
+            aligned_detections = aligned_detections[:max_images]
+            logger.info(f"Limited to first {max_images} images")
 
-        if not matched_files:
-            raise ValueError("No images matched with detection files after alignment")
+        # 6) 记录对齐统计信息
+        if alignment_report.get('repair_applied'):
+            logger.info(f"✅ Alignment repaired: {alignment_report['repaired_frame_count']} frames aligned")
+            logger.info(f"   Dropped images: {alignment_report.get('dropped_vggt_frames', 0)}")
+            logger.info(f"   Dropped detections: {alignment_report.get('dropped_detection_frames', 0)}")
+        else:
+            logger.info(f"✅ Perfect alignment: {len(aligned_image_paths)} frames")
 
-        valid_image_paths = [path for _, path in matched_files]
-        detections = [det_map[num] for num, _ in matched_files]
-
-        return valid_image_paths, detections
+        return aligned_image_paths, aligned_detections
     
     def _run_matching(
         self, 
@@ -259,10 +309,7 @@ class SKUMatchingSystem:
             
             # 保存可视化摘要
             save_visualization_summary(correspondences, self.config, reference_image_idx)
-            
-            # # 打印结果摘要
-            # self._print_results_summary(correspondences)
-            
+
             # 保存JSON结果（如果启用）
             if self.config.save_json:
                 meta = {
