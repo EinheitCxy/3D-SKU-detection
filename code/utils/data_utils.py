@@ -6,7 +6,7 @@ SKU匹配系统数据处理模块
 
 import json
 import logging
-from typing import Dict, List, Tuple
+from typing import Dict, List
 from pathlib import Path
 
 from .config import SKUMatchingConfig
@@ -114,96 +114,87 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
         raise
 
 
-def _is_valid_bbox(obj: Dict, config: SKUMatchingConfig) -> Tuple[bool, str]:
-    """
-    检查单个bbox是否有效
-
-    Args:
-        obj: 检测对象
-        config: 配置参数
-
-    Returns:
-        (is_valid, reason): 是否有效和原因
-    """
-    if 'position' not in obj:
-        return False, "no_position"
-
-    confidence = obj.get('confidences', {}).get('det', 0.0)
-    if confidence < config.detection_confidence_threshold:
-        return False, "low_confidence"
-
-    x1, y1, x2, y2 = obj['position']
-    area = max(0.0, (x2 - x1) * (y2 - y1))
-    if area < config.min_bbox_area:
-        return False, "small_area"
-
-    return True, "valid"
-
-
 def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, config: SKUMatchingConfig) -> List[Dict]:
     """从检测结果中提取边界框
-
+    
     Args:
         detections: 检测结果列表
         image_idx: 图像索引
         config: 配置参数
-
+        
     Returns:
         边界框列表
-
+        
     Raises:
         ValueError: 图像索引超出范围或检测数据无效时抛出
     """
     if not detections:
         raise ValueError("Detections list is empty")
-
+        
     if image_idx >= len(detections):
         raise ValueError(f"Image index {image_idx} out of range (max: {len(detections) - 1})")
-
+    
     detection_data = detections[image_idx]
-    if not detection_data or 'objects' not in detection_data:
-        raise ValueError(f"Invalid detection data for image {image_idx}")
-
+    if not detection_data:
+        raise ValueError(f"Detection data for image {image_idx} is None or empty")
+        
+    if 'objects' not in detection_data:
+        raise ValueError(f"No 'objects' field found in detection data for image {image_idx}")
+        
     objects = detection_data['objects']
     if not objects:
         logger.warning(f"No objects found in detection data for image {image_idx}")
         return []
-
-    # 使用辅助函数过滤并统计
+    
     bboxes = []
-    stats = {"total": len(objects), "no_position": 0, "low_confidence": 0, "small_area": 0}
-
+    total_with_position = 0
+    below_conf = 0
+    below_area = 0
     for obj_idx, obj in enumerate(objects):
-        is_valid, reason = _is_valid_bbox(obj, config)
-
-        if not is_valid:
-            stats[reason] += 1
-            continue
-
-        x1, y1, x2, y2 = obj['position']
-        bboxes.append({
-            'bbox': [x1, y1, x2, y2],
-            'center': [(x1 + x2) / 2, (y1 + y2) / 2],
-            'confidence': obj.get('confidences', {}).get('det', 0.0),
-            'object_id': obj_idx,
-            'area': (x2 - x1) * (y2 - y1)
-        })
-
+        if 'position' in obj:
+            total_with_position += 1
+            x1, y1, x2, y2 = obj['position']
+            confidence = obj.get('confidences', {}).get('det', 0.0)
+            if confidence < config.detection_confidence_threshold:
+                below_conf += 1
+                continue
+            area = max(0.0, (x2 - x1) * (y2 - y1))
+            if area < config.min_bbox_area:
+                below_area += 1
+                continue
+            bbox_info = {
+                'bbox': [x1, y1, x2, y2],
+                'center': [(x1 + x2) / 2, (y1 + y2) / 2],
+                'confidence': confidence,
+                'object_id': obj_idx,
+                'area': area
+            }
+            bboxes.append(bbox_info)
+    
     # 按面积排序并限制数量
     bboxes.sort(key=lambda x: x['area'], reverse=True)
-    original_count = len(bboxes)
+    kept_before_cap = len(bboxes)
+    truncated = 0
     if len(bboxes) > config.max_bboxes:
-        stats['truncated'] = len(bboxes) - config.max_bboxes
+        truncated = len(bboxes) - config.max_bboxes
         bboxes = bboxes[:config.max_bboxes]
-    else:
-        stats['truncated'] = 0
 
     logger.debug(
-        f"bbox_filter image={image_idx}: total={stats['total']} "
-        f"kept={len(bboxes)} truncated={stats['truncated']} "
-        f"filtered=[no_pos:{stats['no_position']} conf:{stats['low_confidence']} area:{stats['small_area']}]"
+        "bbox_filter image_idx=%d total=%d with_position=%d below_det_conf=%d below_min_area=%d "
+        "kept_before_max=%d truncated_by_max_bboxes=%d kept=%d min_bbox_area=%.1f det_conf_thres=%.2f max_bboxes=%d",
+        image_idx,
+        len(objects),
+        total_with_position,
+        below_conf,
+        below_area,
+        kept_before_cap,
+        truncated,
+        len(bboxes),
+        config.min_bbox_area,
+        config.detection_confidence_threshold,
+        config.max_bboxes,
     )
-
+    
     return bboxes
 
 
