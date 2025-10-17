@@ -79,37 +79,27 @@ class VGGTImageTransform:
         self.padded_width = max_width
         self.padded_height = max_height
 
+    def _clamp_coord(self, value: float, min_val: float, max_val: float) -> float:
+        """辅助函数: 将坐标限制在有效范围内"""
+        return max(min_val, min(value, max_val))
+
     def map_xy_to_final(self, x: float, y: float) -> Tuple[float, float]:
         """将原图坐标映射到VGGT最终输入坐标
-        
-        修复后的变换顺序：
-        1. 原图 -> 缩放后坐标
-        2. 缩放后 -> 裁剪后坐标（如果有裁剪）
-        3. 裁剪后 -> 批量填充后坐标
+
+        变换顺序: 缩放 → 裁剪 → 填充
         """
-        # 步骤1：应用缩放
-        x_scaled = x * self.scale_x
-        y_scaled = y * self.scale_y
-        
-        # 步骤2：应用裁剪（如果有）
-        if self.crop_applied:
-            y_cropped = y_scaled - self.crop_start_y
-            # 裁剪后的坐标需要在有效范围内
-            y_cropped = max(0.0, min(y_cropped, self.final_height - 1))
-        else:
-            y_cropped = y_scaled
-            
-        x_cropped = x_scaled
-        x_cropped = max(0.0, min(x_cropped, self.final_width - 1))
-        
-        # 步骤3：应用批量填充
-        x_final = x_cropped + self.batch_pad_left
-        y_final = y_cropped + self.batch_pad_top
-        
-        # 确保在最终图像范围内
-        x_final = max(0.0, min(x_final, self.padded_width - 1))
-        y_final = max(0.0, min(y_final, self.padded_height - 1))
-        
+        # 步骤1：缩放
+        x_scaled, y_scaled = x * self.scale_x, y * self.scale_y
+
+        # 步骤2：裁剪
+        y_cropped = y_scaled - self.crop_start_y if self.crop_applied else y_scaled
+        x_cropped = self._clamp_coord(x_scaled, 0.0, self.final_width - 1)
+        y_cropped = self._clamp_coord(y_cropped, 0.0, self.final_height - 1)
+
+        # 步骤3：填充
+        x_final = self._clamp_coord(x_cropped + self.batch_pad_left, 0.0, self.padded_width - 1)
+        y_final = self._clamp_coord(y_cropped + self.batch_pad_top, 0.0, self.padded_height - 1)
+
         return x_final, y_final
 
     def map_points_to_final(self, points):
@@ -151,32 +141,23 @@ class VGGTImageTransform:
     # -------- 模型输入(final) -> 原图 映射 --------
     def map_xy_to_original(self, xp: float, yp: float) -> Tuple[float, float]:
         """将VGGT最终输入坐标映射回原图坐标
-        
-        修复后的变换顺序（逆向）：
-        1. 批量填充后 -> 裁剪后坐标
-        2. 裁剪后 -> 缩放后坐标（如果有裁剪）
-        3. 缩放后 -> 原图坐标
+
+        逆变换顺序: 移除填充 → 移除裁剪 → 移除缩放
         """
-        # 步骤1：移除批量填充
-        x_cropped = xp - self.batch_pad_left
-        y_cropped = yp - self.batch_pad_top
-        
-        # 步骤2：移除裁剪（如果有）
-        if self.crop_applied:
-            y_scaled = y_cropped + self.crop_start_y
-        else:
-            y_scaled = y_cropped
-            
-        x_scaled = x_cropped
-        
+        # 步骤1：移除填充
+        x_cropped, y_cropped = xp - self.batch_pad_left, yp - self.batch_pad_top
+
+        # 步骤2：移除裁剪
+        y_scaled = y_cropped + self.crop_start_y if self.crop_applied else y_cropped
+
         # 步骤3：移除缩放
-        x_orig = x_scaled / self.scale_x if self.scale_x != 0 else 0.0
+        x_orig = x_cropped / self.scale_x if self.scale_x != 0 else 0.0
         y_orig = y_scaled / self.scale_y if self.scale_y != 0 else 0.0
-        
-        # 确保在原图范围内
-        x_orig = max(0.0, min(x_orig, self.orig_width - 1))
-        y_orig = max(0.0, min(y_orig, self.orig_height - 1))
-        
+
+        # 限制在原图范围内
+        x_orig = self._clamp_coord(x_orig, 0.0, self.orig_width - 1)
+        y_orig = self._clamp_coord(y_orig, 0.0, self.orig_height - 1)
+
         return x_orig, y_orig
 
     def map_points_to_original(self, points):

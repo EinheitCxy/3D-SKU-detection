@@ -103,27 +103,40 @@ def sample_3d_points_from_non_overlap_regions(
     return all_points
 
 
-def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float], 
-                               transform: VGGTImageTransform, config: SKUMatchingConfig, 
+def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float],
+                               transform: VGGTImageTransform, config: SKUMatchingConfig,
                                other_bboxes: Optional[List[List[float]]] = None) -> Optional[torch.Tensor]:
-    """从检出框中采样3D点 - 改进版：使用实际depth值进行精确重建"""
+    """
+    从检出框中采样3D点 - 使用实际depth值进行精确重建
+
+    Args:
+        scene_data: VGGT场景数据（包含depth, depth_conf, world_points等）
+        img_idx: 图像索引
+        bbox: 检出框坐标 [x1, y1, x2, y2]
+        transform: VGGT图像变换
+        config: 匹配配置参数
+        other_bboxes: 其他检出框列表（保留参数，当前未使用）
+
+    Returns:
+        采样的3D点 torch.Tensor (N, 3) 或 None（如果无效点不足）
+    """
     vggt_bbox = transform.map_bbox_to_final(bbox)
     x1, y1, x2, y2 = [int(c) for c in vggt_bbox]
-    
+
     # 确保坐标在有效范围内
     H, W = scene_data['depth'].shape[1:3]
     x1, x2 = max(0, x1), min(W, x2)
     y1, y2 = max(0, y1), min(H, y2)
-    
+
     if x1 >= x2 or y1 >= y2:
         return None
-        
+
     # 提取检出框区域的3D信息
     depth_region = scene_data['depth'][img_idx, y1:y2, x1:x2, 0]
     depth_conf_region = scene_data['depth_conf'][img_idx, y1:y2, x1:x2]
     world_points_region = scene_data['world_points'][img_idx, y1:y2, x1:x2]
     world_points_conf_region = scene_data['world_points_conf'][img_idx, y1:y2, x1:x2]
-    
+
     # 改进的过滤条件：更严格的质量控制
     valid_mask = (
         (depth_conf_region > config.depth_confidence_threshold) &
@@ -133,48 +146,47 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
         torch.isfinite(depth_region) &  # 确保深度值有限
         torch.isfinite(world_points_region).all(dim=-1)  # 确保3D点有限
     )
-    
+
     if valid_mask.sum() < 10:
         logger.debug(f"检出框 {bbox} 中有效3D点不足: {valid_mask.sum()}")
         return None
-    
+
     # 优先使用VGGT的world_points，但用深度图进行验证
     valid_world_points = world_points_region[valid_mask]
     valid_depths = depth_region[valid_mask]
-    
+
     # 深度一致性检查：world_points的Z坐标应与depth_region接近
     world_depths = valid_world_points[:, 2]
     depth_diff = torch.abs(world_depths - valid_depths)
     depth_consistent_mask = depth_diff < 0.5  # 允许0.5米的深度差异
-    
+
     if depth_consistent_mask.sum() < 5:
         logger.debug(f"检出框 {bbox} 中深度一致的点不足: {depth_consistent_mask.sum()}")
         # 如果深度不一致，使用enhanced_backproject_2d_to_3d重新计算
         device = valid_world_points.device
         reconstructed_points = []
-        
+
         # 获取有效像素的坐标
         valid_y_indices, valid_x_indices = torch.where(valid_mask)
         for i in range(min(len(valid_y_indices), config.max_3d_points_per_bbox)):
             y_coord = valid_y_indices[i].item() + y1
             x_coord = valid_x_indices[i].item() + x1
-            
+
             point_3d = enhanced_backproject_2d_to_3d(
                 x_coord, y_coord, scene_data, img_idx, config
             )
             if point_3d is not None:
                 reconstructed_points.append(point_3d)
-        
+
         if len(reconstructed_points) < 5:
             return None
-        
+
         sampled_points = torch.stack(reconstructed_points)
-        # logger.debug(f"使用enhanced_backproject重建了 {len(sampled_points)} 个3D点")  # 注释掉冗余调试信息
-        
+
     else:
         # 使用深度一致的world_points
         consistent_points = valid_world_points[depth_consistent_mask]
-        
+
         # 随机采样指定数量的点
         device = consistent_points.device
         num_points = min(len(consistent_points), config.max_3d_points_per_bbox)
@@ -183,95 +195,11 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
             sampled_points = consistent_points[indices]
         else:
             sampled_points = consistent_points
-            
-        # logger.debug(f"采样了 {len(sampled_points)} 个深度一致的3D点")  # 注释掉过于冗余的调试信息
-    
+
     return sampled_points
 
 
-def sample_3d_points_from_single_bbox(scene_data: Dict, img_idx: int, bbox: List[float], 
-                                     transform: VGGTImageTransform, config: SKUMatchingConfig) -> Optional[torch.Tensor]:
-    """从单个检出框中采样 3D 点（传统方法）"""
-    vggt_bbox = transform.map_bbox_to_final(bbox)
-    x1, y1, x2, y2 = [int(c) for c in vggt_bbox]
-    
-    # 确保坐标在有效范围内
-    H, W = scene_data['depth'].shape[1:3]
-    x1, x2 = max(0, x1), min(W, x2)
-    y1, y2 = max(0, y1), min(H, y2)
-    
-    if x1 >= x2 or y1 >= y2:
-        return None
-        
-    # 提取检出框区域的 3D 信息
-    depth_region = scene_data['depth'][img_idx, y1:y2, x1:x2, 0]
-    depth_conf_region = scene_data['depth_conf'][img_idx, y1:y2, x1:x2]
-    world_points_region = scene_data['world_points'][img_idx, y1:y2, x1:x2]
-    world_points_conf_region = scene_data['world_points_conf'][img_idx, y1:y2, x1:x2]
-    
-    # 改进的过滤条件：更严格的质量控制
-    valid_mask = (
-        (depth_conf_region > config.depth_confidence_threshold) &
-        (world_points_conf_region > config.point_3d_confidence_threshold) &
-        (depth_region > config.min_depth) &
-        (depth_region < config.max_depth) &
-        torch.isfinite(depth_region) &  # 确保深度值有限
-        torch.isfinite(world_points_region).all(dim=-1)  # 确保 3D 点有限
-    )
-    
-    if valid_mask.sum() < 10:
-        logger.debug(f"检出框 {bbox} 中有效 3D 点不足: {valid_mask.sum()}")
-        return None
-    
-    # 优先使用VGGT的world_points，但用深度图进行验证
-    valid_world_points = world_points_region[valid_mask]
-    valid_depths = depth_region[valid_mask]
-    
-    # 深度一致性检查：world_points的Z坐标应与depth_region接近
-    world_depths = valid_world_points[:, 2]
-    depth_diff = torch.abs(world_depths - valid_depths)
-    depth_consistent_mask = depth_diff < 0.5  # 允许 0.5 米的深度差异
-    
-    if depth_consistent_mask.sum() < 5:
-        logger.debug(f"检出框 {bbox} 中深度一致的点不足: {depth_consistent_mask.sum()}")
-        # 如果深度不一致，使用enhanced_backproject_2d_to_3d重新计算
-        device = valid_world_points.device
-        reconstructed_points = []
-        
-        # 获取有效像素的坐标
-        valid_y_indices, valid_x_indices = torch.where(valid_mask)
-        for i in range(min(len(valid_y_indices), config.max_3d_points_per_bbox)):
-            y_coord = valid_y_indices[i].item() + y1
-            x_coord = valid_x_indices[i].item() + x1
-            
-            point_3d = enhanced_backproject_2d_to_3d(
-                x_coord, y_coord, scene_data, img_idx, config
-            )
-            if point_3d is not None:
-                reconstructed_points.append(point_3d)
-        
-        if len(reconstructed_points) < 5:
-            return None
-        
-        sampled_points = torch.stack(reconstructed_points)
-        
-    else:
-        # 使用深度一致的world_points
-        consistent_points = valid_world_points[depth_consistent_mask]
-        
-        # 随机采样指定数量的点
-        device = consistent_points.device
-        num_points = min(len(consistent_points), config.max_3d_points_per_bbox)
-        if len(consistent_points) > num_points:
-            indices = torch.randperm(len(consistent_points), device=device)[:num_points]
-            sampled_points = consistent_points[indices]
-        else:
-            sampled_points = consistent_points
-    
-    return sampled_points
-
-
-def enhanced_backproject_2d_to_3d(x: float, y: float, scene_data: Dict, img_idx: int, 
+def enhanced_backproject_2d_to_3d(x: float, y: float, scene_data: Dict, img_idx: int,
                                  config: SKUMatchingConfig) -> Optional[torch.Tensor]:
     """使用深度图增强的2D到3D反投影 - 基于advanced_3d_reconstruction.py优化
     
