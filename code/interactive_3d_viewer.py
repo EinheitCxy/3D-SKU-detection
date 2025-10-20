@@ -2,13 +2,13 @@
 Interactive 3D Viewer - Viser交互式3D可视化系统
 
 使用方式：
-  uv run interactive_3d_viewer.py \
-    --global-mapping <global_mapping.json> \
-    --reconstruction <reconstruction.glb> \
-    --image-dir <images_folder> \
-    [--port 8080] \
-    [--downsample 0.1] \
-    [--cache-dir <dir>]
+uv run interactive_3d_viewer.py \
+--global-mapping Output/floor_display2/dedup_detections/global_mapping.json \
+--reconstruction Output/floor_display2/reconstruction.glb \
+--image-dir ../imdata/floor_display2/images \
+--detection-dir ../imdata/floor_display2/detections_results \
+[--downsample 0.1] \
+[--cache-dir <dir>]
 
 架构设计：
 1. **数据加载层**：从GLB加载点云 + 从global_mapping.json加载全局ID映射
@@ -861,10 +861,6 @@ class ViserInteractive3DViewer:
         self.global_mapping_path = Path(global_mapping_path)
         self.port = port
 
-        # 加载数据
-        self.load_cache()
-        self.mapper = GlobalIDMapper(str(self.global_mapping_path))
-
         # Viser服务器（延迟初始化）
         self.server = None
 
@@ -875,6 +871,10 @@ class ViserInteractive3DViewer:
         # 拾取状态
         self.pick_mode_enabled = False
         self.last_picked_gid = None
+
+        # 加载数据（必须在初始化变量之后）
+        self.load_cache()
+        self.mapper = GlobalIDMapper(str(self.global_mapping_path))
 
         logger.info(f"ViserInteractive3DViewer initialized on port {port}")
 
@@ -1096,11 +1096,11 @@ class ViserInteractive3DViewer:
         )
 
         # 拾取球体指示器（初始隐藏）
+        # 注意：viser的add_icosphere不支持opacity参数，使用默认透明度
         pick_sphere = self.server.scene.add_icosphere(
             name="pick_sphere",
             radius=gui_pick_radius.value,
             color=(255, 255, 0),  # 黄色
-            opacity=0.3,
             position=(0.0, 0.0, 0.0),
             visible=False,
         )
@@ -1241,7 +1241,16 @@ def main():
     """主程序入口 - 直接从GLB+JSON启动可视化"""
     parser = argparse.ArgumentParser(
         description="3D SKU 交互式可视化系统（基于Viser）",
-        epilog="示例: uv run interactive_3d_viewer.py --global-mapping X.json --reconstruction Y.glb --image-dir Z"
+        epilog="""
+        示例用法（所有路径在同一数据集目录下）:
+        cd code
+        uv run python interactive_3d_viewer.py \\
+            --global-mapping Output/floor_display2/dedup_detections/global_mapping.json \\
+            --reconstruction Output/floor_display2/reconstruction.glb \\
+            --image-dir ../imdata/floor_display2/images \\
+            --detection-dir ../imdata/floor_display2/detections_results
+        """,
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
     # 核心参数（必需）
@@ -1250,11 +1259,11 @@ def main():
     parser.add_argument('--reconstruction', type=str, required=True,
                         help='GLB/PLY 3D重建文件路径')
     parser.add_argument('--image-dir', type=str, required=True,
-                        help='原始图像目录')
+                        help='原始图像目录（如 ../imdata/floor_display2/images）')
 
     # 可选参数
     parser.add_argument('--detection-dir', type=str, default=None,
-                        help='检测结果目录（默认：自动从reconstruction路径推断为 <dataset_root>/detections_results）')
+                        help='检测结果目录（如 ../imdata/floor_display2/detections_results，默认：自动推断）')
     parser.add_argument('--port', type=int, default=8080,
                         help='Viser服务端口 (默认: 8080)')
     parser.add_argument('--downsample', type=float, default=0.1,

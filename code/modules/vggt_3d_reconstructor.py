@@ -413,7 +413,15 @@ class VGGT3DReconstructor:
             # 验证数据一致性
             world_points = predictions.get('world_points_from_depth')
             depth = predictions.get('depth')
-            conf = predictions.get('conf')
+
+            # VGGT模型返回的置信度键名为 depth_conf 和 world_points_conf
+            # 优先使用 depth_conf（与depth配套），回退到 world_points_conf 或旧版 conf
+            # 注意：不能用 or 连接numpy数组，必须显式判断 is not None
+            conf = predictions.get('depth_conf')
+            if conf is None:
+                conf = predictions.get('world_points_conf')
+            if conf is None:
+                conf = predictions.get('conf')
 
             if world_points is not None:
                 if world_points.ndim == 4:  # (S,H,W,3)
