@@ -244,6 +244,7 @@ class DataCacheBuilder:
         reconstruction_path: str,
         output_dir: str,
         image_dir: Optional[str] = None,
+        detection_dir: Optional[str] = None,
         downsample_ratio: float = 0.1,
         seed: Optional[int] = 42,
         enable_progress: bool = True,
@@ -257,6 +258,7 @@ class DataCacheBuilder:
             reconstruction_path: GLB/PLY 3D重建文件路径
             output_dir: 缓存输出目录
             image_dir: 原始图像目录
+            detection_dir: 检测结果目录（可选，默认自动推断）
             downsample_ratio: 下采样比例（0-1），用于减少点云规模
             seed: 随机种子
             enable_progress: 是否启用进度条
@@ -268,6 +270,7 @@ class DataCacheBuilder:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.downsample_ratio = downsample_ratio
         self.image_dir = Path(image_dir) if image_dir is not None else None
+        self.detection_dir = Path(detection_dir) if detection_dir is not None else None
         self._rng = np.random.default_rng(seed)
         self.enable_progress = enable_progress and RICH_AVAILABLE
         self.enable_gpu = enable_gpu and (GPU_CONFIG.use_cupy or GPU_CONFIG.use_faiss_gpu)
@@ -278,6 +281,7 @@ class DataCacheBuilder:
         logger.info(f"  - Global mapping: {self.global_mapping_path}")
         logger.info(f"  - Reconstruction: {self.reconstruction_path}")
         logger.info(f"  - Output directory: {self.output_dir}")
+        logger.info(f"  - Detection directory: {self.detection_dir or 'Auto-inferred'}")
         logger.info(f"  - Downsample ratio: {downsample_ratio}")
         logger.info(f"  - RNG seed: {seed}")
         logger.info(f"  - Progress bar: {self.enable_progress}")
@@ -447,20 +451,57 @@ class DataCacheBuilder:
         logger.info(f"   世界坐标点云: {world_points_flat.shape}")
         logger.info(f"   目标点云: {target_points.shape}")
 
-        # 加载 global_mapping 和 detections
-        global_mapping_path = dataset_root / "global_mapping.json"
-        if not global_mapping_path.exists():
-            logger.error(f"global_mapping.json 不存在: {global_mapping_path}")
-            logger.error("请先运行去重流程生成 global_mapping.json")
-            raise FileNotFoundError(f"global_mapping.json not found: {global_mapping_path}")
+        # 加载 global_mapping（优先使用传入路径，回退到dataset_root）
+        # 策略：
+        # 1. 使用 self.global_mapping_path（用户通过 --global-mapping 传入）
+        # 2. 回退到 dataset_root/global_mapping.json
+        if self.global_mapping_path.exists():
+            global_mapping_path = self.global_mapping_path
+            logger.info(f"使用传入的 global_mapping: {global_mapping_path}")
+        else:
+            # 回退路径
+            fallback_path = dataset_root / "global_mapping.json"
+            if fallback_path.exists():
+                global_mapping_path = fallback_path
+                logger.warning(f"传入路径不存在，使用回退路径: {fallback_path}")
+            else:
+                error_msg = (
+                    f"找不到 global_mapping.json！\n"
+                    f"  尝试的路径:\n"
+                    f"    1. 传入路径: {self.global_mapping_path}\n"
+                    f"    2. 回退路径: {fallback_path}\n\n"
+                    f"解决方案:\n"
+                    f"  1. 确保 --global-mapping 参数指向正确文件\n"
+                    f"  2. 或者运行去重流程生成: uv run python modules/deduplicate_detections.py"
+                )
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
 
         with global_mapping_path.open('r') as f:
             global_mapping_data = json.load(f)
 
         logger.info(f"加载 global_mapping: {len(global_mapping_data)} 个全局ID")
 
-        # 加载检测结果（带索引映射）
-        detection_dir = dataset_root / "detections_results"
+        # 加载检测结果（优先使用传入路径，回退到dataset_root）
+        if self.detection_dir is not None and self.detection_dir.exists():
+            detection_dir = self.detection_dir
+            logger.info(f"使用传入的检测目录: {detection_dir}")
+        else:
+            # 回退到 dataset_root/detections_results
+            detection_dir = dataset_root / "detections_results"
+            if not detection_dir.exists():
+                error_msg = (
+                    f"找不到检测结果目录！\n"
+                    f"  尝试的路径:\n"
+                    f"    1. 传入路径: {self.detection_dir}\n"
+                    f"    2. 回退路径: {detection_dir}\n\n"
+                    f"解决方案:\n"
+                    f"  添加 --detection-dir 参数指向检测结果目录"
+                )
+                logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
+            logger.warning(f"使用回退检测目录: {detection_dir}")
+
         from utils.data_utils import load_detections
         detections_with_indices = load_detections(str(detection_dir), return_index_map=True)
 
@@ -497,27 +538,8 @@ class DataCacheBuilder:
 
         logger.info("帧对齐验证通过")
 
-        # 构建 VGGT 裁剪/填充对齐的坐标变换（可选）
+        # 变换将在计算出 aligned_image_ids 后优先从 transforms.json 载入
         vggt_transforms = None
-        try:
-            from utils.transforms import build_vggt_transforms
-
-            search_dir = None
-            if self.image_dir is not None and self.image_dir.exists():
-                search_dir = self.image_dir
-            elif (dataset_root / "images").exists():
-                search_dir = dataset_root / "images"
-
-            if search_dir is not None:
-                image_paths, found_all = self._find_image_paths(detection_indices, search_dir)
-
-                if found_all and image_paths:
-                    vggt_transforms = build_vggt_transforms(image_paths, target_size=518)
-                    logger.info(f"构建VGGT裁剪对齐变换，共 {len(vggt_transforms)} 张")
-            else:
-                logger.warning("无法定位图像目录，跳过裁剪对齐。可通过 --image-dir 指定。")
-        except Exception as e:
-            logger.warning(f"构建VGGT裁剪对齐变换失败，将降级为直接像素对齐：{e}")
 
         # 构建反向索引：(image_id, object_id) -> global_id
         reverse_mapping = {}
@@ -528,16 +550,59 @@ class DataCacheBuilder:
 
         logger.info(f"构建反向索引: {len(reverse_mapping)} 个实例")
 
+        # 提取对齐后的真实image_ids
+        aligned_image_ids = alignment_report.get('repaired_image_ids') or alignment_report.get('common_ids')
+        if aligned_image_ids is None:
+            # 完美对齐情况，使用原始detection_indices
+            aligned_image_ids = detection_indices[:len(aligned_detections)]
+
+        logger.info(f"对齐后的图像ID: {aligned_image_ids}")
+
+        # 优先从 vggt_cache/transforms.json 加载VGGT变换，失败则回退到自动构建
+        try:
+            from utils.transforms import build_transforms_from_json
+            transforms_path = dataset_root / "vggt_cache" / "transforms.json"
+            vggt_transforms = build_transforms_from_json(str(transforms_path), aligned_image_ids)
+            if vggt_transforms is not None:
+                logger.info(f"已从 transforms.json 加载变换，共 {len(vggt_transforms)} 张")
+            else:
+                logger.info("未找到或不完整的 transforms.json，准备回退到自动构建变换")
+        except Exception as e:
+            logger.warning(f"加载 transforms.json 失败，将回退到自动构建：{e}")
+
+        if vggt_transforms is None:
+            try:
+                from utils.transforms import build_vggt_transforms
+
+                search_dir = None
+                if self.image_dir is not None and self.image_dir.exists():
+                    search_dir = self.image_dir
+                elif (dataset_root / "images").exists():
+                    search_dir = dataset_root / "images"
+
+                if search_dir is not None:
+                    image_paths, found_all = self._find_image_paths(aligned_image_ids, search_dir)
+                    if found_all and image_paths:
+                        vggt_transforms = build_vggt_transforms(image_paths, target_size=518)
+                        logger.info(f"构建VGGT裁剪对齐变换，共 {len(vggt_transforms)} 张")
+                    else:
+                        logger.warning("无法为所有对齐后的图像构建路径，跳过裁剪对齐变换")
+                else:
+                    logger.warning("无法定位图像目录，跳过裁剪对齐。可通过 --image-dir 指定。")
+            except Exception as e:
+                logger.warning(f"构建VGGT裁剪对齐变换失败，将降级为直接像素对齐：{e}")
+
         # 高效方法：从2D检测框直接提取3D点（O(K×A)复杂度）
         logger.info("从检测框直接提取3D点并分配全局ID...")
         from utils.bbox_3d_extractor import extract_3d_from_bboxes
 
-        # 使用高效掩码索引方法
+        # 使用高效掩码索引方法（传入真实image_ids）
         extracted_points, extracted_gids, extracted_confs = extract_3d_from_bboxes(
             world_points=world_points,
             world_points_conf=conf,
-            detections=detections,
+            detections=aligned_detections,
             reverse_mapping=reverse_mapping,
+            image_ids=aligned_image_ids,  # **关键修复**：传入真实image_ids
             conf_threshold=0.1,
             vggt_transforms=vggt_transforms,
         )
@@ -858,29 +923,34 @@ class ViserInteractive3DViewer:
         radius: float = 0.05
     ) -> Optional[int]:
         """
-        通过球形区域拾取点（简化的点拾取）
+        通过球形区域拾取点（优化版：单次查询）
+
+        策略：先找最近点，再验证是否在半径内
 
         Args:
             click_position: 点击位置 (3D坐标)
             radius: 拾取半径
 
         Returns:
-            拾取到的点的索引，如果没有则返回None
+            拾取到的点的索引，如果半径内无点则返回None
         """
         if self.kdtree is None:
             logger.warning("KD-Tree not built yet")
             return None
 
-        # 查询半径范围内的所有点
-        indices = self.kdtree.query_ball_point(click_position, r=radius)
+        # 单次查询：找到最近的点及其距离
+        distance, nearest_idx = self.kdtree.query(click_position, k=1)
 
-        if len(indices) == 0:
-            logger.debug(f"No points found within radius {radius}")
+        # 确保返回标量（scipy可能返回0维数组）
+        distance = float(distance) if hasattr(distance, '__float__') else distance
+        nearest_idx = int(nearest_idx) if hasattr(nearest_idx, '__int__') else nearest_idx
+
+        # 验证是否在半径内
+        if distance > radius:
+            logger.debug(f"Nearest point at distance {distance:.4f} exceeds radius {radius:.4f}")
             return None
 
-        # 返回最近的点
-        distances, nearest_idx = self.kdtree.query(click_position, k=1)
-        logger.info(f"Picked point {nearest_idx}, distance={distances:.4f}")
+        logger.info(f"Picked point {nearest_idx}, distance={distance:.4f}")
         return nearest_idx
 
     def get_global_id_from_point_index(self, point_idx: int) -> Optional[str]:
@@ -957,6 +1027,10 @@ class ViserInteractive3DViewer:
             mask = self.global_ids == gid
             colors_by_gid[mask] = self.get_color_for_global_id(int(gid))
 
+        # 为显示层添加稳定的随机采样掩码（固定种子，保证不同筛选下采样一致）
+        rng = np.random.default_rng(42)
+        display_rand = rng.random(len(self.points))  # [0,1) 每点一个随机数
+
         # ========== GUI Controls ==========
         gui_conf_threshold = self.server.gui.add_slider(
             "Confidence Percentile %", min=0, max=100, step=1, initial_value=25
@@ -982,6 +1056,22 @@ class ViserInteractive3DViewer:
             initial_value=0.05
         )
 
+        # 新增：点大小与显示采样率控制
+        gui_point_size = self.server.gui.add_slider(
+            "Point Size",
+            min=0.001,
+            max=0.02,
+            step=0.001,
+            initial_value=0.002,
+        )
+        gui_sampling = self.server.gui.add_slider(
+            "Display Sample %",
+            min=1,
+            max=100,
+            step=1,
+            initial_value=100,
+        )
+
         # 显示当前场景中心（用于说明坐标已中心化）
         gui_scene_center = self.server.gui.add_text(
             "Scene Center (subtracted)",
@@ -990,17 +1080,18 @@ class ViserInteractive3DViewer:
 
         gui_info_text = self.server.gui.add_text(
             "Selected ID Info",
-            initial_value="Enable Pick Mode and enter XYZ in centered coords",
+            initial_value="Tip: Enable 'Pick Mode' and click on the 3D point cloud to query Global ID!",
         )
 
-        # 初始点云
-        init_threshold = np.percentile(self.confidences, 25)
+        # 初始点云（加入显示采样率）
+        init_threshold = np.percentile(self.confidences, gui_conf_threshold.value)
         init_mask = self.confidences >= init_threshold
+        init_sample_mask = display_rand <= (gui_sampling.value / 100.0)
         point_cloud = self.server.scene.add_point_cloud(
             name="sku_pcd",
-            points=points_centered[init_mask],
-            colors=colors_by_gid[init_mask],
-            point_size=0.002,
+            points=points_centered[init_mask & init_sample_mask],
+            colors=colors_by_gid[init_mask & init_sample_mask],
+            point_size=gui_point_size.value,
             point_shape="circle",
         )
 
@@ -1014,25 +1105,23 @@ class ViserInteractive3DViewer:
             visible=False,
         )
 
-        # ========== 点拾取逻辑 ==========
-        # 由于Viser点云暂不支持原生on_click，我们提供手动输入3D坐标的拾取方式
-        # 添加一个按钮组来输入3D坐标进行拾取（坐标已减去scene center）
-        with self.server.gui.add_folder("Manual Pick (XYZ)"):
-            gui_pick_x = self.server.gui.add_number("X", initial_value=0.0, step=0.01)
-            gui_pick_y = self.server.gui.add_number("Y", initial_value=0.0, step=0.01)
-            gui_pick_z = self.server.gui.add_number("Z", initial_value=0.0, step=0.01)
-            gui_pick_button = self.server.gui.add_button("Pick Point")
+        # ========== 智能点拾取系统 ==========
+        # 用户体验：启用Pick Mode后，直接在3D视图中点击点云即可查询Global ID
 
-        @gui_pick_button.on_click
-        def _(_) -> None:
-            """手动拾取按钮回调"""
+        # 统一的点拾取处理函数
+        def handle_point_pick(click_pos: np.ndarray, source: str = "click") -> None:
+            """
+            统一的点拾取处理逻辑
+
+            Args:
+                click_pos: 点击位置（已中心化的坐标）
+                source: 触发来源（"click" 或 "manual"）
+            """
             if not gui_pick_mode.value:
-                gui_info_text.value = "Please enable Pick Mode first"
+                gui_info_text.value = "WARNING: Enable 'Pick Mode' checkbox first!"
                 return
 
-            click_pos = np.array([gui_pick_x.value, gui_pick_y.value, gui_pick_z.value])
-
-            # 显示拾取球体
+            # 显示拾取球体指示器
             pick_sphere.position = tuple(click_pos)
             pick_sphere.radius = gui_pick_radius.value
             pick_sphere.visible = True
@@ -1047,22 +1136,45 @@ class ViserInteractive3DViewer:
                     info_text = self.format_global_id_info(gid_str)
                     gui_info_text.value = info_text
 
-                    # 自动选择该全局ID
+                    # 自动选择该全局ID并高亮显示
                     gui_selected_id.value = gid_str
                     update_point_cloud()
 
-                    logger.info(f"Picked Global ID: {gid_str}")
+                    logger.info(f"Picked Global ID {gid_str} via {source}")
                 else:
-                    gui_info_text.value = "Invalid point index"
+                    gui_info_text.value = "ERROR: Invalid point (no Global ID)"
             else:
-                gui_info_text.value = f"No points found within radius {gui_pick_radius.value:.3f}"
+                gui_info_text.value = f"No points within {gui_pick_radius.value:.3f}m radius"
+
+        # 注册场景点击事件（Viser原生支持）
+        @self.server.scene.on_pointer_event(point_cloud)
+        def handle_scene_click(event: viser.ScenePointerEvent) -> None:
+            """
+            3D场景点击事件处理器
+
+            当用户在点云上点击时自动触发，获取点击位置并查询Global ID
+            """
+            if event.event_type == "click" and gui_pick_mode.value:
+                # Viser提供点击的射线信息
+                ray_origin = np.array(event.ray_origin)
+                ray_direction = np.array(event.ray_direction) if event.ray_direction else None
+
+                # 计算点击位置（使用射线起点，因为点云在浅层）
+                # 如果点云很深，可以用射线-平面交点优化
+                click_pos_world = ray_origin
+
+                # 转换到中心化坐标系（与点云对齐）
+                click_pos_centered = click_pos_world - self.scene_center
+
+                logger.debug(f"Scene click: world={click_pos_world}, centered={click_pos_centered}")
+                handle_point_pick(click_pos_centered, source="3D click")
 
         @gui_pick_mode.on_update
         def _(_) -> None:
             """拾取模式切换"""
             if gui_pick_mode.value:
-                gui_info_text.value = "Pick Mode ON - Enter centered XYZ and click 'Pick Point'"
-                pick_sphere.visible = True
+                gui_info_text.value = "Pick Mode ON - Click on any point in the 3D view!"
+                pick_sphere.visible = False  # 初始隐藏，点击后显示
             else:
                 gui_info_text.value = "Pick Mode OFF"
                 pick_sphere.visible = False
@@ -1084,7 +1196,10 @@ class ViserInteractive3DViewer:
                 selected_gid = int(gui_selected_id.value)
                 id_mask = self.global_ids == selected_gid
 
-            combined_mask = conf_mask & id_mask
+            # 采样率掩码（稳定随机）
+            sample_mask = display_rand <= (gui_sampling.value / 100.0)
+
+            combined_mask = conf_mask & id_mask & sample_mask
             point_cloud.points = points_centered[combined_mask]
             point_cloud.colors = colors_by_gid[combined_mask]
 
@@ -1100,6 +1215,14 @@ class ViserInteractive3DViewer:
                 gui_info_text.value = self.format_global_id_info(gui_selected_id.value)
             else:
                 gui_info_text.value = "Showing all global IDs"
+
+        @gui_sampling.on_update
+        def _(_) -> None:
+            update_point_cloud()
+
+        @gui_point_size.on_update
+        def _(_) -> None:
+            point_cloud.point_size = gui_point_size.value
 
         logger.info("Viser server started successfully")
         logger.info(f"Open http://localhost:{self.port} in your browser")
@@ -1123,13 +1246,15 @@ def main():
 
     # 核心参数（必需）
     parser.add_argument('--global-mapping', type=str, required=True,
-                        help='global_mapping.json 路径')
+                        help='global_mapping.json 路径（如 code/output_dedup/floor_display2/global_mapping.json）')
     parser.add_argument('--reconstruction', type=str, required=True,
                         help='GLB/PLY 3D重建文件路径')
     parser.add_argument('--image-dir', type=str, required=True,
                         help='原始图像目录')
 
     # 可选参数
+    parser.add_argument('--detection-dir', type=str, default=None,
+                        help='检测结果目录（默认：自动从reconstruction路径推断为 <dataset_root>/detections_results）')
     parser.add_argument('--port', type=int, default=8080,
                         help='Viser服务端口 (默认: 8080)')
     parser.add_argument('--downsample', type=float, default=0.1,
@@ -1182,6 +1307,7 @@ def main():
             reconstruction_path=args.reconstruction,
             output_dir=str(cache_dir),
             image_dir=args.image_dir,
+            detection_dir=args.detection_dir,  # 新增：传递检测目录参数
             downsample_ratio=args.downsample,
             enable_progress=not args.no_progress,
             enable_gpu=not args.no_gpu,

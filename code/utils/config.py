@@ -29,12 +29,12 @@ def get_optimal_device_config(verbose: bool = True):
             
         if verbose:
             gpu_name = torch.cuda.get_device_name(0)
-            logger.info(f"🚀 GPU: {gpu_name}, 使用{dtype}")
+            logger.info(f"GPU: {gpu_name}, 使用{dtype}")
     else:
         device = torch.device("cpu")
         dtype = torch.float32
         if verbose:
-            logger.info("🖥️ 使用CPU计算")
+            logger.info("使用CPU计算")
     
     return device, dtype
 

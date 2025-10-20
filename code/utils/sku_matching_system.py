@@ -231,11 +231,11 @@ class SKUMatchingSystem:
 
         # 6) 记录对齐统计信息
         if alignment_report.get('repair_applied'):
-            logger.info(f"✅ Alignment repaired: {alignment_report['repaired_frame_count']} frames aligned")
+            logger.info(f"Alignment repaired: {alignment_report['repaired_frame_count']} frames aligned")
             logger.info(f"   Dropped images: {alignment_report.get('dropped_vggt_frames', 0)}")
             logger.info(f"   Dropped detections: {alignment_report.get('dropped_detection_frames', 0)}")
         else:
-            logger.info(f"✅ Perfect alignment: {len(aligned_image_paths)} frames")
+            logger.info(f"Perfect alignment: {len(aligned_image_paths)} frames")
 
         return aligned_image_paths, aligned_detections
     

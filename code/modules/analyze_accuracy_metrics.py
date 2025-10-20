@@ -61,11 +61,11 @@ def extract_metrics_from_file(file_path: str) -> Optional[Dict[str, float]]:
         if all(key in metrics for key in required_keys):
             return metrics
         else:
-            print(f"⚠️  {file_path} 中未找到完整的性能指标")
+            print(f"WARNING: {file_path} 中未找到完整的性能指标")
             return None
             
     except Exception as e:
-        print(f"❌ 读取文件 {file_path} 失败: {e}")
+        print(f"ERROR: 读取文件 {file_path} 失败: {e}")
         return None
 
 def find_all_accuracy_files(base_dir: str) -> List[str]:
@@ -106,12 +106,12 @@ def calculate_weighted_averages(all_metrics: List[Tuple[str, Dict[str, float]]])
         else:
             excluded_files.append((file_path, overall_accuracy))
     
-    print(f"\n🔍 过滤结果:")
+    print(f"\n过滤结果:")
     print(f"  - 保留文件: {len(filtered_metrics)} 个")
     print(f"  - 排除文件: {len(excluded_files)} 个 (总体准确率 < 50%)")
     
     if excluded_files:
-        print(f"\n📋 排除的低准确率文件:")
+        print(f"\n排除的低准确率文件:")
         for file_path, accuracy in excluded_files:
             print(f"  - {file_path}: {accuracy:.2f}%")
     
@@ -200,11 +200,11 @@ def main():
     args = parser.parse_args()
     base_dir = args.base_dir
     
-    print("🔍 扫描floor_display2-12的accuracy_evaluation目录...")
+    print("扫描floor_display2-12的accuracy_evaluation目录...")
     
     # 查找所有txt文件
     all_txt_files = find_all_accuracy_files(base_dir)
-    print(f"📁 找到 {len(all_txt_files)} 个评估文件")
+    print(f"找到 {len(all_txt_files)} 个评估文件")
     
     # 提取所有文件的指标
     all_metrics = []
@@ -212,30 +212,30 @@ def main():
     
     for txt_file in all_txt_files:
         relative_path = os.path.relpath(txt_file, base_dir)
-        print(f"📄 处理: {relative_path}")
+        print(f"处理: {relative_path}")
         
         metrics = extract_metrics_from_file(txt_file)
         if metrics:
             all_metrics.append((relative_path, metrics))
             successful_extractions += 1
-            print(f"   ✅ 召回率: {metrics['recall']:.2f}%, 有效率: {metrics['effectiveness']:.2f}%, 精确率: {metrics['precision']:.2f}%")
+            print(f"   召回率: {metrics['recall']:.2f}%, 有效率: {metrics['effectiveness']:.2f}%, 精确率: {metrics['precision']:.2f}%")
         else:
             all_metrics.append((relative_path, None))
-            print(f"   ❌ 提取失败")
+            print(f"   提取失败")
     
-    print(f"\n📊 成功提取 {successful_extractions}/{len(all_txt_files)} 个文件的指标")
+    print(f"\n成功提取 {successful_extractions}/{len(all_txt_files)} 个文件的指标")
     
     if successful_extractions == 0:
-        print("❌ 没有成功提取任何指标")
+        print("ERROR: 没有成功提取任何指标")
         return
     
     # 计算加权平均值
-    print("\n🧮 计算加权平均值...")
+    print("\n计算加权平均值...")
     weighted_averages = calculate_weighted_averages(all_metrics)
     
     # 输出结果
     print("\n" + "="*60)
-    print("📈 Floor Display 2-12 整体性能指标汇总")
+    print("Floor Display 2-12 整体性能指标汇总")
     print("="*60)
     
     if 'recall_weighted_avg' in weighted_averages:
@@ -256,7 +256,7 @@ def main():
     print("="*60)
     
     # 统计各个floor_display的文件数量
-    print(f"\n📋 按目录分组统计:")
+    print(f"\n按目录分组统计:")
     floor_counts = {}
     for relative_path, _ in all_metrics:
         floor_name = relative_path.split('/')[0]
@@ -265,7 +265,7 @@ def main():
     for floor_name in sorted(floor_counts.keys()):
         print(f"  - {floor_name}: {floor_counts[floor_name]} 个文件")
     
-    print(f"\n🎯 处理完成！共分析了 {len(all_txt_files)} 个评估文件")
+    print(f"\n处理完成！共分析了 {len(all_txt_files)} 个评估文件")
 
 if __name__ == "__main__":
     main()

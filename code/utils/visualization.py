@@ -146,7 +146,7 @@ def visualize_results(
                 target_bbox_id = item.get('target_obj_id', item.get('target_bbox_id', 'N/A'))
                 
                 if not vggt_box or len(vggt_box) != 4:
-                    logger.warning(f"⚠️ 目标图像 {s_idx} 对象 {obj_id}: 无效的VGGT坐标 {vggt_box}")
+                    logger.warning(f"WARNING: 目标图像 {s_idx} 对象 {obj_id}: 无效的VGGT坐标 {vggt_box}")
                     continue
                 
                 # 使用与参考图像一致的颜色

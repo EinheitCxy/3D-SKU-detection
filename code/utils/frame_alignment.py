@@ -48,7 +48,7 @@ class VGGTDetectionAligner:
         Raises:
             FrameAlignmentError: 严格模式下发现不可修复的对齐问题
         """
-        logger.info("🔍 开始VGGT-Detection帧对齐验证...")
+        logger.info("开始VGGT-Detection帧对齐验证...")
 
         # 1. 基础检查
         world_points = vggt_data.get("world_points")
@@ -71,11 +71,11 @@ class VGGTDetectionAligner:
         # 2. 推断图像ID（如果未提供）
         if detection_indices is None:
             detection_indices = list(range(detection_count))
-            logger.warning("⚠️  未提供detection_indices，假设为[0,1,2,...]")
+            logger.warning("WARNING: 未提供detection_indices，假设为[0,1,2,...]")
 
         if vggt_image_ids is None:
             vggt_image_ids = list(range(vggt_frame_count))
-            logger.warning("⚠️  未提供vggt_image_ids，假设为[0,1,2,...]")
+            logger.warning("WARNING: 未提供vggt_image_ids，假设为[0,1,2,...]")
 
         # 3. 对齐分析
         alignment_report = VGGTDetectionAligner._analyze_alignment(
@@ -84,11 +84,11 @@ class VGGTDetectionAligner:
 
         # 4. 决定处理策略
         if alignment_report["is_perfectly_aligned"]:
-            logger.info("✅ 帧对齐验证通过，无需修复")
+            logger.info("帧对齐验证通过，无需修复")
             return vggt_data, detections, alignment_report
 
         elif not strict_mode:
-            logger.warning("⚠️  检测到帧对齐问题，尝试自动修复...")
+            logger.warning("WARNING: 检测到帧对齐问题，尝试自动修复...")
             return VGGTDetectionAligner._attempt_repair(
                 vggt_data, detections, vggt_image_ids, detection_indices, alignment_report
             )
@@ -161,7 +161,7 @@ class VGGTDetectionAligner:
         if len(common_ids) == 0:
             raise FrameAlignmentError("无交集图像，无法修复对齐")
 
-        logger.info(f"🔧 修复对齐：保留{len(common_ids)}个共同图像")
+        logger.info(f"修复对齐：保留{len(common_ids)}个共同图像")
 
         # 创建映射表
         vggt_id_to_idx = {img_id: idx for idx, img_id in enumerate(vggt_image_ids)}
@@ -203,7 +203,7 @@ class VGGTDetectionAligner:
             "dropped_detection_frames": len(detections) - len(aligned_image_ids),
         })
 
-        logger.info(f"✅ 修复完成：{len(aligned_image_ids)}帧对齐")
+        logger.info(f"修复完成：{len(aligned_image_ids)}帧对齐")
         logger.info(f"   丢弃VGGT帧: {alignment_report['dropped_vggt_frames']}")
         logger.info(f"   丢弃检测帧: {alignment_report['dropped_detection_frames']}")
 

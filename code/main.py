@@ -17,6 +17,33 @@ if str(CODE_DIR) not in sys.path:
     sys.path.append(str(CODE_DIR))
 
 
+class _StartEndColorFilter(logging.Filter):
+    """Colorize messages that contain START/END without changing file logs.
+
+    - Lines containing 'start' → cyan message
+    - Lines containing 'end' → green message (or red when contains 'fail')
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
+        try:
+            msg = record.getMessage()
+            lower = msg.lower()
+            from colorlog import escape_codes
+
+            color = ''
+            if 'start' in lower:
+                color = escape_codes.get('cyan', '')
+            elif 'end' in lower:
+                color = escape_codes.get('red', '') if 'fail' in lower else escape_codes.get('green', '')
+
+            # Prefix only the message part; keep level color as-is
+            record.msg_color = color
+            # ColoredFormatter appends %(reset)s at the end, no need for extra reset
+        except Exception:
+            record.msg_color = ''
+        return True
+
+
 def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
     """配置全局日志，使每次运行仅在 save_root 中生成一个日志文件。
 
@@ -39,14 +66,14 @@ def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
     
     # 创建彩色控制台格式器
     console_fmt = colorlog.ColoredFormatter(
-        '%(log_color)s%(levelname)s - %(message)s%(reset)s',
+        '%(log_color)s%(levelname)s - %(msg_color)s%(message)s%(reset)s',
         log_colors={
             'DEBUG': 'cyan',
             'INFO': 'white',
-            'WARNING': 'yellow', 
+            'WARNING': 'yellow',
             'ERROR': 'red',
             'CRITICAL': 'bold_red',
-        }
+        },
     )
 
     fh = RotatingFileHandler(str(log_file), maxBytes=10_000_000, backupCount=1, encoding='utf-8')
@@ -57,6 +84,8 @@ def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
     sh.setFormatter(console_fmt)
 
     root_logger.addHandler(fh)
+    # Only colorize console output based on message content
+    sh.addFilter(_StartEndColorFilter())
     root_logger.addHandler(sh)
 
     logger = logging.getLogger(__name__)
@@ -254,8 +283,14 @@ class SKUDetectionMain:
 
     
 
-    def run_detection_visualization(self, dataset_path: str) -> StepResult:
-        """运行检出框可视化，输出到 output_viz/<dataset_name>/（或 --save_root）"""
+    def run_detection_visualization(self, dataset_path: str, detection_dir: str = None, output_suffix: str = "imgs_w_bboxes") -> StepResult:
+        """运行检出框可视化
+
+        Args:
+            dataset_path: 数据集路径
+            detection_dir: 检测结果目录（默认使用 detections_results）
+            output_suffix: 输出目录后缀（默认 imgs_w_bboxes）
+        """
         start = perf_counter()
         original_argv = sys.argv.copy()
         try:
@@ -265,12 +300,17 @@ class SKUDetectionMain:
 
             dataset = Path(dataset_path)
             image_dir = dataset / "images"
-            detection_dir = dataset / "detections_results"
 
-            # 输出目录：若指定 save_root，则写到 save_root/output_viz/<dataset_name>
+            # 如果未指定detection_dir，使用默认的detections_results
+            if detection_dir is None:
+                detection_dir = dataset / "detections_results"
+            else:
+                detection_dir = Path(detection_dir)
+
+            # 输出目录：若指定 save_root，则写到 save_root/<dataset_name>/<output_suffix>
             output_viz_dir = (
-                (self.save_root / dataset.name / "imgs_w_bboxes")
-                if self.save_root else (CODE_DIR / dataset.name / "imgs_w_bboxes")
+                (self.save_root / dataset.name / output_suffix)
+                if self.save_root else (CODE_DIR / dataset.name / output_suffix)
             ).resolve()
             output_viz_dir.mkdir(parents=True, exist_ok=True)
 
@@ -466,7 +506,8 @@ class SKUDetectionMain:
 
             paths = resolve_dataset_paths(dataset_dir)
 
-            output_root = self.save_root if self.save_root is not None else (CODE_DIR / "output_dedup")
+            # 输出根目录：改为 dedup_detection/<dataset_name>（与模块内部追加 dataset_name 兼容）
+            output_root = (self.save_root if self.save_root is not None else CODE_DIR) / "dedup_detection"
 
             result = deduplicate_sequence(
                 paths,
@@ -479,7 +520,7 @@ class SKUDetectionMain:
 
             duration = perf_counter() - start
             dataset_name = Path(dataset_path).name
-            logger.info(f"END dedup_sequence duration={duration:.2f}s result=ok output_dir={output_root / dataset_name} count={len(result)}")
+            logger.info(f"END dedup_sequence duration={duration:.2f}s result=ok output_dir={(output_root / dataset_name)} count={len(result)}")
             return {"success": True, "duration_s": duration, "details": {"count": len(result), "output_root": str(output_root)}}
         except Exception as e:
             duration = perf_counter() - start
@@ -495,20 +536,43 @@ class SKUDetectionMain:
             return {"validation": False}
         summary['validation'] = True
 
+        # 1. 原始检测框可视化
         viz = self.run_detection_visualization(dataset_path)
         summary['visualization'] = bool(viz.get('success', False))
 
+        # 2. SKU匹配推理
         match = self.run_sku_matching(dataset_path, 'point_tracking', batch_all_refs=True)  # TODO: algorithm is hardcoded now
         summary['matching'] = bool(match.get('success', False))
 
+        # 3. SKU计数分析
         analysis = self.run_improved_sku_analysis(dataset_path)
         summary['improved_analysis'] = bool(analysis.get('success', False))
 
-        # 6. 顺序去重（默认包含以便一键产出去重JSON）
+        # 4. 顺序去重（默认包含以便一键产出去重JSON）
         dedup = self.run_dedup_sequence(dataset_path)
         summary['dedup'] = bool(dedup.get('success', False))
 
-        # 7. 准确性评估 (可选)
+        # 5. 去重后的检测框可视化
+        if summary['dedup']:
+            dataset = Path(dataset_path)
+            output_root = self.save_root if self.save_root is not None else (CODE_DIR / "output_dedup")
+            dedup_detection_dir = output_root / dataset.name / "dedup_detections"
+
+            if dedup_detection_dir.exists():
+                logger.info("开始可视化去重后的检测框...")
+                dedup_viz = self.run_detection_visualization(
+                    dataset_path,
+                    detection_dir=str(dedup_detection_dir),
+                    output_suffix="dedup_imgs_w_bboxes"
+                )
+                summary['dedup_visualization'] = bool(dedup_viz.get('success', False))
+            else:
+                logger.warning(f"去重检测目录不存在: {dedup_detection_dir}")
+                summary['dedup_visualization'] = False
+        else:
+            summary['dedup_visualization'] = False
+
+        # 6. 准确性评估 (可选)
         acc = self.run_accuracy_evaluation(dataset_path)
         summary['accuracy_evaluation'] = bool(acc.get('success', False))
 
