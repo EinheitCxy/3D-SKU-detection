@@ -327,7 +327,7 @@ def main() -> None:
         logger.info(f"检测结果目录: {args.detection_dir}")
         logger.info(f"参考图像索引: {args.reference_idx}")
         logger.info(f"算法选择: {args.algorithm}")
-        logger.info("")
+        logger.info("==================")
         
         correspondences_point_tracking = None
         correspondences_3d = None
