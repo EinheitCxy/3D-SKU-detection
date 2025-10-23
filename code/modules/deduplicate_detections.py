@@ -12,7 +12,7 @@ uv run python modules/deduplicate_detections.py --dataset imdata0911/floor_displ
 - 对每张图片 i(i>1)，删除它与之前任一图片(1..i-1)中已出现 ref_id 的对应 target_id 的检出框
 
 输出
-- 将去重后的 JSON 写入 output_dedup/<dataset_name>/<image_idx>_dedup.json（或 --output_dir 指定的路径）
+- 将去重后的 JSON 写入 output_dedup/<dataset_name>/<image_idx>.json（或 --output_dir 指定的路径）
 """
 
 from __future__ import annotations
@@ -289,7 +289,7 @@ def deduplicate_for_images(paths: DatasetPaths,
 
     dataset_name = paths.dataset_dir.name
     # 默认输出到代码根目录下的 output_dedup/<dataset_name>
-    out_dir = (output_root or (Path(__file__).parent.parent / 'output_dedup')) / dataset_name
+    out_dir = (output_root or (Path(__file__).parent.parent / 'dedup_detection')) / dataset_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     outputs: Dict[int, Path] = {}
@@ -320,11 +320,21 @@ def deduplicate_for_images(paths: DatasetPaths,
 
 def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
                          max_image: int | None = None, same_names: bool = False,
-                         dedup_mode: str = 'any', min_hit_ratio: float = 0.0) -> Dict[int, Path]:
+                         dedup_mode: str = 'any', min_hit_ratio: float = 0.0,
+                         output_subdir: str = None) -> Dict[int, Path]:
     """对 1..N 序列依次去重：
     - 第1张保留原样
     - 第i张(i>1)去除在 1..i-1 中已出现过（有匹配）的 ref_id 在第i张对应的 target_id。
     返回 {image_idx: 输出路径}。
+
+    Args:
+        paths: 数据集路径配置
+        output_root: 输出根目录
+        max_image: 最大处理图片数
+        same_names: 是否使用相同文件名（否则添加_dedup后缀）
+        dedup_mode: 去重模式 'any'/'best'
+        min_hit_ratio: 最小命中率阈值
+        output_subdir: 输出子目录名（如'dedup_detections'），若为None则直接输出到dataset_name/
     """
     # 解析所有参考索引的匹配
     summary_root = paths.dataset_dir / 'output_pt'
@@ -370,7 +380,11 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
 
     dataset_name = paths.dataset_dir.name
     # 默认输出到代码根目录下的 output_dedup/<dataset_name>
-    out_dir = (output_root or (Path(__file__).parent.parent / 'output_dedup')) / dataset_name
+    # 如果指定了 output_subdir，则追加子目录
+    if output_subdir:
+        out_dir = (output_root or (Path(__file__).parent.parent / 'output_dedup')) / dataset_name / output_subdir
+    else:
+        out_dir = (output_root or (Path(__file__).parent.parent / 'output_dedup')) / dataset_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     outputs: Dict[int, Path] = {}

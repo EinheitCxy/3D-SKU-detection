@@ -5,7 +5,7 @@
 main:
   dataset: "imdata/floor_display2"
   mode: "interactive"  # interactive, pipeline, concise, analyzer, dedup, reconstruct
-  algorithm: "both"  # point_tracking, 3d, both
+  algorithm: "point_tracking"  # point_tracking, 3d, both
   reference_idx: 0
   max_images: 50
   device: "cuda"
