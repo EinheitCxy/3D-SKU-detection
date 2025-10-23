@@ -322,7 +322,22 @@ class VGGT3DReconstructor:
             # 3. 运行推理
             predictions = self.run_inference(images)
 
-            # 4. 导出GLB
+            # 4. （可选）保存 predictions 缓存（并按需应用遮罩到 conf）
+            if save_predictions:
+                try:
+                    self._save_predictions_cache(
+                        predictions,
+                        output_path,
+                        image_ids,
+                        image_paths=image_paths,
+                        mask_black_bg=bool(kwargs.get('mask_black_bg', False)),
+                        mask_white_bg=bool(kwargs.get('mask_white_bg', False)),
+                        mask_sky=bool(kwargs.get('mask_sky', False)),
+                    )
+                except Exception as e:
+                    logger.warning(f"保存predictions缓存失败（跳过）：{e}")
+
+            # 5. 导出GLB
             self.export_glb(predictions, output_path, **kwargs)
 
             # 5. 保存VGGT predictions中间数据（用于后续可视化）
@@ -387,7 +402,16 @@ class VGGT3DReconstructor:
 
         logger.info(f"保存VGGT transforms参数: {out_file}")
 
-    def _save_predictions_cache(self, predictions, output_path, image_ids):
+    def _save_predictions_cache(
+        self,
+        predictions,
+        output_path,
+        image_ids,
+        image_paths=None,
+        mask_black_bg: bool = False,
+        mask_white_bg: bool = False,
+        mask_sky: bool = False,
+    ):
         """
         保存VGGT predictions中间数据
 
@@ -396,6 +420,9 @@ class VGGT3DReconstructor:
         - depth: 深度图 (S,H,W)
         - conf: 置信度图 (S,H,W)
         - image_ids: 图片ID列表 (S,) - 从文件名提取的数字ID
+        - extrinsic: 相机外参 (S,3,4) - 用于相机位姿可视化
+        - intrinsic: 相机内参 (S,3,3) - 用于相机视锥FOV计算
+        - images: 输入图像 (S,3,H,W) - 用于Frustum纹理
 
         Args:
             predictions: VGGT模型预测结果
@@ -443,6 +470,93 @@ class VGGT3DReconstructor:
                     logger.warning(f"image_ids数量({len(image_ids)})与world_points帧数({frame_count})不一致")
 
 
+            # 提取相机参数（用于可视化）
+            extrinsic = predictions.get('extrinsic')
+            intrinsic = predictions.get('intrinsic')
+            images = predictions.get('images')
+
+            # 基于图像生成遮罩（可选）：将 conf 中对应位置置零（软遮罩，不破坏几何）
+            try:
+                if (mask_black_bg or mask_white_bg or mask_sky) and images is not None and conf is not None:
+                    imgs = images
+                    # 归一化为 (S,H,W,3) uint8
+                    if imgs.ndim == 4 and imgs.shape[1] == 3:
+                        imgs = imgs.transpose(0, 2, 3, 1)  # CHW->HWC
+                    if imgs.dtype != np.uint8:
+                        maxv = float(imgs.max()) if imgs.size > 0 else 1.0
+                        scale = 255.0 if maxv <= 1.0 else 1.0
+                        imgs = np.clip(imgs * scale, 0, 255).astype(np.uint8)
+
+                    S = imgs.shape[0]
+                    Hc, Wc = conf.shape[-2], conf.shape[-1]
+                    # 若尺寸不一致，安全缩放到 conf 尺寸
+                    try:
+                        import cv2
+                        resized_imgs = np.stack([cv2.resize(imgs[i], (Wc, Hc)) for i in range(S)], axis=0)
+                    except Exception:
+                        # 无法缩放时，跳过遮罩
+                        resized_imgs = imgs
+                        if resized_imgs.shape[1] != Hc or resized_imgs.shape[2] != Wc:
+                            raise RuntimeError("图像尺寸与conf不一致且缺少OpenCV进行缩放，跳过遮罩。")
+
+                    mask = np.zeros((S, Hc, Wc), dtype=np.uint8)
+
+                    # 黑色背景遮罩
+                    if mask_black_bg:
+                        gray = (0.299*resized_imgs[...,0] + 0.587*resized_imgs[...,1] + 0.114*resized_imgs[...,2]).astype(np.float32)
+                        mask |= (gray < 25).astype(np.uint8)
+
+                    # 白色背景遮罩
+                    if mask_white_bg:
+                        gray = (0.299*resized_imgs[...,0] + 0.587*resized_imgs[...,1] + 0.114*resized_imgs[...,2]).astype(np.float32)
+                        mask |= (gray > 230).astype(np.uint8)
+
+                    # 天空遮罩（简易 HSV 版本，无外部下载依赖）
+                    if mask_sky:
+                        try:
+                            import cv2
+                            hsv = np.stack([cv2.cvtColor(resized_imgs[i], cv2.COLOR_RGB2HSV) for i in range(S)], axis=0)
+                            h = hsv[...,0]
+                            s = hsv[...,1]
+                            v = hsv[...,2]
+                            # 粗略的天空蓝色范围，仅作弱过滤（后续可在viewer端再提升门槛）
+                            sky = ((h >= 90) & (h <= 140) & (s > 30) & (v > 80)).astype(np.uint8)
+                            mask |= sky
+                        except Exception:
+                            pass
+
+                    # 应用软遮罩：将 conf 中对应位置置零
+                    if mask.any():
+                        conf = conf.astype(np.float32, copy=False)
+                        conf = conf * (1.0 - (mask.astype(np.float32)))
+                        logger.info("已应用预测结果遮罩：黑/白/天空")
+            except Exception as e:
+                logger.warning(f"应用遮罩失败，跳过遮罩: {e}")
+
+            # 统一数值精度：保存为 float32，图像为 uint8
+            def _to_f32(x):
+                try:
+                    return x.astype(np.float32, copy=False)
+                except Exception:
+                    return x
+
+            if world_points is not None:
+                world_points = _to_f32(world_points)
+            if depth is not None:
+                depth = _to_f32(depth)
+            if conf is not None:
+                conf = _to_f32(conf)
+            if extrinsic is not None:
+                extrinsic = _to_f32(extrinsic)
+            if intrinsic is not None:
+                intrinsic = _to_f32(intrinsic)
+            if images is not None:
+                # 将 (S,H,W,3) 转为 uint8；若是 (S,3,H,W) 由消费者自行处理
+                if images.ndim == 4 and images.shape[1] != 3:
+                    # 视为 HWC
+                    if images.dtype != np.uint8:
+                        images = np.clip(images * (255.0 if images.max() <= 1.0 else 1.0), 0, 255).astype(np.uint8)
+
             # 保存数据
             save_data = {
                 'world_points': world_points,
@@ -450,6 +564,9 @@ class VGGT3DReconstructor:
                 'conf': conf,
                 'image_ids': np.array(image_ids, dtype=np.int32),
                 'frame_count': frame_count if world_points is not None else len(image_ids),
+                'extrinsic': extrinsic,  # (S, 3, 4) 相机外参
+                'intrinsic': intrinsic,  # (S, 3, 3) 相机内参
+                'images': images,        # (S, 3, H, W) 或 (S,H,W,3)
             }
 
             # 过滤掉None值
