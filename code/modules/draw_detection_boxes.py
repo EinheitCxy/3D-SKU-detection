@@ -104,7 +104,7 @@ def main():
     # 处理每张图片
     success_count = 0
     total_count = 0
-    
+    print("===Generating imdata with bbox===")
     for num, image_path in numeric_images:
         logger.info(f"\n--- Processing {image_path.name} ---")
         total_count += 1
@@ -154,12 +154,9 @@ def main():
     # 统计结果
     logger.info(f"\n=== 处理完成 ===")
     logger.info(f"总共处理: {total_count} 张图片")
-    logger.info(f"成功处理: {success_count} 张图片") 
     logger.info(f"失败数量: {total_count - success_count} 张图片")
     logger.info(f"输出目录: {output_dir}")
     
-    if success_count > 0:
-        logger.info(f"\n可以查看输出目录中的可视化结果。")
 
 if __name__ == "__main__":
     main()
