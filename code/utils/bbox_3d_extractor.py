@@ -27,6 +27,7 @@ def extract_3d_from_bboxes(
     world_points_conf: np.ndarray, # (S, H, W) or (H, W)
     detections: List[Dict],        # 按图像顺序的检测结果（与 world_points 对齐）
     reverse_mapping: Dict[Tuple[int, int], int],  # (image_id, object_id) -> global_id（image_id为1-based）
+    image_ids: Optional[List[int]] = None,  # 真实图像ID列表（与detections对齐）
     conf_threshold: float = 0.1,
     use_adaptive_threshold: bool = False,
     adaptive_percentile: float = 10.0,
@@ -40,12 +41,14 @@ def extract_3d_from_bboxes(
     核心要点：
     - detections 的顺序必须与 world_points 的第0维一致；若传入 vggt_transforms，其长度也需一致。
     - reverse_mapping 使用 (image_id, object_id) 作为键，其中 image_id 按 1 开始计数。
+    - **关键修复**：优先使用检测结果中的真实 object_id，避免顺序索引导致的ID偏差
 
     Args:
         world_points: VGGT 预测的世界坐标点云。
         world_points_conf: 与 world_points 对齐的置信度图。
         detections: 单张图的检测数据，需包含 objects 列表，每个对象有 position[bbox]。
         reverse_mapping: (image_id(1-based), object_id) -> global_id。
+        image_ids: 真实图像ID列表（与detections对齐），若None则使用img_idx+1作为image_id。
         conf_threshold: 置信度绝对阈值。
         use_adaptive_threshold: 使用每个bbox内部的自适应百分位阈值。
         adaptive_percentile: 自适应阈值百分位数。
@@ -98,19 +101,22 @@ def extract_3d_from_bboxes(
         det = detections[img_idx]
         img_stats = {"image_idx": img_idx, "bboxes_count": 0, "valid_bboxes": 0, "points_extracted": 0}
 
-        # 将不同格式统一为“扁平 objects 列表”
+        # 将不同格式统一为"扁平 objects 列表"
         objects = _flatten_objects(det)
         img_stats["bboxes_count"] = len(objects)
 
-        # 对齐 global_mapping 的 object_id：按本图内对象出现顺序从 0 递增
-        next_object_id = 0
+        # 确定当前图像的真实image_id
+        real_image_id = image_ids[img_idx] if image_ids else (img_idx + 1)
+
+        # 顺序计数器（仅在检测结果缺少真实object_id时使用）
+        fallback_object_id = 0
 
         for obj in objects:
             stats["total_bboxes"] += 1
             bbox_orig = obj.get("position")  # 原图坐标 [x1, y1, x2, y2]
             if bbox_orig is None or len(bbox_orig) != 4:
                 stats["skipped_outofbound"] += 1
-                next_object_id += 1
+                fallback_object_id += 1
                 continue
 
             # 将 bbox 原图坐标映射到 VGGT 最终输入坐标（包含裁剪与批量填充）
@@ -125,7 +131,7 @@ def extract_3d_from_bboxes(
             x1i, y1i, x2i, y2i = _shrink_and_clip_bbox(x1f, y1f, x2f, y2f, W, H, bbox_margin)
             if x2i <= x1i or y2i <= y1i:
                 stats["skipped_outofbound"] += 1
-                next_object_id += 1
+                fallback_object_id += 1
                 continue
 
             # 取出该区域的 3D 点与置信度
@@ -143,15 +149,44 @@ def extract_3d_from_bboxes(
             valid_mask = (flat_conf > thr) & np.isfinite(flat_pts).all(axis=1)
             if not np.any(valid_mask):
                 stats["skipped_lowconf"] += 1
-                next_object_id += 1
+                fallback_object_id += 1
                 continue
 
-            # 反向映射获得 global_id（image_id 为 1-based）
-            key = (img_idx + 1, next_object_id)
+            # **关键修复**：优先使用检测结果中的真实object_id
+            # 尝试多种可能的字段名：object_id, id, obj_id
+            real_object_id = obj.get('object_id')
+            if real_object_id is None:
+                real_object_id = obj.get('id')
+            if real_object_id is None:
+                real_object_id = obj.get('obj_id')
+            if real_object_id is None:
+                # 回退到顺序索引
+                real_object_id = fallback_object_id
+
+            # 反向映射获得 global_id
+            key = (real_image_id, real_object_id)
             gid = reverse_mapping.get(key, -1)
+
+            # 调试信息：记录查找失败的情况
+            if gid == -1 and fallback_object_id != real_object_id:
+                # 尝试用fallback_object_id再查一次
+                fallback_key = (real_image_id, fallback_object_id)
+                gid_fallback = reverse_mapping.get(fallback_key, -1)
+                if gid_fallback != -1:
+                    logger.debug(
+                        f"图像{real_image_id}: 使用真实object_id={real_object_id}未找到gid，"
+                        f"但fallback_id={fallback_object_id}找到gid={gid_fallback}"
+                    )
+                    gid = gid_fallback
+                    real_object_id = fallback_object_id
+
             if filter_invalid_ids and gid == -1:
                 stats["skipped_invalid_id"] += 1
-                next_object_id += 1
+                logger.debug(
+                    f"图像{real_image_id}, object_id={real_object_id}: "
+                    f"在reverse_mapping中未找到对应的global_id (key={key})"
+                )
+                fallback_object_id += 1
                 continue
 
             valid_points = flat_pts[valid_mask]
@@ -168,7 +203,8 @@ def extract_3d_from_bboxes(
             if return_stats:
                 stats["per_bbox"].append({
                     "image_idx": img_idx,
-                    "object_id": next_object_id,
+                    "image_id": real_image_id,
+                    "object_id": real_object_id,
                     "global_id": gid,
                     "bbox_final": [int(x1i), int(y1i), int(x2i), int(y2i)],
                     "points_count": int(len(valid_points)),
@@ -176,7 +212,7 @@ def extract_3d_from_bboxes(
                     "conf_std": float(np.std(valid_confs)),
                 })
 
-            next_object_id += 1
+            fallback_object_id += 1
 
         if return_stats:
             stats["per_image"].append(img_stats)

@@ -6,7 +6,8 @@ SKU匹配系统坐标变换模块
 
 import numpy as np
 import torch
-from typing import List, Tuple
+from typing import List, Tuple, Optional, Sequence, Dict, Any
+from pathlib import Path
 from PIL import Image
 
 
@@ -238,3 +239,95 @@ def build_vggt_transforms(image_paths: List[str], target_size: int = 518) -> Lis
         t.apply_batch_padding(max_w, max_h)
 
     return transforms
+
+
+# ========== Lightweight adapters for transforms.json ==========
+
+class JSONTransformAdapter:
+    """A lightweight adapter built from transforms.json minimal fields.
+
+    It re-implements only the forward mapping used by the viewer: map_xy_to_final.
+    """
+
+    __slots__ = ("sx", "sy", "crop_start_y", "pad_left", "pad_top", "pw", "ph")
+
+    def __init__(
+        self,
+        sx: float,
+        sy: float,
+        crop_start_y: int,
+        pad_left: int,
+        pad_top: int,
+        padded_width: int,
+        padded_height: int,
+    ) -> None:
+        self.sx = float(sx)
+        self.sy = float(sy)
+        self.crop_start_y = int(crop_start_y)
+        self.pad_left = int(pad_left)
+        self.pad_top = int(pad_top)
+        self.pw = int(padded_width)
+        self.ph = int(padded_height)
+
+    def map_xy_to_final(self, x: float, y: float) -> Tuple[float, float]:
+        xs = x * self.sx
+        ys = y * self.sy
+        if self.crop_start_y > 0:
+            ys -= self.crop_start_y
+        # apply batch-centered padding
+        xf = xs + self.pad_left
+        yf = ys + self.pad_top
+        # clamp to canvas
+        if self.pw > 0:
+            xf = 0.0 if xf < 0.0 else (float(self.pw - 1) if xf > self.pw - 1 else xf)
+        if self.ph > 0:
+            yf = 0.0 if yf < 0.0 else (float(self.ph - 1) if yf > self.ph - 1 else yf)
+        return float(xf), float(yf)
+
+
+def build_transforms_from_json(
+    json_path: str | Path,
+    aligned_image_ids: Sequence[int],
+) -> Optional[List[JSONTransformAdapter]]:
+    """Load transforms.json and return adapters ordered by aligned_image_ids.
+
+    Returns None when file missing, malformed, or any image id is absent.
+    """
+    p = Path(json_path)
+    if not p.exists():
+        return None
+
+    import json
+
+    with p.open("r", encoding="utf-8") as f:
+        data: Dict[str, Any] = json.load(f)
+
+    padded_size = data.get("padded_size")
+    if not padded_size or len(padded_size) != 2:
+        return None
+    pw, ph = int(padded_size[0]), int(padded_size[1])
+
+    frames = data.get("frames") or []
+    if not isinstance(frames, list) or len(frames) == 0:
+        return None
+
+    by_img: Dict[int, JSONTransformAdapter] = {}
+    for fr in frames:
+        try:
+            img_id = int(fr["image_id"])
+            sx, sy = fr["scales"][0], fr["scales"][1]
+            crop_start_y = int(fr.get("crop_start_y", 0))
+            pad_left, pad_top = fr.get("batch_padding", [0, 0])
+            by_img[img_id] = JSONTransformAdapter(sx, sy, crop_start_y, int(pad_left), int(pad_top), pw, ph)
+        except Exception:
+            # Skip malformed frame entries
+            continue
+
+    adapters: List[JSONTransformAdapter] = []
+    for img_id in aligned_image_ids:
+        a = by_img.get(int(img_id))
+        if a is None:
+            return None
+        adapters.append(a)
+
+    return adapters

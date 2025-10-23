@@ -300,8 +300,6 @@ class SKUMatchingSystem:
     ) -> None:
         """后处理结果：可视化和保存"""
         if correspondences:
-            # 生成可视化
-            logger.info("Generating visualization...")
             visualize_results(
                 images, reference_image_idx, points_per_object, 
                 correspondences, self.config, detections, transforms_info
