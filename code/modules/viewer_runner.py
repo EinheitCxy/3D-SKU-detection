@@ -59,8 +59,12 @@ def start_viewer(
     image_dir: str,
     global_mapping: str,
     port: int = 8080,
+    open_browser: bool = True,
 ) -> None:
     """Start interactive viewer from prepared artifacts."""
+    import threading
+    import time as _time
+    import webbrowser
     artifacts = ViewerArtifacts(
         pcd_cache_path=Path(pcd_cache_path),
         index_cache_path=Path(index_cache_path),
@@ -68,6 +72,14 @@ def start_viewer(
     )
     runtime = ViewerRuntimeConfig(port=int(port))
     viewer = ViserViewer(artifacts, runtime, image_dir=Path(image_dir), global_mapping=Path(global_mapping))
+    if open_browser:
+        def _open():
+            _time.sleep(0.5)
+            try:
+                webbrowser.open(f"http://127.0.0.1:{int(port)}")
+            except (OSError, RuntimeError):
+                pass
+        threading.Thread(target=_open, daemon=True).start()
     viewer.start()
 
 
@@ -82,6 +94,7 @@ def run_viewer(
     points_source: str = "glb",
     port: int = 8080,
     force_rebuild: bool = False,
+    open_browser: bool = True,
 ) -> None:
     """Build and run the viewer in one call."""
     res = build_viewer_cache(
@@ -100,5 +113,5 @@ def run_viewer(
         image_dir=image_dir,
         global_mapping=global_mapping,
         port=port,
+        open_browser=open_browser,
     )
-
