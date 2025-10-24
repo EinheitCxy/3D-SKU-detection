@@ -171,7 +171,7 @@ def visualize_results(
             output_filename = Path(config.output_dir) / f"target_image_{s_idx}_all_bboxes_and_matches.jpg"
             cv2.imwrite(str(output_filename), target_image_bgr)
             
-    except Exception as e:
+    except (cv2.error, FileNotFoundError, PermissionError, KeyError, IndexError) as e:
         logger.error(f"Failed to generate visualization: {e}")
         raise
 
@@ -314,6 +314,6 @@ def save_visualization_summary(
         
         logger.info(f"Saved matching summary to {summary_path}")
         
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, UnicodeEncodeError) as e:
         logger.error(f"Failed to save visualization summary: {e}")
         raise

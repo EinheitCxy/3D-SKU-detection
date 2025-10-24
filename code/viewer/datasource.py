@@ -82,6 +82,6 @@ def normalize_colors_to_uint8(colors: np.ndarray) -> np.ndarray:
         if maxv <= 1.0:
             col = col * 255.0
         return np.clip(col, 0, 255).astype(np.uint8)
-    except Exception:
+    except (ValueError, AttributeError, TypeError):
         return colors.astype(np.uint8, copy=False)
 

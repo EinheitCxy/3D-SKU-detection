@@ -68,7 +68,7 @@ class SKUMatchingSystem:
             self._is_initialized = True
             logger.info("System initialization complete")
             
-        except Exception as e:
+        except (ImportError, RuntimeError, FileNotFoundError) as e:
             logger.error(f"Failed to initialize system: {e}")
             raise
     
@@ -137,7 +137,7 @@ class SKUMatchingSystem:
             
             return correspondences
             
-        except Exception as e:
+        except (RuntimeError, ValueError, FileNotFoundError) as e:
             logger.error(f"Failed to process images: {e}")
             raise
     

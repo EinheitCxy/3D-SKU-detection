@@ -50,7 +50,7 @@ def _count_images_and_detections(image_folder: str, detection_dir: str) -> tuple
                 continue
             try:
                 data = json.loads(p.read_text(encoding="utf-8"))
-            except Exception:
+            except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
                 continue
             if isinstance(data, list) and data and isinstance(data[0], dict):
                 if data[0].get("objects"):
@@ -58,7 +58,7 @@ def _count_images_and_detections(image_folder: str, detection_dir: str) -> tuple
             elif isinstance(data, dict):
                 if (isinstance(data.get("skus"), list) and data["skus"] and data["skus"][0].get("objects")) or data.get("objects"):
                     n_det += 1
-    except Exception:
+    except (FileNotFoundError, PermissionError):
         pass
     return n_img, n_det
 
@@ -352,7 +352,7 @@ def main() -> None:
             logger.info(f"差异: {abs(point_tracking_total - projection_total)} 个匹配")        
         logger.info("=== 处理完成 ===")
             
-    except Exception as e:
+    except (RuntimeError, ValueError, FileNotFoundError, ImportError) as e:
         logger.error(f"执行过程中发生错误: {e}")
         import traceback
         traceback.print_exc()

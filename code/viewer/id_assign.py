@@ -47,7 +47,7 @@ def assign_global_ids_to_points(
         pre_confs = data["confidences"] if "confidences" in data else np.ones(len(pre_points), dtype=np.float32)
         pre_frame_indices = data["frame_indices"] if "frame_indices" in data else None
 
-        distances, indices = nearest_neighbor_mapping(pre_points, points, k=1)
+        distances, indices = _nn_search(pre_points, points)
         final_gids = pre_gids[indices].astype(np.int32)
         final_confs = pre_confs[indices].astype(np.float32)
         if pre_frame_indices is not None:
@@ -169,7 +169,8 @@ def _compute_gids_from_predictions(
 
         transforms_path = dataset_root / "vggt_cache" / "transforms.json"
         vggt_transforms = build_transforms_from_json(str(transforms_path), aligned_image_ids)
-    except Exception:
+    except (FileNotFoundError, KeyError, ImportError) as e:
+        logger.debug(f"Failed to load transforms from cache: {e}")
         vggt_transforms = None
 
     if vggt_transforms is None:
@@ -181,7 +182,8 @@ def _compute_gids_from_predictions(
                 image_paths, found_all = _find_image_paths(aligned_image_ids, search_dir)
                 if found_all and image_paths:
                     vggt_transforms = build_vggt_transforms(image_paths, target_size=518)
-        except Exception:
+        except (FileNotFoundError, ImportError) as e:
+            logger.debug(f"Failed to build transforms from images: {e}")
             vggt_transforms = None
 
     # 从检测框提取 3D 点
@@ -208,8 +210,8 @@ def _compute_gids_from_predictions(
             np.zeros(len(target_points), dtype=np.int32),
         )
 
-    # 将提取点映射到目标点云
-    distances, indices = nearest_neighbor_mapping(extracted_points, target_points, k=1)
+    # 将提取点映射到目标点云（优先使用 FAISS-GPU，加速构建期 KNN 映射）
+    distances, indices = _nn_search(extracted_points, target_points)
     final_gids = np.full(len(target_points), -1, dtype=np.int32)
     final_confs = np.zeros(len(target_points), dtype=np.float32)
 
@@ -221,14 +223,16 @@ def _compute_gids_from_predictions(
         valid = distances <= thr
         final_gids[valid] = extracted_gids[indices[valid]]
         final_confs[valid] = extracted_confs[indices[valid]]
-    except Exception:
+    except (ValueError, IndexError) as e:
+        # 如果距离计算失败，使用所有点（无过滤）
+        logger.warning(f"Distance threshold calculation failed: {e}, using all points")
         final_gids = extracted_gids[indices]
         final_confs = extracted_confs[indices]
 
     # 帧索引：用 VGGT 平面点构建 KDTree，查询 target_points 对应帧标签
     world_points_flat = world_points.reshape(-1, 3)
     source_frame_ids = np.repeat(np.arange(world_points.shape[0] if world_points.ndim == 4 else 1), H * W)
-    _, glb_to_vggt_indices = nearest_neighbor_mapping(world_points_flat, target_points, k=1)
+    _, glb_to_vggt_indices = _nn_search(world_points_flat, target_points)
     final_frame_indices = source_frame_ids[glb_to_vggt_indices].astype(np.int32)
     return final_gids, final_confs, final_frame_indices
 
@@ -250,3 +254,39 @@ def _find_image_paths(detection_indices: List[int], search_dir: Path) -> Tuple[L
             break
     return image_paths, found_all
 
+
+# ===== Accelerated NN mapping (FAISS-GPU with graceful fallback) =====
+def _nn_search(source_points: np.ndarray, target_points: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Nearest neighbor search with FAISS-GPU fallback to FAISS-CPU then KDTree.
+
+    Returns
+    -------
+    distances: np.ndarray shape (M,)
+    indices:   np.ndarray shape (M,)
+    """
+    # Fast path: FAISS (GPU if available)
+    try:
+        import faiss  # type: ignore
+
+        d = int(source_points.shape[1])
+        src = source_points.astype(np.float32, copy=False)
+        tgt = target_points.astype(np.float32, copy=False)
+
+        try:
+            res = faiss.StandardGpuResources()
+            index = faiss.GpuIndexFlatL2(res, d)
+            logger.info("KNN: Using FAISS-GPU (IndexFlatL2)")
+        except (ImportError, RuntimeError, AttributeError):
+            index = faiss.IndexFlatL2(d)
+            logger.info("KNN: Using FAISS-CPU (IndexFlatL2)")
+
+        index.add(src)
+        D, I = index.search(tgt, 1)
+        return D.reshape(-1), I.reshape(-1)
+    except (ImportError, RuntimeError, ValueError) as e:
+        logger.info(f"KNN: FAISS not available or failed ({e}); fallback to KDTree")
+
+    # Fallback: KDTree
+    distances, indices = nearest_neighbor_mapping(source_points, target_points, k=1)
+    # Ensure 1-D
+    return distances.reshape(-1), indices.reshape(-1)

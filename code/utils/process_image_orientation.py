@@ -58,7 +58,7 @@ def fix_image_orientation(image_path: str, output_path: str = None) -> bool:
             
             return True
             
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, OSError) as e:
         logger.error(f"Failed to process {image_path}: {e}")
         return False
 
@@ -123,7 +123,7 @@ def fix_directory_orientations(input_dir: str, output_dir: str = None, backup: b
             if fix_image_orientation(str(image_file), str(output_file)):
                 success_count += 1
                 
-        except Exception as e:
+        except (FileNotFoundError, PermissionError, OSError) as e:
             logger.error(f"Failed to process {image_file.name}: {e}")
             continue
     

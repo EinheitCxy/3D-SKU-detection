@@ -64,7 +64,7 @@ def extract_metrics_from_file(file_path: str) -> Optional[Dict[str, float]]:
             print(f"WARNING: {file_path} 中未找到完整的性能指标")
             return None
             
-    except Exception as e:
+    except (FileNotFoundError, UnicodeDecodeError, PermissionError) as e:
         print(f"ERROR: 读取文件 {file_path} 失败: {e}")
         return None
 

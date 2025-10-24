@@ -131,7 +131,7 @@ class VGGT3DReconstructor:
             self.model = self.model.to(self.device)
             logger.info("模型加载完成")
             
-        except Exception as e:
+        except (ImportError, RuntimeError, FileNotFoundError) as e:
             logger.error(f"模型加载失败: {e}")
             raise
     
@@ -179,7 +179,7 @@ class VGGT3DReconstructor:
             images = load_and_preprocess_images(image_paths).to(self.device)
             logger.info(f"图片预处理完成，张量形状: {images.shape}")
             return images, image_paths, image_names, image_ids
-        except Exception as e:
+        except (RuntimeError, FileNotFoundError) as e:
             logger.error(f"图片预处理失败: {e}")
             raise
     
@@ -232,8 +232,8 @@ class VGGT3DReconstructor:
             logger.info(f"推理完成，耗时: {end_time - start_time:.2f}秒")
             
             return predictions
-            
-        except Exception as e:
+
+        except (RuntimeError, ValueError, KeyError) as e:
             logger.error(f"推理过程出错: {e}")
             raise
     
@@ -284,8 +284,8 @@ class VGGT3DReconstructor:
             if os.path.exists(output_path):
                 file_size = os.path.getsize(output_path) / (1024 * 1024)
                 logger.info(f"文件大小: {file_size:.2f} MB")
-            
-        except Exception as e:
+
+        except (FileNotFoundError, PermissionError, OSError, RuntimeError) as e:
             logger.error(f"GLB导出失败: {e}")
             raise
     
@@ -315,7 +315,7 @@ class VGGT3DReconstructor:
             # 2.1 保存与VGGT预处理完全一致的裁剪/填充变换参数（transforms.json）
             try:
                 self._save_transforms_cache(image_paths, image_ids, output_path, target_size=518)
-            except Exception as e:
+            except (FileNotFoundError, PermissionError, OSError, ValueError) as e:
                 logger.warning(f"保存 transforms.json 失败（不影响后续流程）: {e}")
             logger.info(f"处理图片: {[os.path.basename(p) for p in image_paths]}")
 
@@ -334,7 +334,7 @@ class VGGT3DReconstructor:
                         mask_white_bg=bool(kwargs.get('mask_white_bg', False)),
                         mask_sky=bool(kwargs.get('mask_sky', False)),
                     )
-                except Exception as e:
+                except (FileNotFoundError, PermissionError, OSError, KeyError, ValueError) as e:
                     logger.warning(f"保存predictions缓存失败（跳过）：{e}")
 
             # 5. 导出GLB
@@ -350,7 +350,7 @@ class VGGT3DReconstructor:
 
             return output_path
 
-        except Exception as e:
+        except (RuntimeError, ValueError, FileNotFoundError, OSError) as e:
             logger.error(f"3D重构失败: {e}")
             raise
         finally:
@@ -493,7 +493,7 @@ class VGGT3DReconstructor:
                     try:
                         import cv2
                         resized_imgs = np.stack([cv2.resize(imgs[i], (Wc, Hc)) for i in range(S)], axis=0)
-                    except Exception:
+                    except (ImportError, ValueError, IndexError) as e:
                         # 无法缩放时，跳过遮罩
                         resized_imgs = imgs
                         if resized_imgs.shape[1] != Hc or resized_imgs.shape[2] != Wc:
@@ -522,7 +522,7 @@ class VGGT3DReconstructor:
                             # 粗略的天空蓝色范围，仅作弱过滤（后续可在viewer端再提升门槛）
                             sky = ((h >= 90) & (h <= 140) & (s > 30) & (v > 80)).astype(np.uint8)
                             mask |= sky
-                        except Exception:
+                        except (ImportError, ValueError, IndexError) as e:
                             pass
 
                     # 应用软遮罩：将 conf 中对应位置置零
@@ -530,14 +530,14 @@ class VGGT3DReconstructor:
                         conf = conf.astype(np.float32, copy=False)
                         conf = conf * (1.0 - (mask.astype(np.float32)))
                         logger.info("已应用预测结果遮罩：黑/白/天空")
-            except Exception as e:
+            except (KeyError, ValueError, IndexError, RuntimeError) as e:
                 logger.warning(f"应用遮罩失败，跳过遮罩: {e}")
 
             # 统一数值精度：保存为 float32，图像为 uint8
             def _to_f32(x):
                 try:
                     return x.astype(np.float32, copy=False)
-                except Exception:
+                except (ValueError, AttributeError) as e:
                     return x
 
             if world_points is not None:
@@ -579,7 +579,7 @@ class VGGT3DReconstructor:
             logger.info(f"   包含数据: {list(save_data.keys())}")
 
 
-        except Exception as e:
+        except (FileNotFoundError, PermissionError, OSError, KeyError, ValueError) as e:
             logger.warning(f"保存predictions缓存失败: {e}")
             logger.warning("   可视化功能可能受限，但不影响GLB导出")
 
@@ -643,8 +643,8 @@ def main():
             mask_sky=args.mask_sky
         )
         logger.info(f"\n成功! GLB文件已保存到: {result_path}")
-        
-    except Exception as e:
+
+    except (RuntimeError, ValueError, FileNotFoundError, OSError) as e:
         logger.error(f"\n失败: {e}")
         return 1
     

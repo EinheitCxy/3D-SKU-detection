@@ -130,7 +130,7 @@ def parse_matching_summary(summary_path: Path) -> Dict[int, List[Tuple[int, int]
                         buffer.append((ref_id, target_id))
                         total_pairs += 1
                         continue
-                except Exception:
+                except (AttributeError, ValueError):
                     pass
             g = group_header_re.match(line)
             if g:
@@ -195,7 +195,7 @@ def parse_all_matches(summary_root: Path) -> List[Dict]:
             continue
         try:
             lines = sf.read_text(encoding='utf-8', errors='ignore').splitlines()
-        except Exception:
+        except (FileNotFoundError, UnicodeDecodeError):
             lines = sf.read_text(errors='ignore').splitlines()
 
         # 缓存本文件中尚未分配 target 的匹配行
@@ -206,7 +206,7 @@ def parse_all_matches(summary_root: Path) -> List[Dict]:
             if m:
                 try:
                     pending.append((int(m.group(1)), int(m.group(2)), float(m.group(3)), int(m.group(4)), int(m.group(5))))
-                except Exception:
+                except (ValueError, IndexError):
                     continue
                 continue
 
@@ -215,7 +215,7 @@ def parse_all_matches(summary_root: Path) -> List[Dict]:
                 try:
                     n = int(f.group(1))
                     tgt_idx = int(f.group(2))  # 0-based
-                except Exception:
+                except (ValueError, IndexError):
                     continue
                 if n <= 0:
                     continue
@@ -431,7 +431,7 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
         with mapping_path.open('w', encoding='utf-8') as f:
             json.dump(mapping, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved global mapping to: {mapping_path}")
-    except Exception as e:
+    except (ValueError, json.JSONEncodeError, FileNotFoundError, PermissionError) as e:
         logger.warning(f"Failed to build/save global mapping: {e}")
 
     return outputs

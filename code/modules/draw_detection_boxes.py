@@ -89,7 +89,7 @@ def main():
     # 加载检测结果并建立编号映射
     try:
         detections_indexed = load_detections(str(detection_dir), return_index_map=True)
-    except Exception as e:
+    except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
         logger.error(f"Failed to load detections: {e}")
         return
 
@@ -122,7 +122,7 @@ def main():
         # 提取边界框（使用统一逻辑）
         try:
             bboxes = extract_bboxes_from_detections([det_map[num]], 0, cfg)
-        except Exception as e:
+        except (ValueError, KeyError, IndexError) as e:
             logger.error(f"Failed to extract bboxes for {image_path.name}: {e}")
             continue
 

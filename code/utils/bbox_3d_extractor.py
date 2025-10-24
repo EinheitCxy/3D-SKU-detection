@@ -15,7 +15,7 @@ import numpy as np
 try:
     # 仅在调用方需要启用 VGGT 裁剪映射时导入
     from .transforms import VGGTImageTransform
-except Exception:  # pragma: no cover - 运行环境可能未用到
+except ImportError:  # pragma: no cover - 运行环境可能未用到
     VGGTImageTransform = None  # type: ignore
 
 

@@ -230,7 +230,7 @@ def _process_single_ref_object(
             'produced_matches': len(matches),
         }
         
-    except Exception as e:
+    except (KeyError, IndexError, ValueError, AttributeError) as e:
         logger.error(f"处理参考对象 {ref_object_id} 失败: {e}")
         return [], {
             'ref_object_id': ref_object_id,
@@ -462,7 +462,7 @@ def find_correspondences_3d_projection(
         logger.info(f"3D-2D projection complete. Found correspondences in {matched_targets} images.")
         return correspondences, points_per_object
         
-    except Exception as e:
+    except (RuntimeError, ValueError, KeyError, IndexError) as e:
         logger.error(f"Failed to find 3D-2D projection correspondences: {e}")
         raise
 
@@ -618,7 +618,7 @@ def find_correspondences_point_tracking(
         logger.info(f"Point tracking complete. Found correspondences in {matched_targets} images.")
         return object_correspondences, points_per_object
         
-    except Exception as e:
+    except (RuntimeError, ValueError, KeyError, IndexError) as e:
         logger.error(f"Failed to find point tracking correspondences: {e}")
         raise
 
@@ -699,10 +699,10 @@ def match_objects_by_correspondence(
                         matches, stats = future.result()
                         matched_objects.extend(matches)
                         stats_list.append(stats)
-                    except Exception as e:
+                    except (TimeoutError, RuntimeError) as e:
                         logger.error(f"并行处理参考对象 {ref_object_id} 失败: {e}")
                         
-        except Exception as e:
+        except (RuntimeError, TimeoutError, ImportError) as e:
             logger.warning(f"并行处理失败，回退到串行模式: {e}")
             use_parallel = False
     

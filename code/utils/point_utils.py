@@ -207,7 +207,7 @@ def generate_points_from_bboxes(bboxes: List[Dict], image_shape: Tuple[int, int]
         logger.info(f"Generated {total_points} query points from {len(points_per_object)} objects (使用{sampling_method})")
         return query_points_tensor, points_per_object
         
-    except Exception as e:
+    except (ValueError, KeyError, IndexError) as e:
         logger.error(f"Failed to generate points from bounding boxes: {e}")
         raise
 

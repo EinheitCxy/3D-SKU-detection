@@ -60,7 +60,8 @@ class ViserViewer:
             cam2world = closed_form_inverse_se3(extr)[:, :3, :]
             cam2world[..., -1] -= self.scene_center
             return cam2world, intr, images, image_ids
-        except Exception:
+        except (FileNotFoundError, KeyError, ImportError) as e:
+            logger.debug(f"Failed to load camera data: {e}")
             return None
 
     def start(self) -> None:
@@ -85,8 +86,9 @@ class ViserViewer:
         def _(client: viser.ClientHandle) -> None:
             try:
                 client.camera.position = initial_camera_position
-            except Exception:
-                pass
+            except (AttributeError, RuntimeError):
+                # Client API可能不支持position属性
+                logger.debug("Failed to set initial camera position")
 
         # Build KDTree on rotated points (initial no-rotation)
         self.R_cur = np.eye(3, dtype=float)
@@ -123,8 +125,7 @@ class ViserViewer:
 
         with self.server.gui.add_folder("⚙️ Advanced Options", expand_by_default=False):
             gui_sampling = self.server.gui.add_slider("Display Sample %", min=10, max=100, step=10, initial_value=100)
-            # gui_rotate disabled - Viser version doesn't support drag events
-            # gui_rotate = self.server.gui.add_checkbox("Rotate Model (Shift+Drag)", initial_value=bool(self.runtime.rotate_model_default))
+            gui_rotate = self.server.gui.add_checkbox("Rotate Model (Shift+Drag)", initial_value=bool(self.runtime.rotate_model_default))
             gui_hide_unknown = self.server.gui.add_checkbox("Hide Unknown IDs (-1)", initial_value=bool(self.runtime.hide_unknown_default))
 
         # Camera viz
@@ -168,6 +169,9 @@ class ViserViewer:
         if self.frame_indices is not None:
             fids = sorted(np.unique(self.frame_indices).tolist())
             gui_frame_selector = self.server.gui.add_dropdown("Show Points from Frame", options=["All"] + [str(x) for x in fids], initial_value="All")
+
+        # Status bar (always visible)
+        gui_status = self.server.gui.add_text("Status", initial_value="-", disabled=True)
 
         # Point cloud and pick sphere
         point_cloud = self.server.scene.add_point_cloud(
@@ -213,6 +217,17 @@ class ViserViewer:
             known_mask = (self.global_ids >= 0) if gui_hide_unknown.value else np.ones(len(self.global_ids), dtype=bool)
             sample_mask = display_rand <= (gui_sampling.value / 100.0)
             mask = conf_mask & id_mask & frame_mask & known_mask & sample_mask
+
+            # Update status
+            try:
+                n_vis = int(mask.sum())
+                total = int(len(self.points))
+                frame_lbl = gui_frame_selector.value if gui_frame_selector is not None else "All"
+                id_lbl = gui_gid.value
+                gui_status.value = f"Visible: {n_vis}/{total} | ID: {id_lbl} | Frame: {frame_lbl} | Conf≥{gui_conf.value:.1f}%"
+            except (AttributeError, ValueError) as e:
+                # GUI可能未初始化或数据格式错误
+                logger.debug(f"Failed to update status: {e}")
             point_cloud.points = self.rotated_points[mask]
             point_cloud.colors = self.colors[mask]
 
@@ -242,7 +257,7 @@ class ViserViewer:
                 btn = str(evt.button).lower() if hasattr(evt, "button") and evt.button is not None else "left"
                 if "right" in btn or "middle" in btn:
                     return
-            except Exception:
+            except (AttributeError, ValueError):
                 pass
             if not hasattr(evt, "ray_direction") or evt.ray_direction is None:
                 return
@@ -276,7 +291,7 @@ class ViserViewer:
                 if hasattr(evt, "modifiers") and evt.modifiers is not None:
                     mods = str(evt.modifiers).lower()
                     return ("shift" in mods) or ("mod.shift" in mods)
-            except Exception:
+            except (AttributeError, ValueError):
                 return False
             return False
 
@@ -304,59 +319,100 @@ class ViserViewer:
             vx = np.array([[0, -v[2], v[1]],[v[2], 0, -v[0]],[-v[1], v[0], 0]], dtype=float)
             return np.eye(3) + vx + vx @ vx * ((1 - c) / (s * s))
 
-        # NOTE: Arcball rotation disabled - Viser version only supports 'click' and 'rect-select' events
-        # The following event types are not supported: 'down', 'move', 'up'
-        # Use Viser's built-in camera controls (drag to rotate) instead
+        # Camera orbit (Shift+Drag): update camera position/orientation, DO NOT touch point cloud or KDTree
+        def _apply_camera_orbit(R_delta: np.ndarray) -> None:
+            try:
+                from scipy.spatial.transform import Rotation as R
+                use_scipy = True
+            except ImportError:
+                use_scipy = False
 
-        # @self.server.scene.on_pointer_event(event_type="down")
-        # def _on_down(evt: "viser.ScenePointerEvent") -> None:
-        #     # respect right/middle buttons for pan
-        #     try:
-        #         btn = str(evt.button).lower()
-        #         if "right" in btn or "middle" in btn:
-        #             return
-        #     except Exception:
-        #         pass
-        #     if not (gui_rotate.value and _shift(evt)):
-        #         return
-        #     o = np.asarray(evt.ray_origin) - self.scene_center
-        #     d = np.asarray(evt.ray_direction)
-        #     d = d / (np.linalg.norm(d) + 1e-9)
-        #     R_sphere = float(np.linalg.norm(o)) * 0.6
-        #     p = _ray_sphere_intersect(o, d, R_sphere)
-        #     if p is None:
-        #         return
-        #     arcball_active["v"] = True
-        #     prev["p"] = p
+            target = self.scene_center
+            for client in self.server.get_clients().values():
+                # position
+                pos = np.asarray(client.camera.position, dtype=float)
+                pos_rel = pos - target
+                pos_new = (R_delta @ pos_rel) + target
+                try:
+                    client.camera.position = (float(pos_new[0]), float(pos_new[1]), float(pos_new[2]))
+                except (AttributeError, RuntimeError):
+                    pass
 
-        # @self.server.scene.on_pointer_event(event_type="move")
-        # def _on_move(evt: "viser.ScenePointerEvent") -> None:
-        #     try:
-        #         btn = str(evt.button).lower()
-        #         if "right" in btn or "middle" in btn:
-        #             return
-        #     except Exception:
-        #         pass
-        #     if not arcball_active["v"] or not (gui_rotate.value and _shift(evt)):
-        #         return
-        #     o = np.asarray(evt.ray_origin) - self.scene_center
-        #     d = np.asarray(evt.ray_direction)
-        #     d = d / (np.linalg.norm(d) + 1e-9)
-        #     R_sphere = float(np.linalg.norm(o)) * 0.6
-        #     p = _ray_sphere_intersect(o, d, R_sphere)
-        #     if p is None or prev["p"] is None:
-        #         return
-        #     R_delta = _rot_from_to(prev["p"], p)
-        #     self.R_cur = R_delta @ self.R_cur
-        #     self.rotated_points = (self.R_cur @ self.points_centered.T).T
-        #     self.kdtree = build_kdtree(self.rotated_points)
-        #     update_point_cloud()
-        #     prev["p"] = p
+                # orientation (best-effort look-at)
+                if use_scipy:
+                    try:
+                        f = target - pos_new
+                        f = f / (np.linalg.norm(f) + 1e-9)
+                        up = np.array([0.0, 1.0, 0.0], dtype=float)
+                        s = np.cross(f, up)
+                        if np.linalg.norm(s) < 1e-9:
+                            up = np.array([0.0, 0.0, 1.0], dtype=float)
+                            s = np.cross(f, up)
+                        s = s / (np.linalg.norm(s) + 1e-9)
+                        u = np.cross(s, f)
+                        Rm = np.stack([s, u, f], axis=1)
+                        quat_xyzw = R.from_matrix(Rm).as_quat()
+                        wxyz = (float(quat_xyzw[3]), float(quat_xyzw[0]), float(quat_xyzw[1]), float(quat_xyzw[2]))
+                        client.camera.wxyz = wxyz
+                    except (AttributeError, RuntimeError):
+                        pass
 
-        # @self.server.scene.on_pointer_event(event_type="up")
-        # def _on_up(_: "viser.ScenePointerEvent") -> None:
-        #     arcball_active["v"] = False
-        #     prev["p"] = None
+        # Register pointer events defensively (some builds may not support them)
+        try:
+            @self.server.scene.on_pointer_event(event_type="down")
+            def _on_down(evt: "viser.ScenePointerEvent") -> None:
+                # keep right/middle for pan
+                try:
+                    btn = str(evt.button).lower()
+                    if "right" in btn or "middle" in btn:
+                        return
+                except (AttributeError, ValueError):
+                    pass
+                if not (gui_rotate.value and _shift(evt)):
+                    return
+                o = np.asarray(evt.ray_origin) - self.scene_center
+                d = np.asarray(evt.ray_direction)
+                d = d / (np.linalg.norm(d) + 1e-9)
+                R_sphere = float(np.linalg.norm(o)) * 0.6
+                p = _ray_sphere_intersect(o, d, R_sphere)
+                if p is None:
+                    return
+                arcball_active["v"] = True
+                prev["p"] = p
+        except (AttributeError, RuntimeError):
+            pass
+
+        try:
+            @self.server.scene.on_pointer_event(event_type="move")
+            def _on_move(evt: "viser.ScenePointerEvent") -> None:
+                try:
+                    btn = str(evt.button).lower()
+                    if "right" in btn or "middle" in btn:
+                        return
+                except (AttributeError, ValueError):
+                    pass
+                if not arcball_active["v"] or not (gui_rotate.value and _shift(evt)):
+                    return
+                o = np.asarray(evt.ray_origin) - self.scene_center
+                d = np.asarray(evt.ray_direction)
+                d = d / (np.linalg.norm(d) + 1e-9)
+                R_sphere = float(np.linalg.norm(o)) * 0.6
+                p = _ray_sphere_intersect(o, d, R_sphere)
+                if p is None or prev["p"] is None:
+                    return
+                R_delta = _rot_from_to(prev["p"], p)
+                _apply_camera_orbit(R_delta)
+                prev["p"] = p
+        except (AttributeError, RuntimeError):
+            pass
+
+        try:
+            @self.server.scene.on_pointer_event(event_type="up")
+            def _on_up(_: "viser.ScenePointerEvent") -> None:
+                arcball_active["v"] = False
+                prev["p"] = None
+        except (AttributeError, RuntimeError):
+            pass
 
         # GUI callbacks
         @gui_conf.on_update
@@ -397,4 +453,3 @@ class ViserViewer:
                 time.sleep(0.1)
         except KeyboardInterrupt:
             logger.info("Server stopped by user")
-

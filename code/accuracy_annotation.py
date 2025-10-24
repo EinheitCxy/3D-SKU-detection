@@ -8,6 +8,7 @@ SKU匹配准确性标注系统
 import pandas as pd
 import re
 import os
+import csv
 from typing import Dict, List, Tuple, Set
 from collections import defaultdict
 import argparse
@@ -44,8 +45,8 @@ class AccuracyAnnotator:
                     'target_id': int(row['target_id']),
                     'source_data': row['img_src']
                 })
-            
-        except Exception as e:
+
+        except (FileNotFoundError, PermissionError, csv.Error, UnicodeDecodeError) as e:
             print(f"加载人工标注数据失败: {e}")
             raise
     
@@ -129,11 +130,11 @@ class AccuracyAnnotator:
                     if section['actual_target'] == expected_target:
                         target_section = section
                         break
-                
+
                 if target_section and target_section['matches']:
                     self.vggt_results[pair_name] = target_section['matches']
-            
-        except Exception as e:
+
+        except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
             print(f"加载VGGT结果失败: {e}")
             raise
     
@@ -372,9 +373,9 @@ class AccuracyAnnotator:
             try:
                 with open(output_path, 'w', encoding='utf-8') as f:
                     f.write(report_content)
-            except Exception as e:
+            except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
                 print(f"保存报告失败: {e}")
-        
+
         return report_content
 
 
@@ -416,8 +417,8 @@ def main():
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             default_output = f"accuracy_report_{timestamp}.txt"
             report = annotator.generate_report(default_output)
-        
-    except Exception as e:
+
+    except (ValueError, KeyError, IndexError) as e:
         print(f"评估过程出错: {e}")
         return
 

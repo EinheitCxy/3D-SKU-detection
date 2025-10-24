@@ -82,6 +82,7 @@ lightning_logs/
 datasets/
 data/
 imdata/*
+imdata0911/*
 output*/
 
 # 输出文件

@@ -319,8 +319,9 @@ def build_transforms_from_json(
             crop_start_y = int(fr.get("crop_start_y", 0))
             pad_left, pad_top = fr.get("batch_padding", [0, 0])
             by_img[img_id] = JSONTransformAdapter(sx, sy, crop_start_y, int(pad_left), int(pad_top), pw, ph)
-        except Exception:
-            # Skip malformed frame entries
+        except (KeyError, ValueError, TypeError) as e:
+            # Skip malformed frame entries (missing fields or invalid types)
+            logger.debug(f"Skipping malformed frame entry: {e}")
             continue
 
     adapters: List[JSONTransformAdapter] = []

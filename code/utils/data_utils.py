@@ -97,7 +97,7 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
                     empty_objects_count += 1
                     continue
                     
-            except Exception as e:
+            except (FileNotFoundError, json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
                 logger.error(f"Failed to load detection from {file_path.name}: {e}")
                 continue
         
@@ -109,7 +109,7 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
             return detections_with_numbers
         return detections
         
-    except Exception as e:
+    except (FileNotFoundError, PermissionError) as e:
         logger.error(f"Failed to load detections from directory {detection_dir}: {e}")
         raise
 
@@ -225,6 +225,6 @@ def save_correspondences_json(
             json.dump(result, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved correspondences JSON to '{out_path}'")
         return out_path
-    except Exception as e:
+    except (FileNotFoundError, PermissionError, json.JSONEncodeError, UnicodeEncodeError) as e:
         logger.error(f"Failed to save correspondences JSON: {e}")
         raise
