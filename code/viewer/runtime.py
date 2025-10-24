@@ -4,7 +4,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
@@ -22,6 +22,48 @@ class ViserViewer:
         self.global_mapping_path = global_mapping
         self.server = None
         self.kdtree = None
+
+    @staticmethod
+    def _is_right_or_middle_button(evt) -> bool:
+        """检查鼠标事件是否为右键或中键"""
+        try:
+            btn = str(evt.button).lower() if hasattr(evt, "button") and evt.button is not None else "left"
+            return "right" in btn or "middle" in btn
+        except (AttributeError, ValueError):
+            return False
+
+    @staticmethod
+    def _is_shift_pressed(evt) -> bool:
+        """检查Shift键是否按下（兼容多种viser API版本）"""
+        try:
+            if hasattr(evt, "shift") and bool(evt.shift):
+                return True
+            if hasattr(evt, "shift_key") and bool(evt.shift_key):
+                return True
+            if hasattr(evt, "modifiers") and evt.modifiers is not None:
+                mods = str(evt.modifiers).lower()
+                return ("shift" in mods) or ("mod.shift" in mods)
+        except (AttributeError, ValueError):
+            return False
+        return False
+
+    def _register_pointer_event(
+        self,
+        event_type: str,
+        callback: Callable,
+        skip_right_middle: bool = True
+    ) -> None:
+        """安全注册指针事件，封装try/except和按钮过滤逻辑"""
+        try:
+            @self.server.scene.on_pointer_event(event_type=event_type)
+            def _handler(evt) -> None:
+                # 统一的按钮过滤
+                if skip_right_middle and self._is_right_or_middle_button(evt):
+                    return
+                # 调用实际业务逻辑
+                callback(evt)
+        except (AttributeError, RuntimeError) as e:
+            logger.debug(f"Failed to register {event_type} pointer event: {e}")
 
     def _load_cache(self) -> None:
         data = np.load(self.artifacts.pcd_cache_path)
@@ -103,9 +145,48 @@ class ViserViewer:
             "Point Size", min=0.0001, max=0.005, step=0.0001, initial_value=float(self.runtime.default_point_size)
         )
         unique_gids = np.unique(self.global_ids[self.global_ids >= 0])
+        gid_options = [str(x) for x in sorted(unique_gids)]
         gui_gid = self.server.gui.add_dropdown(
-            "Show Global ID", options=["All"] + [str(x) for x in sorted(unique_gids)], initial_value="All"
+            "Show Global ID", options=["All"] + gid_options, initial_value="All"
         )
+        # Navigation buttons: All / Prev / Next
+        btn_all = self.server.gui.add_button("All")
+        btn_prev = self.server.gui.add_button("Prev")
+        btn_next = self.server.gui.add_button("Next")
+
+        @btn_all.on_click
+        def _(_):
+            gui_gid.value = "All"
+
+        @btn_prev.on_click
+        def _(_):
+            if not gid_options:
+                return
+            cur = gui_gid.value
+            if cur == "All":
+                gui_gid.value = gid_options[0]
+                return
+            try:
+                idx = gid_options.index(str(cur))
+            except ValueError:
+                gui_gid.value = gid_options[0]
+                return
+            gui_gid.value = gid_options[(idx - 1) % len(gid_options)]
+
+        @btn_next.on_click
+        def _(_):
+            if not gid_options:
+                return
+            cur = gui_gid.value
+            if cur == "All":
+                gui_gid.value = gid_options[0]
+                return
+            try:
+                idx = gid_options.index(str(cur))
+            except ValueError:
+                gui_gid.value = gid_options[0]
+                return
+            gui_gid.value = gid_options[(idx + 1) % len(gid_options)]
 
         with self.server.gui.add_folder("📋 Selected ID Info", expand_by_default=True):
             gui_info_gid = self.server.gui.add_text("Global ID", initial_value="(None)", disabled=True)
@@ -218,15 +299,15 @@ class ViserViewer:
             sample_mask = display_rand <= (gui_sampling.value / 100.0)
             mask = conf_mask & id_mask & frame_mask & known_mask & sample_mask
 
+            n_vis = int(mask.sum())
+
             # Update status
             try:
-                n_vis = int(mask.sum())
                 total = int(len(self.points))
                 frame_lbl = gui_frame_selector.value if gui_frame_selector is not None else "All"
                 id_lbl = gui_gid.value
                 gui_status.value = f"Visible: {n_vis}/{total} | ID: {id_lbl} | Frame: {frame_lbl} | Conf≥{gui_conf.value:.1f}%"
             except (AttributeError, ValueError) as e:
-                # GUI可能未初始化或数据格式错误
                 logger.debug(f"Failed to update status: {e}")
             point_cloud.points = self.rotated_points[mask]
             point_cloud.colors = self.colors[mask]
@@ -251,14 +332,8 @@ class ViserViewer:
             else:
                 clear_info()
 
-        @self.server.scene.on_pointer_event(event_type="click")
-        def _on_click(evt: "viser.ScenePointerEvent") -> None:
-            try:
-                btn = str(evt.button).lower() if hasattr(evt, "button") and evt.button is not None else "left"
-                if "right" in btn or "middle" in btn:
-                    return
-            except (AttributeError, ValueError):
-                pass
+        def _on_click_impl(evt) -> None:
+            """Click事件业务逻辑：射线投射选择点云"""
             if not hasattr(evt, "ray_direction") or evt.ray_direction is None:
                 return
             ray = np.asarray(evt.ray_direction)
@@ -278,22 +353,12 @@ class ViserViewer:
             else:
                 clear_info()
 
+        # 注册click事件（统一封装）
+        self._register_pointer_event("click", _on_click_impl)
+
         # rotation (Shift+Drag)
         arcball_active = {"v": False}
         prev = {"p": None}
-
-        def _shift(evt) -> bool:
-            try:
-                if hasattr(evt, "shift") and bool(evt.shift):
-                    return True
-                if hasattr(evt, "shift_key") and bool(evt.shift_key):
-                    return True
-                if hasattr(evt, "modifiers") and evt.modifiers is not None:
-                    mods = str(evt.modifiers).lower()
-                    return ("shift" in mods) or ("mod.shift" in mods)
-            except (AttributeError, ValueError):
-                return False
-            return False
 
         def _ray_sphere_intersect(o: np.ndarray, d: np.ndarray, R: float):
             b = 2.0 * float(np.dot(o, d))
@@ -357,62 +422,44 @@ class ViserViewer:
                     except (AttributeError, RuntimeError):
                         pass
 
-        # Register pointer events defensively (some builds may not support them)
-        try:
-            @self.server.scene.on_pointer_event(event_type="down")
-            def _on_down(evt: "viser.ScenePointerEvent") -> None:
-                # keep right/middle for pan
-                try:
-                    btn = str(evt.button).lower()
-                    if "right" in btn or "middle" in btn:
-                        return
-                except (AttributeError, ValueError):
-                    pass
-                if not (gui_rotate.value and _shift(evt)):
-                    return
-                o = np.asarray(evt.ray_origin) - self.scene_center
-                d = np.asarray(evt.ray_direction)
-                d = d / (np.linalg.norm(d) + 1e-9)
-                R_sphere = float(np.linalg.norm(o)) * 0.6
-                p = _ray_sphere_intersect(o, d, R_sphere)
-                if p is None:
-                    return
-                arcball_active["v"] = True
-                prev["p"] = p
-        except (AttributeError, RuntimeError):
-            pass
+        def _on_down_impl(evt) -> None:
+            """Down事件业务逻辑：Shift+拖拽开始arcball旋转"""
+            if not (gui_rotate.value and self._is_shift_pressed(evt)):
+                return
+            o = np.asarray(evt.ray_origin) - self.scene_center
+            d = np.asarray(evt.ray_direction)
+            d = d / (np.linalg.norm(d) + 1e-9)
+            R_sphere = float(np.linalg.norm(o)) * 0.6
+            p = _ray_sphere_intersect(o, d, R_sphere)
+            if p is None:
+                return
+            arcball_active["v"] = True
+            prev["p"] = p
 
-        try:
-            @self.server.scene.on_pointer_event(event_type="move")
-            def _on_move(evt: "viser.ScenePointerEvent") -> None:
-                try:
-                    btn = str(evt.button).lower()
-                    if "right" in btn or "middle" in btn:
-                        return
-                except (AttributeError, ValueError):
-                    pass
-                if not arcball_active["v"] or not (gui_rotate.value and _shift(evt)):
-                    return
-                o = np.asarray(evt.ray_origin) - self.scene_center
-                d = np.asarray(evt.ray_direction)
-                d = d / (np.linalg.norm(d) + 1e-9)
-                R_sphere = float(np.linalg.norm(o)) * 0.6
-                p = _ray_sphere_intersect(o, d, R_sphere)
-                if p is None or prev["p"] is None:
-                    return
-                R_delta = _rot_from_to(prev["p"], p)
-                _apply_camera_orbit(R_delta)
-                prev["p"] = p
-        except (AttributeError, RuntimeError):
-            pass
+        def _on_move_impl(evt) -> None:
+            """Move事件业务逻辑：Shift+拖拽执行arcball旋转"""
+            if not arcball_active["v"] or not (gui_rotate.value and self._is_shift_pressed(evt)):
+                return
+            o = np.asarray(evt.ray_origin) - self.scene_center
+            d = np.asarray(evt.ray_direction)
+            d = d / (np.linalg.norm(d) + 1e-9)
+            R_sphere = float(np.linalg.norm(o)) * 0.6
+            p = _ray_sphere_intersect(o, d, R_sphere)
+            if p is None or prev["p"] is None:
+                return
+            R_delta = _rot_from_to(prev["p"], p)
+            _apply_camera_orbit(R_delta)
+            prev["p"] = p
 
-        try:
-            @self.server.scene.on_pointer_event(event_type="up")
-            def _on_up(_: "viser.ScenePointerEvent") -> None:
-                arcball_active["v"] = False
-                prev["p"] = None
-        except (AttributeError, RuntimeError):
-            pass
+        def _on_up_impl(_) -> None:
+            """Up事件业务逻辑：结束arcball旋转"""
+            arcball_active["v"] = False
+            prev["p"] = None
+
+        # 注册pointer事件（统一封装，keep right/middle for pan）
+        self._register_pointer_event("down", _on_down_impl, skip_right_middle=True)
+        self._register_pointer_event("move", _on_move_impl, skip_right_middle=True)
+        self._register_pointer_event("up", _on_up_impl, skip_right_middle=False)
 
         # GUI callbacks
         @gui_conf.on_update
