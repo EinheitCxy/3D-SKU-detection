@@ -37,29 +37,25 @@ def _compute_output_dir(base: str, algorithm_type: str, ref_idx: int) -> str:
 def _count_images_and_detections(image_folder: str, detection_dir: str) -> tuple[int, int]:
     """Count total images and numeric detection JSON files with valid structure.
 
+    使用 utils.data_utils.load_detections 作为唯一标准源，避免重复的文件扫描逻辑。
+
     Returns (num_images, num_detections)."""
+    from pathlib import Path
+    from utils.data_utils import load_detections
+
+    # 计数图片文件
     exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
     img_dir = Path(image_folder)
-    det_dir = Path(detection_dir)
     n_img = sum(1 for p in img_dir.iterdir() if p.is_file() and p.suffix.lower() in exts)
-    n_det = 0
+
+    # 使用标准load_detections计数有效检测文件
     try:
-        import json
-        for p in det_dir.glob("*.json"):
-            if not p.stem.isdigit():
-                continue
-            try:
-                data = json.loads(p.read_text(encoding="utf-8"))
-            except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
-                continue
-            if isinstance(data, list) and data and isinstance(data[0], dict):
-                if data[0].get("objects"):
-                    n_det += 1
-            elif isinstance(data, dict):
-                if (isinstance(data.get("skus"), list) and data["skus"] and data["skus"][0].get("objects")) or data.get("objects"):
-                    n_det += 1
-    except (FileNotFoundError, PermissionError):
-        pass
+        detections_with_index = load_detections(detection_dir, return_index_map=True)
+        n_det = len(detections_with_index)
+    except (FileNotFoundError, ValueError) as e:
+        logger.debug(f"Failed to load detections: {e}")
+        n_det = 0
+
     return n_img, n_det
 
 

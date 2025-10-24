@@ -249,28 +249,21 @@ class SKUDetectionMain:
             logger.info("开始SKU匹配推理")
             if batch_all_refs:
                 # 批量处理所有有效图片作为参考图片
-                import json
+                # 使用 utils.data_utils.load_detections 作为唯一标准源
+                from utils.data_utils import load_detections
+
                 dataset = Path(dataset_path)
-                image_folder = dataset / "images"
                 detection_dir = dataset / "detections_results"
 
-                # 检测有效图片索引（文件名为纯数字且 JSON 含非空 objects）
-                valid_indices: list[int] = []
-                for img_file in image_folder.glob("*"):
-                    if img_file.is_file() and img_file.stem.isdigit():
-                        detection_file = detection_dir / f"{img_file.stem}.json"
-                        if detection_file.exists():
-                            try:
-                                with detection_file.open('r', encoding='utf-8') as f:
-                                    data = json.load(f)
-                                if ((isinstance(data, list) and data and isinstance(data[0], dict) and data[0].get('objects')) or
-                                    (isinstance(data, dict) and ((isinstance(data.get('skus'), list) and data['skus'] and data['skus'][0].get('objects')) or data.get('objects')))):
-                                    valid_indices.append(int(img_file.stem))
-                            except (OSError, json.JSONDecodeError, ValueError, KeyError, IndexError):
-                                continue
-
-                valid_indices.sort()
-                logger.info(f"找到 {len(valid_indices)} 个有效参考图片")
+                # 使用标准load_detections获取有效检测文件索引
+                try:
+                    detections_with_index = load_detections(str(detection_dir), return_index_map=True)
+                    # 提取文件编号（即图片索引）
+                    valid_indices = sorted([file_num for file_num, _ in detections_with_index])
+                    logger.info(f"找到 {len(valid_indices)} 个有效参考图片")
+                except (FileNotFoundError, ValueError) as e:
+                    logger.error(f"无法加载检测结果: {e}")
+                    return {"success": False, "error": str(e), "duration_s": perf_counter() - start}
 
                 # 依次以每个有效图片为参考图片运行推理
                 for i, filename_idx in enumerate(valid_indices):
