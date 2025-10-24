@@ -60,7 +60,7 @@ class CacheValidator:
         try:
             with meta.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
+        except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
             return False
         if data.get("version") != CacheValidator.CACHE_VERSION:
             return False
@@ -76,7 +76,7 @@ class CacheValidator:
                 return False
             if rc_hash != CacheValidator.compute_file_hash(config.reconstruction):
                 return False
-        except Exception:
+        except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
             return False
         return True
 
@@ -110,7 +110,7 @@ def build_cache(config: ViewerConfig) -> ViewerArtifacts:
         pred_path = config.reconstruction.parent / "vggt_cache" / "predictions.npz"
         try:
             points, colors = load_points_from_npz(pred_path)
-        except Exception as e:
+        except (FileNotFoundError, ValueError, KeyError) as e:
             logger.warning(f"加载NPZ失败，回退GLB: {e}")
             points, colors = load_points_from_glb(config.reconstruction)
     else:
