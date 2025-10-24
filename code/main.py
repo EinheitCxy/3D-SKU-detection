@@ -1,3 +1,4 @@
+from re import T
 import sys
 import argparse
 import logging
@@ -39,7 +40,8 @@ class _StartEndColorFilter(logging.Filter):
             # Prefix only the message part; keep level color as-is
             record.msg_color = color
             # ColoredFormatter appends %(reset)s at the end, no need for extra reset
-        except Exception:
+        except (AttributeError, KeyError, ImportError):
+            # Gracefully handle missing colorlog or attribute errors in log formatting
             record.msg_color = ''
         return True
 
@@ -114,45 +116,99 @@ class SKUDetectionMain:
         logger.info("初始化3D SKU Detection主程序")
 
     def show_banner(self) -> None:
-        """显示程序横幅"""
+        """显示程序横幅（自适应对齐，宽字符友好）。"""
         from datetime import datetime
         import sys
-        
-        # 获取运行时信息
+
+        # 运行时信息
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        
+
         # 安全获取torch信息
         try:
             import torch
             torch_version = torch.__version__
             cuda_available = "Yes" if torch.cuda.is_available() else "No"
         except ImportError:
+            # torch未安装或不可用
             torch_version = "N/A"
             cuda_available = "N/A"
-        
-        banner = f"""
-╔════════════════════════════════════════════════════════════════════════╗
-║                        3D SKU Detection System                         ║
-║                     RetailEye 商品计数分析平台 v2.0                       ║
-╠════════════════════════════════════════════════════════════════════════╣
-║  核心功能:                                                              ║
-║  1. SKU匹配推理 (点追踪 + 3D投影)     2. 检出框可视化                       ║
-║  3. SKU聚类分析                      4. 匹配准确性评估                     ║
-║  5. 改进的SKU计数 (去重优化)          6. 3D场景重建                        ║
-╠════════════════════════════════════════════════════════════════════════╣
-║  运行环境:                                                               ║
-║  时间: {current_time:<20} Python: {python_version}                      ║
-║  PyTorch: {torch_version:<12} CUDA: {cuda_available}                   ║
-╠════════════════════════════════════════════════════════════════════════╣
-║  快速开始:                                                              ║
-║  • 完整流水线: --mode pipeline --dataset imdata/floor_display2          ║
-║  • 仅匹配推理: --mode concise --algorithm point_tracking                         ║
-║  • 交互模式:   --mode interactive (当前模式)                             ║
-║  • 帮助文档:   --help                                                   ║
-╚════════════════════════════════════════════════════════════════════════╝
-        """
-        print(banner)
+
+        # 宽字符显示宽度（CJK/Emoji）
+        def _disp_width(s: str) -> int:
+            try:
+                from wcwidth import wcswidth  # type: ignore
+                w = wcswidth(s)
+                return max(w, 0)
+            except ImportError:
+                # wcwidth未安装，降级为ASCII长度
+                return len(s)
+
+        # 文本内容（不含边框）
+        title1 = "3D SKU Detection System"
+        title2 = "RetailEye 商品计数分析平台 v2.0"
+        lines = [
+            " 核心功能:",
+            " 1. SKU匹配推理（点追踪 + 3D投影）  2. 检出框可视化",
+            " 3. SKU聚类分析                       4. 匹配准确性评估",
+            " 5. 改进的SKU计数（去重优化）          6. 3D场景重建",
+            " 运行环境:",
+            f" 时间: {current_time}    Python: {python_version}",
+            f" PyTorch: {torch_version}    CUDA: {cuda_available}",
+            " 快速开始:",
+            " • 完整流水线: --mode pipeline --dataset <dataset_dir>",
+            " • 仅匹配推理: --mode concise --algorithm point_tracking",
+            " • 交互模式:   --mode interactive",
+            " • 帮助文档:   --help",
+        ]
+
+        # 计算内部最大宽度（包含行首一个空格）
+        max_inner = max(_disp_width(title1), _disp_width(title2))
+        for s in lines:
+            max_inner = max(max_inner, _disp_width(s))
+
+        # 预留左右边距各1空格
+        inner_width = max_inner
+        total_width = inner_width + 2  # 左右各一个空格
+
+        # 构造边框
+        top = "╔" + ("═" * total_width) + "╗"
+        sep = "╠" + ("═" * total_width) + "╣"
+        bottom = "╚" + ("═" * total_width) + "╝"
+
+        def pad_line(text: str, center: bool = False) -> str:
+            w = _disp_width(text)
+            if w > inner_width:
+                text = text[: max(0, len(text) - (w - inner_width))]
+                w = _disp_width(text)
+            if center:
+                # 居中：左右尽量均衡，右侧补齐
+                left_spaces = (inner_width - w) // 2
+                right_spaces = inner_width - w - left_spaces
+                return f"║{' ' * (left_spaces + 1)}{text}{' ' * (right_spaces + 1)}║"
+            else:
+                # 左对齐：右侧补齐
+                pad = inner_width - w
+                return f"║ {text}{' ' * pad} ║"
+
+        out = [
+            top,
+            pad_line(title1, center=True),
+            pad_line(title2, center=True),
+            sep,
+        ]
+        # 分段插入
+        out.append(pad_line(lines[0]))  # 核心功能
+        out.extend(pad_line(x) for x in lines[1:4])
+        out.append(sep)
+        out.append(pad_line(lines[4]))  # 运行环境
+        out.extend(pad_line(x) for x in lines[5:7])
+        out.append(sep)
+        out.append(pad_line(lines[7]))  # 快速开始
+        out.extend(pad_line(x) for x in lines[8:])
+        out.append(bottom)
+
+        print("\n".join(out))
 
     def validate_dataset(self, dataset_path: str) -> bool:
         """验证数据集目录结构"""
@@ -210,7 +266,7 @@ class SKUDetectionMain:
                                 if ((isinstance(data, list) and data and isinstance(data[0], dict) and data[0].get('objects')) or
                                     (isinstance(data, dict) and ((isinstance(data.get('skus'), list) and data['skus'] and data['skus'][0].get('objects')) or data.get('objects')))):
                                     valid_indices.append(int(img_file.stem))
-                            except Exception:
+                            except (OSError, json.JSONDecodeError, ValueError, KeyError, IndexError):
                                 continue
 
                 valid_indices.sort()
@@ -230,7 +286,7 @@ class SKUDetectionMain:
                 # 单个参考图片处理
                 return self._run_single_matching(dataset_path, algorithm, reference_idx, max_images, device, save_json)
 
-        except Exception as e:
+        except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
             logger.error(f"END matching duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
@@ -274,7 +330,7 @@ class SKUDetectionMain:
             duration = perf_counter() - start
             logger.info(f"END matching_single duration={duration:.2f}s result=ok")
             return {"success": True, "duration_s": duration}
-        except Exception as e:
+        except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
             logger.error(f"END matching_single duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
@@ -326,7 +382,7 @@ class SKUDetectionMain:
             duration = perf_counter() - start
             logger.info(f"END visualization duration={duration:.2f}s result=ok")
             return {"success": True, "duration_s": duration, "details": {"output_dir": str(output_viz_dir)}}
-        except Exception as e:
+        except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
             logger.error(f"END visualization duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
@@ -382,7 +438,7 @@ class SKUDetectionMain:
             logger.info(f"END improved_analysis duration={duration:.2f}s result=ok output={report_file}")
             logger.info(f"最终SKU匹配数: {result['filtered_matches']}")
             return {"success": True, "duration_s": duration, "details": {"report_file": str(report_file)}}
-        except Exception as e:
+        except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError, KeyError) as e:
             duration = perf_counter() - start
             logger.error(f"END improved_analysis duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
@@ -429,10 +485,11 @@ class SKUDetectionMain:
             duration = perf_counter() - start
             logger.info(f"END evaluation duration={duration:.2f}s result=ok")
             return {"success": True, "duration_s": duration}
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError, RuntimeError) as e:
             duration = perf_counter() - start
             logger.error(f"END evaluation duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
+
 
     def run_reconstruction(
         self,
@@ -443,9 +500,9 @@ class SKUDetectionMain:
         conf_thres: float = 50.0,
         model_path: str | None = None,
         show_cam: bool = True,
-        mask_black_bg: bool = False,
-        mask_white_bg: bool = False,
-        mask_sky: bool = False,
+        mask_black_bg: bool = True,
+        mask_white_bg: bool = True,
+        mask_sky: bool = True,
     ) -> StepResult:
         """使用 VGGT 生成3D点云/GLB。
 
@@ -486,7 +543,7 @@ class SKUDetectionMain:
             duration = perf_counter() - start
             logger.info(f"END reconstruct duration={duration:.2f}s result=ok output={result_path}")
             return {"success": True, "duration_s": duration, "details": {"output_file": str(result_path)}}
-        except Exception as e:
+        except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
             logger.error(f"END reconstruct duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
@@ -505,24 +562,27 @@ class SKUDetectionMain:
                     dataset_dir = candidate
 
             paths = resolve_dataset_paths(dataset_dir)
+            dataset_name = dataset_dir.name
 
-            # 输出根目录：改为 dedup_detection/<dataset_name>（与模块内部追加 dataset_name 兼容）
-            output_root = (self.save_root if self.save_root is not None else CODE_DIR) / "dedup_detection"
+            # 输出目录：code/Output/<dataset_name>/dedup_detections/
+            output_base = self.save_root if self.save_root is not None else (CODE_DIR / "Output")
 
             result = deduplicate_sequence(
                 paths,
-                output_root=output_root,
-                max_image=None,           # 处理所有图片
-                same_names=True,          # 默认同名输出 (1.json, 2.json, ...)
-                dedup_mode='any',         # 默认使用所有匹配进行去重
-                min_hit_ratio=0.0,        # 默认不过滤命中率
+                output_root=output_base,       # 模块内部会追加 dataset_name
+                max_image=None,                # 处理所有图片
+                same_names=True,               # 默认同名输出 (1.json, 2.json, ...)
+                dedup_mode='any',              # 默认使用所有匹配进行去重
+                min_hit_ratio=0.0,             # 默认不过滤命中率
+                output_subdir='dedup_detections'  # 指定子目录名
             )
 
+            # 实际输出路径是 output_base/dataset_name/dedup_detections/
+            actual_output_dir = output_base / dataset_name / "dedup_detections"
             duration = perf_counter() - start
-            dataset_name = Path(dataset_path).name
-            logger.info(f"END dedup_sequence duration={duration:.2f}s result=ok output_dir={(output_root / dataset_name)} count={len(result)}")
-            return {"success": True, "duration_s": duration, "details": {"count": len(result), "output_root": str(output_root)}}
-        except Exception as e:
+            logger.info(f"END dedup_sequence duration={duration:.2f}s result=ok output_dir={actual_output_dir} count={len(result)}")
+            return {"success": True, "duration_s": duration, "details": {"count": len(result), "output_dir": str(actual_output_dir)}}
+        except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError, KeyError) as e:
             duration = perf_counter() - start
             logger.error(f"END dedup_sequence duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
@@ -555,10 +615,12 @@ class SKUDetectionMain:
         # 5. 去重后的检测框可视化
         if summary['dedup']:
             dataset = Path(dataset_path)
-            output_root = self.save_root if self.save_root is not None else (CODE_DIR / "output_dedup")
-            dedup_detection_dir = output_root / dataset.name / "dedup_detections"
+            dataset_name = dataset.name
+            output_base = self.save_root if self.save_root is not None else (CODE_DIR / "Output")
+            # deduplicate_sequence 输出到 output_base/dataset_name/dedup_detections/
+            dedup_detection_dir = output_base / dataset_name / "dedup_detections"
 
-            if dedup_detection_dir.exists():
+            if dedup_detection_dir.exists() and any(dedup_detection_dir.glob("*.json")):
                 logger.info("开始可视化去重后的检测框...")
                 dedup_viz = self.run_detection_visualization(
                     dataset_path,
@@ -567,7 +629,7 @@ class SKUDetectionMain:
                 )
                 summary['dedup_visualization'] = bool(dedup_viz.get('success', False))
             else:
-                logger.warning(f"去重检测目录不存在: {dedup_detection_dir}")
+                logger.warning(f"去重检测目录为空或不存在: {dedup_detection_dir}")
                 summary['dedup_visualization'] = False
         else:
             summary['dedup_visualization'] = False
@@ -613,15 +675,12 @@ class SKUDetectionMain:
             print("\n请选择操作:")
             print("1. 运行完整流水线")
             print("2. 运行精简流水线 (SKU匹配 + 准确性评估)")
-            print("3. SKU匹配推理")
-            print("4. 检出框可视化")
-            print("5. 改进的SKU计数分析")
-            print("6. 准确性评估")
-            print("7. 更改数据集路径")
-            print("8. 3D重建 (VGGT)")
+            print("3. 更改数据集路径")
+            print("4. 3D重建 (VGGT)")
+            print("5. 3D可视化 (Viewer)")
             print("0. 退出")
 
-            choice = input(f"\n当前数据集: {self.default_dataset}\n请输入选择 (0-8): ").strip()
+            choice = input(f"\n当前数据集: {self.default_dataset}\n请输入选择 (0-5): ").strip()
 
             if choice == '0':
                 logger.info("退出程序")
@@ -632,26 +691,67 @@ class SKUDetectionMain:
                 algorithm = input("选择算法 (point_tracking/3d/both) [默认: both]: ").strip() or 'both'
                 self.run_concise_pipeline(self.default_dataset, algorithm)
             elif choice == '3':
-                algorithm = input("选择算法 (point_tracking/3d/both) [默认: both]: ").strip() or 'both'
-                res = self.run_sku_matching(self.default_dataset, algorithm)
-                print(f"匹配: {'成功' if res.get('success') else '失败'}，耗时 {res.get('duration_s', 0):.2f}s")
+                dataset_name = input("输入数据集名称 (如 floor_display2): ").strip()
+                if dataset_name:
+                    # 自动拼接完整路径: PROJECT_ROOT / "imdata" / dataset_name
+                    new_path = str(PROJECT_ROOT / "imdata" / dataset_name)
+                    if self.validate_dataset(new_path):
+                        self.default_dataset = new_path
+                        # 显示完整路径和输出目录信息
+                        output_base = self.save_root if self.save_root is not None else (CODE_DIR / "Output")
+                        output_dir = output_base / dataset_name
+                        logger.info(f"数据集已更改为: {new_path}")
+                        logger.info(f"输出目录将使用: {output_dir}")
+                    else:
+                        logger.warning(f"数据集 '{dataset_name}' 验证失败，保持当前数据集")
             elif choice == '4':
-                res = self.run_detection_visualization(self.default_dataset)
-                print(f"可视化: {'成功' if res.get('success') else '失败'}，耗时 {res.get('duration_s', 0):.2f}s")
-            elif choice == '5':
-                res = self.run_improved_sku_analysis(self.default_dataset)
-                print(f"分析: {'成功' if res.get('success') else '失败'}，耗时 {res.get('duration_s', 0):.2f}s")
-            elif choice == '6':
-                res = self.run_accuracy_evaluation(self.default_dataset)
-                print(f"评估: {'成功' if res.get('success') else '失败'}，耗时 {res.get('duration_s', 0):.2f}s")
-            elif choice == '7':
-                new_path = input("输入新的数据集路径: ").strip()
-                if new_path and self.validate_dataset(new_path):
-                    self.default_dataset = new_path
-                    logger.info(f"数据集已更改为: {new_path}")
-            elif choice == '8':
                 res = self.run_reconstruction(self.default_dataset)
                 print(f"3D重建: {'成功' if res.get('success') else '失败'}，耗时 {res.get('duration_s', 0):.2f}s")
+            elif choice == '5':
+                # 3D 可视化（viewer），基于智能路径推导
+                dataset = Path(self.default_dataset)
+                dataset_name = dataset.name
+                save_base = self.save_root if self.save_root is not None else (CODE_DIR / 'Output')
+                output_dir = save_base / dataset_name
+
+                # 基于统一的 output_dir 自动推导所有路径
+                gm_default = output_dir / 'dedup_detections' / 'global_mapping.json'
+                recon_default = output_dir / 'reconstruction.glb'
+                if not recon_default.exists():
+                    recon_default = dataset / 'reconstruction.glb'
+                det_default = output_dir / 'dedup_detections'
+                cache_default = output_dir / 'viewer_cache'
+                img_default = dataset / 'images'
+
+                print("\n即将启动 3D 可视化 (Viewer)")
+                print(f"output_dir:     {output_dir}")
+                print(f"global_mapping: {gm_default}")
+                print(f"reconstruction: {recon_default}")
+                print(f"image_dir:      {img_default}")
+                print(f"detection_dir:  {det_default}")
+                print(f"cache_dir:      {cache_default}")
+                pts_src = (input("点云来源 (glb/predictions) [默认 glb]: ").strip() or 'glb')
+                try:
+                    port = int(input("端口 [默认 8080]: ").strip() or '8080')
+                except ValueError:
+                    logger.warning("Invalid port, using default 8080")
+                    port = 8080
+                force = (input("强制重建缓存? (y/N): ").strip().lower() == 'y')
+                open_browser = not ((input("启动后自动打开浏览器? (Y/n): ").strip().lower() or 'y') == 'n')
+
+                from modules.viewer_runner import run_viewer as viewer_run
+                viewer_run(
+                    global_mapping=str(gm_default),
+                    reconstruction=str(recon_default),
+                    image_dir=str(img_default),
+                    detection_dir=str(det_default),
+                    cache_dir=str(cache_default),
+                    downsample_ratio=1.0,
+                    points_source=pts_src,
+                    port=port,
+                    force_rebuild=force,
+                    open_browser=open_browser,
+                )
             else:
                 print("无效选择，请重试")
 
@@ -677,7 +777,8 @@ def main() -> None:
             data = load_yaml_config(config_path)
             yaml_main = extract_main_settings(data)
             yaml_recon = extract_reconstruction_settings(data)
-    except Exception:
+    except (FileNotFoundError, KeyError) as e:
+        logger.warning(f"Failed to load config: {e}, using defaults")
         yaml_main = {}
         yaml_recon = {}
 
@@ -685,8 +786,8 @@ def main() -> None:
     parser.add_argument('--dataset', type=str, default=yaml_main.get('dataset', str(PROJECT_ROOT / "imdata" / "floor_display2")),
                        help="数据集目录路径")
     parser.add_argument('--mode', type=str, default=yaml_main.get('mode', "interactive"),
-                       choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'reconstruct'],
-                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), reconstruct(3D重建)")
+                       choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'reconstruct', 'viewer'],
+                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), reconstruct(3D重建), viewer(3D可视化)")
     parser.add_argument('--algorithm', type=str, default=yaml_main.get('algorithm', "both"),
                        choices=['point_tracking', '3d', 'both'],
                        help="匹配算法选择")
@@ -701,6 +802,34 @@ def main() -> None:
     parser.add_argument('--recon_conf_thres', type=float, default=float(yaml_recon.get('conf_thres', 50.0)), help="3D导出置信度阈值(0-100)")
     parser.add_argument('--recon_output', type=str, default=yaml_recon.get('output', 'reconstruction.glb'), help="3D重建输出文件名")
     parser.add_argument('--recon_model_path', type=str, default=yaml_recon.get('model_path', None), help="3D重建模型权重路径")
+
+    # Viewer 参数：复用 --save_root 和 --dataset，无需额外路径参数
+    #   - output_dir: <save_root>/<dataset_name>
+    #   - image_dir: <dataset>/images
+    #   - global_mapping: <output_dir>/dedup_detections/global_mapping.json
+    #   - reconstruction: <output_dir>/reconstruction.glb (fallback: <dataset>/reconstruction.glb)
+    #   - detection_dir: <output_dir>/dedup_detections
+    #   - cache_dir: <output_dir>/viewer_cache
+    parser.add_argument('--viewer-global-mapping', type=str, default=None,
+                       help='viewer: global_mapping.json 路径（默认：<save_root>/<dataset_name>/dedup_detections/global_mapping.json）')
+    parser.add_argument('--viewer-reconstruction', type=str, default=None,
+                       help='viewer: reconstruction.glb 路径（默认：<save_root>/<dataset_name>/reconstruction.glb）')
+    parser.add_argument('--viewer-image-dir', type=str, default=None,
+                       help='viewer: images 目录（默认：<dataset>/images）')
+    parser.add_argument('--viewer-detection-dir', type=str, default=None,
+                       help='viewer: 检测结果目录（默认：<save_root>/<dataset_name>/dedup_detections）')
+    parser.add_argument('--viewer-cache-dir', type=str, default=None,
+                       help='viewer: 缓存目录（默认：<save_root>/<dataset_name>/viewer_cache）')
+    parser.add_argument('--viewer-points-source', type=str, default='glb', choices=['glb', 'predictions'],
+                       help='viewer: 点云来源（默认glb）')
+    parser.add_argument('--viewer-downsample', type=float, default=1.0,
+                       help='viewer: 下采样比例 0-1（默认1.0）')
+    parser.add_argument('--viewer-port', type=int, default=8080,
+                       help='viewer: 端口（默认8080）')
+    parser.add_argument('--no-viewer-open', action='store_true',
+                       help='viewer: 启动后不自动打开浏览器（默认开启自动打开）')
+    parser.add_argument('--viewer-force-rebuild', action='store_true',
+                       help='viewer: 强制重建缓存')
 
     args = parser.parse_args()
 
@@ -740,6 +869,34 @@ def main() -> None:
             output_filename=args.recon_output,
             conf_thres=args.recon_conf_thres,
             model_path=args.recon_model_path,
+        )
+    elif args.mode == 'viewer':
+        # 完全复用 --save_root 和 --dataset，无需额外参数
+        dataset = Path(args.dataset)
+        dataset_name = dataset.name
+        output_dir = app.save_root / dataset_name  # save_root已在前面初始化
+
+        # 基于约定自动推导所有路径（可被显式参数覆盖）
+        gm_default = output_dir / 'dedup_detections' / 'global_mapping.json'
+        recon_default = output_dir / 'reconstruction.glb'
+        if not recon_default.exists():
+            recon_default = dataset / 'reconstruction.glb'  # Fallback 到数据集目录
+        det_default = output_dir / 'detections_results'
+        cache_default = output_dir / 'vggt_cache'
+        img_default = dataset / 'images'  # images 始终在数据集目录
+
+        # 通过 modules.viewer_runner 调用
+        from modules.viewer_runner import run_viewer as viewer_run
+        viewer_run(
+            global_mapping=str(Path(args.viewer_global_mapping) if args.viewer_global_mapping else gm_default),
+            reconstruction=str(Path(args.viewer_reconstruction) if args.viewer_reconstruction else recon_default),
+            image_dir=str(Path(args.viewer_image_dir) if args.viewer_image_dir else img_default),
+            detection_dir=str(Path(args.viewer_detection_dir) if args.viewer_detection_dir else det_default),
+            cache_dir=str(Path(args.viewer_cache_dir)) if args.viewer_cache_dir else str(cache_default),
+            downsample_ratio=float(args.viewer_downsample),
+            points_source=str(args.viewer_points_source) if args.viewer_points_source else 'glb',
+            port=int(args.viewer_port),
+            force_rebuild=bool(args.viewer_force_rebuild),
         )
 
 
