@@ -53,7 +53,12 @@ class ViserViewer:
         callback: Callable,
         skip_right_middle: bool = True
     ) -> None:
-        """安全注册指针事件，封装try/except和按钮过滤逻辑"""
+        """安全注册指针事件，封装try/except和按钮过滤逻辑。
+
+        兼容说明：某些 viser 版本不支持 'down'/'move'/'up' 类型，
+        在这种情况下，on_pointer_event 会在装饰器创建时触发断言。
+        这里捕获 AssertionError 并跳过注册，以保证服务器不崩溃。
+        """
         try:
             @self.server.scene.on_pointer_event(event_type=event_type)
             def _handler(evt) -> None:
@@ -62,7 +67,7 @@ class ViserViewer:
                     return
                 # 调用实际业务逻辑
                 callback(evt)
-        except (AttributeError, RuntimeError) as e:
+        except (AttributeError, RuntimeError, AssertionError, ValueError) as e:
             logger.debug(f"Failed to register {event_type} pointer event: {e}")
 
     def _load_cache(self) -> None:

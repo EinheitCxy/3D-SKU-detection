@@ -227,7 +227,7 @@ class SKUMatchingConfig:
     seed: Optional[int] = 42                     # 随机种子
     
     # === 输出配置参数 ===
-    output_dir: str = "output"                   # 输出目录
+    output_dir: str = ""                   # 输出目录
     save_json: bool = False                      # 是否保存JSON结果
     json_filename: str = "correspondences.json"  # JSON文件名
     
@@ -240,8 +240,8 @@ class SKUMatchingConfig:
             if self.dtype is None:
                 self.dtype = optimal_dtype
         
-        # 创建输出目录
-        os.makedirs(self.output_dir, exist_ok=True)
+        if self.output_dir:
+            os.makedirs(self.output_dir, exist_ok=True)
         
         self._validate_config()
     
@@ -309,7 +309,7 @@ DEFAULT_POINT_TRACKING_CONFIG = {
     "confidence_threshold": 0.5,
     "min_confident_points": 7,
     "min_bbox_area": 10.0,
-    "output_dir": "output_point_tracking",
+    "output_dir": "",
     "enable_3d_projection_matching": False
 }
 

@@ -27,7 +27,7 @@ class ViewerArtifacts:
 @dataclass
 class ViewerRuntimeConfig:
     port: int = 8080
-    default_conf_percentile: float = 15.0
+    default_conf_percentile: float = 5.0
     default_point_size: float = 0.0006
     rotate_model_default: bool = False
     hide_unknown_default: bool = True

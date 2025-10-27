@@ -198,7 +198,7 @@ def _compute_gids_from_predictions(
         detections=aligned_detections,
         reverse_mapping=reverse_mapping,
         image_ids=aligned_image_ids,
-        conf_threshold=0.1,
+        conf_threshold=0.05,
         vggt_transforms=vggt_transforms,
     )
 
