@@ -25,7 +25,11 @@ dependencies = [
     "einops>=0.6.0",
     # Utilities
     "colorlog>=6.9.0",
-    "rich>=13.0.0",  # 进度条和格式化输出
+    "rich>=13.0.0", # 进度条和格式化输出
+    "pyyaml>=6.0.2",
+    "huggingface-hub>=0.34.2",
+    "safetensors>=0.5.3",
+    "matplotlib>=3.7.5",
 ]
 
 [project.optional-dependencies]

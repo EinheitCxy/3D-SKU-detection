@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
 from utils.global_id_mapper import GlobalIDMapper
-from utils.kdtree_utils import nearest_neighbor_mapping
+from utils.nn_search import nn_search
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,8 @@ def assign_global_ids_to_points(
         pre_confs = data["confidences"] if "confidences" in data else np.ones(len(pre_points), dtype=np.float32)
         pre_frame_indices = data["frame_indices"] if "frame_indices" in data else None
 
-        distances, indices = _nn_search(pre_points, points)
+        # 最近邻映射（统一使用 utils.nn_search）
+        distances, indices = nn_search(pre_points, points, k=1)
         final_gids = pre_gids[indices].astype(np.int32)
         final_confs = pre_confs[indices].astype(np.float32)
         if pre_frame_indices is not None:
@@ -71,6 +72,9 @@ def assign_global_ids_to_points(
 
 
 def _generate_frame_indices_from_predictions(target_points: np.ndarray, reconstruction_path: Path) -> np.ndarray:
+    """
+    为 target_points 生成帧索引。
+    """
     vggt_cache_dir = reconstruction_path.parent / "vggt_cache"
     predictions_cache = vggt_cache_dir / "predictions.npz"
     if not predictions_cache.exists():
@@ -87,10 +91,9 @@ def _generate_frame_indices_from_predictions(target_points: np.ndarray, reconstr
 
     flat_points = world_points.reshape(-1, 3)
     source_frame_ids = np.repeat(np.arange(S), H * W)
-    from scipy.spatial import cKDTree
 
-    tree = cKDTree(flat_points)
-    _, indices = tree.query(target_points, k=1)
+    # 统一的最近邻搜索（FAISS→KDTree）
+    _, indices = nn_search(flat_points, target_points, k=1)
     return source_frame_ids[indices].astype(np.int32)
 
 
@@ -211,7 +214,7 @@ def _compute_gids_from_predictions(
         )
 
     # 将提取点映射到目标点云（优先使用 FAISS-GPU，加速构建期 KNN 映射）
-    distances, indices = _nn_search(extracted_points, target_points)
+    distances, indices = nn_search(extracted_points, target_points, k=1)
     final_gids = np.full(len(target_points), -1, dtype=np.int32)
     final_confs = np.zeros(len(target_points), dtype=np.float32)
 
@@ -232,7 +235,8 @@ def _compute_gids_from_predictions(
     # 帧索引：用 VGGT 平面点构建 KDTree，查询 target_points 对应帧标签
     world_points_flat = world_points.reshape(-1, 3)
     source_frame_ids = np.repeat(np.arange(world_points.shape[0] if world_points.ndim == 4 else 1), H * W)
-    _, glb_to_vggt_indices = _nn_search(world_points_flat, target_points)
+    # 帧索引：用统一 KNN 将 target_points 映射到 VGGT 平面点以获得帧标签
+    _, glb_to_vggt_indices = nn_search(world_points_flat, target_points, k=1)
     final_frame_indices = source_frame_ids[glb_to_vggt_indices].astype(np.int32)
     return final_gids, final_confs, final_frame_indices
 
@@ -253,40 +257,3 @@ def _find_image_paths(detection_indices: List[int], search_dir: Path) -> Tuple[L
             found_all = False
             break
     return image_paths, found_all
-
-
-# ===== Accelerated NN mapping (FAISS-GPU with graceful fallback) =====
-def _nn_search(source_points: np.ndarray, target_points: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """Nearest neighbor search with FAISS-GPU fallback to FAISS-CPU then KDTree.
-
-    Returns
-    -------
-    distances: np.ndarray shape (M,)
-    indices:   np.ndarray shape (M,)
-    """
-    # Fast path: FAISS (GPU if available)
-    try:
-        import faiss  # type: ignore
-
-        d = int(source_points.shape[1])
-        src = source_points.astype(np.float32, copy=False)
-        tgt = target_points.astype(np.float32, copy=False)
-
-        try:
-            res = faiss.StandardGpuResources()
-            index = faiss.GpuIndexFlatL2(res, d)
-            logger.info("KNN: Using FAISS-GPU (IndexFlatL2)")
-        except (ImportError, RuntimeError, AttributeError):
-            index = faiss.IndexFlatL2(d)
-            logger.info("KNN: Using FAISS-CPU (IndexFlatL2)")
-
-        index.add(src)
-        D, I = index.search(tgt, 1)
-        return D.reshape(-1), I.reshape(-1)
-    except (ImportError, RuntimeError, ValueError) as e:
-        logger.info(f"KNN: FAISS not available or failed ({e}); fallback to KDTree")
-
-    # Fallback: KDTree
-    distances, indices = nearest_neighbor_mapping(source_points, target_points, k=1)
-    # Ensure 1-D
-    return distances.reshape(-1), indices.reshape(-1)

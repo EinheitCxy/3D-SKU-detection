@@ -97,7 +97,10 @@ class ViserViewer:
                 image_ids = data["image_ids"].tolist()
             else:
                 image_ids = list(range(extr.shape[0]))
+
+            # 延迟导入VGGT模块（路径由utils/__init__.py统一注入，通过main.py调用链确保）
             from vggt.utils.geometry import closed_form_inverse_se3
+
 
             cam2world = closed_form_inverse_se3(extr)[:, :3, :]
             cam2world[..., -1] -= self.scene_center

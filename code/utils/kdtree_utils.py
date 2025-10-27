@@ -1,13 +1,15 @@
 """
-KDTree工具函数模块 - 统一的KD树构建和最近邻搜索
+KDTree 工具函数模块（运行期拾取专用）
 
-本模块提供通用的KDTree操作，避免代码重复
+说明：
+- 构建期/批量最近邻映射（KNN）已统一迁移到 utils.nn_search.nn_search，
+  该函数内部提供 FAISS-GPU → FAISS-CPU → SciPy cKDTree 的梯度回退。
+- 本模块仅保留运行期交互拾取所需的 KDTree 构建（build_kdtree）。
 """
 
 import logging
 import numpy as np
 from scipy.spatial import cKDTree
-from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -32,49 +34,6 @@ def build_kdtree(points: np.ndarray, leafsize: int = 10) -> cKDTree:
     return tree
 
 
-def nearest_neighbor_mapping(
-    source_points: np.ndarray,
-    target_points: np.ndarray,
-    k: int = 1,
-    distance_threshold: Optional[float] = None
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    使用KDTree进行最近邻映射
-
-    Args:
-        source_points: 源点云 (N, D)
-        target_points: 目标点云 (M, D)
-        k: 最近邻数量
-        distance_threshold: 距离阈值，超过此值的匹配将被丢弃
-
-    Returns:
-        (distances, indices): 距离和索引数组
-    """
-    tree = build_kdtree(source_points)
-    distances, indices = tree.query(target_points, k=k)
-
-    if distance_threshold is not None:
-        valid_mask = distances < distance_threshold
-        logger.info(f"Filtered matches: {valid_mask.sum()}/{len(target_points)} within threshold {distance_threshold}")
-
-    return distances, indices
-
-
-def query_ball_point(
-    tree: cKDTree,
-    point: np.ndarray,
-    radius: float
-) -> np.ndarray:
-    """
-    查询球形区域内的所有点
-
-    Args:
-        tree: KD-Tree对象
-        point: 查询点坐标
-        radius: 查询半径
-
-    Returns:
-        索引数组
-    """
-    indices = tree.query_ball_point(point, r=radius)
-    return np.array(indices)
+# 注意：
+# - 最近邻映射/搜索请使用 utils.nn_search.nn_search。
+# - 这里仅保留 build_kdtree 以支持 viewer 运行期拾取的快速单点查询。
