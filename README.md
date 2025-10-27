@@ -8,11 +8,13 @@
 
 ## 功能特性
 
-- 🎯 跨图像 SKU 匹配：点追踪与 3D 投影两套实现，可独立或同时运行
-- 🔄 顺序去重：按顺序移除重复检测，生成统一的全局 ID 映射
-- 👀 可视化与摘要：检出框可视化、匹配日志解析与汇总
-- 📊 批量评估：与标注对照的准确性评估与汇总
-- 🧩 模块化：`modules/` 可执行脚本 + `utils/` 复用库，便于拓展与集成
+- **跨图像SKU匹配**：点追踪与3D投影两套算法，可独立或同时运行
+- **智能去重系统**：顺序去重，自动生成全局ID映射，支持批量处理
+- **交互式3D可视化**：基于Viser的实时3D viewer，支持GPU加速和进度条显示
+- **准确性评估**：与人工标注对照，计算Precision/Recall/F1指标
+- **模块化架构**：统一CLI接口，模块化设计便于拓展与集成
+- **性能优化**：FAISS GPU/CPU加速，智能缓存管理，自动降级策略
+- **代码质量**：统一数据加载接口，消除重复逻辑，完善错误处理
 
 ## 项目结构（精简）
 
@@ -55,9 +57,19 @@ uv run python code/main.py --mode pipeline --dataset imdata/floor_display2 --sav
 # 仅匹配（点追踪+3D 两者）
 uv run python code/main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output
 
+# 3D交互式可视化（Viewer模式）
+uv run python code/main.py --mode viewer --dataset imdata/floor_display2 --save_root ./Output
+
 # 批量匹配（参考索引 0..N）
 bash code/batch_run_inference.sh floor_display2 4
 ```
+
+**Viewer模式说明**：
+- 启动基于Viser的交互式3D可视化服务器
+- 默认端口：8080，浏览器访问 `http://localhost:8080`
+- 自动推导路径：无需手动指定global_mapping、reconstruction等参数
+- 支持GPU/CPU加速的KNN搜索和点云下采样
+- 智能缓存：首次构建后自动检测文件变更，按需重建
 
 更多细节（参数、输出路径、测试命令）参考 `code/README.md` 与 `code/README_EN.md`。
 
@@ -105,7 +117,7 @@ bash code/batch_run_inference.sh floor_display2 4
 
 ## 输出文件
 
-### 📦 GLB/GLTF 3D文件 (主要格式)
+### GLB/GLTF 3D文件 (主要格式)
 
 所有工具自动输出GLB格式文件到 `output` 目录：
 
@@ -125,30 +137,34 @@ bash code/batch_run_inference.sh floor_display2 4
 - `sku_centers_3d_YYYYMMDD_HHMMSS.json`: 3D坐标数据
 - `clusters_3d_viz_YYYYMMDD_HHMMSS.png`: 聚类可视化图
 
-### 📄 其他输出文件
+### 其他输出文件
 
 - `3d_visualization.png`: matplotlib 3D可视化图片
 - `detection_report.json`: 检测统计报告
 - `camera_poses.json`: 相机姿态数据
 
-> 💡 **GLB文件兼容性**: 可在Blender、Three.js、Unity、GLTF Viewer等3D软件中直接打开
+> **GLB文件兼容性**: 可在Blender、Three.js、Unity、GLTF Viewer等3D软件中直接打开
 
 ## 技术实现
 
-### 1. 🏗️ 3D重建流程
+### 1. 3D重建流程
 
-1. **Fast3R重建** (推荐): 使用CVPR 2025技术，支持1000+图片
-2. **VGGT重建** (备选): Meta AI的Visual Geometry Grounded Transformer
-3. **COLMAP回退**: 传统SfM方法作为最后备选
+**支持的重建方法**：
+1. **VGGT** (Visual Geometry Grounded Transformer): Meta AI的前馈式3D重建模型
+2. **COLMAP**: 传统SfM方法作为备选
 
-### 2. 🎯 SKU聚类算法
+**路径注入策略**：
+- 统一由 `utils/__init__.py` 管理VGGT路径注入
+- 其他模块通过 `import utils` 或 `from utils import get_vggt_root` 触发路径配置
+- 避免重复的sys.path操作，确保导入一致性
+
+### 2. SKU聚类与匹配
 
 **核心约束**: 同一图片内的物体绝不会被聚类
 
 ```python
 # 聚类后处理，确保跨图片聚类
 for cluster_id, images_dict in cluster_to_images.items():
-    images_with_multiple_objects = []
     for img_idx, point_indices in images_dict.items():
         if len(point_indices) > 1:  # 同一图片多个物体
             # 只保留第一个物体，其余标记为噪声点
@@ -156,12 +172,50 @@ for cluster_id, images_dict in cluster_to_images.items():
                 new_cluster_labels[point_idx] = -1
 ```
 
-### 3. 🚀 设备优化
+**统一数据加载**：
+- 所有检测文件加载使用 `utils.data_utils.load_detections` 作为唯一标准源
+- 支持 `return_index_map=True` 获取 `[(文件编号, 检测数据)]` 格式
+- 自动处理 floor_display1 和 floor_display2 两种JSON格式
+- 自动过滤空objects，确保数据质量
 
-智能设备选择优先级：
-1. **CUDA**: NVIDIA GPU加速
-2. **MPS**: Apple Silicon GPU加速  
+### 3. 性能优化
+
+**智能设备选择优先级**：
+1. **CUDA**: NVIDIA GPU加速（优先）
+2. **MPS**: Apple Silicon GPU加速
 3. **CPU**: 通用处理器回退
+
+**FAISS加速**：
+- GPU版本：`faiss-gpu` (Python 3.8-3.10) + `cupy-cuda12x`
+- CPU版本：`faiss-cpu` (Python 3.8-3.12，推荐)
+- 自动降级：GPU不可用时自动切换CPU
+- KNN搜索性能提升：3-10倍
+
+**3D Viewer缓存系统**：
+- **智能缓存管理**：基于文件mtime/md5的自动失效检测，无需手动清理
+- **4阶段进度条**：点云构建→颜色映射→索引建立→KDTree构建，实时显示进度
+- **GPU加速下采样**：使用CuPy进行点云下采样，FAISS-GPU加速最近邻搜索
+- **持久化缓存**：支持 `--cache-dir` 指定缓存目录，跨会话复用
+- **性能基准**（1M点云）：
+  - CPU模式：缓存构建约120s，KDTree构建约2.5s
+  - GPU模式：缓存构建约30s，KDTree构建约0.3s（使用FAISS-GPU）
+
+**Viewer交互优化**：
+- **事件注册封装**：统一的try/except和按钮过滤逻辑，减少80行重复代码
+- **参数自动推导**：从 `--save_root` 和 `--dataset` 自动推导所有路径
+- **错误容错**：防御式编程，兼容多种viser API版本
+
+### 4. 代码质量保障
+
+**消除重复逻辑**：
+- 统一检测文件扫描：3处重复 → 1个标准接口（减少57行）
+- 封装viewer事件注册：4处重复try/except → 1个注册方法（减少80行）
+- 优化索引枚举：手写扫描 → 复用load_detections（减少6行）
+
+**错误处理**：
+- 分层异常处理：FileNotFoundError、ValueError、ImportError
+- 防御式编程：try/except包装外部API调用
+- 清晰的日志级别：INFO（关键事件）、DEBUG（详细信息）
 
 ## 使用示例
 
@@ -180,45 +234,30 @@ ls output/
 ### 测试数据结果
 
 在包含13张图片和446个SKU检测的测试中：
-- ✅ 识别15个SKU类型 (跨图片聚类)
-- ✅ 412个独立SKU正确标记
-- ✅ 无同图片内物体错误聚类
-- ✅ 平均聚类距离0.6-1.6米
-
-## 开发日志
-
-### 2025-01-29 重大更新
-- ✅ 删除GUI交互式功能，简化项目结构
-- ✅ 实现跨图片SKU聚类，确保同图片内物体不聚类
-- ✅ 所有工具统一输出GLB格式到output目录
-- ✅ 智能设备选择 (CUDA → MPS → CPU)
-- ✅ 完整的命令行工具和报告系统
-
-### 2024-12-19 初始版本
-- 创建基础3D检测可视化脚本
-- 实现2D到3D映射功能
-- 添加多种可视化方法
-- 集成Fast3R和VGGT模型
+- 识别15个SKU类型 (跨图片聚类)
+- 412个独立SKU正确标记
+- 无同图片内物体错误聚类
+- 平均聚类距离0.6-1.6米
 
 ## 故障排除
 
 ### 常见问题
 
-1. **Fast3R导入错误**: 
+1. **VGGT导入错误**:
    ```bash
-   pip install -r fast3r/requirements.txt
+   pip install -r vggt-main/requirements.txt
    ```
 
-2. **GLB导出失败**: 
+2. **GLB导出失败**:
    ```bash
    uv pip install trimesh pygltflib
    ```
 
-3. **CUDA不可用**: 
+3. **CUDA不可用**:
    - 系统会自动回退到MPS (Apple Silicon) 或CPU
    - 无需手动干预
 
-4. **内存不足**: 
+4. **内存不足**:
    - 减少图片数量或使用 `--no_viz` 跳过可视化
 
 ### 性能优化
