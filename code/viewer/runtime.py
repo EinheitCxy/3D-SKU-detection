@@ -52,7 +52,7 @@ class ViserViewer:
         event_type: str,
         callback: Callable,
         skip_right_middle: bool = True
-    ) -> None:
+    ) -> bool:
         """安全注册指针事件，封装try/except和按钮过滤逻辑。
 
         兼容说明：某些 viser 版本不支持 'down'/'move'/'up' 类型，
@@ -67,8 +67,10 @@ class ViserViewer:
                     return
                 # 调用实际业务逻辑
                 callback(evt)
+            return True
         except (AttributeError, RuntimeError, AssertionError, ValueError) as e:
             logger.debug(f"Failed to register {event_type} pointer event: {e}")
+            return False
 
     def _load_cache(self) -> None:
         data = np.load(self.artifacts.pcd_cache_path)
@@ -214,8 +216,9 @@ class ViserViewer:
 
         with self.server.gui.add_folder("⚙️ Advanced Options", expand_by_default=False):
             gui_sampling = self.server.gui.add_slider("Display Sample %", min=10, max=100, step=10, initial_value=100)
-            gui_rotate = self.server.gui.add_checkbox("Rotate Model (Shift+Drag)", initial_value=bool(self.runtime.rotate_model_default))
             gui_hide_unknown = self.server.gui.add_checkbox("Hide Unknown IDs (-1)", initial_value=bool(self.runtime.hide_unknown_default))
+            # 说明：默认相机交互始终可用（左键旋转 / 右键平移 / 滚轮缩放）
+            self.server.gui.add_markdown("Default camera: left=rotate, right=pan, wheel=zoom")
 
         # Camera viz
         camera_data = self._load_camera_data()
@@ -321,8 +324,7 @@ class ViserViewer:
             point_cloud.colors = self.colors[mask]
 
         def handle_pick(click_pos: np.ndarray):
-            if not gui_pick_mode.value:
-                return
+            """处理点云拾取：找到最近的点并更新显示"""
             pick_sphere.position = tuple(float(x) for x in click_pos)
             pick_sphere.radius = gui_pick_radius.value
             pick_sphere.visible = bool(gui_show_pick.value)
@@ -340,136 +342,56 @@ class ViserViewer:
             else:
                 clear_info()
 
-        def _on_click_impl(evt) -> None:
-            """Click事件业务逻辑：射线投射选择点云"""
-            if not hasattr(evt, "ray_direction") or evt.ray_direction is None:
-                return
-            ray = np.asarray(evt.ray_direction)
-            o = np.asarray(evt.ray_origin)
-            ray = ray / (np.linalg.norm(ray) + 1e-9)
-            depth_est = np.linalg.norm(o)
-            best_idx = None
-            best_d = float("inf")
-            for t in np.linspace(0, depth_est * 2, 20):
-                p = o + ray * t
-                d, idx = self.kdtree.query(p, k=1)
-                if d < best_d and d < gui_pick_radius.value:
-                    best_d = d
-                    best_idx = int(idx)
-            if best_idx is not None:
-                handle_pick(self.rotated_points[best_idx])
-            else:
-                clear_info()
+        # ============================================================
+        # 交互控制策略（参考demo_viser.py）:
+        # 1. 默认不注册pointer事件，让viser完全控制相机
+        # 2. 只在Pick Mode启用时注册click事件
+        # 3. Click事件尽可能轻量，避免阻塞相机交互
+        # ============================================================
 
-        # 注册click事件（统一封装）
-        self._register_pointer_event("click", _on_click_impl)
+        click_handler_registered = {"val": False}
 
-        # rotation (Shift+Drag)
-        arcball_active = {"v": False}
-        prev = {"p": None}
-
-        def _ray_sphere_intersect(o: np.ndarray, d: np.ndarray, R: float):
-            b = 2.0 * float(np.dot(o, d))
-            c = float(np.dot(o, o) - R * R)
-            disc = b * b - 4.0 * c
-            if disc < 0:
-                return None
-            t1 = (-b - float(np.sqrt(disc))) / 2.0
-            t2 = (-b + float(np.sqrt(disc))) / 2.0
-            t = t1 if t1 > 0 else (t2 if t2 > 0 else None)
-            if t is None:
-                return None
-            return o + t * d
-
-        def _rot_from_to(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-            a_n = a / (np.linalg.norm(a) + 1e-9)
-            b_n = b / (np.linalg.norm(b) + 1e-9)
-            v = np.cross(a_n, b_n)
-            s = np.linalg.norm(v)
-            c = float(np.dot(a_n, b_n))
-            if s < 1e-9:
-                return np.eye(3)
-            vx = np.array([[0, -v[2], v[1]],[v[2], 0, -v[0]],[-v[1], v[0], 0]], dtype=float)
-            return np.eye(3) + vx + vx @ vx * ((1 - c) / (s * s))
-
-        # Camera orbit (Shift+Drag): update camera position/orientation, DO NOT touch point cloud or KDTree
-        def _apply_camera_orbit(R_delta: np.ndarray) -> None:
-            try:
-                from scipy.spatial.transform import Rotation as R
-                use_scipy = True
-            except ImportError:
-                use_scipy = False
-
-            target = self.scene_center
-            for client in self.server.get_clients().values():
-                # position
-                pos = np.asarray(client.camera.position, dtype=float)
-                pos_rel = pos - target
-                pos_new = (R_delta @ pos_rel) + target
+        @gui_pick_mode.on_update
+        def _(_):
+            """动态注册/注销点击事件，避免干扰相机控制"""
+            if gui_pick_mode.value and not click_handler_registered["val"]:
+                # 启用Pick Mode - 注册click事件
                 try:
-                    client.camera.position = (float(pos_new[0]), float(pos_new[1]), float(pos_new[2]))
-                except (AttributeError, RuntimeError):
-                    pass
+                    @self.server.scene.on_pointer_event(event_type="click")
+                    def _on_click(evt) -> None:
+                        if not gui_pick_mode.value:
+                            return
+                        if not hasattr(evt, "ray_direction") or evt.ray_direction is None:
+                            return
+                        ray = np.asarray(evt.ray_direction)
+                        o = np.asarray(evt.ray_origin)
+                        ray = ray / (np.linalg.norm(ray) + 1e-9)
+                        depth_est = np.linalg.norm(o)
+                        best_idx = None
+                        best_d = float("inf")
+                        # 增加采样点提高命中率
+                        for t in np.linspace(0, depth_est * 2, 50):
+                            p = o + ray * t
+                            d, idx = self.kdtree.query(p, k=1)
+                            search_radius = gui_pick_radius.value * 2.0
+                            if d < best_d and d < search_radius:
+                                best_d = d
+                                best_idx = int(idx)
+                        if best_idx is not None:
+                            handle_pick(self.rotated_points[best_idx])
+                        else:
+                            clear_info()
+                    click_handler_registered["val"] = True
+                    logger.info("Pick Mode enabled - click on point cloud to select")
+                except Exception as e:
+                    logger.warning(f"Failed to register click event: {e}")
+            elif not gui_pick_mode.value:
+                # 禁用Pick Mode - 无需注销（viser会自动处理）
+                click_handler_registered["val"] = False
+                pick_sphere.visible = False
+                logger.info("Pick Mode disabled - camera interaction fully restored")
 
-                # orientation (best-effort look-at)
-                if use_scipy:
-                    try:
-                        f = target - pos_new
-                        f = f / (np.linalg.norm(f) + 1e-9)
-                        up = np.array([0.0, 1.0, 0.0], dtype=float)
-                        s = np.cross(f, up)
-                        if np.linalg.norm(s) < 1e-9:
-                            up = np.array([0.0, 0.0, 1.0], dtype=float)
-                            s = np.cross(f, up)
-                        s = s / (np.linalg.norm(s) + 1e-9)
-                        u = np.cross(s, f)
-                        Rm = np.stack([s, u, f], axis=1)
-                        quat_xyzw = R.from_matrix(Rm).as_quat()
-                        wxyz = (float(quat_xyzw[3]), float(quat_xyzw[0]), float(quat_xyzw[1]), float(quat_xyzw[2]))
-                        client.camera.wxyz = wxyz
-                    except (AttributeError, RuntimeError):
-                        pass
-
-        def _on_down_impl(evt) -> None:
-            """Down事件业务逻辑：Shift+拖拽开始arcball旋转"""
-            if not (gui_rotate.value and self._is_shift_pressed(evt)):
-                return
-            o = np.asarray(evt.ray_origin) - self.scene_center
-            d = np.asarray(evt.ray_direction)
-            d = d / (np.linalg.norm(d) + 1e-9)
-            R_sphere = float(np.linalg.norm(o)) * 0.6
-            p = _ray_sphere_intersect(o, d, R_sphere)
-            if p is None:
-                return
-            arcball_active["v"] = True
-            prev["p"] = p
-
-        def _on_move_impl(evt) -> None:
-            """Move事件业务逻辑：Shift+拖拽执行arcball旋转"""
-            if not arcball_active["v"] or not (gui_rotate.value and self._is_shift_pressed(evt)):
-                return
-            o = np.asarray(evt.ray_origin) - self.scene_center
-            d = np.asarray(evt.ray_direction)
-            d = d / (np.linalg.norm(d) + 1e-9)
-            R_sphere = float(np.linalg.norm(o)) * 0.6
-            p = _ray_sphere_intersect(o, d, R_sphere)
-            if p is None or prev["p"] is None:
-                return
-            R_delta = _rot_from_to(prev["p"], p)
-            _apply_camera_orbit(R_delta)
-            prev["p"] = p
-
-        def _on_up_impl(_) -> None:
-            """Up事件业务逻辑：结束arcball旋转"""
-            arcball_active["v"] = False
-            prev["p"] = None
-
-        # 注册pointer事件（统一封装，keep right/middle for pan）
-        self._register_pointer_event("down", _on_down_impl, skip_right_middle=True)
-        self._register_pointer_event("move", _on_move_impl, skip_right_middle=True)
-        self._register_pointer_event("up", _on_up_impl, skip_right_middle=False)
-
-        # GUI callbacks
+        # GUI callbacks - 仅处理GUI控件更新
         @gui_conf.on_update
         def _(_):
             update_point_cloud()
