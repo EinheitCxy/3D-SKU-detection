@@ -34,19 +34,35 @@ if not logger.handlers and not logging.getLogger().handlers:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
-# 先导入 utils 以统一配置 VGGT 路径（由 utils/__init__.py 负责）
+# ====== VGGT路径注入策略 ======
+# 1. 先导入 utils 模块，触发 utils/__init__.py 的路径注入逻辑
+# 2. utils/__init__.py 会自动将 vggt-main 添加到 sys.path
+# 3. 然后再导入 vggt 相关模块，确保路径已正确配置
+# =============================
+
 from utils.config import get_optimal_device_config
 from utils.transforms import build_vggt_transforms
+from utils import get_vggt_root  # 确保VGGT路径已注入
 
+# 验证VGGT路径可用性
+VGGT_ROOT = get_vggt_root()
+if not VGGT_ROOT.exists():
+    logger.error(f"VGGT路径不存在: {VGGT_ROOT}")
+    logger.error("请确保vggt-main目录存在于项目根目录")
+    sys.exit(1)
+
+# 现在安全地导入VGGT模块（路径已由utils/__init__.py注入）
 try:
     from visual_util import predictions_to_glb
     from vggt.models.vggt import VGGT
     from vggt.utils.load_fn import load_and_preprocess_images
     from vggt.utils.pose_enc import pose_encoding_to_extri_intri
     from vggt.utils.geometry import unproject_depth_map_to_point_map
-except ImportError:
-    # 如果此处仍失败，说明 utils/__init__.py 未被正确导入或 vggt-main 不存在
-    raise
+except ImportError as e:
+    logger.error(f"VGGT模块导入失败: {e}")
+    logger.error(f"VGGT路径: {VGGT_ROOT}")
+    logger.error("请确保VGGT模块已正确安装: pip install -r vggt-main/requirements.txt")
+    sys.exit(1)
 
 # 使用统一的设备与精度选择逻辑：已在顶部导入
 

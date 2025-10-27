@@ -20,9 +20,13 @@ from __future__ import annotations
 import json
 import logging
 import re
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple, Set
+
+# 添加父目录到路径以便导入utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 logger = logging.getLogger(__name__)
@@ -268,14 +272,19 @@ def filter_best_matches(matches: List[Dict]) -> List[Dict]:
 
 
 def _list_numeric_detection_indices(detections_dir: Path) -> List[int]:
-    nums: List[int] = []
-    for p in detections_dir.glob('*.json'):
-        try:
-            nums.append(int(p.stem))
-        except ValueError:
-            continue
-    nums.sort()
-    return nums
+    """获取检测目录中所有有效的数字索引。
+
+    Returns:
+        排序后的文件索引列表
+    """
+    from utils.data_utils import load_detections
+
+    try:
+        detections_with_index = load_detections(str(detections_dir), return_index_map=True)
+        return sorted([idx for idx, _ in detections_with_index])
+    except (FileNotFoundError, ValueError) as e:
+        logger.debug(f"Failed to load detections from {detections_dir}: {e}")
+        return []
 
 
 def deduplicate_for_images(paths: DatasetPaths,
