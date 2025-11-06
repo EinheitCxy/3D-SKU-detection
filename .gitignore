@@ -84,6 +84,8 @@ data/
 imdata/*
 imdata0911/*
 output*/
+Dockered_GlobalIDMapping/
+*.backup
 
 # 输出文件
 outputs/
