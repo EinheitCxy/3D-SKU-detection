@@ -301,30 +301,31 @@ class SKUMatchingSystem:
         """后处理结果：可视化和保存"""
         if correspondences:
             visualize_results(
-                images, reference_image_idx, points_per_object, 
+                images, reference_image_idx, points_per_object,
                 correspondences, self.config, detections, transforms_info
             )
-            
-            # 保存可视化摘要
-            save_visualization_summary(correspondences, self.config, reference_image_idx)
 
-            # 保存JSON结果（如果启用）
-            if self.config.save_json:
-                meta = {
-                    "image_paths": image_paths,
-                    "reference_image_idx": reference_image_idx,
-                    "algorithm": "3D-2D projection" if self.config.enable_3d_projection_matching else "point tracking",
-                    "config": {
-                        "confidence_threshold": self.config.confidence_threshold,
-                        "min_confident_points": self.config.min_confident_points,
-                        "max_points_per_bbox": self.config.max_points_per_bbox,
-                        "max_bboxes": self.config.max_bboxes,
-                        "enable_3d_projection_matching": self.config.enable_3d_projection_matching,
-                    },
-                }
-                save_correspondences_json(correspondences, points_per_object, self.config, meta)
-        else:
-            logger.warning("No object correspondences found")
+        # 始终保存可视化摘要（即使没有匹配结果）
+        save_visualization_summary(correspondences, self.config, reference_image_idx)
+
+        # 保存JSON结果（如果启用）
+        if self.config.save_json and correspondences:
+            meta = {
+                "image_paths": image_paths,
+                "reference_image_idx": reference_image_idx,
+                "algorithm": "3D-2D projection" if self.config.enable_3d_projection_matching else "point tracking",
+                "config": {
+                    "confidence_threshold": self.config.confidence_threshold,
+                    "min_confident_points": self.config.min_confident_points,
+                    "max_points_per_bbox": self.config.max_points_per_bbox,
+                    "max_bboxes": self.config.max_bboxes,
+                    "enable_3d_projection_matching": self.config.enable_3d_projection_matching,
+                },
+            }
+            save_correspondences_json(correspondences, points_per_object, self.config, meta)
+
+        if not correspondences:
+            raise Exception("No object correspondences found")
     
     def _print_results_summary(self, correspondences: Dict[int, List[Dict]]) -> None:
         """打印结果摘要"""
