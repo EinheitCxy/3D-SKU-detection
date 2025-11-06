@@ -169,6 +169,7 @@ def extract_reconstruction_settings(data_or_path: Dict[str, Any] | str | Path) -
     rec = data.get("reconstruction", data)
     out: Dict[str, Any] = {}
     for k in (
+        "backend",
         "device",
         "conf_thres",
         "output",
