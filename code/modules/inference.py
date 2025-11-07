@@ -307,7 +307,7 @@ def main() -> None:
     parser.add_argument("--save_json", action="store_true", help="保存结果为JSON文件")
     # 匹配参数
     parser.add_argument("--max_points_per_bbox", type=int, default=30, help="每个检测框最大采样点数")
-    parser.add_argument("--confidence_threshold", type=float, default=0.5, help="点追踪置信度阈值")
+    parser.add_argument("--confidence_threshold", type=float, default=0.0, help="点追踪置信度阈值")
     parser.add_argument("--min_confident_points", type=int, default=10, help="每个bbox的最小置信点数")
     parser.add_argument("--correspondence_threshold", type=float, default=0.5, help="对应关系阈值")
     args = parser.parse_args()
