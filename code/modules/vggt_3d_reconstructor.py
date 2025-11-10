@@ -23,6 +23,7 @@ from datetime import datetime
 import gc
 import time
 from contextlib import nullcontext
+from typing import Optional, List, Any
 
 # 添加父目录到路径以便导入utils模块
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -40,7 +41,6 @@ if not logger.handlers and not logging.getLogger().handlers:
 # 3. 然后再导入 vggt 相关模块，确保路径已正确配置
 # =============================
 
-from utils.config import get_optimal_device_config
 from utils.transforms import build_transforms
 from utils import get_vggt_root  # 确保VGGT路径已注入
 
@@ -66,39 +66,14 @@ except ImportError as e:
 
 # 使用统一的设备与精度选择逻辑：已在顶部导入
 
-class VGGT3DReconstructor:
+from .reconstructor_base import ReconstructorBase
+
+
+class VGGT3DReconstructor(ReconstructorBase):
     """VGGT 3D重构器"""
-    
+
     def __init__(self, device=None, model_path=None):
-        """
-        初始化3D重构器
-        
-        Args:
-            device: 计算设备 ("cuda" 或 "cpu")
-            model_path: 预训练模型路径 (可选，默认从HuggingFace下载)
-        """
-        # 统一设备与dtype选择
-        optimal_device, optimal_dtype = get_optimal_device_config(verbose=True)
-
-        # 用户覆盖（若提供）
-        if device is not None:
-            if device == "cuda" and not torch.cuda.is_available():
-                logger.warning("警告: CUDA不可用，回退到CPU")
-                self.device = "cpu"
-                self.dtype = torch.float32
-            elif device == "cpu":
-                self.device = "cpu"
-                self.dtype = torch.float32
-            else:
-                self.device = device
-                self.dtype = optimal_dtype if str(optimal_device).startswith("cuda") else torch.float32
-        else:
-            self.device = optimal_device
-            self.dtype = optimal_dtype if str(optimal_device).startswith("cuda") else torch.float32
-
-        self.model = None
-        self.model_path = model_path
-        
+        super().__init__(device=device, model_path=model_path)
         logger.info(f"使用设备: {self.device}")
 
     def _extract_image_ids(self, image_names):
@@ -184,7 +159,7 @@ class VGGT3DReconstructor:
 
         # 提取图片名字和ID
         image_names = [os.path.basename(path) for path in image_paths]
-        image_ids = self._extract_image_ids(image_names)
+        image_ids = self.extract_image_ids(image_names)
 
         logger.info(f"图片顺序和ID映射:")
         for i, (name, img_id) in enumerate(zip(image_names, image_ids)):
@@ -194,7 +169,8 @@ class VGGT3DReconstructor:
         try:
             images = load_and_preprocess_images(image_paths).to(self.device)
             logger.info(f"图片预处理完成，张量形状: {images.shape}")
-            return images, image_paths, image_names, image_ids
+            # 基类流程只需要图像张量
+            return images
         except (RuntimeError, FileNotFoundError) as e:
             logger.error(f"图片预处理失败: {e}")
             raise
@@ -253,13 +229,13 @@ class VGGT3DReconstructor:
             logger.error(f"推理过程出错: {e}")
             raise
     
-    def export_glb(self, predictions, output_path, 
-                   conf_thres=50.0, 
-                   show_cam=True,
-                   mask_black_bg=False,
-                   mask_white_bg=False,
-                   mask_sky=False,
-                   prediction_mode="Depthmap and Camera Branch"):
+    def export_glb(self, predictions, output_path: Path, *,
+                   conf_thres: float = 50.0,
+                   show_cam: bool = True,
+                   mask_black_bg: bool = False,
+                   mask_white_bg: bool = False,
+                   mask_sky: bool = False,
+                   prediction_mode: str = "Depthmap and Camera Branch") -> None:
         """
         将预测结果导出为GLB文件
         
@@ -293,7 +269,7 @@ class VGGT3DReconstructor:
             )
             
             # 导出GLB文件
-            glb_scene.export(file_obj=output_path)
+            glb_scene.export(file_obj=str(output_path))
             logger.info(f"GLB文件成功导出到: {output_path}")
             
             # 文件信息
@@ -305,74 +281,18 @@ class VGGT3DReconstructor:
             logger.error(f"GLB导出失败: {e}")
             raise
     
-    def reconstruct_from_directory(self, input_dir, output_path, save_predictions=True, **kwargs):
-        """
-        从目录中的图片进行3D重构并导出GLB
-
-        Args:
-            input_dir: 输入图片目录
-            output_path: 输出GLB文件路径
-            save_predictions: 是否保存VGGT predictions中间数据（用于后续可视化）
-            **kwargs: 导出参数
-        """
-        logger.info("="*60)
-        logger.info("开始VGGT 3D重构流程")
-        logger.info("="*60)
-
-        total_start = time.time()
-
-        try:
-            # 1. 加载模型
-            if self.model is None:
-                self.load_model()
-
-            # 2. 加载图片
-            images, image_paths, image_names, image_ids = self.load_images(input_dir)
-            # 2.1 保存与VGGT预处理完全一致的裁剪/填充变换参数（transforms.json）
-            try:
-                self._save_transforms_cache(image_paths, image_ids, output_path, target_size=518)
-            except (FileNotFoundError, PermissionError, OSError, ValueError) as e:
-                logger.warning(f"保存 transforms.json 失败（不影响后续流程）: {e}")
-            logger.info(f"处理图片: {[os.path.basename(p) for p in image_paths]}")
-
-            # 3. 运行推理
-            predictions = self.run_inference(images)
-
-            # 4. （可选）保存 predictions 缓存（并按需应用遮罩到 conf）
-            if save_predictions:
-                try:
-                    self._save_predictions_cache(
-                        predictions,
-                        output_path,
-                        image_ids,
-                        image_paths=image_paths,
-                        mask_black_bg=bool(kwargs.get('mask_black_bg', False)),
-                        mask_white_bg=bool(kwargs.get('mask_white_bg', False)),
-                        mask_sky=bool(kwargs.get('mask_sky', False)),
-                    )
-                except (FileNotFoundError, PermissionError, OSError, KeyError, ValueError) as e:
-                    logger.warning(f"保存predictions缓存失败（跳过）：{e}")
-
-            # 5. 导出GLB
-            self.export_glb(predictions, output_path, **kwargs)
-
-            # 5. 保存VGGT predictions中间数据（用于后续可视化）
-            if save_predictions:
-                self._save_predictions_cache(predictions, output_path, image_ids)
-
-            total_time = time.time() - total_start
-            logger.info(f"\n总流程耗时: {total_time:.2f}秒")
-            logger.info("3D重构完成!")
-
-            return output_path
-
-        except (RuntimeError, ValueError, FileNotFoundError, OSError) as e:
-            logger.error(f"3D重构失败: {e}")
-            raise
-        finally:
-            # 清理GPU内存
-            torch.cuda.empty_cache()
-            gc.collect()
+    def reconstruct_from_directory(self, *, input_dir: str, output_path: str,
+                                  conf_thres: float = 50.0, show_cam: bool = True,
+                                  save_predictions: bool = True, **kwargs):
+        """使用基类模板流程执行重建。"""
+        return super().reconstruct_from_directory(
+            input_dir=input_dir,
+            output_path=output_path,
+            conf_thres=conf_thres,
+            show_cam=show_cam,
+            save_predictions=save_predictions,
+            **kwargs,
+        )
 
     def _save_transforms_cache(self, image_paths, image_ids, output_path, *, target_size: int = 518) -> None:
         """保存VGGT裁剪/填充变换到 vggt_cache/transforms.json（精简字段）。
@@ -418,184 +338,49 @@ class VGGT3DReconstructor:
 
         logger.info(f"保存VGGT transforms参数: {out_file}")
 
-    def _save_predictions_cache(
+    def save_predictions_cache(
         self,
         predictions,
-        output_path,
-        image_ids,
-        image_paths=None,
+        images_tensor,
+        out_dir: Path,
+        *,
+        image_names: Optional[List[str]] = None,
+        input_dir: Optional[str] = None,
+        target_size: int = 518,
         mask_black_bg: bool = False,
         mask_white_bg: bool = False,
         mask_sky: bool = False,
-    ):
-        """
-        保存VGGT predictions中间数据
+        **_: Any,
+    ) -> None:
+        """保存 transforms.json 与 predictions.npz（viewer 兼容）。"""
+        # 组装 image_paths 与 image_ids
+        image_paths: list[str] = []
+        image_ids: list[int] = []
+        if image_names and input_dir:
+            image_paths = [str(Path(input_dir) / n) for n in image_names]
+            image_ids = self.extract_image_ids(image_names)
 
-        保存内容：
-        - world_points: 世界坐标点云 (S,H,W,3) - S为图片数量
-        - depth: 深度图 (S,H,W)
-        - conf: 置信度图 (S,H,W)
-        - image_ids: 图片ID列表 (S,) - 从文件名提取的数字ID
-        - extrinsic: 相机外参 (S,3,4) - 用于相机位姿可视化
-        - intrinsic: 相机内参 (S,3,3) - 用于相机视锥FOV计算
-        - images: 输入图像 (S,3,H,W) - 用于Frustum纹理
-
-        Args:
-            predictions: VGGT模型预测结果
-            output_path: GLB输出文件路径
-            image_ids: 图片ID列表
-        """
+        # 1) 保存 transforms.json（严格对齐 VGGT 预处理）
         try:
-            output_dir = Path(output_path).parent
-            vggt_cache_dir = output_dir / "vggt_cache"
-            vggt_cache_dir.mkdir(exist_ok=True)
+            if image_paths and image_ids:
+                dummy_output = out_dir / "reconstruction.glb"  # 仅用于放置同目录 vggt_cache
+                self._save_transforms_cache(image_paths, image_ids, dummy_output, target_size=target_size)
+        except Exception as e:
+            logger.warning(f"保存 transforms.json 失败（不影响后续流程）: {e}")
 
-            cache_path = vggt_cache_dir / "predictions.npz"
-
-
-            # 验证数据一致性
-            world_points = predictions.get('world_points_from_depth')
-            depth = predictions.get('depth')
-
-            # VGGT模型返回的置信度键名为 depth_conf 和 world_points_conf
-            # 优先使用 depth_conf（与depth配套），回退到 world_points_conf 或旧版 conf
-            # 注意：不能用 or 连接numpy数组，必须显式判断 is not None
-            conf = predictions.get('depth_conf')
-            if conf is None:
-                conf = predictions.get('world_points_conf')
-            if conf is None:
-                conf = predictions.get('conf')
-
-            if world_points is not None:
-                if world_points.ndim == 4:  # (S,H,W,3)
-                    frame_count = world_points.shape[0]
-                elif world_points.ndim == 3:  # (H,W,3) - 单帧
-                    frame_count = 1
-                    # 扩展为批次维度
-                    world_points = world_points[np.newaxis, ...]
-                    if depth is not None and depth.ndim == 2:
-                        depth = depth[np.newaxis, ...]
-                    if conf is not None and conf.ndim == 2:
-                        conf = conf[np.newaxis, ...]
-                else:
-                    logger.warning(f"world_points维度异常: {world_points.shape}")
-                    frame_count = len(image_ids)
-
-                # 验证数据一致性
-                if len(image_ids) != frame_count:
-                    logger.warning(f"image_ids数量({len(image_ids)})与world_points帧数({frame_count})不一致")
-
-
-            # 提取相机参数（用于可视化）
-            extrinsic = predictions.get('extrinsic')
-            intrinsic = predictions.get('intrinsic')
-            images = predictions.get('images')
-
-            # 基于图像生成遮罩（可选）：将 conf 中对应位置置零（软遮罩，不破坏几何）
-            try:
-                if (mask_black_bg or mask_white_bg or mask_sky) and images is not None and conf is not None:
-                    imgs = images
-                    # 归一化为 (S,H,W,3) uint8
-                    if imgs.ndim == 4 and imgs.shape[1] == 3:
-                        imgs = imgs.transpose(0, 2, 3, 1)  # CHW->HWC
-                    if imgs.dtype != np.uint8:
-                        maxv = float(imgs.max()) if imgs.size > 0 else 1.0
-                        scale = 255.0 if maxv <= 1.0 else 1.0
-                        imgs = np.clip(imgs * scale, 0, 255).astype(np.uint8)
-
-                    S = imgs.shape[0]
-                    Hc, Wc = conf.shape[-2], conf.shape[-1]
-                    # 若尺寸不一致，安全缩放到 conf 尺寸
-                    try:
-                        import cv2
-                        resized_imgs = np.stack([cv2.resize(imgs[i], (Wc, Hc)) for i in range(S)], axis=0)
-                    except (ImportError, ValueError, IndexError) as e:
-                        # 无法缩放时，跳过遮罩
-                        resized_imgs = imgs
-                        if resized_imgs.shape[1] != Hc or resized_imgs.shape[2] != Wc:
-                            raise RuntimeError("图像尺寸与conf不一致且缺少OpenCV进行缩放，跳过遮罩。")
-
-                    mask = np.zeros((S, Hc, Wc), dtype=np.uint8)
-
-                    # 黑色背景遮罩
-                    if mask_black_bg:
-                        gray = (0.299*resized_imgs[...,0] + 0.587*resized_imgs[...,1] + 0.114*resized_imgs[...,2]).astype(np.float32)
-                        mask |= (gray < 25).astype(np.uint8)
-
-                    # 白色背景遮罩
-                    if mask_white_bg:
-                        gray = (0.299*resized_imgs[...,0] + 0.587*resized_imgs[...,1] + 0.114*resized_imgs[...,2]).astype(np.float32)
-                        mask |= (gray > 230).astype(np.uint8)
-
-                    # 天空遮罩（简易 HSV 版本，无外部下载依赖）
-                    if mask_sky:
-                        try:
-                            import cv2
-                            hsv = np.stack([cv2.cvtColor(resized_imgs[i], cv2.COLOR_RGB2HSV) for i in range(S)], axis=0)
-                            h = hsv[...,0]
-                            s = hsv[...,1]
-                            v = hsv[...,2]
-                            # 粗略的天空蓝色范围，仅作弱过滤（后续可在viewer端再提升门槛）
-                            sky = ((h >= 90) & (h <= 140) & (s > 30) & (v > 80)).astype(np.uint8)
-                            mask |= sky
-                        except (ImportError, ValueError, IndexError) as e:
-                            pass
-
-                    # 应用软遮罩：将 conf 中对应位置置零
-                    if mask.any():
-                        conf = conf.astype(np.float32, copy=False)
-                        conf = conf * (1.0 - (mask.astype(np.float32)))
-                        logger.info("已应用预测结果遮罩：黑/白/天空")
-            except (KeyError, ValueError, IndexError, RuntimeError) as e:
-                logger.warning(f"应用遮罩失败，跳过遮罩: {e}")
-
-            # 统一数值精度：保存为 float32，图像为 uint8
-            def _to_f32(x):
-                try:
-                    return x.astype(np.float32, copy=False)
-                except (ValueError, AttributeError) as e:
-                    return x
-
-            if world_points is not None:
-                world_points = _to_f32(world_points)
-            if depth is not None:
-                depth = _to_f32(depth)
-            if conf is not None:
-                conf = _to_f32(conf)
-            if extrinsic is not None:
-                extrinsic = _to_f32(extrinsic)
-            if intrinsic is not None:
-                intrinsic = _to_f32(intrinsic)
-            if images is not None:
-                # 将 (S,H,W,3) 转为 uint8；若是 (S,3,H,W) 由消费者自行处理
-                if images.ndim == 4 and images.shape[1] != 3:
-                    # 视为 HWC
-                    if images.dtype != np.uint8:
-                        images = np.clip(images * (255.0 if images.max() <= 1.0 else 1.0), 0, 255).astype(np.uint8)
-
-            # 保存数据
-            save_data = {
-                'world_points': world_points,
-                'depth': depth,
-                'conf': conf,
-                'image_ids': np.array(image_ids, dtype=np.int32),
-                'frame_count': frame_count if world_points is not None else len(image_ids),
-                'extrinsic': extrinsic,  # (S, 3, 4) 相机外参
-                'intrinsic': intrinsic,  # (S, 3, 3) 相机内参
-                'images': images,        # (S, 3, H, W) 或 (S,H,W,3)
-            }
-
-            # 过滤掉None值
-            save_data = {k: v for k, v in save_data.items() if v is not None}
-
-            np.savez_compressed(cache_path, **save_data)
-
-            file_size = cache_path.stat().st_size / (1024 * 1024)
-            logger.info(f"保存成功: {file_size:.2f} MB")
-            logger.info(f"   包含数据: {list(save_data.keys())}")
-
-
-        except (FileNotFoundError, PermissionError, OSError, KeyError, ValueError) as e:
+        # 2) 保存 predictions.npz（沿用原有实现）
+        try:
+            output_path = out_dir / "reconstruction.glb"
+            self._save_predictions_cache(
+                predictions,
+                output_path,
+                image_ids,
+                image_paths=image_paths,
+                mask_black_bg=mask_black_bg,
+                mask_white_bg=mask_white_bg,
+                mask_sky=mask_sky,
+            )
+        except Exception as e:
             logger.warning(f"保存predictions缓存失败: {e}")
             logger.warning("   可视化功能可能受限，但不影响GLB导出")
 
