@@ -1,3 +1,18 @@
+"""
+Global ID assignment for reconstructed point clouds (VGGT | Pi3).
+
+This module maps every point in a reconstruction to a global object ID (gid)
+using detection results and a global mapping file. It supports both VGGT and
+Pi3 prediction caches:
+
+- Fast path: use precomputed points_with_gid.npz when available.
+- Fallback path: use vggt_cache/predictions.npz + detections + transforms
+  (transforms.json if present, otherwise rebuild transforms from images).
+
+Frame alignment is performed via utils.frame_alignment.VGGTDetectionAligner
+(works generically for our prediction structure).
+"""
+
 from __future__ import annotations
 
 import json
@@ -40,7 +55,7 @@ def assign_global_ids_to_points(
     # 1) 优先：预计算的 points_with_gid.npz
     pvg_path = vggt_cache_dir / "points_with_gid.npz"
     if pvg_path.exists():
-        logger.info(f"使用预计算VGGT点云: {pvg_path}")
+        logger.info(f"使用预计算点云: {pvg_path}")
         data = np.load(pvg_path)
         pre_points = data["points"]  # (M,3)
         pre_gids = data["global_ids"]  # (M,)
@@ -105,7 +120,7 @@ def _compute_gids_from_predictions(
     image_dir: Optional[Path],
     detection_dir: Optional[Path],
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    logger.info("加载VGGT predictions...")
+    logger.info("加载 predictions 缓存...")
     data = np.load(predictions_path, allow_pickle=True)
     world_points = data["world_points"]  # (B,H,W,3) or (H,W,3)
     conf = data["conf"]
@@ -138,7 +153,7 @@ def _compute_gids_from_predictions(
     logger.info(f"加载检测结果: {len(detections)} 张图片")
 
     # 帧对齐
-    logger.info("验证VGGT-Detection帧对齐...")
+    logger.info("验证预测与检测的帧对齐...")
     from utils.frame_alignment import VGGTDetectionAligner
 
     vggt_image_ids = None
@@ -147,7 +162,7 @@ def _compute_gids_from_predictions(
     else:
         vggt_image_ids = list(range(world_points.shape[0] if world_points.ndim == 4 else 1))
 
-    aligned_vggt_data, aligned_detections, alignment_report = VGGTDetectionAligner.validate_and_align(
+    aligned_pred_data, aligned_detections, alignment_report = VGGTDetectionAligner.validate_and_align(
         vggt_data={"world_points": world_points, "conf": conf},
         detections=detections,
         detection_indices=detection_indices,
@@ -165,18 +180,32 @@ def _compute_gids_from_predictions(
     if aligned_image_ids is None:
         aligned_image_ids = detection_indices[: len(aligned_detections)]
 
-    # 裁剪对齐变换
-    vggt_transforms = None
+    # 裁剪/resize 对齐变换
+    transforms_info = None
     try:
         from utils.transforms import build_transforms_from_json
 
         transforms_path = dataset_root / "vggt_cache" / "transforms.json"
-        vggt_transforms = build_transforms_from_json(str(transforms_path), aligned_image_ids)
+        transforms_info = build_transforms_from_json(str(transforms_path), aligned_image_ids)
     except (FileNotFoundError, KeyError, ImportError) as e:
         logger.debug(f"Failed to load transforms from cache: {e}")
-        vggt_transforms = None
+        transforms_info = None
 
-    if vggt_transforms is None:
+    # 根据 predictions 判断模型类型（VGGT 或 Pi3），用于构建变换
+    model_type = "vggt"
+    try:
+        # Pi3 的缓存通常包含 camera_poses；VGGT 则包含 extrinsic/intrinsic。
+        if ("camera_poses" in data) and ("extrinsic" not in data):
+            model_type = "pi3"
+        # 显式元数据覆写（若日后加入）
+        if "source_model" in data:
+            sm = str(data["source_model"]).lower()
+            if "pi3" in sm:
+                model_type = "pi3"
+    except Exception:
+        pass
+
+    if transforms_info is None:
         try:
             from utils.transforms import build_transforms
 
@@ -184,10 +213,14 @@ def _compute_gids_from_predictions(
             if search_dir.exists():
                 image_paths, found_all = _find_image_paths(aligned_image_ids, search_dir)
                 if found_all and image_paths:
-                    vggt_transforms = build_transforms(image_paths, model_type="vggt", target_size=518)
+                    # VGGT: target_size=518；Pi3: 使用像素上限 255000
+                    if model_type == "pi3":
+                        transforms_info = build_transforms(image_paths, model_type="pi3", pixel_limit=255000)
+                    else:
+                        transforms_info = build_transforms(image_paths, model_type="vggt", target_size=518)
         except (FileNotFoundError, ImportError) as e:
             logger.debug(f"Failed to build transforms from images: {e}")
-            vggt_transforms = None
+            transforms_info = None
 
     # 从检测框提取 3D 点
     from utils.bbox_3d_extractor import extract_3d_from_bboxes
@@ -199,7 +232,7 @@ def _compute_gids_from_predictions(
         reverse_mapping=reverse_mapping,
         image_ids=aligned_image_ids,
         conf_threshold=0.05,
-        vggt_transforms=vggt_transforms,
+        vggt_transforms=transforms_info,
     )
 
     logger.info(
@@ -232,12 +265,12 @@ def _compute_gids_from_predictions(
         final_gids = extracted_gids[indices]
         final_confs = extracted_confs[indices]
 
-    # 帧索引：用 VGGT 平面点构建 KDTree，查询 target_points 对应帧标签
+    # 帧索引：用平面点构建 KDTree，查询 target_points 对应帧标签
     world_points_flat = world_points.reshape(-1, 3)
     source_frame_ids = np.repeat(np.arange(world_points.shape[0] if world_points.ndim == 4 else 1), H * W)
-    # 帧索引：用统一 KNN 将 target_points 映射到 VGGT 平面点以获得帧标签
-    _, glb_to_vggt_indices = nn_search(world_points_flat, target_points, k=1)
-    final_frame_indices = source_frame_ids[glb_to_vggt_indices].astype(np.int32)
+    # 帧索引：用统一 KNN 将 target_points 映射到平面点以获得帧标签
+    _, glb_to_pred_indices = nn_search(world_points_flat, target_points, k=1)
+    final_frame_indices = source_frame_ids[glb_to_pred_indices].astype(np.int32)
     return final_gids, final_confs, final_frame_indices
 
 

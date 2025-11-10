@@ -491,6 +491,7 @@ class SKUDetectionMain:
         *,
         device: str | None = None,
         output_filename: str = "reconstruction.glb",
+        backend: str = "vggt",
         conf_thres: float = 50.0,
         model_path: str | None = None,
         show_cam: bool = True,
@@ -498,14 +499,16 @@ class SKUDetectionMain:
         mask_white_bg: bool = True,
         mask_sky: bool = True,
     ) -> StepResult:
-        """使用 VGGT 生成3D点云/GLB。
+        """生成3D点云/GLB（支持后端：VGGT 或 PI3）。
 
         - 输入图片目录：<dataset>/images
         - 输出GLB：<save_root>/<dataset_name>/reconstruction.glb（或 <dataset>/reconstruction.glb）
         """
         start = perf_counter()
         try:
-            from modules.vggt_3d_reconstructor import VGGT3DReconstructor
+            use_backend = (backend or "vggt").lower()
+            if use_backend not in ("vggt", "pi3"):
+                raise ValueError(f"未知重建后端: {backend}. 仅支持 vggt|pi3")
 
             dataset = Path(dataset_path)
             image_dir = dataset / "images"
@@ -519,18 +522,30 @@ class SKUDetectionMain:
             output_dir.mkdir(parents=True, exist_ok=True)
             output_file = output_dir / output_filename
 
-            logger.info(f"开始3D重建: {image_dir} → {output_file}")
+            logger.info(f"开始3D重建[{use_backend}]: {image_dir} → {output_file}")
 
-            recon = VGGT3DReconstructor(device=device, model_path=model_path)
-            result_path = recon.reconstruct_from_directory(
-                input_dir=str(image_dir),
-                output_path=str(output_file),
-                conf_thres=conf_thres,
-                show_cam=show_cam,
-                mask_black_bg=mask_black_bg,
-                mask_white_bg=mask_white_bg,
-                mask_sky=mask_sky,
-            )
+            if use_backend == "vggt":
+                from modules.vggt_3d_reconstructor import VGGT3DReconstructor
+                recon = VGGT3DReconstructor(device=device, model_path=model_path)
+                result_path = recon.reconstruct_from_directory(
+                    input_dir=str(image_dir),
+                    output_path=str(output_file),
+                    conf_thres=conf_thres,
+                    show_cam=show_cam,
+                    mask_black_bg=mask_black_bg,
+                    mask_white_bg=mask_white_bg,
+                    mask_sky=mask_sky,
+                )
+            else:
+                from modules.pi3_3d_reconstructor import PI33DReconstructor
+                recon = PI33DReconstructor(device=device, model_path=model_path)
+                result_path = recon.reconstruct_from_directory(
+                    input_dir=str(image_dir),
+                    output_path=str(output_file),
+                    conf_thres=conf_thres,
+                    show_cam=show_cam,
+                    save_predictions=True,
+                )
 
             duration = perf_counter() - start
             logger.info(f"✓ 3D重建完成 - 耗时 {duration:.2f}s")
@@ -669,7 +684,7 @@ class SKUDetectionMain:
             print("1. 运行完整流水线")
             print("2. 运行精简流水线 (SKU匹配 + 准确性评估)")
             print("3. 更改数据集路径")
-            print("4. 3D重建 (VGGT)")
+            print("4. 3D重建 (VGGT/PI3)")
             print("5. 3D可视化 (Viewer)")
             print("0. 退出")
 
@@ -698,7 +713,10 @@ class SKUDetectionMain:
                     else:
                         logger.warning(f"数据集 '{dataset_name}' 验证失败，保持当前数据集")
             elif choice == '4':
-                res = self.run_reconstruction(self.default_dataset)
+                backend = (input("选择重建后端 (vggt/pi3) [默认 vggt]: ").strip() or 'vggt').lower()
+                if backend not in ('vggt','pi3'):
+                    backend = 'vggt'
+                res = self.run_reconstruction(self.default_dataset, backend=backend)
                 print(f"3D重建: {'成功' if res.get('success') else '失败'}，耗时 {res.get('duration_s', 0):.2f}s")
             elif choice == '5':
                 # 3D 可视化（viewer），基于智能路径推导
@@ -794,6 +812,7 @@ def main() -> None:
     # 3D重建专用参数
     parser.add_argument('--recon_conf_thres', type=float, default=float(yaml_recon.get('conf_thres', 50.0)), help="3D导出置信度阈值(0-100)")
     parser.add_argument('--recon_output', type=str, default=yaml_recon.get('output', 'reconstruction.glb'), help="3D重建输出文件名")
+    parser.add_argument('--recon_backend', type=str, default=yaml_recon.get('backend', 'vggt'), choices=['vggt','pi3'], help="3D重建后端 (vggt|pi3)")
     parser.add_argument('--recon_model_path', type=str, default=yaml_recon.get('model_path', None), help="3D重建模型权重路径")
 
     # Viewer 参数：复用 --save_root 和 --dataset，无需额外路径参数
@@ -860,6 +879,7 @@ def main() -> None:
             args.dataset,
             device=args.device,
             output_filename=args.recon_output,
+            backend=args.recon_backend,
             conf_thres=args.recon_conf_thres,
             model_path=args.recon_model_path,
         )
