@@ -9,14 +9,14 @@ import logging
 from typing import Dict, List, Optional
 
 from .config import SKUMatchingConfig
-from .transforms import VGGTImageTransform
+from .transforms import ImageTransformBase
 
 logger = logging.getLogger(__name__)
 
 
 def sample_3d_points_from_non_overlap_regions(
     scene_data: Dict, img_idx: int, bbox: List[float], non_overlap_regions: List[List[float]],
-    transform: VGGTImageTransform, config: SKUMatchingConfig
+    transform: ImageTransformBase, config: SKUMatchingConfig
 ) -> Optional[torch.Tensor]:
     """从检出框的非重合区域中采样 3D 点
     
@@ -104,7 +104,7 @@ def sample_3d_points_from_non_overlap_regions(
 
 
 def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float],
-                               transform: VGGTImageTransform, config: SKUMatchingConfig,
+                               transform: ImageTransformBase, config: SKUMatchingConfig,
                                other_bboxes: Optional[List[List[float]]] = None) -> Optional[torch.Tensor]:
     """
     从检出框中采样3D点 - 使用实际depth值进行精确重建
@@ -300,9 +300,9 @@ def project_3d_to_2d(points_3d: torch.Tensor, extrinsic: torch.Tensor, intrinsic
     return points_2d
 
 
-def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, target_bboxes: List[Dict], 
+def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, target_bboxes: List[Dict],
                                              config: SKUMatchingConfig, scene_data: Dict, target_img_idx: int,
-                                             target_transform: VGGTImageTransform, ref_3d_center: torch.Tensor, 
+                                             target_transform: ImageTransformBase, ref_3d_center: torch.Tensor,
                                              ref_depth_mean: float) -> Optional[Dict]:
     """找到投影点最多落入的检出框，并进行3D几何验证"""
     if len(projected_points) == 0:

@@ -13,10 +13,10 @@ import logging
 import numpy as np
 
 try:
-    # 仅在调用方需要启用 VGGT 裁剪映射时导入
-    from .transforms import VGGTImageTransform
+    # 支持VGGT和Pi3两种坐标变换（统一基类）
+    from .transforms import ImageTransformBase
 except ImportError:  # pragma: no cover - 运行环境可能未用到
-    VGGTImageTransform = None  # type: ignore
+    ImageTransformBase = None  # type: ignore
 
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def extract_3d_from_bboxes(
     bbox_margin: int = 0,
     filter_invalid_ids: bool = True,
     return_stats: bool = False,
-    vggt_transforms: Optional[List["VGGTImageTransform"]] = None,  # 若提供则进行裁剪/填充对齐
+    vggt_transforms: Optional[List["ImageTransformBase"]] = None,  # 若提供则进行VGGT/Pi3坐标对齐
 ) -> Union[Tuple[np.ndarray, np.ndarray, np.ndarray], Dict[str, Any]]:
     """从2D检测框提取3D点并赋全局ID（兼容VGGT裁剪/填充）
 
@@ -55,7 +55,7 @@ def extract_3d_from_bboxes(
         bbox_margin: 在 world_points 空间（最终输入空间）内对 bbox 做内缩像素。
         filter_invalid_ids: 过滤未命中映射的 bbox（global_id == -1）。
         return_stats: 返回统计信息。
-        vggt_transforms: 若提供，使用其进行原图 → 最终输入空间（含裁剪/填充）的精确映射。
+        vggt_transforms: 若提供，使用其进行原图 → 模型输入空间（VGGT含裁剪/填充，Pi3仅resize）的精确映射。
 
     Returns:
         - 默认返回三元组 (points_3d, global_ids, confidences)。
@@ -259,7 +259,7 @@ def _flatten_objects(det_data: Dict) -> List[Dict]:
     return []
 
 
-def _map_bbox_to_final_with_transform(t: "VGGTImageTransform", bbox: List[float]) -> Tuple[float, float, float, float]:
+def _map_bbox_to_final_with_transform(t: "ImageTransformBase", bbox: List[float]) -> Tuple[float, float, float, float]:
     x1, y1, x2, y2 = bbox
     xf1, yf1 = t.map_xy_to_final(x1, y1)
     xf2, yf2 = t.map_xy_to_final(x2, y2)

@@ -41,7 +41,7 @@ if not logger.handlers and not logging.getLogger().handlers:
 # =============================
 
 from utils.config import get_optimal_device_config
-from utils.transforms import build_vggt_transforms
+from utils.transforms import build_transforms
 from utils import get_vggt_root  # 确保VGGT路径已注入
 
 # 验证VGGT路径可用性
@@ -389,7 +389,7 @@ class VGGT3DReconstructor:
         out_file = out_dir / "transforms.json"
 
         # 按VGGT crop 逻辑构建批次变换，并自动应用批内居中填充
-        transforms = build_vggt_transforms(image_paths, target_size=target_size)
+        transforms = build_transforms(image_paths, model_type="vggt", target_size=target_size)
 
         frames = []
         # padded_size 对整个批次相同，直接取第一帧

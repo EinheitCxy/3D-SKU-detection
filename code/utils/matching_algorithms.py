@@ -25,7 +25,7 @@ from .geometry_3d import (
     find_best_matching_bbox_with_3d_validation,
     apply_uniqueness_constraint
 )
-from .transforms import VGGTImageTransform
+from .transforms import ImageTransformBase
 
 logger = logging.getLogger(__name__)
 
@@ -250,10 +250,10 @@ def find_object_correspondences(
     images: torch.Tensor,
     config: SKUMatchingConfig,
     reference_image_idx: int = 0,
-    transforms_info: Optional[List[VGGTImageTransform]] = None,
+    transforms_info: Optional[List[ImageTransformBase]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """查找物体对应关系的主函数
-    
+
     Args:
         vggt_model: VGGT模型
         detections: 检测结果列表
@@ -261,7 +261,7 @@ def find_object_correspondences(
         config: 配置参数
         reference_image_idx: 参考图像索引
         transforms_info: 坐标变换信息
-        
+
     Returns:
         tuple: (对应关系结果, 物体点映射)
     """
@@ -291,7 +291,7 @@ def find_correspondences_3d_projection(
     images: torch.Tensor,
     config: SKUMatchingConfig,
     reference_image_idx: int = 0,
-    transforms_info: Optional[List[VGGTImageTransform]] = None,
+    transforms_info: Optional[List[ImageTransformBase]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """基于3D-2D投影的物体匹配算法"""
     
@@ -473,7 +473,7 @@ def find_correspondences_point_tracking(
     images: torch.Tensor,
     config: SKUMatchingConfig,
     reference_image_idx: int = 0,
-    transforms_info: Optional[List[VGGTImageTransform]] = None,
+    transforms_info: Optional[List[ImageTransformBase]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """基于点追踪的物体匹配算法"""
     

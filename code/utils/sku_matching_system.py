@@ -21,7 +21,7 @@ except ImportError as e:
 
 from .config import SKUMatchingConfig
 from .data_utils import save_correspondences_json, load_detections
-from .transforms import build_vggt_transforms
+from .transforms import build_transforms
 from .matching_algorithms import find_object_correspondences
 from .visualization import visualize_results, save_visualization_summary
 
@@ -119,7 +119,7 @@ class SKUMatchingSystem:
             logger.info(f"Loaded {len(image_paths)} images with {len(detections)} detection files")
             
             # 2. 构建坐标变换信息
-            transforms_info = build_vggt_transforms(image_paths, target_size=518)
+            transforms_info = build_transforms(image_paths, model_type="vggt", target_size=518)
             
             # 3. 预处理图像
             images = load_and_preprocess_images(image_paths, mode="crop").to(self.config.device)

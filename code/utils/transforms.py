@@ -4,20 +4,200 @@ SKU匹配系统坐标变换模块
 包含VGGT图像变换类和坐标映射功能
 """
 
+import math
 import numpy as np
 import torch
 from typing import List, Tuple, Optional, Sequence, Dict, Any
 from pathlib import Path
 from PIL import Image
+from abc import ABC, abstractmethod
 
 
-class VGGTImageTransform:
+class ImageTransformBase(ABC):
+    """图像变换抽象基类，定义统一接口"""
+
+    @abstractmethod
+    def map_xy_to_final(self, x: float, y: float) -> Tuple[float, float]:
+        """将原图坐标映射到模型输入坐标"""
+        pass
+
+    @abstractmethod
+    def map_xy_to_original(self, x: float, y: float) -> Tuple[float, float]:
+        """将模型输入坐标映射回原图坐标"""
+        pass
+
+    def map_bbox_to_final(self, bbox: List[float]) -> List[float]:
+        """将原图边界框映射到模型输入坐标"""
+        x1, y1 = self.map_xy_to_final(bbox[0], bbox[1])
+        x2, y2 = self.map_xy_to_final(bbox[2], bbox[3])
+        return [x1, y1, x2, y2]
+
+    def map_bbox_to_original(self, bbox: List[float]) -> List[float]:
+        """将模型输入边界框映射回原图坐标"""
+        x1, y1 = self.map_xy_to_original(bbox[0], bbox[1])
+        x2, y2 = self.map_xy_to_original(bbox[2], bbox[3])
+        return [x1, y1, x2, y2]
+
+
+class Pi3ImageTransform(ImageTransformBase):
+    """Pi3图像变换类，用于原图坐标与Pi3 resize后坐标的映射
+
+    Pi3特点：
+    1. 保持宽高比的等比例缩放
+    2. 无裁剪操作
+    3. 尺寸对齐到14的倍数（DINOv2 patch size）
+    4. 批次内所有图片统一尺寸
+
+    ⚠️ 警告：仅用于Pi3模型！不要与VGGT模型混用！
+    """
+
+    def __init__(self, orig_width: int, orig_height: int, target_width: int, target_height: int):
+        """初始化Pi3变换参数
+
+        Args:
+            orig_width: 原图宽度
+            orig_height: 原图高度
+            target_width: Pi3 resize后的宽度（14的倍数）
+            target_height: Pi3 resize后的高度（14的倍数）
+        """
+        self.orig_width = int(orig_width)
+        self.orig_height = int(orig_height)
+        self.target_width = int(target_width)
+        self.target_height = int(target_height)
+
+        # 计算缩放比例
+        self.scale_x = self.target_width / self.orig_width if self.orig_width > 0 else 1.0
+        self.scale_y = self.target_height / self.orig_height if self.orig_height > 0 else 1.0
+
+    def map_xy_to_final(self, x: float, y: float) -> Tuple[float, float]:
+        """将原图坐标映射到Pi3 resize后的坐标"""
+        return x * self.scale_x, y * self.scale_y
+
+    def map_xy_to_original(self, x: float, y: float) -> Tuple[float, float]:
+        """将Pi3 resize后的坐标映射回原图坐标"""
+        return x / self.scale_x, y / self.scale_y
+
+    # 继承基类的 map_bbox_to_final 和 map_bbox_to_original
+
+    def map_bbox_to_resized(self, bbox: List[float]) -> List[float]:
+        """别名方法：兼容旧代码"""
+        return self.map_bbox_to_final(bbox)
+
+    def map_xy_to_resized(self, x: float, y: float) -> Tuple[float, float]:
+        """别名方法：兼容旧代码"""
+        return self.map_xy_to_final(x, y)
+
+    def map_points_to_resized(self, points):
+        """批量映射点坐标到Pi3 resize后的空间
+
+        Args:
+            points: (..., 2) numpy数组或torch张量
+
+        Returns:
+            同类型同形状的映射后坐标
+        """
+        is_torch = torch.is_tensor(points)
+
+        if is_torch:
+            result = points.clone()
+            result[..., 0] *= self.scale_x
+            result[..., 1] *= self.scale_y
+            return result
+        else:
+            result = points.copy()
+            result[..., 0] *= self.scale_x
+            result[..., 1] *= self.scale_y
+            return result
+
+    def map_points_to_original(self, points):
+        """批量映射点坐标回原图空间
+
+        Args:
+            points: (..., 2) numpy数组或torch张量
+
+        Returns:
+            同类型同形状的映射后坐标
+        """
+        is_torch = torch.is_tensor(points)
+
+        if is_torch:
+            result = points.clone()
+            result[..., 0] /= self.scale_x
+            result[..., 1] /= self.scale_y
+            return result
+        else:
+            result = points.copy()
+            result[..., 0] /= self.scale_x
+            result[..., 1] /= self.scale_y
+            return result
+
+    def get_transform_info(self) -> dict:
+        """返回变换信息用于调试"""
+        return {
+            "original_size": (self.orig_width, self.orig_height),
+            "target_size": (self.target_width, self.target_height),
+            "scales": (self.scale_x, self.scale_y),
+        }
+
+
+def build_pi3_transforms(
+    image_paths: List[str],
+    pixel_limit: int = 255000
+) -> List[Pi3ImageTransform]:
+    """构建Pi3变换列表，复用Pi3的resize逻辑
+
+    ⚠️ 警告：返回的Transform仅用于Pi3模型！不要传给VGGT模型！
+
+    Args:
+        image_paths: 图像路径列表
+        pixel_limit: 像素数限制，默认255000（与Pi3一致）
+
+    Returns:
+        Pi3变换对象列表
+    """
+    if not image_paths:
+        return []
+
+    # 基于第一张图片计算统一的目标尺寸
+    first_img = Image.open(image_paths[0]).convert("RGB")
+    W_orig, H_orig = first_img.size
+
+    # Pi3的resize逻辑
+    scale = math.sqrt(pixel_limit / (W_orig * H_orig)) if W_orig * H_orig > 0 else 1.0
+    W_target = W_orig * scale
+    H_target = H_orig * scale
+
+    # 调整到14的倍数
+    k = round(W_target / 14)
+    m = round(H_target / 14)
+    while (k * 14) * (m * 14) > pixel_limit:
+        if k / m > W_target / H_target:
+            k -= 1
+        else:
+            m -= 1
+
+    TARGET_W = max(1, k) * 14
+    TARGET_H = max(1, m) * 14
+
+    # 为每张图片创建变换对象（统一目标尺寸）
+    transforms = []
+    for img_path in image_paths:
+        img = Image.open(img_path).convert("RGB")
+        w, h = img.size
+        transforms.append(Pi3ImageTransform(w, h, TARGET_W, TARGET_H))
+
+    return transforms
+
+
+class VGGTImageTransform(ImageTransformBase):
     """修复版本的VGGT图像变换类，完全对齐load_and_preprocess_images(crop)的实现
-    
+
     关键修复点：
     1. 正确的裁剪offset计算 - 修复了裁剪坐标系映射错误
     2. 精确的坐标映射逻辑 - 按VGGT实际变换顺序处理
     3. 批量填充的正确处理 - 修正为左上角对齐，而非居中对齐
+
+    ⚠️ 警告：仅用于VGGT模型！不要与Pi3模型混用！
     """
 
     def __init__(self, orig_width: int, orig_height: int, target_size: int = 518):
@@ -133,11 +313,7 @@ class VGGTImageTransform:
                 
             return result.reshape(points.shape)
 
-    def map_bbox_to_final(self, bbox: List[float]) -> List[float]:
-        """将原图边界框映射到VGGT输入坐标"""
-        x1, y1 = self.map_xy_to_final(bbox[0], bbox[1])
-        x2, y2 = self.map_xy_to_final(bbox[2], bbox[3])
-        return [x1, y1, x2, y2]
+    # 继承基类的 map_bbox_to_final
 
     # -------- 模型输入(final) -> 原图 映射 --------
     def map_xy_to_original(self, xp: float, yp: float) -> Tuple[float, float]:
@@ -189,11 +365,7 @@ class VGGTImageTransform:
                 
             return result.reshape(points.shape)
 
-    def map_bbox_to_original(self, bbox: List[float]) -> List[float]:
-        """将VGGT输入边界框映射回原图坐标"""
-        x1, y1 = self.map_xy_to_original(bbox[0], bbox[1])
-        x2, y2 = self.map_xy_to_original(bbox[2], bbox[3])
-        return [x1, y1, x2, y2]
+    # 继承基类的 map_bbox_to_original
 
     def get_transform_info(self) -> dict:
         """返回变换信息用于调试"""
@@ -211,21 +383,23 @@ class VGGTImageTransform:
 
 def build_vggt_transforms(image_paths: List[str], target_size: int = 518) -> List[VGGTImageTransform]:
     """构建修复版本的VGGT变换列表，完全对齐load_and_preprocess_images("crop")的实现
-    
+
     修复要点：
     1. 正确处理裁剪坐标映射
     2. 精确的批量填充计算
     3. 与VGGT实际预处理的完全一致性
-    
+
+    ⚠️ 警告：返回的Transform仅用于VGGT模型！不要传给Pi3模型！
+
     Args:
         image_paths: 图像路径列表
         target_size: 目标尺寸，默认518
-        
+
     Returns:
         修复后的变换对象列表
     """
     transforms: List[VGGTImageTransform] = []
-    
+
     # 第一步：为每个图像创建变换对象
     for p in image_paths:
         img = Image.open(p).convert("RGB")
@@ -239,6 +413,47 @@ def build_vggt_transforms(image_paths: List[str], target_size: int = 518) -> Lis
         t.apply_batch_padding(max_w, max_h)
 
     return transforms
+
+
+def build_transforms(
+    image_paths: List[str],
+    model_type: str = "vggt",
+    **kwargs
+) -> List[ImageTransformBase]:
+    """自动根据模型类型构建对应的Transform（统一入口）
+
+    Args:
+        image_paths: 图像路径列表
+        model_type: 模型类型，"vggt" 或 "pi3"
+        **kwargs: 传递给具体构建函数的参数
+            - target_size: VGGT目标尺寸（默认518）
+            - pixel_limit: Pi3像素限制（默认255000）
+
+    Returns:
+        Transform列表（统一基类类型）
+
+    Raises:
+        ValueError: 不支持的模型类型
+
+    Examples:
+        >>> # VGGT模型
+        >>> transforms = build_transforms(image_paths, model_type="vggt")
+        >>> # Pi3模型
+        >>> transforms = build_transforms(image_paths, model_type="pi3")
+    """
+    model_type = model_type.lower()
+
+    if model_type in ("vggt", "dust3r"):
+        target_size = kwargs.get("target_size", 518)
+        return build_vggt_transforms(image_paths, target_size=target_size)
+    elif model_type == "pi3":
+        pixel_limit = kwargs.get("pixel_limit", 255000)
+        return build_pi3_transforms(image_paths, pixel_limit=pixel_limit)
+    else:
+        raise ValueError(
+            f"不支持的模型类型: {model_type}。"
+            f"支持的类型: 'vggt', 'pi3'"
+        )
 
 
 # ========== Lightweight adapters for transforms.json ==========

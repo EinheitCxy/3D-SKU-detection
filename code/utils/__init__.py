@@ -40,7 +40,7 @@ from .config import (
     extract_reconstruction_settings,
 )
 from .data_utils import load_detections, extract_bboxes_from_detections, save_correspondences_json
-from .transforms import VGGTImageTransform, build_vggt_transforms
+from .transforms import VGGTImageTransform, Pi3ImageTransform, ImageTransformBase, build_transforms
 from .point_utils import generate_points_from_bboxes
 from .geometry_3d import (
     sample_3d_points_from_bbox, 
@@ -81,7 +81,9 @@ __all__ = [
     'extract_bboxes_from_detections',
     'save_correspondences_json',
     'VGGTImageTransform',
-    'build_vggt_transforms',
+    'build_transforms',
+    'ImageTransformBase',
+    'Pi3ImageTransform',
     'generate_points_from_bboxes',
     'sample_3d_points_from_bbox',
     'project_3d_to_2d',

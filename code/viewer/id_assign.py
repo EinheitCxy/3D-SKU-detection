@@ -178,13 +178,13 @@ def _compute_gids_from_predictions(
 
     if vggt_transforms is None:
         try:
-            from utils.transforms import build_vggt_transforms
+            from utils.transforms import build_transforms
 
             search_dir = image_dir if (image_dir is not None and image_dir.exists()) else (dataset_root / "images")
             if search_dir.exists():
                 image_paths, found_all = _find_image_paths(aligned_image_ids, search_dir)
                 if found_all and image_paths:
-                    vggt_transforms = build_vggt_transforms(image_paths, target_size=518)
+                    vggt_transforms = build_transforms(image_paths, model_type="vggt", target_size=518)
         except (FileNotFoundError, ImportError) as e:
             logger.debug(f"Failed to build transforms from images: {e}")
             vggt_transforms = None
