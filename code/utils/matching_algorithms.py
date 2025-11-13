@@ -379,7 +379,18 @@ def find_correspondences_3d_projection(
                 
                 # 计算参考3D点的统计信息用于几何验证
                 ref_3d_center = points_3d.mean(dim=0)  # (3,)
-                ref_depth_mean = points_3d[:, 2].mean().item()  # Z坐标作为深度
+                # 使用参考相机坐标系的Z作为深度（extrinsic为world->camera）
+                E = scene_data['extrinsic'][reference_image_idx].to(points_3d.device)
+                if E.shape == (4, 4):
+                    R = E[:3, :3]
+                    t = E[:3, 3]
+                elif E.shape == (3, 4):
+                    R = E[:, :3]
+                    t = E[:, 3]
+                else:
+                    raise ValueError(f"Unsupported extrinsic matrix shape: {E.shape}")
+                points_cam = (R @ points_3d.T + t.unsqueeze(1)).T
+                ref_depth_mean = points_cam[:, 2].mean().item()  # 相机坐标系的Z才是深度
                 
                 # 投影到目标图像
                 projected_points = project_3d_to_2d(
@@ -473,7 +484,7 @@ def find_correspondences_point_tracking(
     images: torch.Tensor,
     config: SKUMatchingConfig,
     reference_image_idx: int = 0,
-    transforms_info: Optional[List[ImageTransformBase]] = None,
+    transforms_info: Optional[List[ImageTransform]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """基于点追踪的物体匹配算法"""
     
