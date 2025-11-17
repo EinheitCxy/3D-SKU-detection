@@ -155,9 +155,19 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
     valid_world_points = world_points_region[valid_mask]
     valid_depths = depth_region[valid_mask]
 
-    # 深度一致性检查：world_points的Z坐标应与depth_region接近
-    world_depths = valid_world_points[:, 2]
-    depth_diff = torch.abs(world_depths - valid_depths)
+    # 深度一致性检查：需在同一坐标系下比较（相机坐标系Z vs 深度图）
+    E = scene_data['extrinsic'][img_idx].to(valid_world_points.device)
+    if E.shape == (4, 4):
+        R = E[:3, :3]
+        t = E[:3, 3]
+    elif E.shape == (3, 4):
+        R = E[:, :3]
+        t = E[:, 3]
+    else:
+        raise ValueError(f"Unsupported extrinsic matrix shape: {E.shape}")
+    points_cam = (R @ valid_world_points.T + t.unsqueeze(1)).T
+    camera_depths = points_cam[:, 2]
+    depth_diff = torch.abs(camera_depths - valid_depths)
     depth_consistent_mask = depth_diff < 0.5  # 允许0.5米的深度差异
 
     if depth_consistent_mask.sum() < 5:

@@ -39,12 +39,13 @@ if not logger.handlers and not logging.getLogger().handlers:
 
 
 # 路径注入：确保可以导入 Pi3（仓库根目录/Pi3）和 code/utils
-THIS_DIR = Path(__file__).resolve().parent
-REPO_ROOT = THIS_DIR.parents[1]  # code/modules -> code -> 仓库根目录
+THIS_DIR = Path(__file__).resolve().parent  # code/modules
+CODE_ROOT = THIS_DIR.parent  # code
+REPO_ROOT = CODE_ROOT.parent  # 3D_Recognization 或 3D_SKU_Detection
 PI3_ROOT = REPO_ROOT / "Pi3"
+
 if str(PI3_ROOT) not in sys.path:
     sys.path.insert(0, str(PI3_ROOT))
-CODE_ROOT = THIS_DIR.parent
 if str(CODE_ROOT) not in sys.path:
     sys.path.insert(0, str(CODE_ROOT))
 
@@ -204,9 +205,14 @@ class PI33DReconstructor(ReconstructorBase):
             del pred['local_points']
         pred['images'] = x.permute(0, 1, 3, 4, 2)  # BNCHW->BNHWC（0-1范围）
 
-        # 转 numpy 但保留原始 torch 供 GLB 导出使用
+        # 验证必需的键存在
         elapsed = time.time() - t0
         logger.info(f"Pi3 推理完成，用时 {elapsed:.2f}s")
+        logger.info(f"返回的键: {list(pred.keys())}")
+        if 'camera_poses' not in pred:
+            logger.warning("⚠️  Pi3 模型输出缺少 'camera_poses'，相机将不会显示在 GLB 中")
+        else:
+            logger.info(f"✓ camera_poses 形状: {pred['camera_poses'].shape}")
         return pred  # tensors（带batch维）
 
     # ---- 导出 ----
