@@ -73,7 +73,7 @@ class VGGT3DReconstructor(ReconstructorBase):
     """VGGT 3D重构器"""
 
     def __init__(self, device=None, model_path=None):
-        super().__init__(device=device, model_path=model_path)
+        super().__init__(device=device, model_path=model_path, backend_name="vggt")
         logger.info(f"使用设备: {self.device}")
 
     def _extract_image_ids(self, image_names):
@@ -303,8 +303,8 @@ class VGGT3DReconstructor(ReconstructorBase):
         from pathlib import Path as _Path
         import json
 
-        # 目标目录：与 predictions.npz 相同的 vggt_cache 目录
-        out_dir = _Path(output_path).parent / "vggt_cache"
+        # 目标目录：与 predictions.npz 相同的 cache 目录
+        out_dir = _Path(output_path).parent / f"{self.backend_name}_cache"
         out_dir.mkdir(parents=True, exist_ok=True)
         out_file = out_dir / "transforms.json"
 

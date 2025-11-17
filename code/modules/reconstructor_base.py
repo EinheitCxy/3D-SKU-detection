@@ -37,7 +37,7 @@ class ReconstructorBase:
     子类应实现模型相关的方法；本类提供统一的 `reconstruct_from_directory` 模板流程。
     """
 
-    def __init__(self, device: Optional[str] = None, model_path: Optional[str] = None) -> None:
+    def __init__(self, device: Optional[str] = None, model_path: Optional[str] = None, backend_name: str = "vggt") -> None:
         optimal_device, optimal_dtype = get_optimal_device_config(verbose=True)
         if device is None:
             self.device = str(optimal_device)
@@ -56,6 +56,7 @@ class ReconstructorBase:
 
         self.model_path = model_path
         self.model: Any = None
+        self.backend_name = backend_name  # 用于生成cache目录名称：vggt_cache 或 pi3_cache
 
     # ---- 子类需实现的方法 ----
     def load_model(self) -> None:

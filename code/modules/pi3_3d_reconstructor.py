@@ -8,7 +8,7 @@
 1. 从目录加载图像
 2. 使用 Pi3 模型推理，得到稠密点云与相机位姿
 3. 导出 GLB（支持可选相机可视化）
-4. 兼容 viewer 的 predictions 缓存（保存为 vggt_cache/predictions.npz，包含 world_points 与 images）
+4. 兼容 viewer 的 predictions 缓存（保存为 pi3_cache/predictions.npz，包含 world_points 与 images）
 
 使用：
   uv run python -m modules.pi3_3d_reconstructor --input_dir <images_dir> --output_file <out.glb>
@@ -79,11 +79,11 @@ def _save_predictions_npz(
 ) -> Path:
     """保存与 viewer 兼容的 predictions 缓存。
 
-    - 保存位置：<out_dir>/vggt_cache/predictions.npz
+    - 保存位置：<out_dir>/pi3_cache/predictions.npz
     - 最低要求键：world_points (S,H,W,3), images (S,H,W,3 uint8)
       注：将 Pi3 的 'points' 重命名为 'world_points' 以保持兼容。
     """
-    cache_dir = out_dir / "vggt_cache"
+    cache_dir = out_dir / "pi3_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_path = cache_dir / "predictions.npz"
 
@@ -146,7 +146,7 @@ class PI33DReconstructor(ReconstructorBase):
     """Pi3 3D重建器（仅用于重建，可无缝替换现有 VGGT 重建流程）。"""
 
     def __init__(self, device: str | None = None, model_path: str | None = None) -> None:
-        super().__init__(device=device, model_path=model_path)
+        super().__init__(device=device, model_path=model_path, backend_name="pi3")
 
         # 延迟导入，以便路径注入生效
         try:
@@ -276,9 +276,9 @@ class PI33DReconstructor(ReconstructorBase):
                 # 取统一目标尺寸
                 first_info = transforms[0].get_transform_info()
                 tw, th = int(first_info["target_size"][0]), int(first_info["target_size"][1])
-                vggt_cache_dir = out_dir / "vggt_cache"
-                vggt_cache_dir.mkdir(parents=True, exist_ok=True)
-                tf_path = vggt_cache_dir / "transforms.json"
+                cache_dir = out_dir / f"{self.backend_name}_cache"
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                tf_path = cache_dir / "transforms.json"
 
                 frames = []
                 for idx, (name, t) in enumerate(zip(image_names or [], transforms)):

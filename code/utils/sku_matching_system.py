@@ -325,7 +325,7 @@ class SKUMatchingSystem:
             save_correspondences_json(correspondences, points_per_object, self.config, meta)
 
         if not correspondences:
-            raise Exception("No object correspondences found")
+            logger.warning(f"No object correspondences found for reference image {reference_image_idx}")
     
     def _print_results_summary(self, correspondences: Dict[int, List[Dict]]) -> None:
         """打印结果摘要"""

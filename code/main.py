@@ -669,7 +669,7 @@ class SKUDetectionMain:
 
     def run_concise_pipeline(self, dataset_path: str, algorithm: str = "point_tracking") -> Dict[str, bool]:
         """运行精简流水线 - 仅SKU匹配和准确性评估"""
-        logger.info("开始精简流水线 - SKU匹配 + 准确性评估")
+        logger.info("开始精简流水线 - SKU Matching + Accuracy evaluation")
         summary: Dict[str, bool] = {}
 
         if not self.validate_dataset(dataset_path):
@@ -696,7 +696,7 @@ class SKUDetectionMain:
         while True:
             print("\n请选择操作:")
             print("1. 运行完整流水线")
-            print("2. 运行精简流水线 (SKU匹配 + 准确性评估)")
+            print("2. 运行精简流水线 (SKU Matching + Accuracy evaluation)")
             print("3. 更改数据集路径")
             print("4. 3D重建 (VGGT/PI3)")
             print("5. 3D可视化 (Viewer)")
@@ -764,7 +764,16 @@ class SKUDetectionMain:
                             recon_default = dataset / 'reconstruction.glb'
 
                 det_default = output_dir / 'dedup_detections'
-                cache_default = output_dir / 'viewer_cache'
+
+                # 从reconstruction文件名提取backend，确定cache目录
+                cache_default = output_dir / 'viewer_cache'  # 默认值
+                if recon_default and recon_default.exists():
+                    recon_stem = recon_default.stem  # reconstruction_vggt 或 reconstruction_pi3
+                    if 'vggt' in recon_stem:
+                        cache_default = output_dir / 'vggt_cache'
+                    elif 'pi3' in recon_stem:
+                        cache_default = output_dir / 'pi3_cache'
+
                 img_default = dataset / 'images'
 
                 print("\n即将启动 3D 可视化 (Viewer)")
@@ -924,11 +933,37 @@ def main() -> None:
 
         # 基于约定自动推导所有路径（可被显式参数覆盖）
         gm_default = output_dir / 'dedup_detections' / 'global_mapping.json'
-        recon_default = output_dir / 'reconstruction.glb'
-        if not recon_default.exists():
-            recon_default = dataset / 'reconstruction.glb'  # Fallback 到数据集目录
+
+        # 智能查找reconstruction文件（优先查找带模型名称的文件）
+        recon_default = None
+        for backend in ['vggt', 'pi3']:
+            candidate = output_dir / f'reconstruction_{backend}.glb'
+            if candidate.exists():
+                recon_default = candidate
+                break
+        if recon_default is None:
+            recon_default = output_dir / 'reconstruction.glb'
+            if not recon_default.exists():
+                # Fallback到数据集目录，同样优先查找带模型名称的文件
+                for backend in ['vggt', 'pi3']:
+                    candidate = dataset / f'reconstruction_{backend}.glb'
+                    if candidate.exists():
+                        recon_default = candidate
+                        break
+                else:
+                    recon_default = dataset / 'reconstruction.glb'
+
         det_default = output_dir / 'detections_results'
-        cache_default = output_dir / 'vggt_cache'
+
+        # 从reconstruction文件名提取backend，确定cache目录
+        cache_default = output_dir / 'viewer_cache'  # 默认值
+        if recon_default and recon_default.exists():
+            recon_stem = recon_default.stem  # reconstruction_vggt 或 reconstruction_pi3
+            if 'vggt' in recon_stem:
+                cache_default = output_dir / 'vggt_cache'
+            elif 'pi3' in recon_stem:
+                cache_default = output_dir / 'pi3_cache'
+
         img_default = dataset / 'images'  # images 始终在数据集目录
 
         # 通过 modules.viewer_runner 调用
