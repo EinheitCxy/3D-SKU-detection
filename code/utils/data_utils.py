@@ -221,6 +221,7 @@ def save_correspondences_json(
             "meta": meta or {},
         }
         out_path = Path(config.output_dir) / config.json_filename
+        out_path.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
         with open(out_path, 'w', encoding='utf-8') as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved correspondences JSON to '{out_path}'")

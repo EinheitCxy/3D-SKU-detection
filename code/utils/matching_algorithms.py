@@ -484,7 +484,7 @@ def find_correspondences_point_tracking(
     images: torch.Tensor,
     config: SKUMatchingConfig,
     reference_image_idx: int = 0,
-    transforms_info: Optional[List[ImageTransform]] = None,
+    transforms_info: Optional[List[ImageTransformBase]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """基于点追踪的物体匹配算法"""
     

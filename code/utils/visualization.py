@@ -79,8 +79,9 @@ def visualize_results(
                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
             else:
                 logger.warning(f"Invalid reference bbox {obj_id}")
-        
+
         ref_output_path = Path(config.output_dir) / "reference_image_with_bboxes.jpg"
+        ref_output_path.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
         cv2.imwrite(str(ref_output_path), overlay)
         logger.info(f"Saved reference visualization")
 
@@ -167,8 +168,9 @@ def visualize_results(
                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
                 else:
                     logger.warning(f"Invalid target bbox {obj_id} in image {s_idx}")
-            
+
             output_filename = Path(config.output_dir) / f"target_image_{s_idx}_all_bboxes_and_matches.jpg"
+            output_filename.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
             cv2.imwrite(str(output_filename), target_image_bgr)
             
     except (cv2.error, FileNotFoundError, PermissionError, KeyError, IndexError) as e:

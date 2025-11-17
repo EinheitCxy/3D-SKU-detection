@@ -10,8 +10,8 @@ from typing import Optional, Dict, Any, TypedDict
 import colorlog
 
 # 项目路径
-PROJECT_ROOT = Path(__file__).parent.parent
-CODE_DIR = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CODE_DIR = Path(__file__).resolve().parent
 
 # 确保可以从仓库根或任意 CWD 导入本目录模块
 if str(CODE_DIR) not in sys.path:
@@ -502,7 +502,7 @@ class SKUDetectionMain:
         """生成3D点云/GLB（支持后端：VGGT 或 PI3）。
 
         - 输入图片目录：<dataset>/images
-        - 输出GLB：<save_root>/<dataset_name>/reconstruction.glb（或 <dataset>/reconstruction.glb）
+        - 输出GLB：<save_root>/<dataset_name>/reconstruction_{backend}.glb（或 <dataset>/reconstruction_{backend}.glb）
         """
         start = perf_counter()
         try:
@@ -510,7 +510,13 @@ class SKUDetectionMain:
             if use_backend not in ("vggt", "pi3"):
                 raise ValueError(f"未知重建后端: {backend}. 仅支持 vggt|pi3")
 
+            # 允许相对路径；当从 code/ 目录执行时，尝试回退到仓库根
             dataset = Path(dataset_path)
+            if not dataset.exists():
+                candidate = CODE_DIR.parent / dataset_path
+                if candidate.exists():
+                    dataset = candidate
+                    logger.info(f"已将数据集路径解析为: {dataset}")
             image_dir = dataset / "images"
             if not image_dir.exists():
                 msg = f"图片目录不存在: {image_dir}"
@@ -520,7 +526,15 @@ class SKUDetectionMain:
             # 选择输出位置
             output_dir = (self.save_root / dataset.name) if self.save_root else dataset
             output_dir.mkdir(parents=True, exist_ok=True)
-            output_file = output_dir / output_filename
+
+            # 自动在文件名中添加模型名称（如果文件名中还没有）
+            output_path = Path(output_filename)
+            if use_backend not in output_path.stem:  # 检查文件名（不含扩展名）中是否已包含模型名
+                # 在扩展名前插入模型名称：reconstruction.glb -> reconstruction_vggt.glb
+                new_filename = f"{output_path.stem}_{use_backend}{output_path.suffix}"
+                output_file = output_dir / new_filename
+            else:
+                output_file = output_dir / output_filename
 
             logger.info(f"开始3D重建[{use_backend}]: {image_dir} → {output_file}")
 
@@ -595,7 +609,7 @@ class SKUDetectionMain:
             logger.error(f"END dedup_sequence duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
 
-    def run_complete_pipeline(self, dataset_path: str) -> Dict[str, bool]:
+    def run_complete_pipeline(self, dataset_path: str, algorithm: str = 'point_tracking') -> Dict[str, bool]:
         """运行完整的SKU计数流水线，返回每步是否成功的摘要。"""
         logger.info("开始完整的SKU计数流水线")
         summary: Dict[str, bool] = {}
@@ -609,7 +623,7 @@ class SKUDetectionMain:
         summary['visualization'] = bool(viz.get('success', False))
 
         # 2. SKU匹配推理
-        match = self.run_sku_matching(dataset_path, 'point_tracking', batch_all_refs=True)  # TODO: algorithm is hardcoded now
+        match = self.run_sku_matching(dataset_path, algorithm, batch_all_refs=True)
         summary['matching'] = bool(match.get('success', False))
 
         # 3. SKU计数分析
@@ -694,7 +708,8 @@ class SKUDetectionMain:
                 logger.info("退出程序")
                 break
             elif choice == '1':
-                self.run_complete_pipeline(self.default_dataset)
+                algorithm = input("选择算法 (point_tracking/3d) [默认: point_tracking]: ").strip() or 'point_tracking'
+                self.run_complete_pipeline(self.default_dataset, algorithm)
             elif choice == '2':
                 algorithm = input("选择算法 (point_tracking/3d/both) [默认: both]: ").strip() or 'both'
                 self.run_concise_pipeline(self.default_dataset, algorithm)
@@ -715,6 +730,7 @@ class SKUDetectionMain:
             elif choice == '4':
                 backend = (input("选择重建后端 (vggt/pi3) [默认 vggt]: ").strip() or 'vggt').lower()
                 if backend not in ('vggt','pi3'):
+                    logger.warning(f"无效的后端 '{backend}'，使用默认 vggt")
                     backend = 'vggt'
                 res = self.run_reconstruction(self.default_dataset, backend=backend)
                 print(f"3D重建: {'成功' if res.get('success') else '失败'}，耗时 {res.get('duration_s', 0):.2f}s")
@@ -727,9 +743,26 @@ class SKUDetectionMain:
 
                 # 基于统一的 output_dir 自动推导所有路径
                 gm_default = output_dir / 'dedup_detections' / 'global_mapping.json'
-                recon_default = output_dir / 'reconstruction.glb'
-                if not recon_default.exists():
-                    recon_default = dataset / 'reconstruction.glb'
+
+                # 智能查找reconstruction文件（优先查找带模型名称的文件）
+                recon_default = None
+                for backend in ['vggt', 'pi3']:
+                    candidate = output_dir / f'reconstruction_{backend}.glb'
+                    if candidate.exists():
+                        recon_default = candidate
+                        break
+                if recon_default is None:
+                    recon_default = output_dir / 'reconstruction.glb'
+                    if not recon_default.exists():
+                        # Fallback到数据集目录，同样优先查找带模型名称的文件
+                        for backend in ['vggt', 'pi3']:
+                            candidate = dataset / f'reconstruction_{backend}.glb'
+                            if candidate.exists():
+                                recon_default = candidate
+                                break
+                        else:
+                            recon_default = dataset / 'reconstruction.glb'
+
                 det_default = output_dir / 'dedup_detections'
                 cache_default = output_dir / 'viewer_cache'
                 img_default = dataset / 'images'
@@ -857,7 +890,7 @@ def main() -> None:
     if args.mode == 'interactive':
         app.interactive_mode()
     elif args.mode == 'pipeline':
-        app.run_complete_pipeline(args.dataset)
+        app.run_complete_pipeline(args.dataset, args.algorithm)
     elif args.mode == 'concise':
         # 在精简流水线中，先匹配后评估；匹配透传关键参数
         app.run_sku_matching(
