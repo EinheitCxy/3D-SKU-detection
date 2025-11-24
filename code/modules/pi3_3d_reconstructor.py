@@ -70,6 +70,137 @@ def _to_nhwc_uint8(imgs: torch.Tensor | np.ndarray) -> np.ndarray:
     return arr
 
 
+def _estimate_intrinsics_from_local_points(
+    local_points: torch.Tensor,
+    conf: Optional[torch.Tensor] = None,
+    max_points_per_view: int = 50000,
+) -> torch.Tensor:
+    """基于相机坐标系下的局部3D点与像素坐标，拟合每帧的内参矩阵K。
+
+    Args:
+        local_points: (B, N, H, W, 3)，相机坐标系下的3D点 (X, Y, Z)。
+        conf: (B, N, H, W, 1) 或 (B, N, H, W)，对应置信度，可为None。
+        max_points_per_view: 每个视角用于拟合的最大点数（随机子采样）。
+
+    Returns:
+        intrinsic: (B, N, 3, 3) 相机内参矩阵。
+    """
+    if local_points.ndim != 5 or local_points.shape[-1] != 3:
+        raise ValueError(f"local_points shape must be (B,N,H,W,3), got {local_points.shape}")
+
+    bsz, num_views, height, width, _ = local_points.shape
+    device = local_points.device
+    dtype = torch.float32
+
+    # 像素坐标网格 (u,v)，带 0.5 像素偏移
+    ys, xs = torch.meshgrid(
+        torch.arange(height, device=device, dtype=dtype),
+        torch.arange(width, device=device, dtype=dtype),
+        indexing="ij",
+    )
+    u_grid = xs + 0.5  # 水平
+    v_grid = ys + 0.5  # 垂直
+
+    intrinsics = torch.zeros((bsz, num_views, 3, 3), device=device, dtype=dtype)
+
+    # 默认K（当样本不足或拟合失败时退化使用）
+    f_default = float(max(height, width))
+    cx_default = (width - 1) / 2.0
+    cy_default = (height - 1) / 2.0
+    default_K = torch.tensor(
+        [[f_default, 0.0, cx_default], [0.0, f_default, cy_default], [0.0, 0.0, 1.0]],
+        device=device,
+        dtype=dtype,
+    )
+
+    if conf is not None:
+        if conf.ndim == 5 and conf.shape[-1] == 1:
+            conf = conf[..., 0]
+        if conf.shape[:4] != (bsz, num_views, height, width):
+            raise ValueError(f"conf shape mismatch, expect (B,N,H,W[,1]), got {conf.shape}")
+
+    for b in range(bsz):
+        for n in range(num_views):
+            pts = local_points[b, n]  # (H, W, 3)
+            pts = pts.to(dtype)
+            X = pts[..., 0]
+            Y = pts[..., 1]
+            Z = pts[..., 2]
+
+            valid_mask = torch.isfinite(pts).all(dim=-1) & (Z > 1e-4)
+            if conf is not None:
+                valid_mask = valid_mask & (conf[b, n] > 0.05)
+
+            if not valid_mask.any():
+                intrinsics[b, n] = default_K
+                continue
+
+            a_u = (X / Z)[valid_mask]
+            a_v = (Y / Z)[valid_mask]
+            u = u_grid[valid_mask]
+            v = v_grid[valid_mask]
+
+            num_samples = a_u.numel()
+            if num_samples < 10:
+                intrinsics[b, n] = default_K
+                continue
+
+            if num_samples > max_points_per_view:
+                idx = torch.randperm(num_samples, device=device)[:max_points_per_view]
+                a_u = a_u[idx]
+                a_v = a_v[idx]
+                u = u[idx]
+                v = v[idx]
+
+            # 线性最小二乘拟合:
+            #   u ≈ fx * (X/Z) + cx
+            #   v ≈ fy * (Y/Z) + cy
+            A_u = torch.stack([a_u, torch.ones_like(a_u)], dim=1)  # (M, 2)
+            A_v = torch.stack([a_v, torch.ones_like(a_v)], dim=1)  # (M, 2)
+
+            try:
+                ATA_u = A_u.T @ A_u
+                ATA_v = A_v.T @ A_v
+
+                # 检查条件数，避免病态矩阵求解
+                cond_u = torch.linalg.cond(ATA_u).item()
+                cond_v = torch.linalg.cond(ATA_v).item()
+                max_cond = max(cond_u, cond_v)
+
+                if max_cond > 1e6:
+                    # 条件数过大，矩阵接近奇异
+                    intrinsics[b, n] = default_K
+                    continue
+
+                ATu = A_u.T @ u
+                theta_u = torch.linalg.solve(ATA_u, ATu)  # (2,)
+
+                ATv = A_v.T @ v
+                theta_v = torch.linalg.solve(ATA_v, ATv)  # (2,)
+
+                fx, cx = theta_u[0].item(), theta_u[1].item()
+                fy, cy = theta_v[0].item(), theta_v[1].item()
+
+                # 验证估计结果的合理性
+                if fx <= 0 or fy <= 0 or fx > 10 * f_default or fy > 10 * f_default:
+                    # 焦距不合理，使用默认K
+                    intrinsics[b, n] = default_K
+                    continue
+
+                K = torch.zeros((3, 3), device=device, dtype=dtype)
+                K[0, 0] = fx
+                K[1, 1] = fy
+                K[0, 2] = cx
+                K[1, 2] = cy
+                K[2, 2] = 1.0
+                intrinsics[b, n] = K
+            except RuntimeError:
+                # 矩阵奇异等情况，退化为默认K
+                intrinsics[b, n] = default_K
+
+    return intrinsics
+
+
 def _save_predictions_npz(
     pred: Dict[str, Any],
     image_tensor: torch.Tensor,
@@ -128,6 +259,67 @@ def _save_predictions_npz(
         if cam.ndim >= 3 and cam.shape[0] == 1:
             cam = cam[0]
         save_kwargs["camera_poses"] = cam
+    # 可选：保存从 Pi3 估算得到的相机外参和内参、深度等（若存在）
+    extrinsic = pred.get("extrinsic")
+    if isinstance(extrinsic, torch.Tensor):
+        extrinsic_np = extrinsic.detach().cpu().numpy()
+    else:
+        extrinsic_np = extrinsic
+    if extrinsic_np is not None:
+        if extrinsic_np.ndim >= 3 and extrinsic_np.shape[0] == 1:
+            extrinsic_np = extrinsic_np[0]
+        save_kwargs["extrinsic"] = extrinsic_np.astype(np.float32, copy=False)
+
+    intrinsic = pred.get("intrinsic")
+    if isinstance(intrinsic, torch.Tensor):
+        intrinsic_np = intrinsic.detach().cpu().numpy()
+    else:
+        intrinsic_np = intrinsic
+    if intrinsic_np is not None:
+        if intrinsic_np.ndim >= 3 and intrinsic_np.shape[0] == 1:
+            intrinsic_np = intrinsic_np[0]
+        save_kwargs["intrinsic"] = intrinsic_np.astype(np.float32, copy=False)
+
+    depth = pred.get("depth")
+    if isinstance(depth, torch.Tensor):
+        depth_np = depth.detach().cpu().numpy()
+    else:
+        depth_np = depth
+    if depth_np is not None:
+        if depth_np.ndim >= 5 and depth_np.shape[0] == 1:
+            depth_np = depth_np[0]
+        save_kwargs["depth"] = depth_np.astype(np.float32, copy=False)
+
+    depth_conf = pred.get("depth_conf")
+    if isinstance(depth_conf, torch.Tensor):
+        depth_conf_np = depth_conf.detach().cpu().numpy()
+    else:
+        depth_conf_np = depth_conf
+    if depth_conf_np is not None:
+        if depth_conf_np.ndim >= 4 and depth_conf_np.shape[0] == 1:
+            depth_conf_np = depth_conf_np[0]
+        save_kwargs["depth_conf"] = depth_conf_np.astype(np.float32, copy=False)
+
+    world_points_conf = pred.get("world_points_conf")
+    if isinstance(world_points_conf, torch.Tensor):
+        world_points_conf_np = world_points_conf.detach().cpu().numpy()
+    else:
+        world_points_conf_np = world_points_conf
+    if world_points_conf_np is not None:
+        if world_points_conf_np.ndim >= 4 and world_points_conf_np.shape[0] == 1:
+            world_points_conf_np = world_points_conf_np[0]
+        save_kwargs["world_points_conf"] = world_points_conf_np.astype(np.float32, copy=False)
+
+    local_points = pred.get("local_points")
+    if isinstance(local_points, torch.Tensor):
+        local_points_np = local_points.detach().cpu().numpy()
+    else:
+        local_points_np = local_points
+    if local_points_np is not None:
+        if local_points_np.ndim >= 5 and local_points_np.shape[0] == 1:
+            local_points_np = local_points_np[0]
+        save_kwargs["local_points"] = local_points_np.astype(np.float32, copy=False)
+
     # 标注来源模型，便于下游判断
     save_kwargs["source_model"] = np.array(["pi3"], dtype=object)
 
@@ -197,13 +389,80 @@ class PI33DReconstructor(ReconstructorBase):
                 pred: Dict[str, torch.Tensor] = self.model(x)
         # 后处理：置信度与图像备份
         from pi3.utils.geometry import depth_edge
-        pred['conf'] = torch.sigmoid(pred['conf'])
-        edge = depth_edge(pred['local_points'][..., 2], rtol=0.03)
-        pred['conf'][edge] = 0.0
-        # 为简洁不返回 local_points
-        if 'local_points' in pred:
-            del pred['local_points']
-        pred['images'] = x.permute(0, 1, 3, 4, 2)  # BNCHW->BNHWC（0-1范围）
+
+        # 置信度后处理：sigmoid + 深度边缘抑制
+        if "conf" in pred:
+            pred["conf"] = torch.sigmoid(pred["conf"])
+            try:
+                edge = depth_edge(pred["local_points"][..., 2], rtol=0.03)
+                pred["conf"][edge] = 0.0
+            except Exception as e:  # pragma: no cover - 仅日志，不中断流程
+                logger.warning(f"depth_edge 处理失败，跳过边缘抑制: {e}")
+
+        # Extrinsic：由 C2W 的 camera_poses 反求 W2C
+        if "camera_poses" in pred:
+            try:
+                pred["extrinsic"] = torch.linalg.inv(pred["camera_poses"])
+            except RuntimeError as e:
+                logger.warning(f"无法从 camera_poses 反求外参矩阵: {e}")
+
+        # Depth / depth_conf / world_points_conf：
+        # 直接使用相机坐标系下的 Z 分量作为深度，并复用点置信度
+        if "local_points" in pred:
+            # (B, N, H, W, 1)
+            pred["depth"] = pred["local_points"][..., 2:3]
+        if "conf" in pred:
+            # (B, N, H, W)
+            depth_conf = pred["conf"]
+            if depth_conf.ndim == 5 and depth_conf.shape[-1] == 1:
+                depth_conf = depth_conf[..., 0]
+            pred["depth_conf"] = depth_conf
+            pred["world_points_conf"] = depth_conf
+
+        # Intrinsic：基于 local_points 估计每帧内参矩阵
+        if "local_points" in pred:
+            try:
+                pred["intrinsic"] = _estimate_intrinsics_from_local_points(
+                    pred["local_points"],
+                    conf=pred.get("conf"),
+                    max_points_per_view=50000,
+                )
+            except Exception as e:
+                logger.warning(f"估计相机内参失败，将在后续流程中回退默认K: {e}")
+
+        # 保留 local_points 用于 SKU 匹配（包含相机坐标系深度）
+        # if 'local_points' in pred:
+        #     del pred['local_points']
+
+        # 验证Pi3坐标系一致性
+        if "local_points" in pred and "points" in pred and "camera_poses" in pred:
+            try:
+                # 采样验证点（batch=0, view=0, 中心位置）
+                b, n, h, w = 0, 0, pred["local_points"].shape[2] // 2, pred["local_points"].shape[3] // 2
+                local_pt = pred["local_points"][b, n, h, w]  # (3,) 相机坐标系
+                world_pt = pred["points"][b, n, h, w]  # (3,) 世界坐标系
+                c2w = pred["camera_poses"][b, n]  # (4, 4) Camera-to-World
+
+                # 验证: world_pt ≈ c2w @ [local_pt, 1]
+                local_pt_homo = torch.cat([local_pt, torch.ones(1, device=local_pt.device)])
+                world_pt_computed = (c2w @ local_pt_homo)[:3]
+                error = torch.norm(world_pt - world_pt_computed).item()
+
+                if error > 0.1:
+                    logger.warning(
+                        f"⚠️  Pi3坐标系验证失败! 误差: {error:.4f}m\n"
+                        f"   local_pt: {local_pt.cpu().numpy()}\n"
+                        f"   world_pt (实际): {world_pt.cpu().numpy()}\n"
+                        f"   world_pt (计算): {world_pt_computed.cpu().numpy()}\n"
+                        f"   这可能导致3D匹配结果不准确"
+                    )
+                else:
+                    logger.info(f"✓ Pi3坐标系验证通过 (误差: {error:.6f}m)")
+            except Exception as e:
+                logger.warning(f"Pi3坐标系验证失败: {e}")
+
+        # 存储原始图像 (BNHWC，0-1范围) 以兼容 Pi3 viewer
+        pred["images"] = x.permute(0, 1, 3, 4, 2)  # BNCHW->BNHWC（0-1范围）
 
         # 验证必需的键存在
         elapsed = time.time() - t0

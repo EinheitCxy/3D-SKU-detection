@@ -9,7 +9,7 @@ Pi3 prediction caches:
 - Fallback path: use vggt_cache/predictions.npz + detections + transforms
   (transforms.json if present, otherwise rebuild transforms from images).
 
-Frame alignment is performed via utils.frame_alignment.VGGTDetectionAligner
+Frame alignment is performed via utils.frame_alignment.ReconstructionDetectionAligner
 (works generically for our prediction structure).
 """
 
@@ -125,16 +125,6 @@ def _compute_gids_from_predictions(
     world_points = data["world_points"]  # (B,H,W,3) or (H,W,3)
     conf = data["conf"]
 
-    # 展平 world_points 统计
-    if world_points.ndim == 4:
-        B, H, W, _ = world_points.shape
-        world_points_flat = world_points.reshape(-1, 3)
-    else:
-        H, W, _ = world_points.shape
-        B = 1
-        world_points_flat = world_points.reshape(-1, 3)
-
-    logger.info(f"   世界坐标点云: {world_points_flat.shape}")
     logger.info(f"   目标点云: {target_points.shape}")
 
     # 加载 global_mapping
@@ -154,21 +144,25 @@ def _compute_gids_from_predictions(
 
     # 帧对齐
     logger.info("验证预测与检测的帧对齐...")
-    from utils.frame_alignment import VGGTDetectionAligner
+    from utils.frame_alignment import ReconstructionDetectionAligner
 
-    vggt_image_ids = None
     if "image_ids" in data:
-        vggt_image_ids = data["image_ids"].tolist()
+        recon_image_ids = data["image_ids"].tolist()
     else:
-        vggt_image_ids = list(range(world_points.shape[0] if world_points.ndim == 4 else 1))
+        recon_image_ids = list(range(world_points.shape[0] if world_points.ndim == 4 else 1))
 
-    aligned_pred_data, aligned_detections, alignment_report = VGGTDetectionAligner.validate_and_align(
-        vggt_data={"world_points": world_points, "conf": conf},
+    aligned_pred_data, aligned_detections, alignment_report = ReconstructionDetectionAligner.validate_and_align(
+        reconstruction_data={"world_points": world_points, "conf": conf},
         detections=detections,
         detection_indices=detection_indices,
-        vggt_image_ids=vggt_image_ids,
+        reconstruction_image_ids=recon_image_ids,
         strict_mode=False,  # 启用自动修复，过滤不匹配的帧
     )
+
+    # 使用对齐后的 3D 预测与检测结果
+    world_points = aligned_pred_data.get("world_points", world_points)
+    conf = aligned_pred_data.get("conf", conf)
+    detections = aligned_detections
 
     # 反向索引 (image_id, object_id) -> gid
     reverse_mapping: Dict[Tuple[int, int], int] = {}
@@ -266,8 +260,17 @@ def _compute_gids_from_predictions(
         final_confs = extracted_confs[indices]
 
     # 帧索引：用平面点构建 KDTree，查询 target_points 对应帧标签
-    world_points_flat = world_points.reshape(-1, 3)
-    source_frame_ids = np.repeat(np.arange(world_points.shape[0] if world_points.ndim == 4 else 1), H * W)
+    if world_points.ndim == 4:
+        S, H, W, _ = world_points.shape
+        world_points_flat = world_points.reshape(-1, 3)
+    else:
+        H, W, _ = world_points.shape
+        S = 1
+        world_points_flat = world_points.reshape(-1, 3)
+
+    logger.info(f"   世界坐标点云: {world_points_flat.shape}")
+
+    source_frame_ids = np.repeat(np.arange(S), H * W)
     # 帧索引：用统一 KNN 将 target_points 映射到平面点以获得帧标签
     _, glb_to_pred_indices = nn_search(world_points_flat, target_points, k=1)
     final_frame_indices = source_frame_ids[glb_to_pred_indices].astype(np.int32)

@@ -168,7 +168,7 @@ def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float]
     points_cam = (R @ valid_world_points.T + t.unsqueeze(1)).T
     camera_depths = points_cam[:, 2]
     depth_diff = torch.abs(camera_depths - valid_depths)
-    depth_consistent_mask = depth_diff < 0.5  # 允许0.5米的深度差异
+    depth_consistent_mask = depth_diff < config.depth_consistency_threshold
 
     if depth_consistent_mask.sum() < 5:
         logger.debug(f"检出框 {bbox} 中深度一致的点不足: {depth_consistent_mask.sum()}")
@@ -350,8 +350,20 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
         
         # 计算目标3D点的统计信息
         target_3d_center = target_points_3d.mean(dim=0)
-        target_depth_mean = target_points_3d[:, 2].mean().item()
-        
+
+        # 转换到相机坐标系计算深度
+        E_target = scene_data['extrinsic'][target_img_idx].to(target_points_3d.device)
+        if E_target.shape == (4, 4):
+            R_target = E_target[:3, :3]
+            t_target = E_target[:3, 3]
+        elif E_target.shape == (3, 4):
+            R_target = E_target[:, :3]
+            t_target = E_target[:, 3]
+        else:
+            raise ValueError(f"Unsupported extrinsic matrix shape: {E_target.shape}")
+        target_points_cam = (R_target @ target_points_3d.T + t_target.unsqueeze(1)).T
+        target_depth_mean = target_points_cam[:, 2].mean().item()
+
         # 3D距离验证
         spatial_distance = torch.norm(ref_3d_center - target_3d_center).item()
         

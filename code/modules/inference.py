@@ -83,6 +83,7 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
     output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx)
     
     config_dict = {
+        "backend": args.backend,
         "device": args.device,
         "max_points_per_bbox": args.max_points_per_bbox,
         "confidence_threshold": args.confidence_threshold,
@@ -299,8 +300,10 @@ def main() -> None:
     parser.add_argument("--reference_idx", type=int, default=0, help="参考图像索引")
     parser.add_argument("--max_images", type=int, default=50, help="最大处理图像数量")
     # 算法选择
-    parser.add_argument("--algorithm", type=str, choices=["point_tracking", "3d", "both"], default="both", 
+    parser.add_argument("--algorithm", type=str, choices=["point_tracking", "3d", "both"], default="both",
                        help="选择匹配算法: point_tracking(点追踪), 3d(3D投影), both(两种都运行)")
+    parser.add_argument("--backend", type=str, choices=["vggt", "pi3"], default="vggt",
+                       help="3D重建模型后端 (vggt/pi3)，用于3D算法时选择数据源")
     # 系统参数
     parser.add_argument("--device", type=str, default="cuda", help="计算设备 (cuda/cpu)")
     parser.add_argument("--seed", type=int, default=42, help="随机种子")

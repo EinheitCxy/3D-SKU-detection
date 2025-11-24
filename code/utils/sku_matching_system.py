@@ -117,9 +117,20 @@ class SKUMatchingSystem:
                 raise ValueError(f"No valid images found in {image_folder}")
             
             logger.info(f"Loaded {len(image_paths)} images with {len(detections)} detection files")
-            
-            # 2. 构建坐标变换信息
-            transforms_info = build_transforms(image_paths, model_type="vggt", target_size=518)
+
+            # 2. 构建坐标变换信息（根据 backend 选择 VGGT 或 Pi3 的变换）
+            model_type = "vggt"
+            build_kwargs = {"target_size": 518}
+            try:
+                if self.config.enable_3d_projection_matching and getattr(self.config, "backend", "vggt") == "pi3":
+                    model_type = "pi3"
+                    build_kwargs = {"pixel_limit": 255000}
+            except AttributeError:
+                # 旧配置可能没有 backend 字段，回退到 VGGT
+                model_type = "vggt"
+                build_kwargs = {"target_size": 518}
+
+            transforms_info = build_transforms(image_paths, model_type=model_type, **build_kwargs)
             
             # 3. 预处理图像
             images = load_and_preprocess_images(image_paths, mode="crop").to(self.config.device)
@@ -148,11 +159,11 @@ class SKUMatchingSystem:
         max_images: Optional[int]
     ) -> tuple[List[str], List[Dict]]:
         """
-        加载图像和检测数据，并使用VGGTDetectionAligner进行严格对齐验证
+        加载图像和检测数据，并使用ReconstructionDetectionAligner进行严格对齐验证
 
         该方法确保图像编号与检测编号严格对应，并自动处理顺序不一致的情况。
         """
-        from utils.frame_alignment import VGGTDetectionAligner
+        from utils.frame_alignment import ReconstructionDetectionAligner
 
         image_folder_path = Path(image_folder)
         if not image_folder_path.exists():
@@ -190,16 +201,16 @@ class SKUMatchingSystem:
         # 3) 使用VGGTDetectionAligner进行帧对齐验证
         # 构建占位vggt_data（仅用于对齐验证，不需要真实的world_points）
         import numpy as np
-        dummy_vggt_data = {
+        dummy_reconstruction_data = {
             "world_points": np.zeros((len(image_ids), 1, 1, 3), dtype=np.float32)
         }
 
         # 严格模式=False：允许自动修复顺序不一致和缺失图像
-        _, aligned_detections, alignment_report = VGGTDetectionAligner.validate_and_align(
-            vggt_data=dummy_vggt_data,
+        _, aligned_detections, alignment_report = ReconstructionDetectionAligner.validate_and_align(
+            reconstruction_data=dummy_reconstruction_data,
             detections=detections,
             detection_indices=detection_indices,
-            vggt_image_ids=image_ids,
+            reconstruction_image_ids=image_ids,
             strict_mode=False  # 允许自动修复
         )
 
@@ -227,15 +238,14 @@ class SKUMatchingSystem:
         if max_images is not None:
             aligned_image_paths = aligned_image_paths[:max_images]
             aligned_detections = aligned_detections[:max_images]
-            logger.info(f"Limited to first {max_images} images")
 
         # 6) 记录对齐统计信息
         if alignment_report.get('repair_applied'):
             logger.info(f"Alignment repaired: {alignment_report['repaired_frame_count']} frames aligned")
             logger.info(f"   Dropped images: {alignment_report.get('dropped_vggt_frames', 0)}")
             logger.info(f"   Dropped detections: {alignment_report.get('dropped_detection_frames', 0)}")
-        else:
-            logger.info(f"Perfect alignment: {len(aligned_image_paths)} frames")
+        # else:
+        #     logger.info(f"Perfect alignment: {len(aligned_image_paths)} frames")
 
         return aligned_image_paths, aligned_detections
     

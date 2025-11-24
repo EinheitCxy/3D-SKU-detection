@@ -187,7 +187,10 @@ def extract_reconstruction_settings(data_or_path: Dict[str, Any] | str | Path) -
 @dataclass
 class SKUMatchingConfig:
     """SKU匹配配置参数"""
-    
+
+    # === 3D重建后端选择 ===
+    backend: str = "vggt"  # 3D重建模型后端 (vggt/pi3)
+
     # === 核心检测参数 ===
     detection_confidence_threshold: float = 0.0  # 检测置信度阈值
     min_bbox_area: float = 10.0                  # 最小边界框面积
@@ -197,7 +200,12 @@ class SKUMatchingConfig:
     max_points_per_bbox: int = 70                # 每个2D检测框最大采样点数
     max_3d_points_per_bbox: int = 70             # 每个3D检测框最大采样点数
     max_total_points: int = 100000               # 全局最大采样点数上限
-    
+
+    # === 高斯分布采样参数 ===
+    enable_gaussian_sampling: bool = True        # 是否启用高斯分布采样（中心密集，向外正态递减）
+    gaussian_sigma: float = 0.3                  # 高斯分布标准差（相对于bbox半径，0.2-0.4推荐，越小中心越集中）
+    gaussian_truncate: float = 3.0               # 高斯分布截断倍数（超过sigma*truncate的点权重接近0）
+
     # === 非重合区域采样参数 ===
     enable_non_overlap_sampling: bool = True     # 是否启用非重合区域采样
     overlap_threshold: float = 0.1               # 检出框重合阈值
@@ -205,21 +213,22 @@ class SKUMatchingConfig:
     
     # === 匹配阈值参数 ===
     confidence_threshold: float = 0.5            # 点追踪置信度阈值
-    min_confident_points: int = 7                # 最小置信点数
-    correspondence_threshold: float = 0.5         # 2D对应关系阈值
-    projection_match_threshold: float = 0.7       # 3D投影匹配阈值
-    
+    min_confident_points: int = 5                # 最小置信点数
+    correspondence_threshold: float = 0.4         # 2D对应关系阈值
+    projection_match_threshold: float = 0.3       # 3D投影匹配阈值
+
     # === 3D重建参数 ===
     enable_3d_projection_matching: bool = False  # 是否启用3D投影匹配
-    depth_confidence_threshold: float = 0.1      # 深度置信度阈值  
-    point_3d_confidence_threshold: float = 0.1   # 3D点置信度阈值
-    min_depth: float = 0.1                       # 最小深度值
-    max_depth: float = 10.0                      # 最大深度值
-    
-    # === 3D几何验证参数 ===
-    max_3d_distance: float = 1.0                 # 最大3D空间距离阈值(米)
-    max_depth_difference: float = 2.0            # 最大深度差异容忍(米)  
-    min_depth_consistency: float = 0.3           # 最小深度一致性阈值
+    depth_confidence_threshold: float = 0.05     # 深度置信度阈值
+    point_3d_confidence_threshold: float = 0.05  # 3D点置信度阈值
+    min_depth: float = -1.0                      # 最小深度值
+    max_depth: float = 7.0                       # 最大深度值（基于场景深度2.9米）
+
+    # === 3D几何验证参数 ===（基于实际场景：宽2.4m×高1.5m×深2.9m）
+    max_3d_distance: float = 0.8                 # 最大3D空间距离阈值(米)
+    max_depth_difference: float = 2            # 最大深度差异容忍(米)
+    min_depth_consistency: float = 0.15          # 最小深度一致性阈值（降低以减少过滤）
+    depth_consistency_threshold: float = 0.5     # 深度一致性阈值(米)，用于sample_3d_points_from_bbox
     
     # === 系统配置参数 ===
     device: str = "auto"                         # 计算设备选择
@@ -240,16 +249,21 @@ class SKUMatchingConfig:
                 self.device = str(optimal_device)
             if self.dtype is None:
                 self.dtype = optimal_dtype
-        
-        if self.output_dir:
-            os.makedirs(self.output_dir, exist_ok=True)
-        
+
+        # 不在初始化时创建目录，而是在实际写入文件时创建
+        # if self.output_dir:
+        #     os.makedirs(self.output_dir, exist_ok=True)
+
         self._validate_config()
     
     def _validate_config(self):
+        # Backend验证
+        if self.backend not in ("vggt", "pi3"):
+            raise ValueError(f"backend must be 'vggt' or 'pi3', got {self.backend}")
+
         if self.max_points_per_bbox <= 0:
             raise ValueError(f"max_points_per_bbox must be positive, got {self.max_points_per_bbox}")
-        
+
         if not (0.0 <= self.confidence_threshold <= 1.0):
             raise ValueError(f"confidence_threshold must be in [0,1], got {self.confidence_threshold}")
         
@@ -318,17 +332,17 @@ DEFAULT_3D_PROJECTION_CONFIG = {
     "max_bboxes": 500,
     "max_total_points": 100000,
     "confidence_threshold": 0.5,
-    "min_confident_points": 7,
+    "min_confident_points": 5,                   # 降低以提高召回率
     "min_bbox_area": 10.0,
     "output_dir": "output_3d_projection",
     "enable_3d_projection_matching": True,
-    "depth_confidence_threshold": 0.15,
-    "point_3d_confidence_threshold": 0.15,
+    "depth_confidence_threshold": 0.05,          # 降低以接受更多点
+    "point_3d_confidence_threshold": 0.05,       # 降低以接受更多点
     "min_depth": 0.1,
-    "max_depth": 10.0,
+    "max_depth": 3.0,                            # 基于场景深度2.9米
     "max_3d_points_per_bbox": 70,
-    "projection_match_threshold": 0.7,
-    "max_3d_distance": 1.0,
-    "max_depth_difference": 2.0,
-    "min_depth_consistency": 0.3
+    "projection_match_threshold": 0.3,           # 降低以提高召回率
+    "max_3d_distance": 0.8,                      # 场景宽度的33%
+    "max_depth_difference": 1.8,                 # 场景深度的62%
+    "min_depth_consistency": 0.15                # 降低以减少过滤
 }

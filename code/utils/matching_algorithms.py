@@ -294,37 +294,120 @@ def find_correspondences_3d_projection(
     transforms_info: Optional[List[ImageTransformBase]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """基于3D-2D投影的物体匹配算法"""
-    
+
     try:
         S = images.shape[0]
         _, _, H, W = images.shape
         device = images.device
-        
+
         # 验证输入参数
         if reference_image_idx >= S:
             raise ValueError(f"Reference image index {reference_image_idx} out of range for {S} images")
-        
-        # 1. 全局3D场景重建（关键：只调用一次VGGT）
-        logger.info("Performing global 3D scene reconstruction...")
-        with torch.no_grad():
-            predictions = vggt_model(images)  # 不提供query_points
-            
-        # 转换姿态编码为相机参数
-        extrinsic, intrinsic = pose_encoding_to_extri_intri(
-            predictions["pose_enc"], 
-            images.shape[-2:]
-        )
-        
-        scene_data = {
-            'depth': predictions["depth"].squeeze(0),  # (S, H, W, 1)
-            'depth_conf': predictions["depth_conf"].squeeze(0),  # (S, H, W)
-            'world_points': predictions["world_points"].squeeze(0),  # (S, H, W, 3)
-            'world_points_conf': predictions["world_points_conf"].squeeze(0),  # (S, H, W)
-            'extrinsic': extrinsic.squeeze(0),  # (S, 4, 4)
-            'intrinsic': intrinsic.squeeze(0),  # (S, 3, 3)
-        }
-        
-        logger.info("Global 3D scene reconstruction complete")
+
+        # 1. 全局3D场景重建（根据backend选择数据源）
+        logger.info(f"使用 {config.backend} 后端进行3D场景重建...")
+
+        if config.backend == "pi3":
+            # 从Pi3缓存加载预先重建的数据
+            # 路径推导: output_dir通常是 <dataset>/output_3dmapping/<ref_idx>
+            # 因此 parent.parent 应该是 <dataset>
+            cache_path = Path(config.output_dir).parent.parent / "pi3_cache" / "predictions.npz"
+
+            # 验证路径推导的合理性
+            dataset_root = cache_path.parent.parent
+            if not dataset_root.exists() or not (dataset_root / "images").exists():
+                logger.warning(
+                    f"Pi3缓存路径推导可能不正确:\n"
+                    f"  output_dir: {config.output_dir}\n"
+                    f"  推导的dataset_root: {dataset_root}\n"
+                    f"  预期的缓存路径: {cache_path}"
+                )
+
+            if not cache_path.exists():
+                raise FileNotFoundError(
+                    f"Pi3缓存不存在: {cache_path}\n"
+                    f"请先运行3D重建生成缓存:\n"
+                    f"  cd code\n"
+                    f"  uv run python -m modules.pi3_3d_reconstructor \\\n"
+                    f"    --input_dir {dataset_root}/images \\\n"
+                    f"    --output_file {dataset_root}/reconstruction_pi3.glb"
+                )
+
+            import numpy as np
+            data = np.load(cache_path)
+
+            # 验证必需字段
+            required_keys = ['depth', 'depth_conf', 'world_points', 'world_points_conf',
+                             'extrinsic', 'intrinsic']
+            missing_keys = [k for k in required_keys if k not in data]
+            if missing_keys:
+                raise ValueError(f"Pi3缓存缺少必需字段: {missing_keys}")
+
+            depth_np = data['depth']
+
+            # 验证图像数量一致性（仅比较帧数）
+            if depth_np.ndim != 4:
+                raise ValueError(f"depth 维度应为4，当前为 {depth_np.ndim}，shape={depth_np.shape}")
+            S_cache, H_pi3, W_pi3, C_depth = depth_np.shape
+            if C_depth != 1:
+                raise ValueError(f"depth 最后一维应为1，当前为 {C_depth}")
+            if S_cache != S:
+                raise ValueError(
+                    f"Pi3缓存图像数量({S_cache})与当前加载图像数量({S})不匹配。"
+                    f"请重新生成Pi3缓存。"
+                )
+
+            # 验证shape格式（以 Pi3 自身的 H_pi3/W_pi3 为准）
+            world_np = data['world_points']
+            if world_np.shape != (S_cache, H_pi3, W_pi3, 3):
+                raise ValueError(
+                    f\"world_points shape {world_np.shape} != ({S_cache}, {H_pi3}, {W_pi3}, 3)\"
+                )
+            extr_np = data['extrinsic']
+            if extr_np.shape not in [(S_cache, 4, 4), (S_cache, 3, 4)]:
+                raise ValueError(f\"extrinsic shape {extr_np.shape} 不符合预期\")
+            intr_np = data['intrinsic']
+            if intr_np.shape != (S_cache, 3, 3):
+                raise ValueError(f\"intrinsic shape {intr_np.shape} != ({S_cache}, 3, 3)\")
+
+            # 检查数值有效性
+            for key in required_keys:
+                if not np.isfinite(data[key]).all():
+                    nan_count = (~np.isfinite(data[key])).sum()
+                    logger.warning(f\"Pi3缓存中{key}包含{nan_count}个非有限值\")
+
+            # 转换为torch张量并构建scene_data（使用 Pi3 分辨率）
+            scene_data = {
+                'depth': torch.from_numpy(depth_np).to(device),  # (S, H_pi3, W_pi3, 1)
+                'depth_conf': torch.from_numpy(data['depth_conf']).to(device),  # (S, H_pi3, W_pi3)
+                'world_points': torch.from_numpy(world_np).to(device),  # (S, H_pi3, W_pi3, 3)
+                'world_points_conf': torch.from_numpy(data['world_points_conf']).to(device),  # (S, H_pi3, W_pi3)
+                'extrinsic': torch.from_numpy(extr_np).to(device),  # (S, 4, 4) or (S, 3, 4)
+                'intrinsic': torch.from_numpy(intr_np).to(device),  # (S, 3, 3)
+            }
+            logger.info(f"已从Pi3缓存加载数据: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})")
+
+        else:  # backend == "vggt"
+            # 原有VGGT逻辑
+            logger.info("Performing global 3D scene reconstruction...")
+            with torch.no_grad():
+                predictions = vggt_model(images)  # 不提供query_points
+
+            # 转换姿态编码为相机参数
+            extrinsic, intrinsic = pose_encoding_to_extri_intri(
+                predictions["pose_enc"],
+                images.shape[-2:]
+            )
+
+            scene_data = {
+                'depth': predictions["depth"].squeeze(0),  # (S, H, W, 1)
+                'depth_conf': predictions["depth_conf"].squeeze(0),  # (S, H, W)
+                'world_points': predictions["world_points"].squeeze(0),  # (S, H, W, 3)
+                'world_points_conf': predictions["world_points_conf"].squeeze(0),  # (S, H, W)
+                'extrinsic': extrinsic.squeeze(0),  # (S, 4, 4)
+                'intrinsic': intrinsic.squeeze(0),  # (S, 3, 3)
+            }
+            logger.info("Global 3D scene reconstruction complete")
         
         # 2. 获取参考图像的检出框
         ref_bboxes = extract_bboxes_from_detections([detections[reference_image_idx]], 0, config)

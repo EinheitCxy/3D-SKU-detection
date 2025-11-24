@@ -224,7 +224,6 @@ class SKUDetectionMain:
                 logger.error(f"缺少必需目录: {dataset_path}/{req_dir}")
                 return False
 
-        logger.info(f"数据集验证通过: {dataset_path}")
         return True
 
     def run_sku_matching(
@@ -237,11 +236,13 @@ class SKUDetectionMain:
         device: str = "cuda",
         save_json: bool = False,
         batch_all_refs: bool = True,
+        backend: str = "vggt",
     ) -> StepResult:
         """运行SKU匹配推理，支持批量将每张图片作为参考图像运行。
 
         - 当 batch_all_refs=True 时：遍历 images/ 中数字命名且在 detections_results/ 有有效 objects 的每个图片，依次作为参考图运行。
         - 否则：仅以 reference_idx 指定的单张图片作为参考图运行。
+        - backend: 3D重建模型后端 (vggt/pi3)，用于3D算法时选择数据源
         """
         start = perf_counter()
         original_argv = sys.argv.copy()
@@ -270,14 +271,14 @@ class SKUDetectionMain:
                     # 文件名从1开始，但系统内部索引从0开始，所以需要减1
                     system_ref_idx = filename_idx - 1
                     logger.debug(f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {system_ref_idx}")
-                    self._run_single_matching(dataset_path, algorithm, system_ref_idx, max_images, device, save_json)
+                    self._run_single_matching(dataset_path, algorithm, system_ref_idx, max_images, device, save_json, backend)
 
                 duration = perf_counter() - start
                 logger.info(f"✓ 匹配完成 - 耗时 {duration:.2f}s，处理 {len(valid_indices)} 个参考图片")
                 return {"success": True, "duration_s": duration}
             else:
                 # 单个参考图片处理
-                return self._run_single_matching(dataset_path, algorithm, reference_idx, max_images, device, save_json)
+                return self._run_single_matching(dataset_path, algorithm, reference_idx, max_images, device, save_json, backend)
 
         except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
@@ -287,12 +288,16 @@ class SKUDetectionMain:
             sys.argv = original_argv
 
     def _run_single_matching(self, dataset_path: str, algorithm: str, reference_idx: int,
-                           max_images: int, device: str, save_json: bool) -> StepResult:
-        """运行单个参考图片的SKU匹配推理（内部使用）。"""
+                           max_images: int, device: str, save_json: bool, backend: str = "vggt") -> StepResult:
+        """运行单个参考图片的SKU匹配推理（内部使用）。
+
+        Args:
+            backend: 3D重建模型后端 (vggt/pi3)
+        """
         start = perf_counter()
         original_argv = sys.argv.copy()
         try:
-            logger.debug(f"单次匹配 - 算法: {algorithm}, 参考索引: {reference_idx}")
+            logger.debug(f"单次匹配 - 算法: {algorithm}, 后端: {backend}, 参考索引: {reference_idx}")
 
             from modules.inference import main as inference_main
 
@@ -311,6 +316,7 @@ class SKUDetectionMain:
                 '--reference_idx', str(reference_idx),
                 '--max_images', str(max_images),
                 '--device', device,
+                '--backend', backend,
             ]
             if save_json:
                 argv.append('--save_json')
@@ -523,18 +529,19 @@ class SKUDetectionMain:
                 logger.error(msg)
                 return {"success": False, "error": msg, "duration_s": 0.0}
 
-            # 选择输出位置
+            # 选择输出位置：GLB文件放到对应的cache目录中
             output_dir = (self.save_root / dataset.name) if self.save_root else dataset
-            output_dir.mkdir(parents=True, exist_ok=True)
+            cache_dir = output_dir / f"{use_backend}_cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
 
             # 自动在文件名中添加模型名称（如果文件名中还没有）
             output_path = Path(output_filename)
             if use_backend not in output_path.stem:  # 检查文件名（不含扩展名）中是否已包含模型名
                 # 在扩展名前插入模型名称：reconstruction.glb -> reconstruction_vggt.glb
                 new_filename = f"{output_path.stem}_{use_backend}{output_path.suffix}"
-                output_file = output_dir / new_filename
+                output_file = cache_dir / new_filename
             else:
-                output_file = output_dir / output_filename
+                output_file = cache_dir / output_filename
 
             logger.info(f"开始3D重建[{use_backend}]: {image_dir} → {output_file}")
 
@@ -744,35 +751,18 @@ class SKUDetectionMain:
                 # 基于统一的 output_dir 自动推导所有路径
                 gm_default = output_dir / 'dedup_detections' / 'global_mapping.json'
 
-                # 智能查找reconstruction文件（优先查找带模型名称的文件）
+                # 从cache目录查找reconstruction文件
                 recon_default = None
+                cache_default = None
                 for backend in ['vggt', 'pi3']:
-                    candidate = output_dir / f'reconstruction_{backend}.glb'
+                    cache_dir = output_dir / f'{backend}_cache'
+                    candidate = cache_dir / f'reconstruction_{backend}.glb'
                     if candidate.exists():
                         recon_default = candidate
+                        cache_default = cache_dir
                         break
-                if recon_default is None:
-                    recon_default = output_dir / 'reconstruction.glb'
-                    if not recon_default.exists():
-                        # Fallback到数据集目录，同样优先查找带模型名称的文件
-                        for backend in ['vggt', 'pi3']:
-                            candidate = dataset / f'reconstruction_{backend}.glb'
-                            if candidate.exists():
-                                recon_default = candidate
-                                break
-                        else:
-                            recon_default = dataset / 'reconstruction.glb'
 
                 det_default = output_dir / 'dedup_detections'
-
-                # 从reconstruction文件名提取backend，确定cache目录
-                cache_default = output_dir / 'viewer_cache'  # 默认值
-                if recon_default and recon_default.exists():
-                    recon_stem = recon_default.stem  # reconstruction_vggt 或 reconstruction_pi3
-                    if 'vggt' in recon_stem:
-                        cache_default = output_dir / 'vggt_cache'
-                    elif 'pi3' in recon_stem:
-                        cache_default = output_dir / 'pi3_cache'
 
                 img_default = dataset / 'images'
 
@@ -934,36 +924,18 @@ def main() -> None:
         # 基于约定自动推导所有路径（可被显式参数覆盖）
         gm_default = output_dir / 'dedup_detections' / 'global_mapping.json'
 
-        # 智能查找reconstruction文件（优先查找带模型名称的文件）
+        # 从cache目录查找reconstruction文件
         recon_default = None
+        cache_default = None
         for backend in ['vggt', 'pi3']:
-            candidate = output_dir / f'reconstruction_{backend}.glb'
+            cache_dir = output_dir / f'{backend}_cache'
+            candidate = cache_dir / f'reconstruction_{backend}.glb'
             if candidate.exists():
                 recon_default = candidate
+                cache_default = cache_dir
                 break
-        if recon_default is None:
-            recon_default = output_dir / 'reconstruction.glb'
-            if not recon_default.exists():
-                # Fallback到数据集目录，同样优先查找带模型名称的文件
-                for backend in ['vggt', 'pi3']:
-                    candidate = dataset / f'reconstruction_{backend}.glb'
-                    if candidate.exists():
-                        recon_default = candidate
-                        break
-                else:
-                    recon_default = dataset / 'reconstruction.glb'
 
         det_default = output_dir / 'detections_results'
-
-        # 从reconstruction文件名提取backend，确定cache目录
-        cache_default = output_dir / 'viewer_cache'  # 默认值
-        if recon_default and recon_default.exists():
-            recon_stem = recon_default.stem  # reconstruction_vggt 或 reconstruction_pi3
-            if 'vggt' in recon_stem:
-                cache_default = output_dir / 'vggt_cache'
-            elif 'pi3' in recon_stem:
-                cache_default = output_dir / 'pi3_cache'
-
         img_default = dataset / 'images'  # images 始终在数据集目录
 
         # 通过 modules.viewer_runner 调用

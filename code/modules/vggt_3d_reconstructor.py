@@ -338,6 +338,63 @@ class VGGT3DReconstructor(ReconstructorBase):
 
         logger.info(f"保存VGGT transforms参数: {out_file}")
 
+    def _save_predictions_cache(
+        self,
+        predictions,
+        output_path: Path,
+        image_ids: Optional[List[int]] = None,
+        *,
+        image_paths: Optional[List[str]] = None,
+        mask_black_bg: bool = False,
+        mask_white_bg: bool = False,
+        mask_sky: bool = False,
+    ) -> None:
+        """保存与 viewer 兼容的 predictions.npz 缓存。
+
+        约定：
+        - 缓存目录：<output_path.parent>/<backend_name>_cache/
+        - 必需键：world_points (S,H,W,3), conf (S,H,W)
+        - 可选键：extrinsic, intrinsic, image_ids
+        """
+        try:
+            cache_dir = Path(output_path).parent / f"{self.backend_name}_cache"
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            cache_path = cache_dir / "predictions.npz"
+
+            world_points = predictions.get("world_points")
+            if world_points is None:
+                logger.warning("VGGT 预测结果缺少 'world_points'，跳过 predictions 缓存保存")
+                return
+
+            import numpy as np
+
+            # 置信度：优先使用 world_points_conf，其次 depth_conf，最后回退为全1
+            conf = predictions.get("world_points_conf")
+            if conf is None:
+                conf = predictions.get("depth_conf")
+            if conf is None:
+                conf = np.ones(world_points.shape[:-1], dtype=np.float32)
+
+            save_dict: dict[str, Any] = {
+                "world_points": world_points.astype(np.float32, copy=False),
+                "conf": conf.astype(np.float32, copy=False),
+            }
+
+            extr = predictions.get("extrinsic")
+            intr = predictions.get("intrinsic")
+            if extr is not None:
+                save_dict["extrinsic"] = np.asarray(extr, dtype=np.float32)
+            if intr is not None:
+                save_dict["intrinsic"] = np.asarray(intr, dtype=np.float32)
+
+            if image_ids:
+                save_dict["image_ids"] = np.asarray(image_ids, dtype=np.int32)
+
+            np.savez_compressed(cache_path, **save_dict)
+            logger.info(f"保存VGGT预测缓存: {cache_path}")
+        except Exception as e:  # noqa: BLE001 - 缓存失败不影响主流程
+            logger.warning(f"保存 VGGT predictions 缓存失败（不影响GLB导出）：{e}")
+
     def save_predictions_cache(
         self,
         predictions,

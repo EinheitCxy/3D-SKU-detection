@@ -13,10 +13,11 @@ main:
   save_root: "Output"
   batch_all_refs: true  # 批量处理所有图片作为参考图片
 
-# 3D重建配置 (modules/vggt_3d_reconstructor.py)
+# 3D重建配置 (VGGT 或 PI3)
 reconstruction:
+  backend: "pi3"   # vggt 或 pi3
   input_dir: "images"  # 相对于数据集目录
-  output_file: "reconstruction.glb"
+  output_file: "reconstruction.glb"  # 实际输出会自动添加模型名称：reconstruction_vggt.glb 或 reconstruction_pi3.glb
   device: "cuda"  # cuda, cpu
   model_path: null  # 预训练模型路径，null表示从HuggingFace下载
   conf_thres: 50.0  # 置信度阈值 (0-100)
