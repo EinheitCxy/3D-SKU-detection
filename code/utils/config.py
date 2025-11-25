@@ -256,6 +256,39 @@ class SKUMatchingConfig:
 
         self._validate_config()
     
+    # === Backend 衍生属性（自动推导，减少参数传递）===
+    @property
+    def model_type(self) -> str:
+        """根据 backend 自动推导 model_type
+
+        Returns:
+            "pi3" 如果 backend == "pi3"，否则 "vggt"
+        """
+        return "pi3" if self.backend == "pi3" else "vggt"
+
+    @property
+    def transform_kwargs(self) -> dict:
+        """根据 backend 自动推导 transform 构建参数
+
+        Returns:
+            Pi3: {"pixel_limit": 255000}
+            VGGT: {"target_size": 518}
+        """
+        if self.backend == "pi3":
+            return {"pixel_limit": 255000}
+        else:
+            return {"target_size": 518}
+
+    @property
+    def preprocess_mode(self) -> str:
+        """根据 backend 自动推导图像预处理模式
+
+        Returns:
+            Pi3: "resize" (等比例缩放)
+            VGGT: "crop" (裁剪+填充)
+        """
+        return "resize" if self.backend == "pi3" else "crop"
+
     def _validate_config(self):
         # Backend验证
         if self.backend not in ("vggt", "pi3"):

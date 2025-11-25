@@ -27,11 +27,21 @@ except ImportError as e:
     sys.exit(1)
 
 
-def _compute_output_dir(base: str, algorithm_type: str, ref_idx: int) -> str:
+def _compute_output_dir(base: str, algorithm_type: str, ref_idx: int, backend: str | None = None) -> str:
+    """根据算法类型和后端计算输出目录。
+
+    - point_tracking: base/output_pt/<ref_idx>
+    - 3d_projection:
+        - 若指定 backend，则 base/output_3dmapping_<backend>/<ref_idx>
+        - 否则保持旧行为: base/output_3dmapping/<ref_idx>
+    """
     if algorithm_type == "point_tracking":
         return f"{base}/output_pt/{ref_idx}"
-    else:
-        return f"{base}/output_3dmapping/{ref_idx}"
+
+    # 3D 投影匹配输出目录
+    if backend:
+        return f"{base}/output_3dmapping_{backend}/{ref_idx}"
+    return f"{base}/output_3dmapping/{ref_idx}"
 
 
 def _count_images_and_detections(image_folder: str, detection_dir: str) -> tuple[int, int]:
@@ -80,7 +90,7 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
     base_config = DEFAULT_POINT_TRACKING_CONFIG if algorithm_type == "point_tracking" else DEFAULT_3D_PROJECTION_CONFIG
     
     # 从parser获取基础output_dir，然后按算法类型和索引分组
-    output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx)
+    output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx, getattr(args, "backend", None))
     
     config_dict = {
         "backend": args.backend,
@@ -103,11 +113,17 @@ def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
 
     cfg = build_matching_config_from_yaml(args.config, algorithm=args.algorithm)
     # Always route outputs to per-ref subdir like CLI path does
-    cfg.output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx)
+    cfg.output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx, getattr(args, "backend", None))
     # Override a few runtime knobs from CLI
     cfg.device = args.device
     cfg.save_json = bool(args.save_json)
     cfg.seed = args.seed
+    # 统一 backend：优先使用命令行参数，其次使用 YAML 中的配置
+    try:
+        cfg.backend = args.backend
+    except AttributeError:
+        # 旧调用路径没有 backend 参数时，保留 YAML 中的设置或默认值
+        pass
     return cfg
 
 

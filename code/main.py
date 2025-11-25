@@ -113,6 +113,8 @@ class SKUDetectionMain:
         self.default_dataset = str(PROJECT_ROOT / "imdata" / "floor_display2")
         self.save_root: Optional[Path] = None  # 可选的输出保存根目录
         self.config_path: Optional[Path] = None
+        # 3D 匹配后端 (vggt/pi3)，仅在算法包含3d时生效
+        self.match_backend: str = "vggt"
         logger.info("初始化3D SKU Detection主程序")
 
     def show_banner(self) -> None:
@@ -410,8 +412,18 @@ class SKUDetectionMain:
                 duration = perf_counter() - start
                 return {"success": False, "error": msg, "duration_s": duration}
 
+            # 检测使用的算法
+            algorithm_name = "Point Tracking" if "output_pt" in str(summary_dir) else "3D Projection"
+
             analyzer = ImprovedSKUCountAnalyzer(str(detection_dir), str(summary_dir))
             result = analyzer.analyze_with_filtering()
+
+            # 计算统计信息
+            pairs = result['pairs']
+            hit_ratios = [p['hit_ratio'] for p in pairs]
+            avg_hit_ratio = sum(hit_ratios) / len(hit_ratios) if hit_ratios else 0
+            ref_images = len(set(p['ref_idx'] for p in pairs))
+            target_images = len(set(p['target_idx'] for p in pairs))
 
             # 报告目录：若指定 save_root，则保存到 save_root/output_reports/<dataset_name>
             reports_dir = (
@@ -420,19 +432,32 @@ class SKUDetectionMain:
             )
             reports_dir.mkdir(parents=True, exist_ok=True)
             report_file = reports_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
             with report_file.open('w', encoding='utf-8') as f:
-                f.write("改进的SKU计数分析报告\n")
+                f.write("=" * 70 + "\n")
+                f.write("SKU 计数分析报告\n")
+                f.write("=" * 70 + "\n")
                 f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"数据集: {dataset_path}\n\n")
-                f.write(f"原始匹配数: {result['original_matches']}\n")
-                f.write(f"过滤后匹配数: {result['filtered_matches']}\n")
-                f.write(f"去重减少: {result['original_matches'] - result['filtered_matches']} 个冗余匹配\n\n")
-                f.write("最终匹配结果:\n")
-                for i, pair in enumerate(result['pairs'], 1):
+                f.write(f"数据集: {dataset_path}\n")
+                f.write(f"匹配算法: {algorithm_name}\n")
+                f.write("-" * 70 + "\n\n")
+
+                f.write("【匹配统计】\n")
+                f.write(f"  原始匹配数: {result['original_matches']}\n")
+                f.write(f"  过滤后匹配数: {result['filtered_matches']}\n")
+                f.write(f"  去重减少: {result['original_matches'] - result['filtered_matches']} 个冗余匹配 "
+                        f"({(result['original_matches'] - result['filtered_matches']) / result['original_matches'] * 100:.1f}%)\n")
+                f.write(f"  平均 Hit Ratio: {avg_hit_ratio:.3f}\n")
+                f.write(f"  涉及图片: {ref_images} 个参考图片, {target_images} 个目标图片\n\n")
+
+                f.write("【详细匹配结果】\n")
+                for i, pair in enumerate(pairs, 1):
                     f.write(
                         f"{i:3d}. Ref({pair['ref_idx']},{pair['ref_id']}) → "
-                        f"Target({pair['target_idx']},{pair['target_id']}) hit_ratio={pair['hit_ratio']:.3f}\n"
+                        f"Target({pair['target_idx']},{pair['target_id']}) "
+                        f"hit_ratio={pair['hit_ratio']:.3f}\n"
                     )
+                f.write("\n" + "=" * 70 + "\n")
 
             duration = perf_counter() - start
             logger.info(f"✓ SKU分析完成 - 最终匹配数: {result['filtered_matches']}, 耗时 {duration:.2f}s")
@@ -617,20 +642,37 @@ class SKUDetectionMain:
             return {"success": False, "error": str(e), "duration_s": duration}
 
     def run_complete_pipeline(self, dataset_path: str, algorithm: str = 'point_tracking') -> Dict[str, bool]:
-        """运行完整的SKU计数流水线，返回每步是否成功的摘要。"""
-        logger.info("开始完整的SKU计数流水线")
+        """运行完整的SKU计数流水线（包含3D重建），返回每步是否成功的摘要。"""
+        logger.info("开始完整的SKU计数流水线（包含3D重建）")
         summary: Dict[str, bool] = {}
 
         if not self.validate_dataset(dataset_path):
             return {"validation": False}
         summary['validation'] = True
 
-        # 1. 原始检测框可视化
+        # 1. 3D重建（如果使用3D算法）
+        if '3d' in algorithm:
+            match_backend = self.match_backend if hasattr(self, 'match_backend') else 'vggt'
+            logger.info(f"步骤1: 3D重建 (backend: {match_backend})")
+            recon = self.run_reconstruction(dataset_path, backend=match_backend)
+            summary['reconstruction'] = bool(recon.get('success', False))
+
+            if not summary['reconstruction']:
+                logger.error("3D重建失败，无法继续3D匹配流程")
+                return summary
+        else:
+            logger.info("步骤1: 跳过3D重建（使用 Point Tracking 算法）")
+            summary['reconstruction'] = True  # 标记为成功（不需要）
+
+        # 2. 原始检测框可视化
+        logger.info("步骤2: 原始检测框可视化")
         viz = self.run_detection_visualization(dataset_path)
         summary['visualization'] = bool(viz.get('success', False))
 
-        # 2. SKU匹配推理
-        match = self.run_sku_matching(dataset_path, algorithm, batch_all_refs=True)
+        # 3. SKU匹配推理
+        logger.info(f"步骤3: SKU匹配推理 (algorithm: {algorithm})")
+        match_backend = self.match_backend if '3d' in algorithm else 'vggt'
+        match = self.run_sku_matching(dataset_path, algorithm, batch_all_refs=True, backend=match_backend)
         summary['matching'] = bool(match.get('success', False))
 
         # 3. SKU计数分析
@@ -683,7 +725,8 @@ class SKUDetectionMain:
             return {"validation": False}
         summary['validation'] = True
 
-        match = self.run_sku_matching(dataset_path, algorithm)
+        match_backend = self.match_backend if '3d' in algorithm else 'vggt'
+        match = self.run_sku_matching(dataset_path, algorithm, backend=match_backend)
         summary['matching'] = bool(match.get('success', False))
 
         acc = self.run_accuracy_evaluation(dataset_path)
@@ -709,20 +752,42 @@ class SKUDetectionMain:
             print("5. 3D可视化 (Viewer)")
             print("0. 退出")
 
-            choice = input(f"\n当前数据集: {self.default_dataset}\n请输入选择 (0-5): ").strip()
+            # 显示数据集路径（如果是绝对路径，显示相对于 PROJECT_ROOT 的路径）
+            try:
+                dataset_display = Path(self.default_dataset).relative_to(PROJECT_ROOT)
+            except ValueError:
+                dataset_display = self.default_dataset
+
+            choice = input(f"\n当前数据集: {dataset_display}\n请输入选择 (0-5): ").strip()
 
             if choice == '0':
                 logger.info("退出程序")
                 break
             elif choice == '1':
                 algorithm = input("选择算法 (point_tracking/3d) [默认: point_tracking]: ").strip() or 'point_tracking'
+                if '3d' in algorithm:
+                    backend = (input("选择3D匹配后端 (vggt/pi3) [默认 vggt]: ").strip() or 'vggt').lower()
+                    if backend not in ('vggt', 'pi3'):
+                        logger.warning(f"无效的后端 '{backend}'，使用默认 vggt")
+                        backend = 'vggt'
+                    self.match_backend = backend
                 self.run_complete_pipeline(self.default_dataset, algorithm)
             elif choice == '2':
                 algorithm = input("选择算法 (point_tracking/3d/both) [默认: both]: ").strip() or 'both'
+                if '3d' in algorithm:
+                    backend = (input("选择3D匹配后端 (vggt/pi3) [默认 vggt]: ").strip() or 'vggt').lower()
+                    if backend not in ('vggt', 'pi3'):
+                        logger.warning(f"无效的后端 '{backend}'，使用默认 vggt")
+                        backend = 'vggt'
+                    self.match_backend = backend
                 self.run_concise_pipeline(self.default_dataset, algorithm)
             elif choice == '3':
-                dataset_name = input("输入数据集名称 (如 floor_display2): ").strip()
+                dataset_name = input("输入数据集名称 (如 floor_display2，或仅输入数字如 15): ").strip()
                 if dataset_name:
+                    # 支持仅输入数字：自动补全为 floor_display{num}
+                    if dataset_name.isdigit():
+                        dataset_name = f"floor_display{dataset_name}"
+
                     # 自动拼接完整路径: PROJECT_ROOT / "imdata" / dataset_name
                     new_path = str(PROJECT_ROOT / "imdata" / dataset_name)
                     if self.validate_dataset(new_path):
@@ -826,8 +891,27 @@ def main() -> None:
         yaml_recon = {}
 
     parser = argparse.ArgumentParser(description="3D SKU Detection系统主程序", parents=[pre])
-    parser.add_argument('--dataset', type=str, default=yaml_main.get('dataset', str(PROJECT_ROOT / "imdata" / "floor_display2")),
-                       help="数据集目录路径")
+
+    # 处理数据集路径：如果是相对路径，转换为绝对路径
+    dataset_from_yaml = yaml_main.get('dataset', str(PROJECT_ROOT / "imdata" / "floor_display2"))
+    dataset_path = Path(dataset_from_yaml)
+    if not dataset_path.is_absolute():
+        # 相对路径：相对于 PROJECT_ROOT
+        dataset_path = PROJECT_ROOT / dataset_path
+    dataset_default = str(dataset_path)
+
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        default=dataset_default,
+        help="数据集目录路径（绝对或相对PROJECT_ROOT）",
+    )
+    parser.add_argument(
+        '--floor',
+        type=int,
+        default=None,
+        help="楼层展示数据集编号，例如 15 表示使用 imdata/floor_display15",
+    )
     parser.add_argument('--mode', type=str, default=yaml_main.get('mode', "interactive"),
                        choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'reconstruct', 'viewer'],
                        help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), reconstruct(3D重建), viewer(3D可视化)")
@@ -841,11 +925,13 @@ def main() -> None:
     parser.add_argument('--save_json', action='store_true', default=bool(yaml_main.get('save_json', False)), help="保存匹配结果为 JSON")
     parser.add_argument('--save_root', type=str, default=yaml_main.get('save_root', 'Output'),
                         help="输出保存根目录。例如：/path/to/outputs")
-    # 3D重建专用参数
+    # 3D重建/匹配专用参数
     parser.add_argument('--recon_conf_thres', type=float, default=float(yaml_recon.get('conf_thres', 50.0)), help="3D导出置信度阈值(0-100)")
     parser.add_argument('--recon_output', type=str, default=yaml_recon.get('output', 'reconstruction.glb'), help="3D重建输出文件名")
     parser.add_argument('--recon_backend', type=str, default=yaml_recon.get('backend', 'vggt'), choices=['vggt','pi3'], help="3D重建后端 (vggt|pi3)")
     parser.add_argument('--recon_model_path', type=str, default=yaml_recon.get('model_path', None), help="3D重建模型权重路径")
+    parser.add_argument('--match_backend', type=str, default=yaml_recon.get('backend', 'vggt'),
+                        choices=['vggt', 'pi3'], help="SKU匹配 3D 后端 (vggt|pi3)，仅当算法包含3d时生效")
 
     # Viewer 参数：复用 --save_root 和 --dataset，无需额外路径参数
     #   - output_dir: <save_root>/<dataset_name>
@@ -877,6 +963,12 @@ def main() -> None:
 
     args = parser.parse_args()
 
+    # 若指定了 --floor，则覆盖 dataset 为 imdata/floor_display{floor}
+    if args.floor is not None:
+        floor_name = f"floor_display{args.floor}"
+        dataset_path = PROJECT_ROOT / "imdata" / floor_name
+        args.dataset = str(dataset_path)
+
     # 统一日志
     save_root_path = Path(args.save_root).expanduser().resolve() if args.save_root else (PROJECT_ROOT / 'Output').resolve()
     _configure_logging_to_save_root(save_root_path)
@@ -884,6 +976,8 @@ def main() -> None:
     app = SKUDetectionMain()
     app.default_dataset = args.dataset
     app.save_root = save_root_path
+    # 将命令行或配置中的匹配后端设置到应用实例（仅3D算法生效）
+    app.match_backend = args.match_backend
     app.config_path = Path(args.config).resolve() if args.config else (config_path.resolve() if config_path else None)
 
     if args.mode == 'interactive':
@@ -899,6 +993,7 @@ def main() -> None:
             max_images=args.max_images,
             device=args.device,
             save_json=args.save_json,
+            backend=(args.match_backend if '3d' in args.algorithm else 'vggt'),
         )
         app.run_accuracy_evaluation(args.dataset)
     elif args.mode == 'analyzer':

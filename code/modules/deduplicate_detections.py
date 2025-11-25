@@ -91,83 +91,70 @@ def save_detection_objects(json_path: Path, original: Dict, new_objects: List[Di
     logger.info(f"Saved deduplicated detections to: {json_path}")
 
 
-def parse_matching_summary(summary_path: Path) -> Dict[int, List[Tuple[int, int]]]:
-    """解析 matching_summary.txt，返回 {actual_target_idx(1-based): [(ref_id, target_id), ...]}。
+def save_merged_detections_with_gid(json_path: Path,
+                                    images_data: Dict[int, Tuple[List[Dict], List[int]]],
+                                    originals_by_image: Dict[int, Dict]) -> None:
+    """保存多张图片合并的带global_id的检出框JSON（去掉skus层，直接输出{classes, objects}结构）。
 
-    说明：
-    - 文件内索引为0-based：reference image <r0>, target image <t0>
-    - 为了与检测文件 1.json/2.json/3.json 对齐，这里输出为 1-based 下标 actual_target=t0+1
-    - 匹配详情行在组头行之前，因此需缓存后在组头处落盘
+    Args:
+        json_path: 输出文件路径
+        images_data: {image_id: (objects, global_ids)} 字典
+        originals_by_image: {image_id: original_json_structure} 字典
     """
-    if not summary_path.exists():
-        raise FileNotFoundError(f"matching_summary.txt not found: {summary_path}")
+    import copy
 
-    # 行格式示例: "Matched ref 56 → target 79 (hit ratio: 0.70 32/46)"
-    # 使用鲁棒正则，避免直接依赖特殊箭头字符
-    match_line_re = re.compile(r"^Matched ref (\d+).*?target\s+(\d+)\s+\(")
-    group_header_re = re.compile(r"^Matching objects between reference image (\d+) and target image (\d+)")
+    merged_output = []
 
-    pairs_by_target: Dict[int, List[Tuple[int, int]]] = {}
-    buffer: List[Tuple[int, int]] = []
+    for image_id in sorted(images_data.keys()):
+        objects, global_ids = images_data[image_id]
+        if len(global_ids) != len(objects):
+            logger.warning(f"Image {image_id}: global_ids length mismatch, skipping")
+            continue
 
-    total_pairs = 0
-    with summary_path.open('r', encoding='utf-8') as f:
-        for raw in f:
-            line = raw.strip()
-            if not line:
-                continue
-            m = match_line_re.match(line)
-            if m:
-                ref_id = int(m.group(1))
-                target_id = int(m.group(2))
-                buffer.append((ref_id, target_id))
-                total_pairs += 1
-                continue
-            # 回退解析：更宽松的提取（防止正则模式因特殊字符编码差异导致失配）
-            if line.startswith("Matched ref ") and "target" in line:
-                try:
-                    m1 = re.search(r"Matched ref\s+(\d+)", line)
-                    m2 = re.search(r"target\s+(\d+)", line)
-                    if m1 and m2:
-                        ref_id = int(m1.group(1))
-                        target_id = int(m2.group(1))
-                        buffer.append((ref_id, target_id))
-                        total_pairs += 1
-                        continue
-                except (AttributeError, ValueError):
-                    pass
-            g = group_header_re.match(line)
-            if g:
-                # 刷新到对应 target
-                t0 = int(g.group(2))
-                actual_target = t0 + 1
-                if buffer:
-                    pairs_by_target.setdefault(actual_target, []).extend(buffer)
-                    buffer = []
+        # 为每个object添加global_id
+        objects_with_gid = []
+        for obj, gid in zip(objects, global_ids):
+            obj_copy = copy.deepcopy(obj)
+            obj_copy['global_id'] = gid
+            objects_with_gid.append(obj_copy)
 
-    if total_pairs == 0:
-        logger.warning(f"No 'Matched ref ... target ...' pairs parsed in summary: {summary_path}")
-    return pairs_by_target
+        # 获取原始JSON结构
+        original = originals_by_image.get(image_id)
+        if original is None:
+            logger.warning(f"Image {image_id}: original structure not found, skipping")
+            continue
 
+        # 提取classes和objects，去掉skus层
+        image_data = None
+        if isinstance(original, dict) and 'skus' in original:
+            if isinstance(original['skus'], list) and original['skus']:
+                # 从skus[0]中提取classes，直接构造{classes, objects}
+                image_data = {
+                    'classes': copy.deepcopy(original['skus'][0].get('classes', {})),
+                    'objects': objects_with_gid
+                }
+        elif isinstance(original, list) and original:
+            # 已经是[{classes, objects}]格式
+            image_data = {
+                'classes': copy.deepcopy(original[0].get('classes', {})),
+                'objects': objects_with_gid
+            }
+        elif isinstance(original, dict) and 'objects' in original:
+            # 已经是{classes, objects}格式
+            image_data = {
+                'classes': copy.deepcopy(original.get('classes', {})),
+                'objects': objects_with_gid
+            }
+        else:
+            logger.warning(f"Image {image_id}: unsupported structure, skipping")
+            continue
 
-def compute_dedup_indices(pairs_by_target: Dict[int, List[Tuple[int, int]]],
-                          keep_images: Set[int], dedup_image: int) -> Set[int]:
-    """根据对应关系，计算在 dedup_image 中需要去除的 target_id 集合（object_id）。
+        merged_output.append(image_data)
 
-    规则：
-    - 先汇总 keep_images 中出现过的所有 ref_id 集合 R_keep
-    - 在 dedup_image 中，凡是 (ref_id, target_id) 的 ref_id ∈ R_keep 的，都将其 target_id 标记为去除
-    """
-    ref_keep: Set[int] = set()
-    for img in keep_images:
-        for ref_id, _t in pairs_by_target.get(img, []):
-            ref_keep.add(ref_id)
-
-    drop_ids: Set[int] = set()
-    for ref_id, target_id in pairs_by_target.get(dedup_image, []):
-        if ref_id in ref_keep:
-            drop_ids.add(target_id)
-    return drop_ids
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    with json_path.open('w', encoding='utf-8') as f:
+        json.dump(merged_output, f, ensure_ascii=False, indent=2)
+    logger.info(f"Saved merged detections with global_id to: {json_path} ({len(merged_output)} images)")
 
 
 def parse_all_matches(summary_root: Path) -> List[Dict]:
@@ -287,46 +274,6 @@ def _list_numeric_detection_indices(detections_dir: Path) -> List[int]:
         return []
 
 
-def deduplicate_for_images(paths: DatasetPaths,
-                           keep_images: Set[int], dedup_image: int,
-                           output_root: Path | None = None,
-                           same_names: bool = False) -> Dict[int, Path]:
-    """执行一次性去重（兼容旧用法）。返回 {image_idx: 输出路径}。image_idx 为 1-based。"""
-    pairs_by_target = parse_matching_summary(paths.summary_file)
-    to_drop_in_dedup = compute_dedup_indices(pairs_by_target, keep_images, dedup_image)
-    logger.info(f"Dedup plan: drop {len(to_drop_in_dedup)} boxes in image {dedup_image}")
-
-    dataset_name = paths.dataset_dir.name
-    # 默认输出到代码根目录下的 output_dedup/<dataset_name>
-    out_dir = (output_root or (Path(__file__).parent.parent / 'dedup_detection')) / dataset_name
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    outputs: Dict[int, Path] = {}
-    # 保留图
-    for img_idx in sorted(keep_images):
-        src = paths.detections_dir / f"{img_idx}.json"
-        if not src.exists():
-            logger.warning(f"Detection JSON missing for image {img_idx}: {src}")
-            continue
-        original, objects = load_detection_objects(src)
-        dst = out_dir / (f"{img_idx}.json" if same_names else f"{img_idx}_dedup.json")
-        save_detection_objects(dst, original, objects)
-        outputs[img_idx] = dst
-
-    # 去重图
-    src = paths.detections_dir / f"{dedup_image}.json"
-    if not src.exists():
-        logger.warning(f"Detection JSON missing for dedup image {dedup_image}: {src}")
-    else:
-        original, objects = load_detection_objects(src)
-        filtered = [obj for idx, obj in enumerate(objects) if idx not in to_drop_in_dedup]
-        dst = out_dir / (f"{dedup_image}.json" if same_names else f"{dedup_image}_dedup.json")
-        save_detection_objects(dst, original, filtered)
-        outputs[dedup_image] = dst
-
-    return outputs
-
-
 def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
                          max_image: int | None = None, same_names: bool = False,
                          dedup_mode: str = 'any', min_hit_ratio: float = 0.0,
@@ -400,6 +347,7 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
     # 记录每张图保留下来的对象索引（基于原始 objects 下标）与其对象信息
     survivors_by_image: Dict[int, Set[int]] = {}
     objects_by_image: Dict[int, List[Dict]] = {}
+    originals_by_image: Dict[int, Dict] = {}
 
     for i in indices:
         src = paths.detections_dir / f"{i}.json"
@@ -408,6 +356,7 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
             continue
 
         original, objects = load_detection_objects(src)
+        originals_by_image[i] = original
 
         if i == 1:
             # 保留原样
@@ -440,8 +389,33 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
         with mapping_path.open('w', encoding='utf-8') as f:
             json.dump(mapping, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved global mapping to: {mapping_path}")
+
+        # 生成带global_id的合并JSON
+        images_data_for_merge: Dict[int, Tuple[List[Dict], List[int]]] = {}
+        for img_id in indices:
+            survivors = survivors_by_image.get(img_id, set())
+            objects = objects_by_image.get(img_id, [])
+            kept_objects = [objects[idx] for idx in sorted(survivors) if idx < len(objects)]
+            kept_gids = []
+            for idx in sorted(survivors):
+                if idx < len(objects):
+                    # 从mapping中查找global_id
+                    gid = None
+                    for gid_str, entries in mapping.items():
+                        for entry in entries:
+                            if entry['image_id'] == img_id and entry['object_id'] == idx and not entry['removed']:
+                                gid = int(gid_str)
+                                break
+                        if gid:
+                            break
+                    if gid:
+                        kept_gids.append(gid)
+            images_data_for_merge[img_id] = (kept_objects, kept_gids)
+
+        merged_gid_path = out_dir / 'all_images_with_global_id.json'
+        save_merged_detections_with_gid(merged_gid_path, images_data_for_merge, originals_by_image)
     except (ValueError, json.JSONEncodeError, FileNotFoundError, PermissionError) as e:
-        logger.warning(f"Failed to build/save global mapping: {e}")
+        logger.warning(f"Failed to build/save global mapping or global_id JSONs: {e}")
 
     return outputs
 
@@ -484,14 +458,27 @@ def build_global_mapping(
             parent[rb] = ra
             rank[ra] += 1
 
-    # 初始化节点（所有对象：保留与被去重的都纳入全局图）
+    # 先收集所有有匹配关系的节点
+    nodes_with_matches = set()
+    for m in matches:
+        r_img = int(m.get('ref_idx', -1)) + 1
+        t_img = int(m.get('target_idx', -1)) + 1
+        r_id = int(m.get('ref_id', -1))
+        t_id = int(m.get('target_id', -1))
+        nodes_with_matches.add((r_img, r_id))
+        nodes_with_matches.add((t_img, t_id))
+
+    # 初始化节点（保留的对象 + 有匹配关系的对象）
     for img_id in image_indices:
         objs = objects_by_image.get(img_id, [])
+        survivors = survivors_by_image.get(img_id, set())
         for obj_idx in range(len(objs)):
-            parent[(img_id, obj_idx)] = (img_id, obj_idx)
-            rank[(img_id, obj_idx)] = 0
+            # 保留的对象或有匹配关系的对象
+            if obj_idx in survivors or (img_id, obj_idx) in nodes_with_matches:
+                parent[(img_id, obj_idx)] = (img_id, obj_idx)
+                rank[(img_id, obj_idx)] = 0
 
-    # 添加边（使用所有匹配连接对应节点），以便被去重的节点仍隶属于其物体的全局组件
+    # 添加边（使用所有匹配连接对应节点）
     for m in matches:
         r_img = int(m.get('ref_idx', -1)) + 1
         t_img = int(m.get('target_idx', -1)) + 1
@@ -505,18 +492,21 @@ def build_global_mapping(
     gid_counter = 1
     mapping: Dict[str, List[Dict]] = {}
 
-    # 分配全局ID并输出所有对象（包含被去重的，标注 removed=True/False）
+    # 分配全局ID（只为parent中的节点）
     for img_id in sorted(image_indices):
         objects = objects_by_image.get(img_id, [])
         survivors = survivors_by_image.get(img_id, set())
         for obj_idx in range(len(objects)):
+            # 跳过不在parent中的节点
+            if (img_id, obj_idx) not in parent:
+                continue
             root = find((img_id, obj_idx))
             if root not in comp_to_gid:
                 comp_to_gid[root] = gid_counter
                 gid_counter += 1
             gid = comp_to_gid[root]
             key = str(gid)
-            obj = objects[obj_idx] if 0 <= obj_idx < len(objects) else {}
+            obj = objects[obj_idx]
             entry = {
                 'image_id': img_id,
                 'object_id': obj_idx,
@@ -531,12 +521,10 @@ def build_global_mapping(
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description='根据匹配关系对检出框去重')
+    parser = argparse.ArgumentParser(description='根据匹配关系对检出框序列去重')
     parser.add_argument('--dataset', type=str, default=str(Path('imdata0911') / 'floor_display2'), help='数据集根目录')
     parser.add_argument('--summary', type=str, default=None, help='matching_summary.txt 路径（默认: <dataset>/output_pt/0/matching_summary.txt）')
-    parser.add_argument('--keep', type=str, default=None, help='单次去重模式：保留原样的图片编号(1-based)，逗号分隔')
-    parser.add_argument('--dedup', type=int, default=None, help='单次去重模式：需要去重的图片编号(1-based)')
-    parser.add_argument('--max_image', type=int, default=None, help='序列去重模式：处理到最大图片编号(含)')
+    parser.add_argument('--max_image', type=int, default=None, help='处理到最大图片编号(含)')
     parser.add_argument('--output_dir', type=str, default=None, help='输出根目录（默认: output_dedup/<dataset_name>）')
     parser.add_argument('--same_names', action='store_true', help='输出文件名与原始一致（1.json, 2.json, ...），而不是 *_dedup.json')
     parser.add_argument('--dedup_mode', type=str, choices=['any', 'best'], default='any',
@@ -562,29 +550,14 @@ def main():
 
     output_root = Path(args.output_dir) if args.output_dir else None
 
-    # 模式选择：若提供了 --dedup（可选配 --keep），执行单次去重；否则执行序列去重 1..N
-    if args.dedup is not None:
-        keep_images: Set[int] = set()
-        if args.keep:
-            for tok in args.keep.split(','):
-                tok = tok.strip()
-                if tok:
-                    keep_images.add(int(tok))
-        else:
-            logger.warning("--dedup 指定但未提供 --keep，将仅输出去重图并不复制保留图")
-
-        outputs = deduplicate_for_images(paths, keep_images, args.dedup, output_root, same_names=args.same_names)
-        logger.info("Dedup (single) completed. Outputs:")
-        for k, v in outputs.items():
-            logger.info(f"  image {k}: {v}")
-    else:
-        outputs = deduplicate_sequence(
-            paths, output_root, args.max_image, same_names=args.same_names,
-            dedup_mode=args.dedup_mode, min_hit_ratio=args.min_hit_ratio
-        )
-        logger.info("Dedup (sequence) completed. Outputs:")
-        for k in sorted(outputs.keys()):
-            logger.info(f"  image {k}: {outputs[k]}")
+    # 执行序列去重 1..N
+    outputs = deduplicate_sequence(
+        paths, output_root, args.max_image, same_names=args.same_names,
+        dedup_mode=args.dedup_mode, min_hit_ratio=args.min_hit_ratio
+    )
+    logger.info("Dedup (sequence) completed. Outputs:")
+    for k in sorted(outputs.keys()):
+        logger.info(f"  image {k}: {outputs[k]}")
 
 
 if __name__ == '__main__':
