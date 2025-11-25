@@ -294,19 +294,21 @@ class VGGT3DReconstructor(ReconstructorBase):
             **kwargs,
         )
 
-    def _save_transforms_cache(self, image_paths, image_ids, output_path, *, target_size: int = 518) -> None:
-        """保存VGGT裁剪/填充变换到 vggt_cache/transforms.json（精简字段）。
+    def _save_transforms_cache_direct(self, image_paths, image_ids, cache_dir: Path, *, target_size: int = 518) -> None:
+        """保存VGGT裁剪/填充变换到 transforms.json（精简字段）。
+
+        Args:
+            image_paths: 图像路径列表
+            image_ids: 图像ID列表
+            cache_dir: 缓存目录（直接传入，不再创建嵌套）
+            target_size: VGGT目标尺寸
 
         每帧仅保存映射必需参数：scales、crop_start_y、batch_padding，加上标识 frame_idx/image_id/source_path；
         顶层保存 padded_size 与 target_size 便于校验与可视化。
         """
-        from pathlib import Path as _Path
         import json
 
-        # 目标目录：与 predictions.npz 相同的 cache 目录
-        out_dir = _Path(output_path).parent / f"{self.backend_name}_cache"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_file = out_dir / "transforms.json"
+        out_file = cache_dir / "transforms.json"
 
         # 按VGGT crop 逻辑构建批次变换，并自动应用批内居中填充
         transforms = build_transforms(image_paths, model_type="vggt", target_size=target_size)
@@ -338,10 +340,10 @@ class VGGT3DReconstructor(ReconstructorBase):
 
         logger.info(f"保存VGGT transforms参数: {out_file}")
 
-    def _save_predictions_cache(
+    def _save_predictions_cache_direct(
         self,
         predictions,
-        output_path: Path,
+        cache_path: Path,
         image_ids: Optional[List[int]] = None,
         *,
         image_paths: Optional[List[str]] = None,
@@ -351,15 +353,22 @@ class VGGT3DReconstructor(ReconstructorBase):
     ) -> None:
         """保存与 viewer 兼容的 predictions.npz 缓存。
 
+        Args:
+            predictions: VGGT 预测结果字典
+            cache_path: 缓存文件的完整路径（如 <out_dir>/vggt_cache/predictions.npz）
+            image_ids: 可选的图像ID列表
+            image_paths: 可选的图像路径列表
+            mask_black_bg: 是否遮罩黑色背景
+            mask_white_bg: 是否遮罩白色背景
+            mask_sky: 是否遮罩天空
+
         约定：
-        - 缓存目录：<output_path.parent>/<backend_name>_cache/
         - 必需键：world_points (S,H,W,3), conf (S,H,W)
         - 可选键：extrinsic, intrinsic, image_ids
         """
         try:
-            cache_dir = Path(output_path).parent / f"{self.backend_name}_cache"
-            cache_dir.mkdir(parents=True, exist_ok=True)
-            cache_path = cache_dir / "predictions.npz"
+            # 确保父目录存在
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
 
             world_points = predictions.get("world_points")
             if world_points is None:
@@ -417,20 +426,23 @@ class VGGT3DReconstructor(ReconstructorBase):
             image_paths = [str(Path(input_dir) / n) for n in image_names]
             image_ids = self.extract_image_ids(image_names)
 
+        # out_dir 已经是 cache 目录（如 Output/floor_display7/vggt_cache），不需要再嵌套
+        cache_dir = out_dir
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
         # 1) 保存 transforms.json（严格对齐 VGGT 预处理）
         try:
             if image_paths and image_ids:
-                dummy_output = out_dir / "reconstruction.glb"  # 仅用于放置同目录 vggt_cache
-                self._save_transforms_cache(image_paths, image_ids, dummy_output, target_size=target_size)
+                self._save_transforms_cache_direct(image_paths, image_ids, cache_dir, target_size=target_size)
         except Exception as e:
             logger.warning(f"保存 transforms.json 失败（不影响后续流程）: {e}")
 
-        # 2) 保存 predictions.npz（沿用原有实现）
+        # 2) 保存 predictions.npz（直接保存到 cache_dir，避免嵌套）
         try:
-            output_path = out_dir / "reconstruction.glb"
-            self._save_predictions_cache(
+            cache_path = cache_dir / "predictions.npz"
+            self._save_predictions_cache_direct(
                 predictions,
-                output_path,
+                cache_path,
                 image_ids,
                 image_paths=image_paths,
                 mask_black_bg=mask_black_bg,

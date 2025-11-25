@@ -54,20 +54,28 @@ class SKUMatchingSystem:
         if self._is_initialized:
             logger.info("System already initialized")
             return
-            
-        logger.info("Initializing SKU matching system...")
-        
+
+        logger.info(f"Initializing SKU matching system (backend: {self.config.backend})...")
+
         try:
             # 设置随机种子（如果指定）
             if self.config.seed is not None:
                 self._set_random_seeds()
-            
-            # 加载VGGT模型
-            self.vggt_model = VGGT.from_pretrained("facebook/VGGT-1B").to(self.config.device).eval()
-            
+
+            # 根据 backend 条件加载模型
+            if self.config.backend == "pi3":
+                # Pi3 后端：不需要加载 VGGT 模型（直接从缓存加载 3D 数据）
+                logger.info("Pi3 后端：跳过 VGGT 模型加载，将从 pi3_cache 加载预重建数据")
+                self.vggt_model = None
+            else:
+                # VGGT 后端：加载 VGGT 模型用于实时 3D 重建
+                logger.info("VGGT 后端：加载 VGGT 模型...")
+                self.vggt_model = VGGT.from_pretrained("facebook/VGGT-1B").to(self.config.device).eval()
+                logger.info("VGGT 模型加载完成")
+
             self._is_initialized = True
             logger.info("System initialization complete")
-            
+
         except (ImportError, RuntimeError, FileNotFoundError) as e:
             logger.error(f"Failed to initialize system: {e}")
             raise
@@ -118,22 +126,35 @@ class SKUMatchingSystem:
             
             logger.info(f"Loaded {len(image_paths)} images with {len(detections)} detection files")
 
-            # 2. 构建坐标变换信息（根据 backend 选择 VGGT 或 Pi3 的变换）
-            model_type = "vggt"
-            build_kwargs = {"target_size": 518}
-            try:
-                if self.config.enable_3d_projection_matching and getattr(self.config, "backend", "vggt") == "pi3":
-                    model_type = "pi3"
-                    build_kwargs = {"pixel_limit": 255000}
-            except AttributeError:
-                # 旧配置可能没有 backend 字段，回退到 VGGT
-                model_type = "vggt"
-                build_kwargs = {"target_size": 518}
+            # 2. 预处理图像和构建 transforms（使用 config 的衍生属性，消除参数冗余）
+            if self.config.model_type == "pi3":
+                # Pi3: 先加载图像（动态尺寸），再根据实际尺寸构建 transforms
+                from pi3.utils.basic import load_images_as_tensor
+                images = load_images_as_tensor(
+                    image_folder,
+                    interval=1,
+                    PIXEL_LIMIT=self.config.transform_kwargs["pixel_limit"]
+                )
+                images = images.to(self.config.device)
 
-            transforms_info = build_transforms(image_paths, model_type=model_type, **build_kwargs)
-            
-            # 3. 预处理图像
-            images = load_and_preprocess_images(image_paths, mode="crop").to(self.config.device)
+                # Pi3 返回动态尺寸 [N, C, H, W]，需要从实际尺寸构建 transforms
+                _, _, H_actual, W_actual = images.shape
+                logger.info(f"Pi3 加载图像: {len(image_paths)} 张, 实际尺寸: ({W_actual}, {H_actual})")
+
+                # 使用实际尺寸构建 transforms（确保与 Pi3 重建时一致）
+                transforms_info = build_transforms(
+                    image_paths,
+                    model_type=self.config.model_type,
+                    **self.config.transform_kwargs
+                )
+            else:
+                # VGGT: 先构建 transforms（固定 518×518），再加载图像
+                transforms_info = build_transforms(
+                    image_paths,
+                    model_type=self.config.model_type,
+                    **self.config.transform_kwargs
+                )
+                images = load_and_preprocess_images(image_paths, mode=self.config.preprocess_mode).to(self.config.device)
             
             # 4. 执行匹配算法
             correspondences, points_per_object = self._run_matching(

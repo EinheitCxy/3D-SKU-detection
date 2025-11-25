@@ -181,12 +181,60 @@ def _estimate_intrinsics_from_local_points(
                 fx, cx = theta_u[0].item(), theta_u[1].item()
                 fy, cy = theta_v[0].item(), theta_v[1].item()
 
-                # 验证估计结果的合理性
-                if fx <= 0 or fy <= 0 or fx > 10 * f_default or fy > 10 * f_default:
-                    # 焦距不合理，使用默认K
+                # 图像尺寸（用于范围检查）
+                W = float(width)
+                H = float(height)
+
+                # === 必要检查（硬性条件）===
+                # 1. 焦距必须为正
+                if fx <= 0 or fy <= 0:
+                    logger.warning(f"⚠️  Pi3 内参拟合失败 (batch={b}, view={n}): 焦距非正 (fx={fx:.1f}, fy={fy:.1f}) → 使用默认内参")
                     intrinsics[b, n] = default_K
                     continue
 
+                # 2. 计算拟合残差（主判据）
+                u_pred = fx * a_u + cx
+                v_pred = fy * a_v + cy
+                residual_u = torch.abs(u - u_pred).mean().item()
+                residual_v = torch.abs(v - v_pred).mean().item()
+                max_residual = max(residual_u, residual_v)
+
+                # 主判据：残差过大 → 拟合质量差 → 使用默认内参
+                RESIDUAL_THRESHOLD = 50.0  # 平均误差阈值（像素）
+                if max_residual > RESIDUAL_THRESHOLD:
+                    logger.warning(
+                        f"⚠️  Pi3 内参拟合质量差 (batch={b}, view={n}):\n"
+                        f"   残差: u={residual_u:.1f}px, v={residual_v:.1f}px (阈值={RESIDUAL_THRESHOLD}px)\n"
+                        f"   拟合结果: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}\n"
+                        f"   → 使用默认内参 (fx={f_default:.1f}, cx={W/2:.1f}, cy={H/2:.1f})"
+                    )
+                    intrinsics[b, n] = default_K
+                    continue
+
+                # === 启发式检查（仅警告，不影响采用）===
+                warnings = []
+                if not (0.1 * f_default <= fx <= 10 * f_default):
+                    warnings.append(f"fx={fx:.1f} 超出合理范围 [{0.1*f_default:.1f}, {10*f_default:.1f}]")
+                if not (0.1 * f_default <= fy <= 10 * f_default):
+                    warnings.append(f"fy={fy:.1f} 超出合理范围 [{0.1*f_default:.1f}, {10*f_default:.1f}]")
+                if not (-0.2 * W <= cx <= 1.2 * W):
+                    warnings.append(f"cx={cx:.1f} 超出图像范围 [{-0.2*W:.1f}, {1.2*W:.1f}]")
+                if not (-0.2 * H <= cy <= 1.2 * H):
+                    warnings.append(f"cy={cy:.1f} 超出图像范围 [{-0.2*H:.1f}, {1.2*H:.1f}]")
+
+                # 防止除零
+                aspect_ratio = fx / fy if abs(fy) > 1e-6 else float("inf")
+                if not (0.7 <= aspect_ratio <= 1.3):
+                    warnings.append(f"焦距比例 fx/fy={aspect_ratio:.3f} 异常（预期接近1.0）")
+
+                if warnings:
+                    logger.warning(
+                        f"⚠️  Pi3 内参拟合异常 (batch={b}, view={n})，但残差可接受 ({max_residual:.1f}px):\n" +
+                        "\n".join(f"   - {w}" for w in warnings) +
+                        f"\n   → 仍采用拟合结果"
+                    )
+
+                # 采用拟合结果
                 K = torch.zeros((3, 3), device=device, dtype=dtype)
                 K[0, 0] = fx
                 K[1, 1] = fy
@@ -204,19 +252,23 @@ def _estimate_intrinsics_from_local_points(
 def _save_predictions_npz(
     pred: Dict[str, Any],
     image_tensor: torch.Tensor,
-    out_dir: Path,
+    cache_path: Path,
     *,
     image_ids: Optional[List[int]] = None,
 ) -> Path:
     """保存与 viewer 兼容的 predictions 缓存。
 
-    - 保存位置：<out_dir>/pi3_cache/predictions.npz
-    - 最低要求键：world_points (S,H,W,3), images (S,H,W,3 uint8)
-      注：将 Pi3 的 'points' 重命名为 'world_points' 以保持兼容。
+    Args:
+        pred: Pi3 预测结果字典
+        image_tensor: 图像张量
+        cache_path: 缓存文件的完整路径（如 <out_dir>/pi3_cache/predictions.npz）
+        image_ids: 可选的图像ID列表
+
+    Returns:
+        保存的缓存文件路径
     """
-    cache_dir = out_dir / "pi3_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / "predictions.npz"
+    # 确保父目录存在
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
 
     points = pred.get("points")  # 期望 (N,H,W,3)
     if isinstance(points, torch.Tensor):
@@ -527,6 +579,10 @@ class PI33DReconstructor(ReconstructorBase):
             if input_dir is not None:
                 image_paths = [str(Path(input_dir) / n) for n in image_names]
 
+        # out_dir 已经是 cache 目录（如 Output/floor_display7/pi3_cache），不需要再嵌套
+        cache_dir = out_dir
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
         # 1) 保存 transforms.json（Pi3 仅包含缩放，无裁剪/填充）
         try:
             if image_paths:
@@ -535,8 +591,6 @@ class PI33DReconstructor(ReconstructorBase):
                 # 取统一目标尺寸
                 first_info = transforms[0].get_transform_info()
                 tw, th = int(first_info["target_size"][0]), int(first_info["target_size"][1])
-                cache_dir = out_dir / f"{self.backend_name}_cache"
-                cache_dir.mkdir(parents=True, exist_ok=True)
                 tf_path = cache_dir / "transforms.json"
 
                 frames = []
@@ -563,8 +617,9 @@ class PI33DReconstructor(ReconstructorBase):
         except Exception as e:
             logger.warning(f"保存 Pi3 transforms.json 失败（不影响GLB/NPZ）：{e}")
 
-        # 2) 保存 predictions.npz
-        _save_predictions_npz(predictions, images, out_dir, image_ids=image_ids)
+        # 2) 保存 predictions.npz（直接保存到 cache_dir，避免嵌套）
+        cache_path = cache_dir / "predictions.npz"
+        _save_predictions_npz(predictions, images, cache_path, image_ids=image_ids)
 
 
 def main() -> int:

@@ -7,6 +7,7 @@ SKU匹配系统核心算法模块
 import time
 import torch
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 # VGGT相关导入（路径由 utils/__init__.py 统一配置）
@@ -309,29 +310,54 @@ def find_correspondences_3d_projection(
 
         if config.backend == "pi3":
             # 从Pi3缓存加载预先重建的数据
-            # 路径推导: output_dir通常是 <dataset>/output_3dmapping/<ref_idx>
-            # 因此 parent.parent 应该是 <dataset>
-            cache_path = Path(config.output_dir).parent.parent / "pi3_cache" / "predictions.npz"
+            # 智能多位置查找：支持不同的目录结构
+            output_path = Path(config.output_dir)
 
-            # 验证路径推导的合理性
-            dataset_root = cache_path.parent.parent
-            if not dataset_root.exists() or not (dataset_root / "images").exists():
-                logger.warning(
-                    f"Pi3缓存路径推导可能不正确:\n"
-                    f"  output_dir: {config.output_dir}\n"
-                    f"  推导的dataset_root: {dataset_root}\n"
-                    f"  预期的缓存路径: {cache_path}"
-                )
+            # 候选位置列表（按优先级排序）
+            candidate_paths = [
+                # 位置1: Output/floor_display7/pi3_cache/predictions.npz
+                # 适用于: output_dir = "Output/floor_display7/output_3dmapping/0"
+                output_path.parent.parent / "pi3_cache" / "predictions.npz",
 
-            if not cache_path.exists():
-                raise FileNotFoundError(
-                    f"Pi3缓存不存在: {cache_path}\n"
-                    f"请先运行3D重建生成缓存:\n"
-                    f"  cd code\n"
-                    f"  uv run python -m modules.pi3_3d_reconstructor \\\n"
-                    f"    --input_dir {dataset_root}/images \\\n"
-                    f"    --output_file {dataset_root}/reconstruction_pi3.glb"
-                )
+                # 位置2: Output/floor_display7/output_3dmapping/pi3_cache/predictions.npz
+                # 适用于: 缓存在 output_3dmapping 目录下
+                output_path.parent / "pi3_cache" / "predictions.npz",
+
+                # 位置3: Output/floor_display7/0/pi3_cache/predictions.npz
+                # 适用于: output_dir = "Output/floor_display7/0"
+                output_path / "pi3_cache" / "predictions.npz",
+            ]
+
+            # 查找第一个存在的缓存文件
+            cache_path = None
+            for candidate in candidate_paths:
+                if candidate.exists():
+                    cache_path = candidate
+                    logger.info(f"✓ 找到Pi3缓存: {cache_path}")
+                    break
+
+            if cache_path is None:
+                # 推导数据集根目录（用于错误提示）
+                dataset_root = output_path.parent.parent
+                if not (dataset_root / "images").exists():
+                    dataset_root = output_path.parent
+
+                # 生成详细的错误信息
+                error_lines = [
+                    "❌ Pi3缓存文件不存在！已尝试以下位置：",
+                    *[f"   {i+1}. {p}" for i, p in enumerate(candidate_paths)],
+                    "",
+                    "📋 请先运行3D重建生成缓存（推荐使用main.py交互模式）：",
+                    "   cd code && uv run python main.py",
+                    "   然后选择 '3' (3D重建) → 选择 'pi3' 后端",
+                    "",
+                    "💡 或者直接运行重建脚本：",
+                    "   cd code",
+                    f"   uv run python -m modules.pi3_3d_reconstructor \\",
+                    f"     --input_dir {dataset_root}/images \\",
+                    f"     --output_file {dataset_root.parent / dataset_root.name / 'reconstruction_pi3.glb'}",
+                ]
+                raise FileNotFoundError("\n".join(error_lines))
 
             import numpy as np
             data = np.load(cache_path)
@@ -361,20 +387,74 @@ def find_correspondences_3d_projection(
             world_np = data['world_points']
             if world_np.shape != (S_cache, H_pi3, W_pi3, 3):
                 raise ValueError(
-                    f\"world_points shape {world_np.shape} != ({S_cache}, {H_pi3}, {W_pi3}, 3)\"
+                    f"world_points shape {world_np.shape} != ({S_cache}, {H_pi3}, {W_pi3}, 3)"
                 )
             extr_np = data['extrinsic']
             if extr_np.shape not in [(S_cache, 4, 4), (S_cache, 3, 4)]:
-                raise ValueError(f\"extrinsic shape {extr_np.shape} 不符合预期\")
+                raise ValueError(f"extrinsic shape {extr_np.shape} 不符合预期")
             intr_np = data['intrinsic']
             if intr_np.shape != (S_cache, 3, 3):
-                raise ValueError(f\"intrinsic shape {intr_np.shape} != ({S_cache}, 3, 3)\")
+                raise ValueError(f"intrinsic shape {intr_np.shape} != ({S_cache}, 3, 3)")
 
             # 检查数值有效性
             for key in required_keys:
                 if not np.isfinite(data[key]).all():
                     nan_count = (~np.isfinite(data[key])).sum()
-                    logger.warning(f\"Pi3缓存中{key}包含{nan_count}个非有限值\")
+                    logger.warning(f"Pi3缓存中{key}包含{nan_count}个非有限值")
+
+            # 尝试根据 image_ids 与 transforms_info 对齐帧顺序，修复 Pi3 与检测的帧错位
+            image_ids_cache = data.get('image_ids')
+            if image_ids_cache is not None and transforms_info is not None:
+                try:
+                    image_ids_cache = np.asarray(image_ids_cache, dtype=int)
+                    if image_ids_cache.shape[0] != S_cache:
+                        raise ValueError(
+                            f"image_ids 长度({image_ids_cache.shape[0]})与缓存帧数({S_cache})不一致"
+                        )
+
+                    # 从 transforms_info 中获取期望顺序的 image_id（由 build_pi3_transforms 填充）
+                    desired_ids = []
+                    for t in transforms_info:
+                        img_id = getattr(t, "image_id", None)
+                        if img_id is None:
+                            raise ValueError("Pi3 transforms_info 缺少 image_id，无法对齐帧顺序")
+                        desired_ids.append(int(img_id))
+
+                    if len(desired_ids) != S:
+                        raise ValueError(
+                            f"Pi3 transforms_info 数量({len(desired_ids)})与当前图像数量({S})不一致"
+                        )
+
+                    # 为每个期望的 image_id 找到在缓存中的索引
+                    index_map: list[int] = []
+                    for img_id in desired_ids:
+                        matches = np.where(image_ids_cache == img_id)[0]
+                        if matches.size == 0:
+                            raise ValueError(
+                                f"在 Pi3 缓存中找不到 image_id={img_id}，请检查重建与检测是否使用相同图像集"
+                            )
+                        index_map.append(int(matches[0]))
+
+                    index_map_np = np.asarray(index_map, dtype=int)
+                    if np.unique(index_map_np).size != S:
+                        logger.warning(
+                            "Pi3 image_ids 对齐产生重复索引，保持原始顺序以避免错误重排"
+                        )
+                    else:
+                        depth_np = depth_np[index_map_np]
+                        world_np = world_np[index_map_np]
+                        extr_np = extr_np[index_map_np]
+                        intr_np = intr_np[index_map_np]
+                        # 可选字段也一起重排
+                        if 'depth_conf' in data:
+                            data['depth_conf'] = data['depth_conf'][index_map_np]
+                        if 'world_points_conf' in data:
+                            data['world_points_conf'] = data['world_points_conf'][index_map_np]
+                        logger.info(
+                            f"✓ 已根据 image_ids 对齐 Pi3 缓存帧顺序: {desired_ids}"
+                        )
+                except Exception as e:  # noqa: BLE001 - 对齐失败仅报警，不中断流程
+                    logger.warning(f"Pi3 image_ids 帧对齐失败，将使用原始缓存顺序: {e}")
 
             # 转换为torch张量并构建scene_data（使用 Pi3 分辨率）
             scene_data = {

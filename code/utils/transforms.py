@@ -184,7 +184,16 @@ def build_pi3_transforms(
     for img_path in image_paths:
         img = Image.open(img_path).convert("RGB")
         w, h = img.size
-        transforms.append(Pi3ImageTransform(w, h, TARGET_W, TARGET_H))
+        t = Pi3ImageTransform(w, h, TARGET_W, TARGET_H)
+
+        # 尝试从文件名解析数值 ID，便于与 Pi3 缓存中的 image_ids 对齐
+        try:
+            t.image_id = int(Path(img_path).stem)
+        except (ValueError, TypeError):
+            # 非纯数字文件名时，保留为 None，不强制要求
+            t.image_id = None
+
+        transforms.append(t)
 
     return transforms
 
