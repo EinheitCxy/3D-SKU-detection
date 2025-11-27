@@ -21,7 +21,7 @@ from .config import SKUMatchingConfig
 from .data_utils import extract_bboxes_from_detections
 from .point_utils import generate_points_from_bboxes
 from .geometry_3d import (
-    sample_3d_points_from_bbox, 
+    sample_3d_points_from_non_overlap_regions,
     project_3d_to_2d,
     find_best_matching_bbox_with_3d_validation,
     apply_uniqueness_constraint
@@ -221,9 +221,6 @@ def _process_single_ref_object(
         filtered_candidates.sort(key=lambda x: x['correspondence_ratio'], reverse=True)
         matches = filtered_candidates[:2]
 
-        for match in matches:
-            logger.debug(f"🧵 并行匹配: ref {ref_object_id} → target {match['target_obj_id']} (hit rate: {match['correspondence_ratio']:.2f} {match['matched_points']}/{match['total_points']})")
-        
         return matches, {
             'ref_object_id': ref_object_id,
             'valid_points': valid_points_count,
@@ -337,7 +334,7 @@ def find_correspondences_3d_projection(
             for candidate in candidate_paths:
                 if candidate.exists():
                     cache_path = candidate
-                    logger.info(f"✓ 找到Pi3缓存: {cache_path}")
+                    logger.info(f"找到Pi3缓存: {cache_path}")
                     break
 
             if cache_path is None:
@@ -348,7 +345,7 @@ def find_correspondences_3d_projection(
 
                 # 生成详细的错误信息
                 error_lines = [
-                    "❌ Pi3缓存文件不存在！已尝试以下位置：",
+                    "Pi3缓存文件不存在！已尝试以下位置：",
                     *[f"   {i+1}. {p}" for i, p in enumerate(candidate_paths)],
                     "",
                     "📋 请先运行3D重建生成缓存（推荐使用main.py交互模式）：",
@@ -422,7 +419,7 @@ def find_correspondences_3d_projection(
                         nan_count = (~np.isfinite(arr)).sum()
                         logger.warning(f"Pi3缓存中{key}包含{nan_count}个非有限值")
 
-                # 尝试根据 image_ids 与 transforms_info 对齐帧顺序，修复 Pi3 与检测的帧错位
+                # 方案2优化：使用预计算的帧对齐索引（避免运行时重复计算）
                 image_ids_cache = data.get("image_ids")
                 if image_ids_cache is not None and transforms_info is not None:
                     try:
@@ -447,15 +444,35 @@ def find_correspondences_3d_projection(
                                 f"Pi3 transforms_info 数量({len(desired_ids)})与当前图像数量({S})不一致"
                             )
 
-                        # 为每个期望的 image_id 找到在缓存中的索引
-                        index_map: list[int] = []
-                        for img_id in desired_ids:
-                            matches = np.where(image_ids_cache == img_id)[0]
-                            if matches.size == 0:
-                                raise ValueError(
-                                    f"在 Pi3 缓存中找不到 image_id={img_id}，请检查重建与检测是否使用相同图像集"
-                                )
-                            index_map.append(int(matches[0]))
+                        # 优先使用预计算的映射表（O(1)查找，替代原来的O(n) np.where）
+                        map_keys = data.get("frame_alignment_map_keys")
+                        map_values = data.get("frame_alignment_map_values")
+
+                        if map_keys is not None and map_values is not None:
+                            # 使用预计算的映射表（快速路径）
+                            id_to_frame_map = dict(zip(map_keys, map_values))
+                            index_map: list[int] = []
+
+                            for img_id in desired_ids:
+                                frame_idx = id_to_frame_map.get(img_id)
+                                if frame_idx is None:
+                                    raise ValueError(
+                                        f"在 Pi3 缓存中找不到 image_id={img_id}，请检查重建与检测是否使用相同图像集"
+                                    )
+                                index_map.append(int(frame_idx))
+
+                            logger.debug("使用预计算的帧对齐映射表（快速路径）")
+                        else:
+                            # 回退到原始方法（慢速路径，用于兼容旧缓存）
+                            logger.debug("缓存中无预计算映射表，使用传统方法对齐（较慢）")
+                            index_map: list[int] = []
+                            for img_id in desired_ids:
+                                matches = np.where(image_ids_cache == img_id)[0]
+                                if matches.size == 0:
+                                    raise ValueError(
+                                        f"在 Pi3 缓存中找不到 image_id={img_id}，请检查重建与检测是否使用相同图像集"
+                                    )
+                                index_map.append(int(matches[0]))
 
                         index_map_np = np.asarray(index_map, dtype=int)
                         if np.unique(index_map_np).size != S:
@@ -468,7 +485,7 @@ def find_correspondences_3d_projection(
                             extr_np = extr_np[index_map_np]
                             intr_np = intr_np[index_map_np]
                             logger.info(
-                                f"✓ 已根据 image_ids 对齐 Pi3 缓存帧顺序: {desired_ids}"
+                                f"已根据 image_ids 对齐 Pi3 缓存帧顺序: {desired_ids}"
                             )
                     except Exception as e:  # noqa: BLE001 - 对齐失败仅报警，不中断流程
                         logger.warning(f"Pi3 image_ids 帧对齐失败，将使用原始缓存顺序: {e}")
@@ -560,10 +577,10 @@ def find_correspondences_3d_projection(
             for ref_bbox_info in ref_bboxes:
                 ref_obj_id = ref_bbox_info['object_id']
                 
-                # 从参考图像的检出框采样3D点
+                # 从参考图像的检出框采样3D点（使用非重合区域）
                 other_ref_bboxes = [other['bbox'] for other in ref_bboxes if other['object_id'] != ref_obj_id]
-                points_3d = sample_3d_points_from_bbox(
-                    scene_data, reference_image_idx, ref_bbox_info['bbox'], 
+                points_3d = sample_3d_points_from_non_overlap_regions(
+                    scene_data, reference_image_idx, ref_bbox_info['bbox'],
                     ref_transform, config, other_ref_bboxes
                 )
                 
@@ -602,10 +619,43 @@ def find_correspondences_3d_projection(
                     bbox_info_copy = dict(bbox_info)
                     bbox_info_copy['bbox'] = vggt_bbox
                     target_bboxes_vggt.append(bbox_info_copy)
-                
-                # 找到最匹配的目标框
+
+                # 性能优化：预筛选候选框，只对Top-K个最有希望的框进行昂贵的3D验证
+                # 策略：先快速计算所有框的2D投影命中率，然后只对Top-K进行3D采样和验证
+                if len(target_bboxes_vggt) > config.max_3d_validation_candidates:
+                    # 快速计算所有框的2D投影命中率（仅GPU向量化操作，无3D采样）
+                    candidate_scores = []
+                    for idx, bbox_info in enumerate(target_bboxes_vggt):
+                        bbox = bbox_info['bbox']
+                        x1, y1, x2, y2 = bbox
+
+                        # 计算投影点落入框内的数量（GPU并行）
+                        points_in_bbox = (
+                            (projected_points[:, 0] >= x1) &
+                            (projected_points[:, 0] <= x2) &
+                            (projected_points[:, 1] >= y1) &
+                            (projected_points[:, 1] <= y2)
+                        ).sum().item()
+
+                        match_ratio = points_in_bbox / len(projected_points)
+                        candidate_scores.append((idx, match_ratio, bbox_info))
+
+                    # 按命中率降序排序，取Top-K
+                    candidate_scores.sort(key=lambda x: x[1], reverse=True)
+                    top_candidates = [item[2] for item in candidate_scores[:config.max_3d_validation_candidates]]
+
+                    logger.debug(
+                        f"3D预筛选: {len(target_bboxes_vggt)}个候选框 → {len(top_candidates)}个进入3D验证 "
+                        f"(Top-{len(top_candidates)}命中率: {[f'{s[1]:.2f}' for s in candidate_scores[:len(top_candidates)]]})"
+                    )
+
+                    target_bboxes_for_validation = top_candidates
+                else:
+                    target_bboxes_for_validation = target_bboxes_vggt
+
+                # 找到最匹配的目标框（仅对预筛选后的候选框进行昂贵的3D验证）
                 best_match = find_best_matching_bbox_with_3d_validation(
-                    projected_points, target_bboxes_vggt, config, 
+                    projected_points, target_bboxes_for_validation, config,
                     scene_data, target_img_idx, target_transform,
                     ref_3d_center, ref_depth_mean
                 )
@@ -644,25 +694,8 @@ def find_correspondences_3d_projection(
                     logger.info(f"3D match: ref {match['ref_obj_id']} → target {target_bbox_info['object_id']} (ratio: {match['match_ratio']:.1%})")
                 
                 correspondences[target_img_idx] = matched_objects
-            # DEBUG 聚合：每个 target 汇总（3D）
-            top_hit_ratio = 0.0
-            top_hit_ref = None
-            if 'final_matches' in locals() and final_matches:
-                for m in final_matches:
-                    r = float(m.get('match_ratio', 0.0))
-                    if r > top_hit_ratio:
-                        top_hit_ratio = r
-                        top_hit_ref = m.get('ref_obj_id')
-            logger.debug(
-                f"target={target_img_idx} matched_objs={len(final_matches) if 'final_matches' in locals() and final_matches else 0} "
-                f"skipped_low_overlap=0 top_hit={top_hit_ref}(hit={top_hit_ratio:.2f})"
-            )
-        
+
         matched_targets = len(correspondences)
-        matched_pairs = sum(len(v) for v in correspondences.values())
-        logger.debug(
-            f"ref={reference_image_idx} matched_targets={matched_targets} matched_pairs={matched_pairs}"
-        )
         logger.info(f"3D-2D projection complete. Found correspondences in {matched_targets} images.")
         return correspondences, points_per_object
         
@@ -921,24 +954,6 @@ def match_objects_by_correspondence(
             matched_objects.extend(matches)
             stats_list.append(stats)
     
-    # DEBUG 聚合：每个 target 的汇总
-    skipped_low_overlap = 0
-    for s in stats_list:
-        if not s.get('below_min_conf_points', False) and s.get('valid_points', 0) > 0 and s.get('produced_matches', 0) == 0 and s.get('num_below_threshold', 0) > 0:
-            skipped_low_overlap += 1
-
-    top_hit_ratio = 0.0
-    top_hit_ref = None
-    for m in matched_objects:
-        r = float(m.get('correspondence_ratio', 0.0))
-        if r > top_hit_ratio:
-            top_hit_ratio = r
-            top_hit_ref = m.get('object_id')
-    logger.debug(
-        f"target={target_image_idx} matched_objs={len(matched_objects)} skipped_low_overlap={skipped_low_overlap} "
-        f"top_hit={top_hit_ref}(hit={top_hit_ratio:.2f})"
-    )
-
     if len(matched_objects) > 0:
         logger.info(f"Finish matching objects between reference image {reference_image_idx} and target image {target_image_idx}")
     

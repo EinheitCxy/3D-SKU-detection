@@ -188,7 +188,7 @@ def _estimate_intrinsics_from_local_points(
                 # === 必要检查（硬性条件）===
                 # 1. 焦距必须为正
                 if fx <= 0 or fy <= 0:
-                    logger.warning(f"⚠️  Pi3 内参拟合失败 (batch={b}, view={n}): 焦距非正 (fx={fx:.1f}, fy={fy:.1f}) → 使用默认内参")
+                    logger.warning(f"Pi3 内参拟合失败 (batch={b}, view={n}): 焦距非正 (fx={fx:.1f}, fy={fy:.1f}) → 使用默认内参")
                     intrinsics[b, n] = default_K
                     continue
 
@@ -203,7 +203,7 @@ def _estimate_intrinsics_from_local_points(
                 RESIDUAL_THRESHOLD = 50.0  # 平均误差阈值（像素）
                 if max_residual > RESIDUAL_THRESHOLD:
                     logger.warning(
-                        f"⚠️  Pi3 内参拟合质量差 (batch={b}, view={n}):\n"
+                        f"Pi3 内参拟合质量差 (batch={b}, view={n}):\n"
                         f"   残差: u={residual_u:.1f}px, v={residual_v:.1f}px (阈值={RESIDUAL_THRESHOLD}px)\n"
                         f"   拟合结果: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}\n"
                         f"   → 使用默认内参 (fx={f_default:.1f}, cx={W/2:.1f}, cy={H/2:.1f})"
@@ -229,7 +229,7 @@ def _estimate_intrinsics_from_local_points(
 
                 if warnings:
                     logger.warning(
-                        f"⚠️  Pi3 内参拟合异常 (batch={b}, view={n})，但残差可接受 ({max_residual:.1f}px):\n" +
+                        f"Pi3 内参拟合异常 (batch={b}, view={n})，但残差可接受 ({max_residual:.1f}px):\n" +
                         "\n".join(f"   - {w}" for w in warnings) +
                         f"\n   → 仍采用拟合结果"
                     )
@@ -375,6 +375,24 @@ def _save_predictions_npz(
     # 标注来源模型，便于下游判断
     save_kwargs["source_model"] = np.array(["pi3"], dtype=object)
 
+    # 方案2优化：预计算帧对齐索引，避免运行时重复计算
+    if image_ids is not None:
+        image_ids_array = np.asarray(image_ids, dtype=np.int32)
+        # 保存排序后的索引映射（用于快速查找）
+        sorted_indices = np.argsort(image_ids_array)
+        save_kwargs["frame_alignment_sorted_indices"] = sorted_indices
+
+        # 保存逆映射（从 image_id 到帧索引的映射字典）
+        # 格式: {image_id: frame_index}
+        id_to_frame_map = {int(img_id): int(idx) for idx, img_id in enumerate(image_ids_array)}
+        # 将字典转换为两个数组保存（npz不直接支持字典）
+        map_keys = np.array(list(id_to_frame_map.keys()), dtype=np.int32)
+        map_values = np.array(list(id_to_frame_map.values()), dtype=np.int32)
+        save_kwargs["frame_alignment_map_keys"] = map_keys
+        save_kwargs["frame_alignment_map_values"] = map_values
+
+        logger.info(f"已预计算帧对齐索引: {len(image_ids)} 帧 (image_ids: {image_ids[:5]}...)")
+
     np.savez_compressed(cache_path, **save_kwargs)
     logger.info(f"保存Pi3预测缓存: {cache_path}")
     return cache_path
@@ -486,33 +504,6 @@ class PI33DReconstructor(ReconstructorBase):
         # if 'local_points' in pred:
         #     del pred['local_points']
 
-        # 验证Pi3坐标系一致性
-        if "local_points" in pred and "points" in pred and "camera_poses" in pred:
-            try:
-                # 采样验证点（batch=0, view=0, 中心位置）
-                b, n, h, w = 0, 0, pred["local_points"].shape[2] // 2, pred["local_points"].shape[3] // 2
-                local_pt = pred["local_points"][b, n, h, w]  # (3,) 相机坐标系
-                world_pt = pred["points"][b, n, h, w]  # (3,) 世界坐标系
-                c2w = pred["camera_poses"][b, n]  # (4, 4) Camera-to-World
-
-                # 验证: world_pt ≈ c2w @ [local_pt, 1]
-                local_pt_homo = torch.cat([local_pt, torch.ones(1, device=local_pt.device)])
-                world_pt_computed = (c2w @ local_pt_homo)[:3]
-                error = torch.norm(world_pt - world_pt_computed).item()
-
-                if error > 0.1:
-                    logger.warning(
-                        f"⚠️  Pi3坐标系验证失败! 误差: {error:.4f}m\n"
-                        f"   local_pt: {local_pt.cpu().numpy()}\n"
-                        f"   world_pt (实际): {world_pt.cpu().numpy()}\n"
-                        f"   world_pt (计算): {world_pt_computed.cpu().numpy()}\n"
-                        f"   这可能导致3D匹配结果不准确"
-                    )
-                else:
-                    logger.info(f"✓ Pi3坐标系验证通过 (误差: {error:.6f}m)")
-            except Exception as e:
-                logger.warning(f"Pi3坐标系验证失败: {e}")
-
         # 存储原始图像 (BNHWC，0-1范围) 以兼容 Pi3 viewer
         pred["images"] = x.permute(0, 1, 3, 4, 2)  # BNCHW->BNHWC（0-1范围）
 
@@ -521,9 +512,9 @@ class PI33DReconstructor(ReconstructorBase):
         logger.info(f"Pi3 推理完成，用时 {elapsed:.2f}s")
         logger.info(f"返回的键: {list(pred.keys())}")
         if 'camera_poses' not in pred:
-            logger.warning("⚠️  Pi3 模型输出缺少 'camera_poses'，相机将不会显示在 GLB 中")
+            logger.warning("Pi3 模型输出缺少 'camera_poses'，相机将不会显示在 GLB 中")
         else:
-            logger.info(f"✓ camera_poses 形状: {pred['camera_poses'].shape}")
+            logger.info(f"camera_poses 形状: {pred['camera_poses'].shape}")
         return pred  # tensors（带batch维）
 
     # ---- 导出 ----

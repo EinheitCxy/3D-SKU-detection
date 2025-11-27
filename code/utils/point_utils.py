@@ -134,44 +134,34 @@ def generate_points_from_bboxes(bboxes: List[Dict], image_shape: Tuple[int, int]
     Returns:
         tuple: (查询点张量, 物体点映射字典)
     """
-    logger.info(f"Generating query points from {len(bboxes)} bounding boxes...")
-    
-    # 分析检出框重合情况
-    if config.enable_non_overlap_sampling and len(bboxes) > 1:
+    logger.info(f"Generating query points from {len(bboxes)} bounding boxes (使用非重合区域采样)...")
+
+    # 分析检出框重合情况（仅用于统计）
+    if len(bboxes) > 1:
         overlap_stats = analyze_bbox_overlaps(bboxes, config.overlap_threshold)
-        use_non_overlap_sampling = len(overlap_stats['overlapping_boxes']) > 0
-        
-        if use_non_overlap_sampling:
-            logger.info(f"检测到 {len(overlap_stats['overlapping_boxes'])} 个检出框有重合，启用非重合区域采样")
+        if len(overlap_stats['overlapping_boxes']) > 0:
+            logger.info(f"检测到 {len(overlap_stats['overlapping_boxes'])} 个检出框有重合")
         else:
-            logger.info("检出框无重合，使用传统采样方式")
-    else:
-        use_non_overlap_sampling = False
-        logger.info("非重合区域采样未启用，使用传统采样方式")
-    
+            logger.info("检出框无重合")
+
     all_query_points = []
     points_per_object = {}
     height, width = image_shape
     total_points = 0
-    
+
     try:
         for bbox_info in bboxes:
             object_id = bbox_info['object_id']
-            
-            if use_non_overlap_sampling:
-                # 使用非重合区域采样
-                other_bboxes = [other['bbox'] for other in bboxes if other['object_id'] != object_id]
-                non_overlap_regions = compute_non_overlap_regions(
-                    bbox_info['bbox'], other_bboxes, config.overlap_threshold
-                )
-                
-                points = generate_points_from_non_overlap_regions(
-                    bbox_info, non_overlap_regions, image_shape, config
-                )
-                
-            else:
-                # 传统全框采样
-                points = generate_points_from_single_bbox(bbox_info, image_shape, config)
+
+            # 始终使用非重合区域采样
+            other_bboxes = [other['bbox'] for other in bboxes if other['object_id'] != object_id]
+            non_overlap_regions = compute_non_overlap_regions(
+                bbox_info['bbox'], other_bboxes, config.overlap_threshold
+            )
+
+            points = generate_points_from_non_overlap_regions(
+                bbox_info, non_overlap_regions, image_shape, config
+            )
             
             if len(points) == 0:
                 logger.warning(f"Invalid bbox or no points generated for object {object_id}, skipping")
@@ -208,9 +198,8 @@ def generate_points_from_bboxes(bboxes: List[Dict], image_shape: Tuple[int, int]
         # 一次性转换为torch tensor，减少内存碎片
         all_points_array = np.concatenate(all_query_points, axis=0)
         query_points_tensor = torch.from_numpy(all_points_array).float()
-        
-        sampling_method = "非重合区域采样" if use_non_overlap_sampling else "传统采样"
-        logger.info(f"Generated {total_points} query points from {len(points_per_object)} objects (使用{sampling_method})")
+
+        logger.info(f"Generated {total_points} query points from {len(points_per_object)} objects (使用非重合区域采样)")
         return query_points_tensor, points_per_object
         
     except (ValueError, KeyError, IndexError) as e:

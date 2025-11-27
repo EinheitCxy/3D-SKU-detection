@@ -228,8 +228,11 @@ class SKUMatchingConfig:
     max_3d_distance: float = 0.8                 # 最大3D空间距离阈值(米)
     max_depth_difference: float = 2            # 最大深度差异容忍(米)
     min_depth_consistency: float = 0.15          # 最小深度一致性阈值（降低以减少过滤）
-    depth_consistency_threshold: float = 0.5     # 深度一致性阈值(米)，用于sample_3d_points_from_bbox
-    
+    depth_consistency_threshold: float = 0.5     # 深度一致性阈值(米)，用于3D点采样深度验证
+
+    # === 3D验证性能优化参数 ===
+    max_3d_validation_candidates: int = 5        # 最大3D验证候选框数量（预筛选Top-K，减少昂贵的3D采样）
+
     # === 系统配置参数 ===
     device: str = "auto"                         # 计算设备选择
     dtype: torch.dtype = None                    # 数据类型
@@ -349,7 +352,53 @@ class SKUMatchingConfig:
             'seed': self.seed
         }
 
+    @classmethod
+    def for_point_tracking(cls, **overrides) -> 'SKUMatchingConfig':
+        """创建点追踪算法的默认配置（仅覆盖算法特定参数，其他使用类默认值）
 
+        Args:
+            **overrides: 覆盖默认值的参数
+
+        Returns:
+            配置好的SKUMatchingConfig实例
+        """
+        # 仅覆盖点追踪算法特定的参数
+        algorithm_specific = {
+            "max_points_per_bbox": 80,
+            "max_bboxes": 200,
+            "max_total_points": 20000,
+            "min_confident_points": 7,
+            "enable_3d_projection_matching": False
+        }
+        algorithm_specific.update(overrides)
+        return cls(**algorithm_specific)
+
+    @classmethod
+    def for_3d_projection(cls, **overrides) -> 'SKUMatchingConfig':
+        """创建3D投影算法的默认配置（仅覆盖算法特定参数，其他使用类默认值）
+
+        Args:
+            **overrides: 覆盖默认值的参数
+
+        Returns:
+            配置好的SKUMatchingConfig实例
+        """
+        # 仅覆盖3D投影算法特定的参数
+        algorithm_specific = {
+            "max_bboxes": 500,
+            "max_total_points": 100000,
+            "min_confident_points": 5,
+            "output_dir": "output_3d_projection",
+            "enable_3d_projection_matching": True,
+            "min_depth": 0.1,
+            "max_depth": 3.0,
+            "max_depth_difference": 1.8
+        }
+        algorithm_specific.update(overrides)
+        return cls(**algorithm_specific)
+
+
+# 向后兼容：保留旧的字典格式（从类方法生成）
 DEFAULT_POINT_TRACKING_CONFIG = {
     "max_points_per_bbox": 80,
     "max_bboxes": 200,
@@ -365,17 +414,17 @@ DEFAULT_3D_PROJECTION_CONFIG = {
     "max_bboxes": 500,
     "max_total_points": 100000,
     "confidence_threshold": 0.5,
-    "min_confident_points": 5,                   # 降低以提高召回率
+    "min_confident_points": 5,
     "min_bbox_area": 10.0,
     "output_dir": "output_3d_projection",
     "enable_3d_projection_matching": True,
-    "depth_confidence_threshold": 0.05,          # 降低以接受更多点
-    "point_3d_confidence_threshold": 0.05,       # 降低以接受更多点
+    "depth_confidence_threshold": 0.05,
+    "point_3d_confidence_threshold": 0.05,
     "min_depth": 0.1,
-    "max_depth": 3.0,                            # 基于场景深度2.9米
+    "max_depth": 3.0,
     "max_3d_points_per_bbox": 70,
-    "projection_match_threshold": 0.3,           # 降低以提高召回率
-    "max_3d_distance": 0.8,                      # 场景宽度的33%
-    "max_depth_difference": 1.8,                 # 场景深度的62%
-    "min_depth_consistency": 0.15                # 降低以减少过滤
+    "projection_match_threshold": 0.3,
+    "max_3d_distance": 0.8,
+    "max_depth_difference": 1.8,
+    "min_depth_consistency": 0.15
 }

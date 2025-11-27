@@ -54,96 +54,130 @@ def _get_overlap_region(bbox1: List[float], bbox2: List[float]) -> List[float]:
     return [x1_overlap, y1_overlap, x2_overlap, y2_overlap]
 
 
-def compute_non_overlap_regions(bbox: List[float], other_bboxes: List[List[float]], 
-                               min_overlap_threshold: float = 0.1) -> List[List[float]]:
-    """计算一个检出框的非重合区域"""
-    x1, y1, x2, y2 = bbox
-    
-    # 收集所有重合区域
-    overlap_regions = []
-    for other_bbox in other_bboxes:
-        overlap_ratio = calculate_bbox_overlap(bbox, other_bbox)
-        if overlap_ratio > min_overlap_threshold:
-            overlap_region = _get_overlap_region(bbox, other_bbox)
-            if overlap_region[0] < overlap_region[2] and overlap_region[1] < overlap_region[3]:
-                overlap_regions.append(overlap_region)
-    
-    if not overlap_regions:
-        # 没有重合，返回原框
-        return [bbox]
-    
-    # 使用简单的区域分割策略
-    non_overlap_regions = []
-    
-    # 策略1：如果重合区域太多或太复杂，采用边缘采样
-    if len(overlap_regions) > 3:
-        # 只在边缘区域采样，避免复杂的区域分割
-        edge_width = min(20, (x2 - x1) * 0.2, (y2 - y1) * 0.2)  # 边缘宽度
-        
-        # 上边缘
-        if y1 + edge_width < y2:
-            non_overlap_regions.append([x1, y1, x2, y1 + edge_width])
-        
-        # 下边缘
-        if y2 - edge_width > y1:
-            non_overlap_regions.append([x1, y2 - edge_width, x2, y2])
-            
-        # 左边缘（排除已经包含的角落）
-        if x1 + edge_width < x2:
-            non_overlap_regions.append([x1, y1 + edge_width, x1 + edge_width, y2 - edge_width])
-            
-        # 右边缘（排除已经包含的角落）
-        if x2 - edge_width > x1:
-            non_overlap_regions.append([x2 - edge_width, y1 + edge_width, x2, y2 - edge_width])
-    
-    else:
-        # 策略2：简单区域分割
-        center_x = (x1 + x2) / 2
-        center_y = (y1 + y2) / 2
-        
-        # 四个象限
-        quadrants = [
-            [x1, y1, center_x, center_y],  # 左上
-            [center_x, y1, x2, center_y],  # 右上
-            [x1, center_y, center_x, y2],  # 左下
-            [center_x, center_y, x2, y2]   # 右下
+def _subtract_bbox_from_bbox(target_bbox: List[float], subtract_bbox: List[float]) -> List[List[float]]:
+    """从目标bbox中减去重叠bbox，返回非重叠的矩形区域（Smart矩形分割算法）
+
+    核心思想：将目标bbox分割为最多4个非重叠矩形（上、下、左、右）。
+    这个算法比象限分割更精确，能最大化保留非重叠区域。
+
+    Args:
+        target_bbox: 目标bbox [x1, y1, x2, y2]
+        subtract_bbox: 要减去的bbox [x1, y1, x2, y2]
+
+    Returns:
+        非重叠区域列表（0-4个矩形）
+
+    示例：
+        target = [0, 0, 100, 100]
+        subtract = [50, 50, 150, 150]  # 右下角重叠
+        结果 = [
+            [0, 0, 100, 50],   # 上方区域
+            [0, 50, 50, 100]   # 左侧区域
         ]
-        
-        # 检查每个象限是否与重合区域有显著重合
-        for quad in quadrants:
-            has_significant_overlap = False
-            for overlap_region in overlap_regions:
-                quad_overlap_ratio = calculate_bbox_overlap(quad, overlap_region)
-                if quad_overlap_ratio > 0.5:  # 如果象限与重合区域重合超过50%
-                    has_significant_overlap = True
-                    break
-            
-            if not has_significant_overlap:
-                # 确保象限有效（面积 > 0）
-                if quad[2] > quad[0] and quad[3] > quad[1]:
-                    non_overlap_regions.append(quad)
-    
+    """
+    tx1, ty1, tx2, ty2 = target_bbox
+    sx1, sy1, sx2, sy2 = subtract_bbox
+
+    # 计算交集区域
+    ix1 = max(tx1, sx1)
+    iy1 = max(ty1, sy1)
+    ix2 = min(tx2, sx2)
+    iy2 = min(ty2, sy2)
+
+    # 如果没有交集，返回原始bbox
+    if ix1 >= ix2 or iy1 >= iy2:
+        return [target_bbox]
+
+    non_overlap_regions = []
+
+    # 上方区域（如果存在）
+    if ty1 < iy1:
+        non_overlap_regions.append([tx1, ty1, tx2, iy1])
+
+    # 下方区域（如果存在）
+    if iy2 < ty2:
+        non_overlap_regions.append([tx1, iy2, tx2, ty2])
+
+    # 左侧区域（如果存在，仅覆盖交集的高度范围）
+    if tx1 < ix1:
+        non_overlap_regions.append([tx1, iy1, ix1, iy2])
+
+    # 右侧区域（如果存在，仅覆盖交集的高度范围）
+    if ix2 < tx2:
+        non_overlap_regions.append([ix2, iy1, tx2, iy2])
+
+    return non_overlap_regions
+
+
+def compute_non_overlap_regions(bbox: List[float], other_bboxes: List[List[float]],
+                               min_overlap_threshold: float = 0.1) -> List[List[float]]:
+    """计算一个检出框的非重合区域（Smart矩形分割算法）
+
+    使用矩形分割算法，逐步减去重叠区域，保留非重叠部分。
+    相比旧版本的象限分割，这个算法：
+    1. 更精确：完全保留所有非重叠区域，没有浪费
+    2. 更通用：可以处理任意复杂的重叠情况
+    3. 更高效：时间复杂度O(n)，n为other_bboxes数量
+
+    Args:
+        bbox: 目标bbox [x1, y1, x2, y2]
+        other_bboxes: 其他bboxes列表
+        min_overlap_threshold: 最小重叠阈值（IoU），低于此值的重叠将被忽略
+
+    Returns:
+        非重合区域列表（原始坐标系）
+
+    注意：
+        - 输入的bbox应该在同一坐标系中（如果需要transform，调用方负责转换）
+        - 返回的区域已过滤掉面积过小的部分（<100像素²）
+    """
+    if not other_bboxes:
+        # 没有其他bbox，整个目标bbox就是非重合区域
+        return [bbox]
+
+    # 初始化：当前非重叠区域列表
+    current_regions = [bbox]
+
+    # 逐个减去重叠的other_bboxes
+    for other_bbox in other_bboxes:
+        # 检查是否有显著重叠
+        overlap_ratio = calculate_bbox_overlap(bbox, other_bbox)
+        if overlap_ratio <= min_overlap_threshold:
+            continue  # 重叠不显著，跳过
+
+        new_regions = []
+        for region in current_regions:
+            # 从当前区域减去other_bbox
+            subtracted = _subtract_bbox_from_bbox(region, other_bbox)
+            new_regions.extend(subtracted)
+        current_regions = new_regions
+
+        # 如果所有区域都被减完了，提前退出
+        if not current_regions:
+            break
+
     # 过滤掉面积太小的区域
-    min_area = 100  # 最小面积阈值
+    min_area = 100  # 最小面积阈值（像素²）
     valid_regions = []
-    for region in non_overlap_regions:
-        area = (region[2] - region[0]) * (region[3] - region[1])
+    for region in current_regions:
+        x1, y1, x2, y2 = region
+        area = (x2 - x1) * (y2 - y1)
         if area >= min_area:
             valid_regions.append(region)
-    
-    # 如果所有区域都被过滤掉了，返回原框的中心区域
+
+    # 如果所有区域都被过滤掉了，返回原框的中心区域作为降级策略
     if not valid_regions:
+        x1, y1, x2, y2 = bbox
         center_x = (x1 + x2) / 2
         center_y = (y1 + y2) / 2
-        center_size = min((x2 - x1) * 0.3, (y2 - y1) * 0.3)
+        # 中心区域大小：取bbox较小边的30%，但不超过50像素
+        center_size = min((x2 - x1) * 0.3, (y2 - y1) * 0.3, 50)
         center_region = [
             center_x - center_size/2, center_y - center_size/2,
             center_x + center_size/2, center_y + center_size/2
         ]
         valid_regions = [center_region]
-        
-        logger.debug(f"所有区域被过滤，使用中心区域: {center_region}")
-    
+
     return valid_regions
 
 

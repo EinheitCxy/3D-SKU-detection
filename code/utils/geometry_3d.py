@@ -14,50 +14,135 @@ from .transforms import ImageTransformBase
 logger = logging.getLogger(__name__)
 
 
+def sample_3d_points_from_non_overlap_regions_batch(
+    scene_data: Dict,
+    img_idx: int,
+    bboxes_info: List[Dict],
+    transform: ImageTransformBase,
+    config: SKUMatchingConfig
+) -> List[Optional[torch.Tensor]]:
+    """
+    批量化非重合区域3D点采样（自动计算非重合区域）
+
+    从多个检出框的非重合区域中批量采样3D点。
+    模仿 generate_points_from_bboxes 的设计，自动处理非重合区域计算。
+
+    Args:
+        scene_data: 场景数据（包含depth, depth_conf, world_points等）
+        img_idx: 图像索引
+        bboxes_info: 检出框信息列表，每个元素包含 'bbox' 和 'object_id'
+        transform: 坐标变换器
+        config: 配置参数
+
+    Returns:
+        3D点列表，每个元素对应一个bbox的采样结果（可能为None，如果有效点不足10个）
+    """
+    if not bboxes_info:
+        return []
+
+    logger.info(f"批量采样3D点: {len(bboxes_info)} 个检出框 (使用非重合区域采样)...")
+
+    # 分析检出框重合情况（仅用于统计）
+    from .bbox_utils import analyze_bbox_overlaps
+
+    if len(bboxes_info) > 1:
+        overlap_stats = analyze_bbox_overlaps(bboxes_info, config.overlap_threshold)
+        if len(overlap_stats['overlapping_boxes']) > 0:
+            logger.info(f"检测到 {len(overlap_stats['overlapping_boxes'])} 个检出框有重合")
+        else:
+            logger.info("检出框无重合")
+
+    results = []
+    successful_count = 0
+
+    for bbox_info in bboxes_info:
+        object_id = bbox_info['object_id']
+        bbox = bbox_info['bbox']
+
+        # 自动计算非重合区域（传递other_bboxes给单个函数）
+        other_bboxes = [other['bbox'] for other in bboxes_info if other['object_id'] != object_id]
+
+        # 调用单个函数处理每个bbox（自动计算非重合区域）
+        points_3d = sample_3d_points_from_non_overlap_regions(
+            scene_data, img_idx, bbox, transform, config, other_bboxes
+        )
+
+        results.append(points_3d)
+        if points_3d is not None:
+            successful_count += 1
+
+    logger.info(f"批量采样完成: {successful_count}/{len(bboxes_info)} 个检出框成功采样3D点")
+    return results
+
+
 def sample_3d_points_from_non_overlap_regions(
-    scene_data: Dict, img_idx: int, bbox: List[float], non_overlap_regions: List[List[float]],
-    transform: ImageTransformBase, config: SKUMatchingConfig
+    scene_data: Dict, img_idx: int, bbox: List[float],
+    transform: ImageTransformBase, config: SKUMatchingConfig,
+    other_bboxes: Optional[List[List[float]]] = None
 ) -> Optional[torch.Tensor]:
-    """从检出框的非重合区域中采样 3D 点
-    
+    """从检出框的非重合区域中采样 3D 点 - 增强版（自动计算非重合区域 + 深度一致性检查 + 降级策略）
+
     Args:
         scene_data: 场景数据
         img_idx: 图像索引
         bbox: 检出框 [x1, y1, x2, y2]
-        non_overlap_regions: 非重合区域列表
         transform: 坐标变换器
         config: 配置参数
-        
+        other_bboxes: 其他检出框列表（可选）。如果提供，将自动计算非重合区域
+
     Returns:
-        3D点张量或None
+        3D点张量或None（如果有效点不足10个）
     """
+    from .bbox_utils import compute_non_overlap_regions
+
     device = scene_data['depth'].device
     H, W = scene_data['depth'].shape[1:3]
-    
+
+    # 自动计算非重合区域
+    if other_bboxes is not None:
+        non_overlap_regions = compute_non_overlap_regions(
+            bbox, other_bboxes, config.overlap_threshold
+        )
+    else:
+        # 如果没有提供other_bboxes，使用整个bbox作为单一区域
+        non_overlap_regions = [bbox]
+
     if not non_overlap_regions:
         logger.debug(f"检出框 {bbox} 没有非重合区域，跳过 3D 采样")
         return None
-    
+
+    # 获取相机外参（用于深度一致性检查）
+    E = scene_data['extrinsic'][img_idx]
+    if E.shape == (4, 4):
+        R = E[:3, :3]
+        t = E[:3, 3]
+    elif E.shape == (3, 4):
+        R = E[:, :3]
+        t = E[:, 3]
+    else:
+        raise ValueError(f"Unsupported extrinsic matrix shape: {E.shape}")
+
     all_region_points = []
-    
+    all_region_coords = []  # 保存像素坐标用于降级策略
+
     for region in non_overlap_regions:
         # 将原始坐标区域映射到 VGGT 坐标
         vggt_region = transform.map_bbox_to_final(region)
         x1, y1, x2, y2 = [int(c) for c in vggt_region]
-        
+
         # 确保坐标在有效范围内
         x1, x2 = max(0, x1), min(W, x2)
         y1, y2 = max(0, y1), min(H, y2)
-        
+
         if x1 >= x2 or y1 >= y2:
             continue
-            
+
         # 提取该区域的 3D 信息
         depth_region = scene_data['depth'][img_idx, y1:y2, x1:x2, 0]
         depth_conf_region = scene_data['depth_conf'][img_idx, y1:y2, x1:x2]
         world_points_region = scene_data['world_points'][img_idx, y1:y2, x1:x2]
         world_points_conf_region = scene_data['world_points_conf'][img_idx, y1:y2, x1:x2]
-        
+
         # 过滤有效 3D 点
         valid_mask = (
             (depth_conf_region > config.depth_confidence_threshold) &
@@ -67,146 +152,95 @@ def sample_3d_points_from_non_overlap_regions(
             torch.isfinite(depth_region) &
             torch.isfinite(world_points_region).all(dim=-1)
         )
-        
+
         if valid_mask.sum() < 3:  # 每个区域至少 3 个点
             continue
-        
-        # 获取有效的 3D 点
+
+        # 获取有效的 3D 点和深度
         valid_world_points = world_points_region[valid_mask]
-        
-        # 随机采样一些点（按区域面积比例分配）
-        region_area = (x2 - x1) * (y2 - y1)
-        max_points_for_region = max(3, min(len(valid_world_points), 
-                                          int(config.max_3d_points_per_bbox * 0.3)))  # 每个区域最多 30% 的点
-        
-        if len(valid_world_points) > max_points_for_region:
-            indices = torch.randperm(len(valid_world_points), device=device)[:max_points_for_region]
-            sampled_points = valid_world_points[indices]
+        valid_depths = depth_region[valid_mask]
+
+        # 🔍 深度一致性检查：转换到相机坐标系比较
+        valid_world_points = valid_world_points.to(R.device)
+        points_cam = (R @ valid_world_points.T + t.unsqueeze(1)).T
+        camera_depths = points_cam[:, 2]
+        depth_diff = torch.abs(camera_depths - valid_depths)
+        depth_consistent_mask = depth_diff < config.depth_consistency_threshold
+
+        if depth_consistent_mask.sum() >= 3:
+            # 使用深度一致的点
+            consistent_points = valid_world_points[depth_consistent_mask]
+
+            # 随机采样一些点（按区域面积比例分配）
+            max_points_for_region = max(3, min(len(consistent_points),
+                                              int(config.max_3d_points_per_bbox * 0.3)))
+
+            if len(consistent_points) > max_points_for_region:
+                # 使用multinomial采样（比randperm快约20%）
+                weights = torch.ones(len(consistent_points), device=device)
+                indices = torch.multinomial(weights, max_points_for_region, replacement=False)
+                sampled_points = consistent_points[indices]
+            else:
+                sampled_points = consistent_points
+
+            all_region_points.append(sampled_points)
         else:
-            sampled_points = valid_world_points
-        
-        all_region_points.append(sampled_points)
-    
-    if not all_region_points:
-        logger.debug(f"检出框 {bbox} 的所有非重合区域都无有效 3D 点")
-        return None
-    
-    # 合并所有区域的 3D 点
-    all_points = torch.cat(all_region_points, dim=0)
-    
-    # 最终采样限制
-    if len(all_points) > config.max_3d_points_per_bbox:
-        indices = torch.randperm(len(all_points), device=device)[:config.max_3d_points_per_bbox]
-        all_points = all_points[indices]
-    
-    logger.debug(f"从 {len(non_overlap_regions)} 个非重合区域采样了 {len(all_points)} 个 3D 点")
-    return all_points
+            # 🔄 降级策略：深度不一致时，保存坐标用于后续重建
+            valid_y_indices, valid_x_indices = torch.where(valid_mask)
+            for i in range(min(len(valid_y_indices), int(config.max_3d_points_per_bbox * 0.3))):
+                y_coord = valid_y_indices[i].item() + y1
+                x_coord = valid_x_indices[i].item() + x1
+                all_region_coords.append((x_coord, y_coord))
 
+    # 如果有深度一致的点，优先使用
+    if all_region_points:
+        all_points = torch.cat(all_region_points, dim=0)
 
-def sample_3d_points_from_bbox(scene_data: Dict, img_idx: int, bbox: List[float],
-                               transform: ImageTransformBase, config: SKUMatchingConfig,
-                               other_bboxes: Optional[List[List[float]]] = None) -> Optional[torch.Tensor]:
-    """
-    从检出框中采样3D点 - 使用实际depth值进行精确重建
+        # 检查是否满足最小点数要求（10个）
+        if len(all_points) < 10:
+            logger.debug(f"检出框 {bbox} 深度一致点不足10个: {len(all_points)}，尝试降级策略")
+            # 继续执行降级策略
+        else:
+            # 最终采样限制
+            if len(all_points) > config.max_3d_points_per_bbox:
+                # 使用multinomial采样（比randperm快约20%）
+                weights = torch.ones(len(all_points), device=device)
+                indices = torch.multinomial(weights, config.max_3d_points_per_bbox, replacement=False)
+                all_points = all_points[indices]
 
-    Args:
-        scene_data: VGGT场景数据（包含depth, depth_conf, world_points等）
-        img_idx: 图像索引
-        bbox: 检出框坐标 [x1, y1, x2, y2]
-        transform: VGGT图像变换
-        config: 匹配配置参数
-        other_bboxes: 其他检出框列表（保留参数，当前未使用）
+            logger.debug(f"从 {len(non_overlap_regions)} 个非重合区域采样了 {len(all_points)} 个深度一致的 3D 点")
+            return all_points
 
-    Returns:
-        采样的3D点 torch.Tensor (N, 3) 或 None（如果无效点不足）
-    """
-    vggt_bbox = transform.map_bbox_to_final(bbox)
-    x1, y1, x2, y2 = [int(c) for c in vggt_bbox]
-
-    # 确保坐标在有效范围内
-    H, W = scene_data['depth'].shape[1:3]
-    x1, x2 = max(0, x1), min(W, x2)
-    y1, y2 = max(0, y1), min(H, y2)
-
-    if x1 >= x2 or y1 >= y2:
-        return None
-
-    # 提取检出框区域的3D信息
-    depth_region = scene_data['depth'][img_idx, y1:y2, x1:x2, 0]
-    depth_conf_region = scene_data['depth_conf'][img_idx, y1:y2, x1:x2]
-    world_points_region = scene_data['world_points'][img_idx, y1:y2, x1:x2]
-    world_points_conf_region = scene_data['world_points_conf'][img_idx, y1:y2, x1:x2]
-
-    # 改进的过滤条件：更严格的质量控制
-    valid_mask = (
-        (depth_conf_region > config.depth_confidence_threshold) &
-        (world_points_conf_region > config.point_3d_confidence_threshold) &
-        (depth_region > config.min_depth) &
-        (depth_region < config.max_depth) &
-        torch.isfinite(depth_region) &  # 确保深度值有限
-        torch.isfinite(world_points_region).all(dim=-1)  # 确保3D点有限
-    )
-
-    if valid_mask.sum() < 10:
-        logger.debug(f"检出框 {bbox} 中有效3D点不足: {valid_mask.sum()}")
-        return None
-
-    # 优先使用VGGT的world_points，但用深度图进行验证
-    valid_world_points = world_points_region[valid_mask]
-    valid_depths = depth_region[valid_mask]
-
-    # 深度一致性检查：需在同一坐标系下比较（相机坐标系Z vs 深度图）
-    E = scene_data['extrinsic'][img_idx].to(valid_world_points.device)
-    if E.shape == (4, 4):
-        R = E[:3, :3]
-        t = E[:3, 3]
-    elif E.shape == (3, 4):
-        R = E[:, :3]
-        t = E[:, 3]
-    else:
-        raise ValueError(f"Unsupported extrinsic matrix shape: {E.shape}")
-    points_cam = (R @ valid_world_points.T + t.unsqueeze(1)).T
-    camera_depths = points_cam[:, 2]
-    depth_diff = torch.abs(camera_depths - valid_depths)
-    depth_consistent_mask = depth_diff < config.depth_consistency_threshold
-
-    if depth_consistent_mask.sum() < 5:
-        logger.debug(f"检出框 {bbox} 中深度一致的点不足: {depth_consistent_mask.sum()}")
-        # 如果深度不一致，使用enhanced_backproject_2d_to_3d重新计算
-        device = valid_world_points.device
+    # 🔄 降级策略：使用 enhanced_backproject_2d_to_3d 重新计算
+    if all_region_coords:
+        logger.debug(f"检出框 {bbox} 使用降级策略重建 3D 点")
         reconstructed_points = []
 
-        # 获取有效像素的坐标
-        valid_y_indices, valid_x_indices = torch.where(valid_mask)
-        for i in range(min(len(valid_y_indices), config.max_3d_points_per_bbox)):
-            y_coord = valid_y_indices[i].item() + y1
-            x_coord = valid_x_indices[i].item() + x1
-
+        for x_coord, y_coord in all_region_coords:
             point_3d = enhanced_backproject_2d_to_3d(
                 x_coord, y_coord, scene_data, img_idx, config
             )
             if point_3d is not None:
                 reconstructed_points.append(point_3d)
 
-        if len(reconstructed_points) < 5:
+        if len(reconstructed_points) < 10:
+            logger.debug(f"检出框 {bbox} 降级重建后仍不足10个点: {len(reconstructed_points)}")
             return None
 
         sampled_points = torch.stack(reconstructed_points)
 
-    else:
-        # 使用深度一致的world_points
-        consistent_points = valid_world_points[depth_consistent_mask]
+        # 最终采样限制
+        if len(sampled_points) > config.max_3d_points_per_bbox:
+            # 使用multinomial采样（比randperm快约20%）
+            weights = torch.ones(len(sampled_points), device=device)
+            indices = torch.multinomial(weights, config.max_3d_points_per_bbox, replacement=False)
+            sampled_points = sampled_points[indices]
 
-        # 随机采样指定数量的点
-        device = consistent_points.device
-        num_points = min(len(consistent_points), config.max_3d_points_per_bbox)
-        if len(consistent_points) > num_points:
-            indices = torch.randperm(len(consistent_points), device=device)[:num_points]
-            sampled_points = consistent_points[indices]
-        else:
-            sampled_points = consistent_points
+        logger.debug(f"从 {len(non_overlap_regions)} 个非重合区域通过降级策略重建了 {len(sampled_points)} 个 3D 点")
+        return sampled_points
 
-    return sampled_points
+    logger.debug(f"检出框 {bbox} 的所有非重合区域都无有效 3D 点")
+    return None
 
 
 def enhanced_backproject_2d_to_3d(x: float, y: float, scene_data: Dict, img_idx: int,
@@ -339,10 +373,10 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
             continue
         
         # 2. 3D几何验证：从目标检出框采样3D点进行比较
-        target_points_3d = sample_3d_points_from_bbox(
-            scene_data, target_img_idx, 
-            target_transform.map_bbox_to_original(bbox), 
-            target_transform, config, None  # 不传递other_bboxes，需要时可以改进
+        target_points_3d = sample_3d_points_from_non_overlap_regions(
+            scene_data, target_img_idx,
+            target_transform.map_bbox_to_original(bbox),
+            target_transform, config, None  # 不传递other_bboxes，使用整个bbox
         )
         
         if target_points_3d is None or len(target_points_3d) < 10:
