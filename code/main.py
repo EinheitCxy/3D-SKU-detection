@@ -270,13 +270,14 @@ class SKUDetectionMain:
 
                 # 依次以每个有效图片为参考图片运行推理
                 for i, filename_idx in enumerate(valid_indices):
-                    # 文件名从1开始，但系统内部索引从0开始，所以需要减1
-                    system_ref_idx = filename_idx - 1
+                    # 使用对齐后的数组索引（enumerate的i），而不是文件ID减1
+                    # 因为帧对齐后，文件ID与数组索引的映射关系可能不连续
+                    system_ref_idx = i
                     logger.debug(f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {system_ref_idx}")
                     self._run_single_matching(dataset_path, algorithm, system_ref_idx, max_images, device, save_json, backend)
 
                 duration = perf_counter() - start
-                logger.info(f"✓ 匹配完成 - 耗时 {duration:.2f}s，处理 {len(valid_indices)} 个参考图片")
+                logger.info(f"匹配完成 - 耗时 {duration:.2f}s，处理 {len(valid_indices)} 个参考图片")
                 return {"success": True, "duration_s": duration}
             else:
                 # 单个参考图片处理
@@ -329,7 +330,7 @@ class SKUDetectionMain:
             inference_main()
 
             duration = perf_counter() - start
-            logger.debug(f"✓ 单次匹配完成 - 耗时 {duration:.2f}s")
+            logger.debug(f"单次匹配完成 - 耗时 {duration:.2f}s")
             return {"success": True, "duration_s": duration}
         except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
@@ -381,7 +382,7 @@ class SKUDetectionMain:
             viz_main()
 
             duration = perf_counter() - start
-            logger.info(f"✓ 可视化完成 - 耗时 {duration:.2f}s")
+            logger.info(f"可视化完成 - 耗时 {duration:.2f}s")
             logger.debug(f"输出目录: {output_viz_dir}")
             return {"success": True, "duration_s": duration, "details": {"output_dir": str(output_viz_dir)}}
         except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
@@ -460,7 +461,7 @@ class SKUDetectionMain:
                 f.write("\n" + "=" * 70 + "\n")
 
             duration = perf_counter() - start
-            logger.info(f"✓ SKU分析完成 - 最终匹配数: {result['filtered_matches']}, 耗时 {duration:.2f}s")
+            logger.info(f"SKU分析完成 - 最终匹配数: {result['filtered_matches']}, 耗时 {duration:.2f}s")
             logger.debug(f"报告文件: {report_file}")
             return {"success": True, "duration_s": duration, "details": {"report_file": str(report_file)}}
         except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError, KeyError) as e:
@@ -500,7 +501,7 @@ class SKUDetectionMain:
                 )
                 if result.returncode == 0:
                     duration = perf_counter() - start
-                    logger.info(f"✓ 评估完成 - 耗时 {duration:.2f}s")
+                    logger.info(f"评估完成 - 耗时 {duration:.2f}s")
                     return {"success": True, "duration_s": duration}
                 else:
                     duration = perf_counter() - start
@@ -508,7 +509,7 @@ class SKUDetectionMain:
                     return {"success": False, "error": result.stderr, "duration_s": duration}
 
             duration = perf_counter() - start
-            logger.info(f"✓ 评估完成 - 耗时 {duration:.2f}s")
+            logger.info(f"评估完成 - 耗时 {duration:.2f}s")
             return {"success": True, "duration_s": duration}
         except (OSError, subprocess.SubprocessError, RuntimeError) as e:
             duration = perf_counter() - start
@@ -594,7 +595,7 @@ class SKUDetectionMain:
                 )
 
             duration = perf_counter() - start
-            logger.info(f"✓ 3D重建完成 - 耗时 {duration:.2f}s")
+            logger.info(f"3D重建完成 - 耗时 {duration:.2f}s")
             return {"success": True, "duration_s": duration, "details": {"output_file": str(result_path)}}
         except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
@@ -633,7 +634,7 @@ class SKUDetectionMain:
             # 实际输出路径是 output_base/dataset_name/dedup_detections/
             actual_output_dir = output_base / dataset_name / "dedup_detections"
             duration = perf_counter() - start
-            logger.info(f"✓ 去重完成 - 处理 {len(result)} 个文件, 耗时 {duration:.2f}s")
+            logger.info(f"去重完成 - 处理 {len(result)} 个文件, 耗时 {duration:.2f}s")
             logger.debug(f"输出目录: {actual_output_dir}")
             return {"success": True, "duration_s": duration, "details": {"count": len(result), "output_dir": str(actual_output_dir)}}
         except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError, KeyError) as e:
@@ -711,7 +712,7 @@ class SKUDetectionMain:
 
         logger.info("=== 流水线执行结果 ===")
         for step, ok in summary.items():
-            status = "✓ 成功" if ok else "✗ 失败"
+            status = "成功" if ok else "失败"
             logger.info(f"{step:20s}: {status}")
 
         return summary
@@ -734,7 +735,7 @@ class SKUDetectionMain:
 
         logger.info("=== 精简流水线执行结果 ===")
         for step, ok in summary.items():
-            status = "✓ 成功" if ok else "✗ 失败"
+            status = "成功" if ok else "失败"
             logger.info(f"{step:20s}: {status}")
 
         return summary
