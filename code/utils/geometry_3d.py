@@ -460,8 +460,12 @@ def apply_uniqueness_constraint(candidate_matches: List[Dict]) -> List[Dict]:
                 ref_obj_id = filtered.get('ref_obj_id', 'unknown')
                 filtered_score = filtered.get('combined_score', 0.0)
                 best_score = best_match.get('combined_score', 0.0)
-                logger.info(f"Filtered duplicate: ref {ref_obj_id} → target {target_id} "
-                          f"(score: {filtered_score:.3f} < {best_score:.3f})")
+                logger.debug(
+                    f"Filtered duplicate: ref {ref_obj_id} → target {target_id} "
+                    f"(score: {filtered_score:.3f} < {best_score:.3f})"
+                )
     
-    logger.info(f"Applied uniqueness constraint: {len(candidate_matches)} → {len(final_matches)} matches")
+    logger.debug(
+        f"Applied uniqueness constraint: {len(candidate_matches)} → {len(final_matches)} matches"
+    )
     return final_matches

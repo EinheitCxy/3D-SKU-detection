@@ -129,10 +129,10 @@ class SKUMatchingSystem:
             # 2. 预处理图像和构建 transforms（使用 config 的衍生属性，消除参数冗余）
             if self.config.model_type == "pi3":
                 # Pi3: 先加载图像（动态尺寸），再根据实际尺寸构建 transforms
+                # 注意：必须使用 image_paths 列表，而不是直接扫描 image_folder，以确保与帧对齐后的检测结果一致
                 from pi3.utils.basic import load_images_as_tensor
                 images = load_images_as_tensor(
-                    image_folder,
-                    interval=1,
+                    image_paths,
                     PIXEL_LIMIT=self.config.transform_kwargs["pixel_limit"]
                 )
                 images = images.to(self.config.device)

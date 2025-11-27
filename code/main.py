@@ -63,31 +63,36 @@ def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
 
     # Root logger at DEBUG so file captures debug-only details.
     root_logger.setLevel(logging.DEBUG)
-    # 文件日志保留完整格式，控制台使用彩色格式
+    # 文件日志保留完整格式，控制台在 TTY 下使用彩色格式，在重定向到文件时使用纯文本，避免ANSI转义序列写入日志文件
     file_fmt = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    
-    # 创建彩色控制台格式器
-    console_fmt = colorlog.ColoredFormatter(
-        '%(log_color)s%(levelname)s - %(msg_color)s%(message)s%(reset)s',
-        log_colors={
-            'DEBUG': 'cyan',
-            'INFO': 'white',
-            'WARNING': 'yellow',
-            'ERROR': 'red',
-            'CRITICAL': 'bold_red',
-        },
-    )
 
     fh = RotatingFileHandler(str(log_file), maxBytes=10_000_000, backupCount=1, encoding='utf-8')
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(file_fmt)
+    root_logger.addHandler(fh)
+
     sh = logging.StreamHandler(sys.stdout)
     sh.setLevel(logging.INFO)
-    sh.setFormatter(console_fmt)
 
-    root_logger.addHandler(fh)
-    # Only colorize console output based on message content
-    sh.addFilter(_StartEndColorFilter())
+    if sys.stdout.isatty():
+        # 仅在交互式终端中启用彩色输出
+        console_fmt = colorlog.ColoredFormatter(
+            '%(log_color)s%(levelname)s - %(msg_color)s%(message)s%(reset)s',
+            log_colors={
+                'DEBUG': 'cyan',
+                'INFO': 'white',
+                'WARNING': 'yellow',
+                'ERROR': 'red',
+                'CRITICAL': 'bold_red',
+            },
+        )
+        sh.setFormatter(console_fmt)
+        # Only colorize console output based on message content
+        sh.addFilter(_StartEndColorFilter())
+    else:
+        # 非TTY（例如重定向到文件）时使用纯文本，避免ANSI转义序列写入外部日志
+        sh.setFormatter(logging.Formatter('%(levelname)s - %(message)s'))
+
     root_logger.addHandler(sh)
 
     logger = logging.getLogger(__name__)

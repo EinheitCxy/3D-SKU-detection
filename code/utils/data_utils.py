@@ -57,8 +57,8 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
         if not json_files:
             raise ValueError(f"No valid JSON files found in {detection_dir}")
         
-        detections = []
-        detections_with_numbers = []
+        detections: List[Dict] = []
+        detections_with_numbers: List[tuple[int, Dict]] = []
         empty_objects_count = 0
         for file_number, file_path in json_files:
             try:
@@ -77,9 +77,10 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
                         if isinstance(file_detections['skus'], list) and len(file_detections['skus']) > 0:
                             processed_data = file_detections['skus'][0]
                         else:
-                            logger.debug(f"Empty skus array in {file_path.name}")
+                            # 空 skus 数组：视为“无检测结果”的有效文件，保留占位
+                            processed_data = {"objects": []}
+                            logger.debug(f"Empty skus array in {file_path.name}, treating as empty detection")
                             empty_objects_count += 1
-                            continue
                     else:
                         # 直接的字典格式: {"classes": {...}, "objects": [...]}
                         processed_data = file_detections
@@ -88,12 +89,17 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
                     continue
                 
                 # 验证处理后的数据是否包含必要字段
-                if processed_data and 'objects' in processed_data and processed_data['objects']:
+                if processed_data and 'objects' in processed_data:
+                    # 即使 objects 为空，也保留该检测文件，用于帧对齐
                     detections.append(processed_data)
                     detections_with_numbers.append((file_number, processed_data))
-                    logger.debug(f"Loaded {len(processed_data['objects'])} objects from {file_path.name}")
+                    if processed_data['objects']:
+                        logger.debug(f"Loaded {len(processed_data['objects'])} objects from {file_path.name}")
+                    else:
+                        logger.debug(f"No objects found in {file_path.name}, keeping empty detection entry")
+                        empty_objects_count += 1
                 else:
-                    logger.debug(f"No valid objects found in {file_path.name}, skipping")
+                    logger.debug(f"No 'objects' field found in {file_path.name}, skipping")
                     empty_objects_count += 1
                     continue
                     

@@ -391,10 +391,9 @@ def find_correspondences_3d_projection(
                 S_cache, H_pi3, W_pi3, C_depth = depth_np.shape
                 if C_depth != 1:
                     raise ValueError(f"depth 最后一维应为1，当前为 {C_depth}")
-                if S_cache != S:
+                if S_cache < S:
                     raise ValueError(
-                        f"Pi3缓存图像数量({S_cache})与当前加载图像数量({S})不匹配。"
-                        f"请重新生成Pi3缓存。"
+                        f"Pi3缓存图像数量({S_cache})少于当前加载图像数量({S})，请重新生成Pi3缓存。"
                     )
 
                 # 验证shape格式（以 Pi3 自身的 H_pi3/W_pi3 为准）
@@ -691,7 +690,6 @@ def find_correspondences_3d_projection(
                     }
                     
                     matched_objects.append(match_result)
-                    logger.info(f"3D match: ref {match['ref_obj_id']} → target {target_bbox_info['object_id']} (ratio: {match['match_ratio']:.1%})")
                 
                 correspondences[target_img_idx] = matched_objects
 

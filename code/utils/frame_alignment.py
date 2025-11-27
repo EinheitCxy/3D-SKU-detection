@@ -49,7 +49,7 @@ class ReconstructionDetectionAligner:
         Raises:
             FrameAlignmentError: 严格模式下发现不可修复的对齐问题
         """
-        logger.info("开始3D重建-Detection帧对齐验证...")
+        logger.debug("开始3D重建-Detection帧对齐验证...")
 
         # 1. 基础检查
         world_points = reconstruction_data.get("world_points")
@@ -66,8 +66,8 @@ class ReconstructionDetectionAligner:
 
         detection_count = len(detections)
 
-        logger.info(f"   3D重建帧数: {recon_frame_count}")
-        logger.info(f"   检测结果数: {detection_count}")
+        logger.debug(f"   3D重建帧数: {recon_frame_count}")
+        logger.debug(f"   检测结果数: {detection_count}")
 
         # 2. 推断图像ID（如果未提供）
         if detection_indices is None:
@@ -85,11 +85,11 @@ class ReconstructionDetectionAligner:
 
         # 4. 决定处理策略
         if alignment_report["is_perfectly_aligned"]:
-            logger.info("帧对齐验证通过，无需修复")
+            logger.debug("帧对齐验证通过，无需修复")
             return reconstruction_data, detections, alignment_report
 
         elif not strict_mode:
-            logger.warning("WARNING: 检测到帧对齐问题，尝试自动修复...")
+            logger.warning("检测到帧对齐问题，尝试自动修复...")
             return ReconstructionDetectionAligner._attempt_repair(
                 reconstruction_data, detections, reconstruction_image_ids, detection_indices, alignment_report
             )
@@ -205,8 +205,8 @@ class ReconstructionDetectionAligner:
         })
 
         logger.info(f"修复完成：{len(aligned_image_ids)}帧对齐")
-        logger.info(f"   丢弃3D重建帧: {alignment_report['dropped_recon_frames']}")
-        logger.info(f"   丢弃检测帧: {alignment_report['dropped_detection_frames']}")
+        logger.debug(f"   丢弃3D重建帧: {alignment_report['dropped_recon_frames']}")
+        logger.debug(f"   丢弃检测帧: {alignment_report['dropped_detection_frames']}")
 
         return aligned_recon_data, aligned_detections, alignment_report
 
