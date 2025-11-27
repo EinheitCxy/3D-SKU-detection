@@ -30,6 +30,10 @@ from .transforms import ImageTransformBase
 
 logger = logging.getLogger(__name__)
 
+# Pi3 场景缓存：避免重复从磁盘加载并拷贝到 device
+# key 形如 "<npz_path>::<device>"，value 为包含 depth/world_points 等张量的字典
+PI3_SCENE_CACHE: Dict[str, Dict[str, torch.Tensor]] = {}
+
 
 def _process_single_ref_object(
     ref_object_id: int,
@@ -309,7 +313,7 @@ def find_correspondences_3d_projection(
         logger.info(f"使用 {config.backend} 后端进行3D场景重建...")
 
         if config.backend == "pi3":
-            # 从Pi3缓存加载预先重建的数据
+            # 从Pi3缓存加载预先重建的数据（增加内存缓存，避免重复np.load和to(device)）
             # 智能多位置查找：支持不同的目录结构
             output_path = Path(config.output_dir)
 
@@ -359,113 +363,139 @@ def find_correspondences_3d_projection(
                 ]
                 raise FileNotFoundError("\n".join(error_lines))
 
-            import numpy as np
-            data = np.load(cache_path)
+            cache_key = f"{str(cache_path)}::{str(device)}"
+            scene_data = PI3_SCENE_CACHE.get(cache_key)
 
-            # 验证必需字段
-            required_keys = ['depth', 'depth_conf', 'world_points', 'world_points_conf',
-                             'extrinsic', 'intrinsic']
-            missing_keys = [k for k in required_keys if k not in data]
-            if missing_keys:
-                raise ValueError(f"Pi3缓存缺少必需字段: {missing_keys}")
+            if scene_data is None:
+                import numpy as np
 
-            depth_np = data['depth']
+                data = np.load(cache_path)
 
-            # 验证图像数量一致性（仅比较帧数）
-            if depth_np.ndim != 4:
-                raise ValueError(f"depth 维度应为4，当前为 {depth_np.ndim}，shape={depth_np.shape}")
-            S_cache, H_pi3, W_pi3, C_depth = depth_np.shape
-            if C_depth != 1:
-                raise ValueError(f"depth 最后一维应为1，当前为 {C_depth}")
-            if S_cache != S:
-                raise ValueError(
-                    f"Pi3缓存图像数量({S_cache})与当前加载图像数量({S})不匹配。"
-                    f"请重新生成Pi3缓存。"
-                )
+                # 验证必需字段
+                required_keys = [
+                    "depth",
+                    "depth_conf",
+                    "world_points",
+                    "world_points_conf",
+                    "extrinsic",
+                    "intrinsic",
+                ]
+                missing_keys = [k for k in required_keys if k not in data]
+                if missing_keys:
+                    raise ValueError(f"Pi3缓存缺少必需字段: {missing_keys}")
 
-            # 验证shape格式（以 Pi3 自身的 H_pi3/W_pi3 为准）
-            world_np = data['world_points']
-            if world_np.shape != (S_cache, H_pi3, W_pi3, 3):
-                raise ValueError(
-                    f"world_points shape {world_np.shape} != ({S_cache}, {H_pi3}, {W_pi3}, 3)"
-                )
-            extr_np = data['extrinsic']
-            if extr_np.shape not in [(S_cache, 4, 4), (S_cache, 3, 4)]:
-                raise ValueError(f"extrinsic shape {extr_np.shape} 不符合预期")
-            intr_np = data['intrinsic']
-            if intr_np.shape != (S_cache, 3, 3):
-                raise ValueError(f"intrinsic shape {intr_np.shape} != ({S_cache}, 3, 3)")
+                depth_np = data["depth"]
 
-            # 检查数值有效性
-            for key in required_keys:
-                if not np.isfinite(data[key]).all():
-                    nan_count = (~np.isfinite(data[key])).sum()
-                    logger.warning(f"Pi3缓存中{key}包含{nan_count}个非有限值")
+                # 验证图像数量一致性（仅比较帧数）
+                if depth_np.ndim != 4:
+                    raise ValueError(
+                        f"depth 维度应为4，当前为 {depth_np.ndim}，shape={depth_np.shape}"
+                    )
+                S_cache, H_pi3, W_pi3, C_depth = depth_np.shape
+                if C_depth != 1:
+                    raise ValueError(f"depth 最后一维应为1，当前为 {C_depth}")
+                if S_cache != S:
+                    raise ValueError(
+                        f"Pi3缓存图像数量({S_cache})与当前加载图像数量({S})不匹配。"
+                        f"请重新生成Pi3缓存。"
+                    )
 
-            # 尝试根据 image_ids 与 transforms_info 对齐帧顺序，修复 Pi3 与检测的帧错位
-            image_ids_cache = data.get('image_ids')
-            if image_ids_cache is not None and transforms_info is not None:
-                try:
-                    image_ids_cache = np.asarray(image_ids_cache, dtype=int)
-                    if image_ids_cache.shape[0] != S_cache:
-                        raise ValueError(
-                            f"image_ids 长度({image_ids_cache.shape[0]})与缓存帧数({S_cache})不一致"
-                        )
+                # 验证shape格式（以 Pi3 自身的 H_pi3/W_pi3 为准）
+                world_np = data["world_points"]
+                if world_np.shape != (S_cache, H_pi3, W_pi3, 3):
+                    raise ValueError(
+                        f"world_points shape {world_np.shape} != ({S_cache}, {H_pi3}, {W_pi3}, 3)"
+                    )
+                extr_np = data["extrinsic"]
+                if extr_np.shape not in [(S_cache, 4, 4), (S_cache, 3, 4)]:
+                    raise ValueError(f"extrinsic shape {extr_np.shape} 不符合预期")
+                intr_np = data["intrinsic"]
+                if intr_np.shape != (S_cache, 3, 3):
+                    raise ValueError(f"intrinsic shape {intr_np.shape} != ({S_cache}, 3, 3)")
 
-                    # 从 transforms_info 中获取期望顺序的 image_id（由 build_pi3_transforms 填充）
-                    desired_ids = []
-                    for t in transforms_info:
-                        img_id = getattr(t, "image_id", None)
-                        if img_id is None:
-                            raise ValueError("Pi3 transforms_info 缺少 image_id，无法对齐帧顺序")
-                        desired_ids.append(int(img_id))
+                # 检查数值有效性
+                for key in required_keys:
+                    arr = data[key]
+                    if not isinstance(arr, (np.ndarray,)):
+                        raise ValueError(f"Pi3缓存字段 {key} 不是numpy数组")
+                    if not np.isfinite(arr).all():
+                        nan_count = (~np.isfinite(arr)).sum()
+                        logger.warning(f"Pi3缓存中{key}包含{nan_count}个非有限值")
 
-                    if len(desired_ids) != S:
-                        raise ValueError(
-                            f"Pi3 transforms_info 数量({len(desired_ids)})与当前图像数量({S})不一致"
-                        )
-
-                    # 为每个期望的 image_id 找到在缓存中的索引
-                    index_map: list[int] = []
-                    for img_id in desired_ids:
-                        matches = np.where(image_ids_cache == img_id)[0]
-                        if matches.size == 0:
+                # 尝试根据 image_ids 与 transforms_info 对齐帧顺序，修复 Pi3 与检测的帧错位
+                image_ids_cache = data.get("image_ids")
+                if image_ids_cache is not None and transforms_info is not None:
+                    try:
+                        image_ids_cache = np.asarray(image_ids_cache, dtype=int)
+                        if image_ids_cache.shape[0] != S_cache:
                             raise ValueError(
-                                f"在 Pi3 缓存中找不到 image_id={img_id}，请检查重建与检测是否使用相同图像集"
+                                f"image_ids 长度({image_ids_cache.shape[0]})与缓存帧数({S_cache})不一致"
                             )
-                        index_map.append(int(matches[0]))
 
-                    index_map_np = np.asarray(index_map, dtype=int)
-                    if np.unique(index_map_np).size != S:
-                        logger.warning(
-                            "Pi3 image_ids 对齐产生重复索引，保持原始顺序以避免错误重排"
-                        )
-                    else:
-                        depth_np = depth_np[index_map_np]
-                        world_np = world_np[index_map_np]
-                        extr_np = extr_np[index_map_np]
-                        intr_np = intr_np[index_map_np]
-                        # 可选字段也一起重排
-                        if 'depth_conf' in data:
-                            data['depth_conf'] = data['depth_conf'][index_map_np]
-                        if 'world_points_conf' in data:
-                            data['world_points_conf'] = data['world_points_conf'][index_map_np]
-                        logger.info(
-                            f"✓ 已根据 image_ids 对齐 Pi3 缓存帧顺序: {desired_ids}"
-                        )
-                except Exception as e:  # noqa: BLE001 - 对齐失败仅报警，不中断流程
-                    logger.warning(f"Pi3 image_ids 帧对齐失败，将使用原始缓存顺序: {e}")
+                        # 从 transforms_info 中获取期望顺序的 image_id（由 build_pi3_transforms 填充）
+                        desired_ids = []
+                        for t in transforms_info:
+                            img_id = getattr(t, "image_id", None)
+                            if img_id is None:
+                                raise ValueError(
+                                    "Pi3 transforms_info 缺少 image_id，无法对齐帧顺序"
+                                )
+                            desired_ids.append(int(img_id))
 
-            # 转换为torch张量并构建scene_data（使用 Pi3 分辨率）
-            scene_data = {
-                'depth': torch.from_numpy(depth_np).to(device),  # (S, H_pi3, W_pi3, 1)
-                'depth_conf': torch.from_numpy(data['depth_conf']).to(device),  # (S, H_pi3, W_pi3)
-                'world_points': torch.from_numpy(world_np).to(device),  # (S, H_pi3, W_pi3, 3)
-                'world_points_conf': torch.from_numpy(data['world_points_conf']).to(device),  # (S, H_pi3, W_pi3)
-                'extrinsic': torch.from_numpy(extr_np).to(device),  # (S, 4, 4) or (S, 3, 4)
-                'intrinsic': torch.from_numpy(intr_np).to(device),  # (S, 3, 3)
-            }
-            logger.info(f"已从Pi3缓存加载数据: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})")
+                        if len(desired_ids) != S:
+                            raise ValueError(
+                                f"Pi3 transforms_info 数量({len(desired_ids)})与当前图像数量({S})不一致"
+                            )
+
+                        # 为每个期望的 image_id 找到在缓存中的索引
+                        index_map: list[int] = []
+                        for img_id in desired_ids:
+                            matches = np.where(image_ids_cache == img_id)[0]
+                            if matches.size == 0:
+                                raise ValueError(
+                                    f"在 Pi3 缓存中找不到 image_id={img_id}，请检查重建与检测是否使用相同图像集"
+                                )
+                            index_map.append(int(matches[0]))
+
+                        index_map_np = np.asarray(index_map, dtype=int)
+                        if np.unique(index_map_np).size != S:
+                            logger.warning(
+                                "Pi3 image_ids 对齐产生重复索引，保持原始顺序以避免错误重排"
+                            )
+                        else:
+                            depth_np = depth_np[index_map_np]
+                            world_np = world_np[index_map_np]
+                            extr_np = extr_np[index_map_np]
+                            intr_np = intr_np[index_map_np]
+                            logger.info(
+                                f"✓ 已根据 image_ids 对齐 Pi3 缓存帧顺序: {desired_ids}"
+                            )
+                    except Exception as e:  # noqa: BLE001 - 对齐失败仅报警，不中断流程
+                        logger.warning(f"Pi3 image_ids 帧对齐失败，将使用原始缓存顺序: {e}")
+
+                # 转换为torch张量并构建scene_data（使用 Pi3 分辨率）
+                scene_data = {
+                    "depth": torch.from_numpy(depth_np).to(device),  # (S, H_pi3, W_pi3, 1)
+                    "depth_conf": torch.from_numpy(data["depth_conf"]).to(
+                        device
+                    ),  # (S, H_pi3, W_pi3)
+                    "world_points": torch.from_numpy(world_np).to(
+                        device
+                    ),  # (S, H_pi3, W_pi3, 3)
+                    "world_points_conf": torch.from_numpy(data["world_points_conf"]).to(
+                        device
+                    ),  # (S, H_pi3, W_pi3)
+                    "extrinsic": torch.from_numpy(extr_np).to(
+                        device
+                    ),  # (S, 4, 4) or (S, 3, 4)
+                    "intrinsic": torch.from_numpy(intr_np).to(device),  # (S, 3, 3)
+                }
+                PI3_SCENE_CACHE[cache_key] = scene_data
+                logger.info(
+                    f"已从Pi3缓存加载数据: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})"
+                )
+            else:
+                logger.info(f"复用 Pi3 场景缓存: {cache_path}")
 
         else:  # backend == "vggt"
             # 原有VGGT逻辑

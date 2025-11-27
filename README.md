@@ -198,6 +198,48 @@ for cluster_id, images_dict in cluster_to_images.items():
 - **持久化缓存**：支持 `--cache-dir` 指定缓存目录，跨会话复用
 - **性能基准**（1M点云）：
   - CPU模式：缓存构建约120s，KDTree构建约2.5s
+
+## CoTracker3 点追踪与微调（可选）
+
+- **子模块位置**：`co-tracker/`，原始仓库为 Meta 的 CoTracker3，提供任意点视频追踪能力，可用于替代/增强当前 VGGT 点追踪。
+- **快速体验推理**：
+  - `cd co-tracker`
+  - `pip install -e .`
+  - `python demo.py`（离线模式示例，使用自带视频）
+
+### 环境与预训练权重
+
+- 安装训练相关依赖：
+  - `pip install pip==24.0`
+  - `pip install pytorch_lightning==1.6.0 tensorboard opencv-python imageio[ffmpeg]`
+- 在 `co-tracker/checkpoints/` 下放置官方权重（从其 README 或 HuggingFace 下载，例如）：
+  - `baseline_online.pth` / `baseline_offline.pth` 或 `scaled_online.pth` / `scaled_offline.pth`
+
+### 使用真实货架视频做伪标签微调
+
+- **准备数据**：
+  - 将货架视频整理为一批 `mp4/avi` 文件，根目录记为 `DATA_ROOT`（例如 `/data/retail_shelf_videos`）。
+- **实现 RealDataset**：
+  - 文件：`co-tracker/cotracker/datasets/real_dataset.py`。
+  - 删除/注释 `__init__` 中的 `raise ValueError(...)`，改为：
+    - 遍历 `DATA_ROOT`，收集所有视频路径到 `self.filelist`；
+    - 保持类名与 `__getitem__/crop` 等接口不变，以兼容 `train_on_real_data.py`。
+- **启动微调（伪标签）**：在 `co-tracker/` 目录执行，例如在线模型：
+  - ```bash
+    python train_on_real_data.py --batch_size 1 --num_steps 15000 \
+      --ckpt_path ./outputs_retail_shelf \
+      --model_name cotracker_three --save_freq 200 --sequence_len 64 \
+      --eval_datasets tapvid_stacking tapvid_davis_first --traj_per_sample 384 \
+      --save_every_n_epoch 15 --evaluate_every_n_epoch 15 --model_stride 4 \
+      --dataset_root DATA_ROOT --num_nodes 1 --real_data_splits 0 \
+      --num_virtual_tracks 64 --mixed_precision --random_frame_rate \
+      --restore_ckpt ./checkpoints/baseline_online.pth \
+      --lr 0.00005 --real_data_filter_sift --validate_at_start \
+      --sliding_window_len 16 --limit_samples 15000
+    ```
+- **输出与使用**：
+  - 新的微调权重保存在 `--ckpt_path` 对应目录下（如 `outputs_retail_shelf/model_*.pth`）。
+  - 在你的匹配/重建代码中，用 `build_cotracker(checkpoint=...)` 或自定义加载逻辑替换原始 CoTracker 权重，即可使用针对货架场景适配的点追踪模型。
   - GPU模式：缓存构建约30s，KDTree构建约0.3s（使用FAISS-GPU）
 
 **Viewer交互优化**：
