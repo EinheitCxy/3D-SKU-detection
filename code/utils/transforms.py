@@ -48,7 +48,7 @@ class Pi3ImageTransform(ImageTransformBase):
     3. 尺寸对齐到14的倍数（DINOv2 patch size）
     4. 批次内所有图片统一尺寸
 
-    ⚠️ 警告：仅用于Pi3模型！不要与VGGT模型混用！
+    警告：仅用于Pi3模型！不要与VGGT模型混用！
     """
 
     def __init__(self, orig_width: int, orig_height: int, target_width: int, target_height: int):
@@ -132,7 +132,7 @@ class Pi3ImageTransform(ImageTransformBase):
             return result
 
     def get_transform_info(self) -> dict:
-        """返回变换信息用于调试"""
+        """返回变换信息"""
         return {
             "original_size": (self.orig_width, self.orig_height),
             "target_size": (self.target_width, self.target_height),
@@ -146,7 +146,7 @@ def build_pi3_transforms(
 ) -> List[Pi3ImageTransform]:
     """构建Pi3变换列表，复用Pi3的resize逻辑
 
-    ⚠️ 警告：返回的Transform仅用于Pi3模型！不要传给VGGT模型！
+    警告：返回的Transform仅用于Pi3模型！不要传给VGGT模型！
 
     Args:
         image_paths: 图像路径列表
@@ -206,7 +206,7 @@ class VGGTImageTransform(ImageTransformBase):
     2. 精确的坐标映射逻辑 - 按VGGT实际变换顺序处理
     3. 批量填充的正确处理 - 修正为左上角对齐，而非居中对齐
 
-    ⚠️ 警告：仅用于VGGT模型！不要与Pi3模型混用！
+    警告：仅用于VGGT模型！不要与Pi3模型混用！
     """
 
     def __init__(self, orig_width: int, orig_height: int, target_size: int = 518):
@@ -377,7 +377,7 @@ class VGGTImageTransform(ImageTransformBase):
     # 继承基类的 map_bbox_to_original
 
     def get_transform_info(self) -> dict:
-        """返回变换信息用于调试"""
+        """返回变换信息"""
         return {
             "original_size": (self.orig_width, self.orig_height),
             "processed_size": (self.proc_width, self.proc_height),
@@ -398,7 +398,7 @@ def build_vggt_transforms(image_paths: List[str], target_size: int = 518) -> Lis
     2. 精确的批量填充计算
     3. 与VGGT实际预处理的完全一致性
 
-    ⚠️ 警告：返回的Transform仅用于VGGT模型！不要传给Pi3模型！
+    警告：返回的Transform仅用于VGGT模型！不要传给Pi3模型！
 
     Args:
         image_paths: 图像路径列表

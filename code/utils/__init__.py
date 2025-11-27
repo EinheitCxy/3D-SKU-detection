@@ -43,7 +43,8 @@ from .data_utils import load_detections, extract_bboxes_from_detections, save_co
 from .transforms import VGGTImageTransform, Pi3ImageTransform, ImageTransformBase, build_transforms
 from .point_utils import generate_points_from_bboxes
 from .geometry_3d import (
-    sample_3d_points_from_bbox, 
+    sample_3d_points_from_non_overlap_regions,
+    sample_3d_points_from_non_overlap_regions_batch,
     project_3d_to_2d,
     find_best_matching_bbox_with_3d_validation,
     apply_uniqueness_constraint
@@ -75,7 +76,7 @@ except ImportError:
 # 基础导出
 __all__ = [
     'SKUMatchingConfig',
-    'DEFAULT_POINT_TRACKING_CONFIG', 
+    'DEFAULT_POINT_TRACKING_CONFIG',
     'DEFAULT_3D_PROJECTION_CONFIG',
     'load_detections',
     'extract_bboxes_from_detections',
@@ -85,7 +86,8 @@ __all__ = [
     'ImageTransformBase',
     'Pi3ImageTransform',
     'generate_points_from_bboxes',
-    'sample_3d_points_from_bbox',
+    'sample_3d_points_from_non_overlap_regions',
+    'sample_3d_points_from_non_overlap_regions_batch',
     'project_3d_to_2d',
     'find_best_matching_bbox_with_3d_validation',
     'apply_uniqueness_constraint',

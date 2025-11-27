@@ -112,7 +112,7 @@ for algo_type in pt vggt pi3; do
                     --output "$temp_report" 2>&1; then
 
                     successful_pairs=$((successful_pairs + 1))
-                    echo -e "${GREEN}✓ 参考图片 $ref_num 评估完成${NC}"
+                    echo -e "${GREEN}参考图片 $ref_num 评估完成${NC}"
 
                     # 从临时报告中提取图片对信息，并创建对应的文件名
                     if [ -f "$temp_report" ]; then
@@ -152,7 +152,7 @@ for algo_type in pt vggt pi3; do
 
                 else
                     failed_pairs=$((failed_pairs + 1))
-                    echo -e "${RED}✗ 参考图片 $ref_num 评估失败${NC}"
+                    echo -e "${RED}参考图片 $ref_num 评估失败${NC}"
                     echo "参考图片 $ref_num: 评估失败" >> "$SUMMARY_REPORT"
                     echo "" >> "$SUMMARY_REPORT"
                 fi

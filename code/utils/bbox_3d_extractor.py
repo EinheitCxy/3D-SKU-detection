@@ -167,7 +167,6 @@ def extract_3d_from_bboxes(
             key = (real_image_id, real_object_id)
             gid = reverse_mapping.get(key, -1)
 
-            # 调试信息：记录查找失败的情况
             if gid == -1 and fallback_object_id != real_object_id:
                 # 尝试用fallback_object_id再查一次
                 fallback_key = (real_image_id, fallback_object_id)

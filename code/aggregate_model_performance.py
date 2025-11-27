@@ -188,7 +188,7 @@ def main():
         f.write("报告生成完成\n")
         f.write("=" * 80 + "\n")
 
-    print(f"✓ 汇总报告已生成: {report_path}")
+    print(f"汇总报告已生成: {report_path}")
     print(f"\n发现 {len(all_data)} 个数据集，共 {len(algo_aggregated)} 种算法配置")
 
     # 打印简要摘要
