@@ -160,6 +160,11 @@ def sample_3d_points_from_non_overlap_regions(
         valid_world_points = world_points_region[valid_mask]
         valid_depths = depth_region[valid_mask]
 
+        # 为有效点准备 2D 像素坐标（与 depth/world_points 同一坐标系，用于高斯加权）
+        valid_y_indices, valid_x_indices = torch.where(valid_mask)
+        coords_x = valid_x_indices.to(device=device, dtype=torch.float32) + float(x1)
+        coords_y = valid_y_indices.to(device=device, dtype=torch.float32) + float(y1)
+
         # 🔍 深度一致性检查：转换到相机坐标系比较
         valid_world_points = valid_world_points.to(R.device)
         points_cam = (R @ valid_world_points.T + t.unsqueeze(1)).T
@@ -170,15 +175,47 @@ def sample_3d_points_from_non_overlap_regions(
         if depth_consistent_mask.sum() >= 3:
             # 使用深度一致的点
             consistent_points = valid_world_points[depth_consistent_mask]
+            # 对应的 2D 像素坐标（用于高斯权重）
+            consistent_coords_x = coords_x[depth_consistent_mask]
+            consistent_coords_y = coords_y[depth_consistent_mask]
 
-            # 随机采样一些点（按区域面积比例分配）
-            max_points_for_region = max(3, min(len(consistent_points),
-                                              int(config.max_3d_points_per_bbox * 0.3)))
+            # 按区域面积比例限制每个区域采样上限
+            max_points_for_region = max(
+                3,
+                min(len(consistent_points), int(config.max_3d_points_per_bbox * 0.3))
+            )
 
             if len(consistent_points) > max_points_for_region:
-                # 使用multinomial采样（比randperm快约20%）
-                weights = torch.ones(len(consistent_points), device=device)
-                indices = torch.multinomial(weights, max_points_for_region, replacement=False)
+                if config.enable_gaussian_sampling:
+                    # 在当前坐标系下，以 bbox 中心为高斯中心进行加权采样
+                    cx = (x1 + x2) / 2.0
+                    cy = (y1 + y2) / 2.0
+                    rx = max(1.0, (x2 - x1) / 2.0)
+                    ry = max(1.0, (y2 - y1) / 2.0)
+
+                    dx_norm = (consistent_coords_x - cx) / rx
+                    dy_norm = (consistent_coords_y - cy) / ry
+                    distances = torch.sqrt(dx_norm * dx_norm + dy_norm * dy_norm)
+
+                    sigma = float(config.gaussian_sigma)
+                    weights = torch.exp(-distances * distances / (2.0 * sigma * sigma))
+                    truncate = float(config.gaussian_truncate)
+                    weights = torch.where(
+                        distances > sigma * truncate,
+                        torch.zeros_like(weights),
+                        weights,
+                    )
+
+                    if weights.sum() <= 1e-6:
+                        # 权重退化时回退到均匀采样
+                        weights = torch.ones_like(weights)
+                    probs = weights / weights.sum()
+                    indices = torch.multinomial(probs, max_points_for_region, replacement=False)
+                else:
+                    # 关闭高斯采样时保持原有的均匀采样行为
+                    weights = torch.ones(len(consistent_points), device=device)
+                    indices = torch.multinomial(weights, max_points_for_region, replacement=False)
+
                 sampled_points = consistent_points[indices]
             else:
                 sampled_points = consistent_points

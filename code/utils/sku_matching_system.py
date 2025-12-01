@@ -341,6 +341,27 @@ class SKUMatchingSystem:
 
         # 保存JSON结果（如果启用）
         if self.config.save_json and correspondences:
+            # 计算机器可解析的 per-image 统计信息
+            per_image_summary: Dict[int, Dict[str, float]] = {}
+            total_matches = 0
+            for target_idx, objs in correspondences.items():
+                match_count = len(objs)
+                total_matches += match_count
+                if match_count > 0:
+                    avg_hit = sum(o.get("correspondence_ratio", 0.0) for o in objs) / match_count
+                    avg_match_frac = sum(
+                        (float(o.get("matched_points", 0)) / max(1.0, float(o.get("total_points", 1))))
+                        for o in objs
+                    ) / match_count
+                else:
+                    avg_hit = 0.0
+                    avg_match_frac = 0.0
+                per_image_summary[int(target_idx)] = {
+                    "match_count": match_count,
+                    "avg_correspondence_ratio": float(avg_hit),
+                    "avg_matched_fraction": float(avg_match_frac),
+                }
+
             meta = {
                 "image_paths": image_paths,
                 "reference_image_idx": reference_image_idx,
@@ -351,6 +372,11 @@ class SKUMatchingSystem:
                     "max_points_per_bbox": self.config.max_points_per_bbox,
                     "max_bboxes": self.config.max_bboxes,
                     "enable_3d_projection_matching": self.config.enable_3d_projection_matching,
+                },
+                "summary": {
+                    "total_matches": int(total_matches),
+                    "images_with_matches": int(len(correspondences)),
+                    "per_image": per_image_summary,
                 },
             }
             save_correspondences_json(correspondences, points_per_object, self.config, meta)

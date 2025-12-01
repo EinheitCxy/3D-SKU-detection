@@ -659,13 +659,28 @@ class SKUDetectionMain:
         # 1. 3D重建（如果使用3D算法）
         if '3d' in algorithm:
             match_backend = self.match_backend if hasattr(self, 'match_backend') else 'vggt'
-            logger.info(f"步骤1: 3D重建 (backend: {match_backend})")
-            recon = self.run_reconstruction(dataset_path, backend=match_backend)
-            summary['reconstruction'] = bool(recon.get('success', False))
+            # 在完整流水线中，若对应缓存目录下已存在GLB，则跳过3D重建
+            dataset = Path(dataset_path)
+            output_dir = (self.save_root / dataset.name) if self.save_root is not None else dataset
+            cache_dir = output_dir / f"{match_backend}_cache"
+            base_output = Path("reconstruction.glb")
+            if match_backend not in base_output.stem:
+                new_filename = f"{base_output.stem}_{match_backend}{base_output.suffix}"
+                expected_glb = cache_dir / new_filename
+            else:
+                expected_glb = cache_dir / base_output
 
-            if not summary['reconstruction']:
-                logger.error("3D重建失败，无法继续3D匹配流程")
-                return summary
+            if expected_glb.exists():
+                logger.info(f"步骤1: 检测到已存在3D重建结果 {expected_glb}，跳过3D重建")
+                summary['reconstruction'] = True
+            else:
+                logger.info(f"步骤1: 3D重建 (backend: {match_backend})")
+                recon = self.run_reconstruction(dataset_path, backend=match_backend)
+                summary['reconstruction'] = bool(recon.get('success', False))
+
+                if not summary['reconstruction']:
+                    logger.error("3D重建失败，无法继续3D匹配流程")
+                    return summary
         else:
             logger.info("步骤1: 跳过3D重建（使用 Point Tracking 算法）")
             summary['reconstruction'] = True  # 标记为成功（不需要）
