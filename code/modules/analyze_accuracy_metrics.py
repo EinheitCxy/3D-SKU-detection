@@ -40,8 +40,8 @@ def extract_metrics_from_file(file_path: str) -> Optional[Dict[str, float]]:
             metrics['recall_num'] = int(recall_match.group(2))
             metrics['recall_den'] = int(recall_match.group(3))
         
-        # 提取VGGT有效率 (Effectiveness): 52.83% (28/53)
-        effectiveness_pattern = r'VGGT有效率.*?(\d+\.?\d*)%.*?\((\d+)/(\d+)\)'
+        # 提取模型有效率 / VGGT有效率 (Effectiveness): 52.83% (28/53)
+        effectiveness_pattern = r'(?:VGGT|模型)有效率.*?(\d+\.?\d*)%.*?\((\d+)/(\d+)\)'
         effectiveness_match = re.search(effectiveness_pattern, content)
         if effectiveness_match:
             metrics['effectiveness'] = float(effectiveness_match.group(1))
@@ -244,7 +244,7 @@ def main():
         print(f"  - 整体计算: {weighted_averages['recall_overall']:.2f}% ({weighted_averages['recall_total_correct']}/{weighted_averages['recall_total_samples']})")
     
     if 'effectiveness_weighted_avg' in weighted_averages:
-        print(f"VGGT有效率 (Effectiveness):")
+        print(f"模型有效率 (Effectiveness):")
         print(f"  - 加权平均: {weighted_averages['effectiveness_weighted_avg']:.2f}%")
         print(f"  - 整体计算: {weighted_averages['effectiveness_overall']:.2f}% ({weighted_averages['effectiveness_total_correct']}/{weighted_averages['effectiveness_total_samples']})")
     

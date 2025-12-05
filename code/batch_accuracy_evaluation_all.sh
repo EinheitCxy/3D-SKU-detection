@@ -135,7 +135,7 @@ for algo_type in pt vggt pi3; do
                         echo "----------------------------------------" >> "$SUMMARY_REPORT"
 
                         recall=$(grep "总体召回率" "$output_report" | head -1)
-                        effectiveness=$(grep "VGGT有效率" "$output_report" | head -1)
+                        effectiveness=$(grep -E "VGGT有效率|模型有效率" "$output_report" | head -1)
                         precision=$(grep "Reference ID映射准确率" "$output_report" | head -1)
 
                         if [ -n "$recall" ] && [ -n "$effectiveness" ] && [ -n "$precision" ]; then

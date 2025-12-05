@@ -18,18 +18,20 @@ logger = logging.getLogger(__name__)
 
 
 def visualize_results(
-    images: torch.Tensor, 
-    reference_idx: int, 
-    points_per_object: Dict[int, Dict], 
-    correspondences: Dict[int, List[Dict]], 
+    images: torch.Tensor,
+    reference_idx: int,
+    points_per_object: Dict[int, Dict],
+    correspondences: Dict[int, List[Dict]],
     config: SKUMatchingConfig,
-    detections: Optional[List[Dict]] = None, 
-    transforms_info: Optional[List] = None
+    detections: Optional[List[Dict]] = None,
+    transforms_info: Optional[List] = None,
 ) -> None:
-    """可视化追踪结果 - 使用VGGT尺寸的图像和坐标
-    
+    """可视化追踪/匹配结果（使用模型输入尺寸与坐标）
+
     Args:
-        images: 图像张量 (S, C, H, W) - VGGT处理后的518x518图像
+        images: 图像张量 (S, C, H, W)，已经过模型预处理
+                - VGGT: 裁剪/填充后的 518×518 或批量对齐尺寸
+                - Pi3: 依据像素上限 resize 后的统一尺寸
         reference_idx: 参考图像索引
         points_per_object: 物体点映射
         correspondences: 对应关系结果
@@ -37,32 +39,32 @@ def visualize_results(
         detections: 原始检测结果列表
         transforms_info: 图像变换信息列表
     """
-    logger.info("Generating visualization...")
-    
+    logger.info("Generating visualization for matching results...")
+
     try:
-        # 1. 可视化参考图像和其上的检测框（使用VGGT图像和坐标）
+        # 1. 可视化参考图像和其上的检测框（使用模型输入空间的图像和坐标）
         ref_image_np = (images[reference_idx].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
         ref_image_bgr = cv2.cvtColor(ref_image_np, cv2.COLOR_RGB2BGR)
         
         overlay = ref_image_bgr.copy()
-        colors = {}
-        
-        # 绘制参考图像的检测框（使用VGGT坐标）
+        colors: Dict[int, List[int]] = {}
+
+        # 绘制参考图像的检测框（使用模型输入坐标）
         for obj_id, data in points_per_object.items():
-            # 使用VGGT处理后的坐标
-            vggt_bbox = data['bbox']  # 这已经是VGGT输入空间的坐标
-            
+            # data['bbox'] 已经是在模型输入空间（VGGT/Pi3 预处理后的坐标）
+            input_bbox = data["bbox"]
+
             # 生成稳定的颜色
             rng = np.random.default_rng(obj_id)  # 局部随机数生成器，避免污染全局seed
             colors[obj_id] = rng.integers(50, 255, size=3).tolist()
             color = colors[obj_id]
-            
-            # 转换为整数坐标并确保在VGGT图像范围内
-            h, w = ref_image_bgr.shape[:2]  # 应该是518x518
-            x1, y1, x2, y2 = [max(0, int(c)) for c in vggt_bbox]
-            x1, x2 = min(x1, w-1), min(x2, w)
-            y1, y2 = min(y1, h-1), min(y2, h)
-            
+
+            # 转换为整数坐标并确保在当前图像范围内
+            h, w = ref_image_bgr.shape[:2]
+            x1, y1, x2, y2 = [max(0, int(c)) for c in input_bbox]
+            x1, x2 = min(x1, w - 1), min(x2, w)
+            y1, y2 = min(y1, h - 1), min(y2, h)
+
             if x1 < x2 and y1 < y2:  # 有效框
                 # 绘制检测框
                 cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
@@ -74,9 +76,16 @@ def visualize_results(
                 # 绘制ID标签 - 只显示ID，字体适中粗细
                 label = f"{obj_id}"
                 (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-                cv2.rectangle(overlay, (x1, y1-label_h-10), (x1+label_w, y1), color, -1)
-                cv2.putText(overlay, label, (x1, max(y1 - 5, 10)), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                cv2.rectangle(overlay, (x1, y1 - label_h - 10), (x1 + label_w, y1), color, -1)
+                cv2.putText(
+                    overlay,
+                    label,
+                    (x1, max(y1 - 5, 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (255, 255, 255),
+                    2,
+                )
             else:
                 logger.warning(f"Invalid reference bbox {obj_id}")
 
@@ -87,11 +96,10 @@ def visualize_results(
 
         # 2. 可视化每个目标图像上的所有检测框和匹配结果
         for s_idx, matched_boxes in correspondences.items():
-            # 使用VGGT处理后的图像
+            # 使用模型输入空间的图像
             target_image_np = (images[s_idx].permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
             target_image_bgr = cv2.cvtColor(target_image_np, cv2.COLOR_RGB2BGR)
-            
-            
+
             # 获取目标图像的所有原始检测框
             if detections and s_idx < len(detections) and transforms_info and s_idx < len(transforms_info):
                 # 提取目标图像的所有检测框
@@ -104,15 +112,15 @@ def visualize_results(
                     matched_target_bbox_ids.add(item.get('target_obj_id', item.get('target_bbox_id')))
                 
                 # 绘制所有原始检测框（使用与reference一致的样式）
-                h, w = target_image_bgr.shape[:2]  # 应该是518x518
+                h, w = target_image_bgr.shape[:2]
                 
                 for bbox_info in target_bboxes:
-                    # 将原始检测框映射到VGGT坐标
-                    vggt_bbox = target_transform.map_bbox_to_final(bbox_info['bbox'])
+                    # 将原始检测框映射到模型输入坐标
+                    input_bbox = target_transform.map_bbox_to_final(bbox_info['bbox'])
                     target_bbox_id = bbox_info['object_id']
                     
                     # 转换为整数坐标
-                    x1, y1, x2, y2 = [max(0, int(c)) for c in vggt_bbox]
+                    x1, y1, x2, y2 = [max(0, int(c)) for c in input_bbox]
                     x1, x2 = min(x1, w-1), min(x2, w)
                     y1, y2 = min(y1, h-1), min(y2, h)
                     
@@ -142,20 +150,20 @@ def visualize_results(
             for item in matched_boxes:
                 obj_id = item['object_id']
                 
-                # 获取VGGT坐标（而不是原图坐标）
-                vggt_box = item.get('vggt_box', [])
+                # 获取模型输入坐标（而不是原图坐标）
+                input_box = item.get('vggt_box', [])
                 target_bbox_id = item.get('target_obj_id', item.get('target_bbox_id', 'N/A'))
                 
-                if not vggt_box or len(vggt_box) != 4:
-                    logger.warning(f"WARNING: 目标图像 {s_idx} 对象 {obj_id}: 无效的VGGT坐标 {vggt_box}")
+                if not input_box or len(input_box) != 4:
+                    logger.warning(f"WARNING: 目标图像 {s_idx} 对象 {obj_id}: 无效的模型输入坐标 {input_box}")
                     continue
                 
                 # 使用与参考图像一致的颜色
                 color = colors.get(obj_id, [255, 255, 255])
                 
-                # 转换为整数坐标并确保在VGGT图像范围内
-                h, w = target_image_bgr.shape[:2]  # 应该是518x518
-                x1, y1, x2, y2 = [max(0, int(c)) for c in vggt_box]
+                # 转换为整数坐标并确保在当前图像范围内
+                h, w = target_image_bgr.shape[:2]
+                x1, y1, x2, y2 = [max(0, int(c)) for c in input_box]
                 x1, x2 = min(x1, w-1), min(x2, w)
                 y1, y2 = min(y1, h-1), min(y2, h)
                 
@@ -253,7 +261,7 @@ def generate_colors_for_objects(object_ids: List[int]) -> Dict[int, tuple]:
     Returns:
         对象ID到颜色的映射字典
     """
-    colors = {}
+    colors: Dict[int, tuple] = {}
     for obj_id in object_ids:
         # 使用本地RNG，确保稳定且不污染全局随机状态
         rng = np.random.default_rng(obj_id)
@@ -309,9 +317,11 @@ def save_visualization_summary(
                 f.write(f"Found {len(matches)} matches in image {target_idx}\n\n")
                 
                 total_matches += len(matches)
-            
+
+            algo_name = config.get_algorithm_name()
+
             # 写入汇总信息
-            f.write(f"Point tracking complete. Found correspondences in {len(correspondences)} images.\n")
+            f.write(f"{algo_name} complete. Found correspondences in {len(correspondences)} images.\n")
             f.write(f"Found {total_matches} matches across {len(correspondences)} images\n")
         
         logger.info(f"Saved matching summary to {summary_path}")

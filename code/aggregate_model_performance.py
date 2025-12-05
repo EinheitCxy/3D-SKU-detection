@@ -18,7 +18,11 @@ def parse_summary_file(file_path: Path) -> Dict:
 
     # 提取所有参考图片的指标
     metrics = []
-    pattern = r'总体召回率 \(Recall\): ([\d.]+)%.*?VGGT有效率 \(Effectiveness\): ([\d.]+)%.*?Reference ID映射准确率 \(Precision\): ([\d.]+)%'
+    pattern = (
+        r'总体召回率 \(Recall\): ([\d.]+)%.*?'
+        r'(?:模型有效率 / )?VGGT有效率 \(Effectiveness\): ([\d.]+)%.*?'
+        r'Reference ID映射准确率 \(Precision\): ([\d.]+)%'
+    )
 
     for match in re.finditer(pattern, content, re.DOTALL):
         recall = float(match.group(1))

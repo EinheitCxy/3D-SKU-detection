@@ -42,7 +42,7 @@ if [ ! -f "$SCRIPT_DIR/accuracy_annotation.py" ]; then
 fi
 
 if [ ! -d "$OUTPUT_BASE_DIR" ]; then
-    echo -e "${RED}错误: VGGT输出目录不存在: $OUTPUT_BASE_DIR${NC}"
+    echo -e "${RED}错误: 匹配输出目录不存在: $OUTPUT_BASE_DIR${NC}"
     exit 1
 fi
 
@@ -63,7 +63,7 @@ echo "" >> "$SUMMARY_REPORT"
 # 存储所有评估结果
 declare -a all_results=()
 
-echo -e "${BLUE}开始扫描VGGT输出目录...${NC}"
+echo -e "${BLUE}开始扫描匹配输出目录...${NC}"
 
 # 遍历所有output_pt子目录
 for ref_dir in "$OUTPUT_BASE_DIR"/*/; do
@@ -74,7 +74,7 @@ for ref_dir in "$OUTPUT_BASE_DIR"/*/; do
         if [ -f "$matching_summary" ]; then
             echo -e "${YELLOW}处理参考图片 $ref_num 的匹配结果...${NC}"
             
-            # 从VGGT结果中解析实际的图片对信息
+            # 从匹配结果中解析实际的图片对信息
             # 根据我们的推理逻辑，参考图片索引需要+1
             actual_ref_img=$((ref_num + 1))
             
@@ -124,7 +124,7 @@ for ref_dir in "$OUTPUT_BASE_DIR"/*/; do
                     
                     # 提取关键指标（适应新的百分比格式）
                     recall=$(grep "总体召回率" "$output_report" | head -1)
-                    effectiveness=$(grep "VGGT有效率" "$output_report" | head -1)
+                    effectiveness=$(grep -E "VGGT有效率|模型有效率" "$output_report" | head -1)
                     precision=$(grep "Reference ID映射准确率" "$output_report" | head -1)
                     
                     if [ -n "$recall" ] && [ -n "$effectiveness" ] && [ -n "$precision" ]; then

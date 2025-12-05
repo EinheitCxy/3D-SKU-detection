@@ -1,8 +1,8 @@
 """
 SKU匹配准确性标注系统
 
-该系统用于比较人工标注的SKU对应关系与VGGT系统输出的匹配结果，
-计算准确性指标，包括精确度(Precision)、召回率(Recall)和F1分数。
+该系统用于比较人工标注的SKU对应关系与匹配系统输出的结果
+（例如 VGGT / Pi3 / Point Tracking），计算召回率、有效率和ID映射准确率等指标。
 """
 
 import pandas as pd
@@ -19,9 +19,10 @@ class AccuracyAnnotator:
     """准确性标注器类"""
     
     def __init__(self):
-        self.ground_truth = {}  # 人工标注的真实数据
-        self.vggt_results = {}  # VGGT系统结果
-        self.metrics = {}       # 评估指标
+        self.ground_truth = {}
+        self.pred_results = {}
+        self.vggt_results = self.pred_results
+        self.metrics = {}
     
     def load_ground_truth(self, csv_path: str, dataset_filter: str = None) -> None:
         try:
@@ -50,7 +51,7 @@ class AccuracyAnnotator:
             print(f"加载人工标注数据失败: {e}")
             raise
     
-    def load_vggt_results(self, result_path: str) -> None:        
+    def load_system_results(self, result_path: str) -> None:
         try:
             with open(result_path, 'r', encoding='utf-8') as f:
                 content = f.read()
@@ -61,7 +62,7 @@ class AccuracyAnnotator:
             ref_base_index = int(parent_dir)
             actual_ref = ref_base_index + 1
             
-            # 基于人工标注中的图片对，查找对应的VGGT匹配结果
+            # 基于人工标注中的图片对，查找对应的系统匹配结果
             expected_pairs = []
             for pair_name in self.ground_truth.keys():
                 ref_img_str, target_img_str = pair_name.split('_to_')
@@ -135,15 +136,19 @@ class AccuracyAnnotator:
                     self.vggt_results[pair_name] = target_section['matches']
 
         except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
-            print(f"加载VGGT结果失败: {e}")
+            print(f"加载匹配结果数据失败: {e}")
             raise
+
+    def load_vggt_results(self, result_path: str) -> None:
+        """向后兼容入口，等价于 load_system_results。"""
+        self.load_system_results(result_path)
     
     def extract_image_pair_from_vggt_path(self, result_path: str) -> str:
         """
-        从VGGT结果文件路径推断图片对信息
+        从结果文件路径推断图片对信息
         
         Args:
-            result_path: VGGT结果文件路径
+            result_path: 匹配结果文件路径
             
         Returns:
             图片对标识符，如"0_to_1"
@@ -169,10 +174,10 @@ class AccuracyAnnotator:
             return {}
         
         if image_pair not in self.vggt_results:
-            print(f"警告: 未找到图片对 {image_pair} 的VGGT结果")
+            print(f"警告: 未找到图片对 {image_pair} 的系统结果")
             return {}
         
-        # 获取人工标注和VGGT结果
+        # 获取人工标注和系统结果
         gt_matches = self.ground_truth[image_pair]
         vggt_matches = self.vggt_results[image_pair]
         
@@ -185,12 +190,12 @@ class AccuracyAnnotator:
         vggt_mapping = {match['reference_id']: match['target_id'] for match in vggt_matches}
         
         # 重新定义评估指标（人工标注不存在的不算错）
-        true_positives = len(gt_set & vggt_set)  # 人工标注存在且VGGT也预测的匹配
-        false_negatives = len(gt_set - vggt_set)  # 人工标注存在但VGGT未预测的匹配（遗漏）
+        true_positives = len(gt_set & vggt_set)  # 人工标注存在且系统也预测的匹配
+        false_negatives = len(gt_set - vggt_set)  # 人工标注存在但系统未预测的匹配（遗漏）
         # 注意：不计算false_positives，因为人工标注可能不完整
         
         # 计算基于reference ID的映射准确率
-        # 找到VGGT和人工标注都有映射的reference ID
+        # 找到系统输出和人工标注都有映射的reference ID
         common_ref_ids = set(gt_mapping.keys()) & set(vggt_mapping.keys())
         ref_mapping_correct = 0
         ref_mapping_total = len(common_ref_ids)
@@ -219,7 +224,7 @@ class AccuracyAnnotator:
         
         for match in (gt_set - vggt_set):
             ref_id, target_id = match
-            # 如果这个ref_id在VGGT中也存在但映射不同，则归类为错误映射，不算遗漏
+            # 如果这个ref_id在系统输出中也存在但映射不同，则归类为错误映射，不算遗漏
             if ref_id in vggt_mapping and vggt_mapping[ref_id] != target_id:
                 continue  # 已经在wrong_mappings中记录
             else:
@@ -228,7 +233,7 @@ class AccuracyAnnotator:
         # 计算召回率（基于人工标注的完整性）
         recall = true_positives / len(gt_set) if len(gt_set) > 0 else 0
         
-        # 计算VGGT预测中的有效比例（在人工标注范围内的准确性）
+        # 计算系统预测中的有效比例（在人工标注范围内的准确性）
         vggt_effectiveness = true_positives / len(vggt_set) if len(vggt_set) > 0 else 0
         
         # 计算基于reference ID映射的准确率
@@ -282,7 +287,7 @@ class AccuracyAnnotator:
         if not all_metrics:
             report_lines.extend([
                 "错误: 未找到可比较的图片对数据",
-                "请检查人工标注数据和VGGT结果是否匹配"
+                "请检查人工标注数据和系统输出结果是否匹配"
             ])
         else:
             # 计算总体指标
@@ -304,21 +309,21 @@ class AccuracyAnnotator:
             report_lines.extend([
                 "总体性能指标:",
                 f"  总体召回率 (Recall): {overall_recall:.2%} ({total_tp}/{total_gt})",
-                f"  VGGT有效率 (Effectiveness): {overall_effectiveness:.2%} ({total_tp}/{total_vggt})",
+                f"  模型有效率 / VGGT有效率 (Effectiveness): {overall_effectiveness:.2%} ({total_tp}/{total_vggt})",
                 f"  Reference ID映射准确率 (Precision): {overall_ref_mapping_precision:.2%} ({total_ref_mapping_correct}/{total_ref_mapping_total})",
                 "",
                 "详细统计:",
                 f"  人工标注总匹配数: {total_gt}",
-                f"  VGGT预测总匹配数: {total_vggt}",
+                f"  系统预测总匹配数: {total_vggt}",
                 f"  正确匹配数: {total_tp}",
                 f"  遗漏匹配数: {total_fn}",
-                f"  VGGT额外预测数: {total_extra}",
+                f"  系统额外预测数: {total_extra}",
                 f"  错误映射数: {total_wrong_mappings}",
                 f"  共同Reference ID数量: {total_ref_mapping_total}",
                 f"  Reference ID映射正确数: {total_ref_mapping_correct}",
                 "",
-                "说明: VGGT额外预测的匹配不被视为错误，因为人工标注可能不完整",
-                "Reference ID映射准确率: 当VGGT和人工标注都对同一ref ID有映射时，映射目标是否一致",
+                "说明: 系统额外预测的匹配不被视为错误，因为人工标注可能不完整",
+                "Reference ID映射准确率: 当系统输出和人工标注都对同一ref ID有映射时，映射目标是否一致",
                 ""
             ])
             
@@ -330,10 +335,10 @@ class AccuracyAnnotator:
                         "-" * 50
                     ])
                     
-                    # VGGT额外预测的匹配
+                    # 系统额外预测的匹配
                     if metrics['vggt_extra_matches']:
                         report_lines.extend([
-                            "VGGT额外检出对 (人工标注中不存在):",
+                            "系统额外检出对 (人工标注中不存在):",
                             f"  {metrics['vggt_extra_matches']}",
                             ""
                         ])
@@ -341,7 +346,7 @@ class AccuracyAnnotator:
                     # 遗漏的匹配
                     if metrics['missed_matches']:
                         report_lines.extend([
-                            "遗漏检出对 (人工标注存在但VGGT未检出):",
+                            "遗漏检出对 (人工标注存在但系统未检出):",
                             f"  {metrics['missed_matches']}",
                             ""
                         ])
@@ -350,16 +355,16 @@ class AccuracyAnnotator:
                     if metrics['wrong_mappings']:
                         report_lines.extend([
                             "错误检出对 (同一ref_id映射到不同target_id):",
-                            "  格式: (ref_id, VGGT预测的target_id, 人工标注的target_id)"
+                            "  格式: (ref_id, 系统预测的target_id, 人工标注的target_id)"
                         ])
                         for ref_id, vggt_target, gt_target in metrics['wrong_mappings']:
-                            report_lines.append(f"  ref_{ref_id}: VGGT预测→{vggt_target}, 人工标注→{gt_target}")
+                            report_lines.append(f"  ref_{ref_id}: 系统预测→{vggt_target}, 人工标注→{gt_target}")
                         report_lines.append("")
                     
                     # 正确匹配
                     if metrics['correct_matches']:
                         report_lines.extend([
-                            "正确检出对 (人工标注和VGGT都检出):",
+                            "正确检出对 (人工标注和系统输出都检出):",
                             f"  {metrics['correct_matches']}",
                             ""
                         ])
@@ -383,8 +388,13 @@ def main():
     parser = argparse.ArgumentParser(description='SKU匹配准确性标注系统')
     parser.add_argument('--benchmark-csv', required=True,
                        help='人工标注数据集CSV文件路径')
-    parser.add_argument('--vggt-result', required=True,
-                       help='VGGT系统输出的匹配结果文件路径')
+    parser.add_argument(
+        '--result-file',
+        '--vggt-result',
+        dest='result_file',
+        required=True,
+        help='匹配系统输出的summary文件路径（可来自 VGGT/Pi3/Point Tracking）'
+    )
     parser.add_argument('--dataset-filter', default=None,
                        help='数据集过滤器')
     parser.add_argument('--output', default=None,
@@ -397,8 +407,8 @@ def main():
         print(f"错误: 人工标注文件不存在: {args.benchmark_csv}")
         return
     
-    if not os.path.exists(args.vggt_result):
-        print(f"错误: VGGT结果文件不存在: {args.vggt_result}")
+    if not os.path.exists(args.result_file):
+        print(f"错误: 匹配结果文件不存在: {args.result_file}")
         return
     
     # 创建标注器实例
@@ -407,7 +417,7 @@ def main():
     try:
         # 加载数据
         annotator.load_ground_truth(args.benchmark_csv, args.dataset_filter)
-        annotator.load_vggt_results(args.vggt_result)
+        annotator.load_system_results(args.result_file)
         
         # 生成报告
         if args.output:
