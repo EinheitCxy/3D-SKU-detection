@@ -2,6 +2,7 @@
 SKU匹配系统可视化模块
 
 包含结果可视化和图像处理功能
+采用SAM3高质量可视化方案：K-Means LAB色彩空间颜色生成
 """
 
 import cv2
@@ -10,11 +11,64 @@ import torch
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional
+from skimage.color import lab2rgb, rgb2lab
+from sklearn.cluster import KMeans
 
 from .config import SKUMatchingConfig
 from .data_utils import extract_bboxes_from_detections
 
 logger = logging.getLogger(__name__)
+
+
+def generate_perceptually_distinct_colors(n_colors=128, n_samples=5000, seed=42):
+    """生成感知上差异最大的颜色集合（基于SAM3方法）
+
+    使用K-Means在LAB色彩空间中聚类，确保生成的颜色在人眼感知上高度区分。
+    LAB色彩空间是感知均匀的色彩空间，欧氏距离对应于人眼感知的色差。
+
+    Args:
+        n_colors: 要生成的颜色数量
+        n_samples: 用于聚类的随机RGB样本数量
+        seed: 随机种子，确保颜色生成的可重复性
+
+    Returns:
+        np.ndarray: 形状为 (n_colors, 3) 的RGB颜色数组，值范围 [0, 255]
+    """
+    # Step 1: 生成随机RGB样本
+    np.random.seed(seed)
+    rgb = np.random.rand(n_samples, 3)
+
+    # Step 2: 转换到LAB色彩空间（感知均匀）
+    lab = rgb2lab(rgb.reshape(1, -1, 3)).reshape(-1, 3)
+
+    # Step 3: 在LAB空间中进行K-Means聚类
+    kmeans = KMeans(n_clusters=n_colors, n_init=10, random_state=seed)
+    kmeans.fit(lab)
+    centers_lab = kmeans.cluster_centers_
+
+    # Step 4: 将聚类中心转回RGB空间
+    colors_rgb = lab2rgb(centers_lab.reshape(1, -1, 3)).reshape(-1, 3)
+    colors_rgb = np.clip(colors_rgb * 255, 0, 255).astype(np.uint8)
+
+    return colors_rgb
+
+
+# 全局颜色池（预计算，避免重复生成）
+_GLOBAL_COLOR_POOL = generate_perceptually_distinct_colors(n_colors=128, n_samples=5000)
+
+
+def get_color_from_pool(obj_id: int) -> tuple:
+    """从全局颜色池中获取稳定的颜色
+
+    Args:
+        obj_id: 对象ID
+
+    Returns:
+        tuple: BGR格式的颜色 (B, G, R)
+    """
+    color_rgb = _GLOBAL_COLOR_POOL[obj_id % len(_GLOBAL_COLOR_POOL)]
+    # 转换为OpenCV的BGR格式
+    return tuple(map(int, color_rgb[::-1]))
 
 
 def visualize_results(
@@ -54,10 +108,9 @@ def visualize_results(
             # data['bbox'] 已经是在模型输入空间（VGGT/Pi3 预处理后的坐标）
             input_bbox = data["bbox"]
 
-            # 生成稳定的颜色
-            rng = np.random.default_rng(obj_id)  # 局部随机数生成器，避免污染全局seed
-            colors[obj_id] = rng.integers(50, 255, size=3).tolist()
-            color = colors[obj_id]
+            # 使用LAB空间优化的颜色池（SAM3方法）
+            color = get_color_from_pool(obj_id)
+            colors[obj_id] = color  # 保存颜色以便在目标图像中复用
 
             # 转换为整数坐标并确保在当前图像范围内
             h, w = ref_image_bgr.shape[:2]
@@ -192,10 +245,17 @@ def draw_bbox_with_id(
     obj_id: int,
     color: tuple,
     thickness: int = 2,
-    font_scale: float = 0.6
+    font_scale: float = 0.7,
+    show_center: bool = True
 ) -> None:
-    """在图像上绘制带ID标签的边界框
-    
+    """在图像上绘制带ID标签的边界框（SAM3增强版）
+
+    增强特性：
+    - 更粗的边界框线条（提升清晰度）
+    - 白色半透明背景 + 彩色粗体文字（更易读）
+    - 可选的中心点标记（提升定位精度）
+    - 自动边距padding（避免文字被裁剪）
+
     Args:
         image: 输入图像 (BGR格式)
         bbox: 边界框坐标 [x1, y1, x2, y2]
@@ -203,22 +263,55 @@ def draw_bbox_with_id(
         color: 绘制颜色 (B, G, R)
         thickness: 线条粗细
         font_scale: 字体大小
+        show_center: 是否显示中心点
     """
     h, w = image.shape[:2]
     x1, y1, x2, y2 = [max(0, int(c)) for c in bbox]
     x1, x2 = min(x1, w-1), min(x2, w)
     y1, y2 = min(y1, h-1), min(y2, h)
-    
+
     if x1 < x2 and y1 < y2:  # 有效框
-        # 绘制边界框
-        cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness)
-        
-        # 绘制ID标签
+        # 1. 绘制边界框（加粗线条）
+        cv2.rectangle(image, (x1, y1), (x2, y2), color, thickness + 1)
+
+        # 2. 绘制中心点（可选）
+        if show_center:
+            center_x, center_y = (x1 + x2) // 2, (y1 + y2) // 2
+            cv2.circle(image, (center_x, center_y), 4, color, -1)
+            cv2.circle(image, (center_x, center_y), 5, (255, 255, 255), 1)  # 白色外圈
+
+        # 3. 绘制ID标签（SAM3风格：白色半透明背景 + 彩色粗体文字）
         label = f"{obj_id}"
-        (label_w, label_h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
-        cv2.rectangle(image, (x1, y1-label_h-10), (x1+label_w, y1), color, -1)
-        cv2.putText(image, label, (x1, max(y1 - 5, 10)), 
-                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        (label_w, label_h), baseline = cv2.getTextSize(label, font, font_scale, 2)
+
+        # 计算标签位置（添加padding）
+        padding = 4
+        label_x = x1
+        label_y = max(label_h + padding * 2, y1 - 5)
+
+        # 绘制白色半透明背景框
+        overlay = image.copy()
+        cv2.rectangle(
+            overlay,
+            (label_x, label_y - label_h - padding),
+            (label_x + label_w + padding * 2, label_y + padding),
+            (255, 255, 255),
+            -1
+        )
+        cv2.addWeighted(overlay, 0.75, image, 0.25, 0, image)  # 75%透明度
+
+        # 绘制彩色粗体ID文字
+        cv2.putText(
+            image,
+            label,
+            (label_x + padding, label_y),
+            font,
+            font_scale,
+            color,
+            2,  # 粗体效果
+            cv2.LINE_AA  # 抗锯齿
+        )
 
 
 def draw_dashed_bbox(
@@ -253,20 +346,22 @@ def draw_dashed_bbox(
 
 
 def generate_colors_for_objects(object_ids: List[int]) -> Dict[int, tuple]:
-    """为对象ID生成稳定的颜色映射
-    
+    """为对象ID生成稳定的高对比度颜色映射（SAM3方法）
+
+    使用预计算的LAB空间K-Means聚类颜色池，确保：
+    - 颜色在感知上高度区分（LAB空间优化）
+    - 相同ID始终获得相同颜色（稳定映射）
+    - 高性能（从预计算池中直接查询）
+
     Args:
         object_ids: 对象ID列表
-        
+
     Returns:
-        对象ID到颜色的映射字典
+        对象ID到BGR颜色的映射字典
     """
     colors: Dict[int, tuple] = {}
     for obj_id in object_ids:
-        # 使用本地RNG，确保稳定且不污染全局随机状态
-        rng = np.random.default_rng(obj_id)
-        color = tuple(rng.integers(50, 255, size=3).tolist())
-        colors[obj_id] = color
+        colors[obj_id] = get_color_from_pool(obj_id)
     return colors
 
 
