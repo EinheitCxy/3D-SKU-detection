@@ -158,7 +158,7 @@ class SKUMatchingSystem:
             
             # 4. 执行匹配算法
             correspondences, points_per_object = self._run_matching(
-                images, detections, reference_image_idx, transforms_info
+                images, detections, reference_image_idx, transforms_info, image_paths
             )
             
             # 5. 后处理和可视化
@@ -275,7 +275,8 @@ class SKUMatchingSystem:
         images: torch.Tensor, 
         detections: List[Dict], 
         reference_image_idx: int,
-        transforms_info: List
+        transforms_info: List,
+        image_paths: List[str],
     ) -> tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
         """运行匹配算法"""
         import time
@@ -302,7 +303,8 @@ class SKUMatchingSystem:
                     images,
                     self.config,
                     reference_image_idx=reference_image_idx,
-                    transforms_info=transforms_info
+                    transforms_info=transforms_info,
+                    image_paths=image_paths,
                 )
         except RuntimeError as e:
             if 'out of memory' in str(e).lower() and torch.cuda.is_available():

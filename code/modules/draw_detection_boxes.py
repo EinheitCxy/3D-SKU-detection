@@ -104,9 +104,8 @@ def main():
     # 处理每张图片
     success_count = 0
     total_count = 0
-    print("===Generating imdata with bbox===")
+    logger.info(f"Generating bbox visualizations for {len(numeric_images)} images...")
     for num, image_path in numeric_images:
-        logger.info(f"\n--- Processing {image_path.name} ---")
         total_count += 1
 
         if num not in det_map:

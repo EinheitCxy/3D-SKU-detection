@@ -17,6 +17,13 @@ dependencies = [
     # Computer vision
     "opencv-python>=4.8.0",
     "Pillow>=9.0.0",
+    "decord>=0.6.0",  # Required for SAM3 image/video loading
+    "pycocotools>=2.0.7",  # Required for SAM3 COCO format support
+    # SAM3 dependencies
+    "timm>=1.0.17",  # Vision transformers for SAM3
+    "ftfy==6.1.1",  # Text formatting
+    "regex",  # Regular expressions
+    "iopath>=0.1.10",  # I/O utilities
     # 3D processing and visualization
     "trimesh>=4.0.0",
     "viser>=0.2.0",

@@ -28,21 +28,22 @@ reconstruction:
 
 # SKU匹配推理配置 (modules/inference.py)
 inference:
-  config: null  # YAML配置文件路径
-  image_folder: "images"
-  detection_dir: "detections_results" 
-  output_dir: "."  # 输出根目录，相对于数据集
-  reference_idx: 0
-  max_images: 50
-  algorithm: "point_tracking"  # point_tracking, 3d, both
-  device: "cuda"
-  seed: 42
-  save_json: true
-  # 匹配参数
+  # 说明：
+  # - 该段仅作为 `SKUMatchingConfig` 的覆盖项（overrides）。
+  # - 未填写的字段使用 `code/utils/config.py` 内的默认值（按算法区分）。
+  # - 运行时路径/索引/设备等通常由 main.py 或命令行传入，无需在这里重复配置。
+
+  # 匹配参数（覆盖默认）
   max_points_per_bbox: 30
   confidence_threshold: 0.5
   min_confident_points: 10
   correspondence_threshold: 0.5
+
+  # SAM3 mask 引导采样（可选）
+  enable_sam3_mask_sampling: true
+  sam3_checkpoint_path: "../sam3/checkpoints/sam3.pt"   # 例如: "../sam3/checkpoints/sam3.pt" 或 "/abs/path/sam3.pt"
+  sam3_use_self_exemplar: true
+  sam3_self_exemplar_threshold: 0.5
 
 # 检出框可视化配置 (modules/draw_detection_boxes.py) 
 visualization:
@@ -69,7 +70,7 @@ deduplication:
 # 准确性评估配置 (accuracy_annotation.py)
 accuracy:
   benchmark_csv: "imdata/picture_mapping_benchmark.csv"  # required
-  vggt_result: null    # required，VGGT输出文件路径
+  system_result: null    # required，系统输出文件路径（支持VGGT/Pi3/Point Tracking）
   dataset_filter: null # 数据集过滤器
   output: null         # 输出报告文件路径
 

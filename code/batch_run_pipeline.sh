@@ -1,6 +1,9 @@
 #!/bin/bash
 # 批量运行pipeline：floor_display1-14，point_tracking + pi3 3d算法
 
+# 优化CUDA显存分配，避免碎片化
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
 cd "$(dirname "$0")"
 
 for i in {1..14}; do

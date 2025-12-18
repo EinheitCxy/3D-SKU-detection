@@ -20,8 +20,7 @@ class AccuracyAnnotator:
     
     def __init__(self):
         self.ground_truth = {}
-        self.pred_results = {}
-        self.vggt_results = self.pred_results
+        self.pred_results = {}  # 系统预测结果（通用，支持VGGT/Pi3/Point Tracking等）
         self.metrics = {}
     
     def load_ground_truth(self, csv_path: str, dataset_filter: str = None) -> None:
@@ -133,14 +132,17 @@ class AccuracyAnnotator:
                         break
 
                 if target_section and target_section['matches']:
-                    self.vggt_results[pair_name] = target_section['matches']
+                    self.pred_results[pair_name] = target_section['matches']
 
         except (FileNotFoundError, PermissionError, UnicodeDecodeError) as e:
             print(f"加载匹配结果数据失败: {e}")
             raise
 
     def load_vggt_results(self, result_path: str) -> None:
-        """向后兼容入口，等价于 load_system_results。"""
+        """向后兼容入口（API兼容性保留），等价于 load_system_results。
+
+        注：虽然函数名为load_vggt_results，但实际支持所有后端（VGGT/Pi3/Point Tracking）。
+        """
         self.load_system_results(result_path)
     
     def extract_image_pair_from_vggt_path(self, result_path: str) -> str:
@@ -173,86 +175,86 @@ class AccuracyAnnotator:
             print(f"警告: 未找到图片对 {image_pair} 的人工标注数据")
             return {}
         
-        if image_pair not in self.vggt_results:
+        if image_pair not in self.pred_results:
             print(f"警告: 未找到图片对 {image_pair} 的系统结果")
             return {}
-        
+
         # 获取人工标注和系统结果
         gt_matches = self.ground_truth[image_pair]
-        vggt_matches = self.vggt_results[image_pair]
+        pred_matches = self.pred_results[image_pair]
         
         # 转换为集合格式进行比较
         gt_set = {(match['reference_id'], match['target_id']) for match in gt_matches}
-        vggt_set = {(match['reference_id'], match['target_id']) for match in vggt_matches}
-        
+        pred_set = {(match['reference_id'], match['target_id']) for match in pred_matches}
+
         # 转换为字典格式进行reference ID映射分析
         gt_mapping = {match['reference_id']: match['target_id'] for match in gt_matches}
-        vggt_mapping = {match['reference_id']: match['target_id'] for match in vggt_matches}
-        
+        pred_mapping = {match['reference_id']: match['target_id'] for match in pred_matches}
+
         # 重新定义评估指标（人工标注不存在的不算错）
-        true_positives = len(gt_set & vggt_set)  # 人工标注存在且系统也预测的匹配
-        false_negatives = len(gt_set - vggt_set)  # 人工标注存在但系统未预测的匹配（遗漏）
+        true_positives = len(gt_set & pred_set)  # 人工标注存在且系统也预测的匹配
+        false_negatives = len(gt_set - pred_set)  # 人工标注存在但系统未预测的匹配（遗漏）
         # 注意：不计算false_positives，因为人工标注可能不完整
-        
+
         # 计算基于reference ID的映射准确率
         # 找到系统输出和人工标注都有映射的reference ID
-        common_ref_ids = set(gt_mapping.keys()) & set(vggt_mapping.keys())
+        common_ref_ids = set(gt_mapping.keys()) & set(pred_mapping.keys())
         ref_mapping_correct = 0
         ref_mapping_total = len(common_ref_ids)
-        
+
         # 分类不同类型的匹配错误
         wrong_mappings = []  # 错误映射：同一ref_id映射到不同target_id
-        
+
         for ref_id in common_ref_ids:
-            if gt_mapping[ref_id] == vggt_mapping[ref_id]:
+            if gt_mapping[ref_id] == pred_mapping[ref_id]:
                 ref_mapping_correct += 1
             else:
                 # 记录错误映射
-                wrong_mappings.append((ref_id, vggt_mapping[ref_id], gt_mapping[ref_id]))
+                wrong_mappings.append((ref_id, pred_mapping[ref_id], gt_mapping[ref_id]))
         
         # 重新计算额外预测和遗漏，排除错误映射的情况
-        vggt_extra_matches_filtered = []
+        pred_extra_matches_filtered = []
         missed_matches_filtered = []
-        
-        for match in (vggt_set - gt_set):
+
+        for match in (pred_set - gt_set):
             ref_id, target_id = match
             # 如果这个ref_id在人工标注中也存在但映射不同，则归类为错误映射，不算额外预测
             if ref_id in gt_mapping and gt_mapping[ref_id] != target_id:
                 continue  # 已经在wrong_mappings中记录
             else:
-                vggt_extra_matches_filtered.append(match)
-        
-        for match in (gt_set - vggt_set):
+                pred_extra_matches_filtered.append(match)
+
+        for match in (gt_set - pred_set):
             ref_id, target_id = match
             # 如果这个ref_id在系统输出中也存在但映射不同，则归类为错误映射，不算遗漏
-            if ref_id in vggt_mapping and vggt_mapping[ref_id] != target_id:
+            if ref_id in pred_mapping and pred_mapping[ref_id] != target_id:
                 continue  # 已经在wrong_mappings中记录
             else:
                 missed_matches_filtered.append(match)
-        
+
         # 计算召回率（基于人工标注的完整性）
         recall = true_positives / len(gt_set) if len(gt_set) > 0 else 0
-        
+
         # 计算系统预测中的有效比例（在人工标注范围内的准确性）
-        vggt_effectiveness = true_positives / len(vggt_set) if len(vggt_set) > 0 else 0
-        
+        pred_effectiveness = true_positives / len(pred_set) if len(pred_set) > 0 else 0
+
         # 计算基于reference ID映射的准确率
         ref_mapping_precision = ref_mapping_correct / ref_mapping_total if ref_mapping_total > 0 else 0
-        
+
         metrics = {
             'image_pair': image_pair,
             'ground_truth_matches': len(gt_matches),
-            'vggt_matches': len(vggt_matches),
+            'pred_matches': len(pred_matches),
             'true_positives': true_positives,
             'false_negatives': false_negatives,
             'recall': recall,
-            'vggt_effectiveness': vggt_effectiveness,
+            'pred_effectiveness': pred_effectiveness,
             'ref_mapping_precision': ref_mapping_precision,
             'ref_mapping_correct': ref_mapping_correct,
             'ref_mapping_total': ref_mapping_total,
-            'correct_matches': list(gt_set & vggt_set),
+            'correct_matches': list(gt_set & pred_set),
             'missed_matches': missed_matches_filtered,  # 使用过滤后的遗漏匹配
-            'vggt_extra_matches': vggt_extra_matches_filtered,  # 使用过滤后的额外预测
+            'pred_extra_matches': pred_extra_matches_filtered,  # 使用过滤后的额外预测
             'wrong_mappings': wrong_mappings  # 新增：错误映射
         }
         
@@ -279,11 +281,11 @@ class AccuracyAnnotator:
         # 计算所有图片对的指标
         all_metrics = []
         for image_pair in self.ground_truth.keys():
-            if image_pair in self.vggt_results:
+            if image_pair in self.pred_results:
                 metrics = self.calculate_metrics(image_pair)
                 if metrics:
                     all_metrics.append(metrics)
-        
+
         if not all_metrics:
             report_lines.extend([
                 "错误: 未找到可比较的图片对数据",
@@ -292,29 +294,29 @@ class AccuracyAnnotator:
         else:
             # 计算总体指标
             total_gt = sum(m['ground_truth_matches'] for m in all_metrics)
-            total_vggt = sum(m['vggt_matches'] for m in all_metrics)
+            total_pred = sum(m['pred_matches'] for m in all_metrics)
             total_tp = sum(m['true_positives'] for m in all_metrics)
             total_fn = sum(m['false_negatives'] for m in all_metrics)
-            total_extra = sum(len(m['vggt_extra_matches']) for m in all_metrics)
+            total_extra = sum(len(m['pred_extra_matches']) for m in all_metrics)
             total_wrong_mappings = sum(len(m['wrong_mappings']) for m in all_metrics)
-            
+
             # 计算总体reference ID映射指标
             total_ref_mapping_correct = sum(m['ref_mapping_correct'] for m in all_metrics)
             total_ref_mapping_total = sum(m['ref_mapping_total'] for m in all_metrics)
-            
+
             overall_recall = total_tp / total_gt if total_gt > 0 else 0
-            overall_effectiveness = total_tp / total_vggt if total_vggt > 0 else 0
+            overall_effectiveness = total_tp / total_pred if total_pred > 0 else 0
             overall_ref_mapping_precision = total_ref_mapping_correct / total_ref_mapping_total if total_ref_mapping_total > 0 else 0
-            
+
             report_lines.extend([
                 "总体性能指标:",
                 f"  总体召回率 (Recall): {overall_recall:.2%} ({total_tp}/{total_gt})",
-                f"  模型有效率 / VGGT有效率 (Effectiveness): {overall_effectiveness:.2%} ({total_tp}/{total_vggt})",
+                f"  模型有效率 (Effectiveness): {overall_effectiveness:.2%} ({total_tp}/{total_pred})",
                 f"  Reference ID映射准确率 (Precision): {overall_ref_mapping_precision:.2%} ({total_ref_mapping_correct}/{total_ref_mapping_total})",
                 "",
                 "详细统计:",
                 f"  人工标注总匹配数: {total_gt}",
-                f"  系统预测总匹配数: {total_vggt}",
+                f"  系统预测总匹配数: {total_pred}",
                 f"  正确匹配数: {total_tp}",
                 f"  遗漏匹配数: {total_fn}",
                 f"  系统额外预测数: {total_extra}",
@@ -336,13 +338,13 @@ class AccuracyAnnotator:
                     ])
                     
                     # 系统额外预测的匹配
-                    if metrics['vggt_extra_matches']:
+                    if metrics['pred_extra_matches']:
                         report_lines.extend([
                             "系统额外检出对 (人工标注中不存在):",
-                            f"  {metrics['vggt_extra_matches']}",
+                            f"  {metrics['pred_extra_matches']}",
                             ""
                         ])
-                    
+
                     # 遗漏的匹配
                     if metrics['missed_matches']:
                         report_lines.extend([
@@ -350,15 +352,15 @@ class AccuracyAnnotator:
                             f"  {metrics['missed_matches']}",
                             ""
                         ])
-                    
+
                     # 错误映射
                     if metrics['wrong_mappings']:
                         report_lines.extend([
                             "错误检出对 (同一ref_id映射到不同target_id):",
                             "  格式: (ref_id, 系统预测的target_id, 人工标注的target_id)"
                         ])
-                        for ref_id, vggt_target, gt_target in metrics['wrong_mappings']:
-                            report_lines.append(f"  ref_{ref_id}: 系统预测→{vggt_target}, 人工标注→{gt_target}")
+                        for ref_id, pred_target, gt_target in metrics['wrong_mappings']:
+                            report_lines.append(f"  ref_{ref_id}: 系统预测→{pred_target}, 人工标注→{gt_target}")
                         report_lines.append("")
                     
                     # 正确匹配

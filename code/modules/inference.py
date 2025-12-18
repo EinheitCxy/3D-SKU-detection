@@ -17,8 +17,6 @@ try:
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from utils import (
         SKUMatchingConfig, 
-        DEFAULT_POINT_TRACKING_CONFIG, 
-        DEFAULT_3D_PROJECTION_CONFIG,
         SKUMatchingSystem
     )
 except ImportError as e:
@@ -87,12 +85,10 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
     Note:
         点追踪算法使用点追踪匹配，3D算法使用3D-2D投影匹配。
     """
-    base_config = DEFAULT_POINT_TRACKING_CONFIG if algorithm_type == "point_tracking" else DEFAULT_3D_PROJECTION_CONFIG
-    
     # 从parser获取基础output_dir，然后按算法类型和索引分组
     output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx, getattr(args, "backend", None))
-    
-    config_dict = {
+
+    overrides = {
         "backend": args.backend,
         "device": args.device,
         "max_points_per_bbox": args.max_points_per_bbox,
@@ -102,16 +98,17 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         "seed": args.seed,
         "save_json": args.save_json,
         "output_dir": output_dir,
-        **{k: v for k, v in base_config.items() if k != "output_dir"}  # 排除base_config中的output_dir
     }
-    
-    return SKUMatchingConfig(**config_dict)
+
+    if algorithm_type == "point_tracking":
+        return SKUMatchingConfig.for_point_tracking(**overrides)
+    return SKUMatchingConfig.for_3d_projection(**overrides)
 
 
 def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
     from utils import build_matching_config_from_yaml
 
-    cfg = build_matching_config_from_yaml(args.config, algorithm=args.algorithm)
+    cfg = build_matching_config_from_yaml(args.config, algorithm=algorithm_type)
     # Always route outputs to per-ref subdir like CLI path does
     cfg.output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx, getattr(args, "backend", None))
     # Override a few runtime knobs from CLI

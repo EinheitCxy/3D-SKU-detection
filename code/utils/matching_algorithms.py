@@ -27,6 +27,12 @@ from .geometry_3d import (
     apply_uniqueness_constraint
 )
 from .transforms import ImageTransformBase
+from .sam3_utils import (
+    map_points_to_final,
+    maybe_run_sam3_for_reference,
+    sample_3d_points_from_mask,
+    sample_points_from_mask,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +259,7 @@ def find_object_correspondences(
     config: SKUMatchingConfig,
     reference_image_idx: int = 0,
     transforms_info: Optional[List[ImageTransformBase]] = None,
+    image_paths: Optional[List[str]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """查找物体对应关系的主函数
 
@@ -279,11 +286,23 @@ def find_object_correspondences(
     # 根据配置选择匹配算法
     if config.enable_3d_projection_matching:
         return find_correspondences_3d_projection(
-            vggt_model, detections, images, config, reference_image_idx, transforms_info
+            vggt_model,
+            detections,
+            images,
+            config,
+            reference_image_idx,
+            transforms_info,
+            image_paths=image_paths,
         )
     else:
         return find_correspondences_point_tracking(
-            vggt_model, detections, images, config, reference_image_idx, transforms_info
+            vggt_model,
+            detections,
+            images,
+            config,
+            reference_image_idx,
+            transforms_info,
+            image_paths=image_paths,
         )
 
 
@@ -294,6 +313,7 @@ def find_correspondences_3d_projection(
     config: SKUMatchingConfig,
     reference_image_idx: int = 0,
     transforms_info: Optional[List[ImageTransformBase]] = None,
+    image_paths: Optional[List[str]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """基于3D-2D投影的物体匹配算法"""
 
@@ -540,11 +560,25 @@ def find_correspondences_3d_projection(
         if not ref_bboxes:
             logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
             return {}, None
-            
+
         if not transforms_info or reference_image_idx >= len(transforms_info):
             raise ValueError("transforms_info missing")
-            
+
         ref_transform = transforms_info[reference_image_idx]
+
+        sam_masks_by_obj_id: Dict[int, "np.ndarray"] = {}
+        masks = maybe_run_sam3_for_reference(
+            config=config,
+            image_paths=image_paths,
+            reference_image_idx=reference_image_idx,
+            ref_bboxes_xyxy=[b["bbox"] for b in ref_bboxes],
+            transform=ref_transform,
+            output_mask_space="final",
+        )
+        if masks is not None:
+            for b, m in zip(ref_bboxes, masks):
+                sam_masks_by_obj_id[int(b["object_id"])] = m
+
         correspondences = {}
         points_per_object = {}
         
@@ -578,10 +612,20 @@ def find_correspondences_3d_projection(
                 
                 # 从参考图像的检出框采样3D点（使用非重合区域）
                 other_ref_bboxes = [other['bbox'] for other in ref_bboxes if other['object_id'] != ref_obj_id]
-                points_3d = sample_3d_points_from_non_overlap_regions(
-                    scene_data, reference_image_idx, ref_bbox_info['bbox'],
-                    ref_transform, config, other_ref_bboxes
-                )
+                if int(ref_obj_id) in sam_masks_by_obj_id:
+                    points_3d = sample_3d_points_from_mask(
+                        scene_data=scene_data,
+                        img_idx=reference_image_idx,
+                        mask=sam_masks_by_obj_id[int(ref_obj_id)],
+                        transform=ref_transform,
+                        config=config,
+                        mask_space="final",
+                    )
+                else:
+                    points_3d = sample_3d_points_from_non_overlap_regions(
+                        scene_data, reference_image_idx, ref_bbox_info['bbox'],
+                        ref_transform, config, other_ref_bboxes
+                    )
                 
                 if points_3d is None or len(points_3d) < 10:
                     continue
@@ -709,6 +753,7 @@ def find_correspondences_point_tracking(
     config: SKUMatchingConfig,
     reference_image_idx: int = 0,
     transforms_info: Optional[List[ImageTransformBase]] = None,
+    image_paths: Optional[List[str]] = None,
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """基于点追踪的物体匹配算法"""
     
@@ -743,7 +788,7 @@ def find_correspondences_point_tracking(
             orig_w = int(ref_transform.orig_width)
         logger.info(f"Original image size: {orig_w}x{orig_h}, VGGT input size: {W}x{H}")
 
-        # 3. 映射边界框到VGGT坐标空间
+        # 3. 映射边界框到模型坐标空间
         mapped_bboxes = []
         for b in ref_bboxes:
             mapped = ref_transform.map_bbox_to_final(b['bbox'])
@@ -753,12 +798,53 @@ def find_correspondences_point_tracking(
             b2['center'] = [(mapped[0] + mapped[2]) / 2, (mapped[1] + mapped[3]) / 2]
             b2['area'] = max(0.0, (mapped[2] - mapped[0]) * (mapped[3] - mapped[1]))
             mapped_bboxes.append(b2)
-        ref_bboxes = mapped_bboxes
 
-        # 4. 生成查询点
-        all_query_points_tensor, points_per_object = generate_points_from_bboxes(
-            ref_bboxes, (H, W), config
+        # 4. 生成查询点：启用 SAM3 时从 mask 内采样，否则沿用 bbox 采样
+        all_query_points_tensor = None
+        points_per_object = None
+        masks = maybe_run_sam3_for_reference(
+            config=config,
+            image_paths=image_paths,
+            reference_image_idx=reference_image_idx,
+            ref_bboxes_xyxy=[b["bbox"] for b in ref_bboxes],
+            transform=ref_transform,
+            output_mask_space="final",
         )
+        if masks is not None:
+            all_pts = []
+            points_per_object = {}
+            total_points = 0
+            for b_orig, b_mapped, m in zip(ref_bboxes, mapped_bboxes, masks):
+                obj_id = int(b_orig["object_id"])
+                # masks 已经是 final 空间
+                pts_final = sample_points_from_mask(m, max_points=int(config.max_points_per_bbox))
+                if pts_final.shape[0] == 0:
+                    continue
+                all_pts.append(pts_final)
+                n = int(pts_final.shape[0])
+                points_per_object[obj_id] = {
+                    "point_indices": (total_points, total_points + n),
+                    "bbox": b_mapped["bbox"],
+                    "center": b_mapped["center"],
+                    "confidence": b_mapped["confidence"],
+                    "area": b_mapped["area"],
+                    "num_sampled_points": n,
+                    "original_bbox": b_orig["bbox"],
+                }
+                total_points += n
+
+            if all_pts:
+                import numpy as np
+
+                all_query_points_tensor = torch.from_numpy(np.concatenate(all_pts, axis=0)).float()
+
+        if all_query_points_tensor is None:
+            ref_bboxes = mapped_bboxes
+            all_query_points_tensor, points_per_object = generate_points_from_bboxes(
+                ref_bboxes, (H, W), config
+            )
+        else:
+            ref_bboxes = mapped_bboxes
         
         if all_query_points_tensor is None:
             logger.warning("Could not generate query points from bounding boxes.")

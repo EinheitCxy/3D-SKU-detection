@@ -88,22 +88,28 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
     Args:
         path: YAML path
         algorithm: optional override of matching.algorithm
+    Notes:
+        - YAML 仅作为覆盖项（overrides）；未提供的字段使用 `SKUMatchingConfig.for_point_tracking()`
+          / `SKUMatchingConfig.for_3d_projection()` 的默认值。
+
     Returns:
         SKUMatchingConfig
     """
     data = load_yaml_config(path)
-    section = data.get("matching", data)
+    # Support both:
+    # - dedicated matching configs: {"matching": {...}}
+    # - project-wide config.yaml used by code/main.py: {"inference": {...}}
+    if "matching" in data and isinstance(data.get("matching"), dict):
+        section = data["matching"]
+    elif "inference" in data and isinstance(data.get("inference"), dict):
+        section = data["inference"]
+    else:
+        section = data
 
     algo = (algorithm or section.get("algorithm") or "point_tracking").lower()
-    if algo in ("3d", "3d_projection", "projection", "3d-2d"):
-        base = DEFAULT_3D_PROJECTION_CONFIG.copy()
-    else:
-        base = DEFAULT_POINT_TRACKING_CONFIG.copy()
 
-    # Map allowed fields into dataclass
-    cfg_dict: Dict[str, Any] = {
-        **base,
-    }
+    # Map allowed fields into overrides for dataclass builders
+    overrides: Dict[str, Any] = {}
     for key in (
         "device",
         "max_points_per_bbox",
@@ -116,6 +122,16 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
         "max_bboxes",
         "max_total_points",
         "min_bbox_area",
+        # Optional SAM3-guided sampling (minimal knobs)
+        "enable_sam3_mask_sampling",
+        "sam3_checkpoint_path",
+        "sam3_use_self_exemplar",
+        "sam3_self_exemplar_threshold",
+        "sam3_device",
+        "sam3_max_queries_per_forward",
+        "sam3_batch_image_size",
+        "sam3_max_dets_per_query",
+        "sam3_min_cuda_free_gb",
         # 3D-specific (safe to include; unused for PT)
         "depth_confidence_threshold",
         "point_3d_confidence_threshold",
@@ -129,10 +145,11 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
         "enable_3d_projection_matching",
     ):
         if key in section:
-            cfg_dict[key] = section[key]
+            overrides[key] = section[key]
 
-    # Construct dataclass; device/dtype resolved in __post_init__
-    return SKUMatchingConfig(**cfg_dict)  # type: ignore[arg-type]
+    if algo in ("3d", "3d_projection", "projection", "3d-2d"):
+        return SKUMatchingConfig.for_3d_projection(**overrides)
+    return SKUMatchingConfig.for_point_tracking(**overrides)
 
 
 def extract_main_settings(data_or_path: Dict[str, Any] | str | Path) -> Dict[str, Any]:
@@ -200,6 +217,18 @@ class SKUMatchingConfig:
     max_points_per_bbox: int = 70                # 每个2D检测框最大采样点数
     max_3d_points_per_bbox: int = 70             # 每个3D检测框最大采样点数
     max_total_points: int = 100000               # 全局最大采样点数上限
+
+    # === SAM3 mask 引导采样（可选）===
+    # 目标：在 bbox 点采样前先用 SAM3 预测 mask，再从 mask 内采样点
+    enable_sam3_mask_sampling: bool = False      # 是否启用 SAM3 mask 引导采样
+    sam3_checkpoint_path: Optional[str] = None   # sam3.pt 本地路径（禁用 HF 下载）
+    sam3_use_self_exemplar: bool = False         # 是否使用self-exemplar分割（每个bbox作为自己的visual exemplar）
+    sam3_self_exemplar_threshold: float = 0.5    # self-exemplar检测阈值
+    sam3_device: str = "auto"                   # SAM3单独设备: auto/cuda/cpu
+    sam3_max_queries_per_forward: int = 16       # self-exemplar时每次forward的最大query数（降低显存峰值）
+    sam3_batch_image_size: int = 1008            # batch API resize尺寸（默认1008，显存紧张可降到768/640）
+    sam3_max_dets_per_query: int = 8             # batch API每个query保留的最大候选数（越小越省显存）
+    sam3_min_cuda_free_gb: float = 10.0          # sam3_device=auto 时启用 CUDA 的最小可用显存(GB)
 
     # === 高斯分布采样参数 ===
     enable_gaussian_sampling: bool = True        # 是否启用高斯分布采样（中心密集，向外正态递减）
@@ -407,7 +436,12 @@ DEFAULT_POINT_TRACKING_CONFIG = {
     "min_confident_points": 7,
     "min_bbox_area": 10.0,
     "output_dir": "",
-    "enable_3d_projection_matching": False
+    "enable_3d_projection_matching": False,
+    # SAM3 self-exemplar配置
+    "enable_sam3_mask_sampling": False,
+    "sam3_checkpoint_path": None,
+    "sam3_use_self_exemplar": False,
+    "sam3_self_exemplar_threshold": 0.5,
 }
 
 DEFAULT_3D_PROJECTION_CONFIG = {
@@ -426,5 +460,10 @@ DEFAULT_3D_PROJECTION_CONFIG = {
     "projection_match_threshold": 0.3,
     "max_3d_distance": 0.8,
     "max_depth_difference": 1.8,
-    "min_depth_consistency": 0.15
+    "min_depth_consistency": 0.15,
+    # SAM3 self-exemplar配置
+    "enable_sam3_mask_sampling": False,
+    "sam3_checkpoint_path": None,
+    "sam3_use_self_exemplar": False,
+    "sam3_self_exemplar_threshold": 0.5,
 }
