@@ -866,16 +866,92 @@ def sam3_masks_with_exemplar(
     )
 
 
-def sample_points_from_mask(mask: np.ndarray, max_points: int) -> np.ndarray:
-    """Uniformly sample up to `max_points` 2D pixels from a binary mask (returns Nx2 xy)."""
+def sample_points_from_mask(
+    mask: np.ndarray,
+    max_points: int,
+    enable_gaussian: bool = False,
+    gaussian_sigma: float = 0.3,
+    gaussian_truncate: float = 3.0,
+    bbox_xyxy: Optional[List[float]] = None,
+) -> np.ndarray:
+    """Sample up to `max_points` 2D pixels from a binary mask (returns Nx2 xy).
+
+    支持两种采样模式：
+    1. 均匀采样（默认）：mask内所有点等概率采样
+    2. 高斯加权采样：以mask质心或bbox中心为高斯中心，中心密集向外递减
+
+    Args:
+        mask: 二值mask (H, W)
+        max_points: 最大采样点数
+        enable_gaussian: 是否启用高斯加权采样
+        gaussian_sigma: 高斯标准差（相对于mask半径）
+        gaussian_truncate: 高斯截断倍数
+        bbox_xyxy: 可选的bbox坐标 [x1, y1, x2, y2]，用于计算高斯中心
+
+    Returns:
+        采样点数组 (N, 2)，格式为 [x, y]
+    """
     ys, xs = np.where(mask)
     if len(xs) == 0:
         return np.zeros((0, 2), dtype=np.float32)
+
     k = int(min(max_points, len(xs)))
     if k <= 0:
         return np.zeros((0, 2), dtype=np.float32)
-    sel = np.random.choice(len(xs), size=k, replace=False)
-    pts = np.stack([xs[sel], ys[sel]], axis=-1).astype(np.float32)
+
+    if not enable_gaussian:
+        # 均匀采样
+        sel = np.random.choice(len(xs), size=k, replace=False)
+        pts = np.stack([xs[sel], ys[sel]], axis=-1).astype(np.float32)
+        return pts
+
+    # === 高斯加权采样 ===
+    # 计算高斯中心：优先使用bbox中心，否则使用mask质心
+    if bbox_xyxy is not None:
+        cx = (bbox_xyxy[0] + bbox_xyxy[2]) / 2
+        cy = (bbox_xyxy[1] + bbox_xyxy[3]) / 2
+        rx = (bbox_xyxy[2] - bbox_xyxy[0]) / 2
+        ry = (bbox_xyxy[3] - bbox_xyxy[1]) / 2
+    else:
+        # 使用mask质心和边界
+        cx = np.mean(xs)
+        cy = np.mean(ys)
+        rx = max((np.max(xs) - np.min(xs)) / 2, 1.0)
+        ry = max((np.max(ys) - np.min(ys)) / 2, 1.0)
+
+    # 计算每个mask点到中心的归一化距离
+    dx_norm = (xs - cx) / (rx + 1e-6)
+    dy_norm = (ys - cy) / (ry + 1e-6)
+    distances = np.sqrt(dx_norm**2 + dy_norm**2)
+
+    # 计算高斯权重
+    weights = np.exp(-distances**2 / (2 * gaussian_sigma**2))
+
+    # 截断距离过大的点
+    truncate_distance = gaussian_sigma * gaussian_truncate
+    weights[distances > truncate_distance] = 0
+
+    # 只在非零权重内采样，避免频繁回退
+    nonzero_idx = np.flatnonzero(weights > 0)
+    if nonzero_idx.size == 0:
+        sel = np.random.choice(len(xs), size=k, replace=False)
+        pts = np.stack([xs[sel], ys[sel]], axis=-1).astype(np.float32)
+        return pts
+
+    xs_nz = xs[nonzero_idx]
+    ys_nz = ys[nonzero_idx]
+    w_nz = weights[nonzero_idx]
+    weight_sum = w_nz.sum()
+    if weight_sum < 1e-10:
+        sel = np.random.choice(len(xs_nz), size=min(k, len(xs_nz)), replace=False)
+        pts = np.stack([xs_nz[sel], ys_nz[sel]], axis=-1).astype(np.float32)
+        return pts
+
+    probabilities = w_nz / weight_sum
+
+    replace = len(xs_nz) < k
+    sel = np.random.choice(len(xs_nz), size=k, replace=replace, p=probabilities)
+    pts = np.stack([xs_nz[sel], ys_nz[sel]], axis=-1).astype(np.float32)
     return pts
 
 
@@ -897,13 +973,33 @@ def sample_3d_points_from_mask(
     transform: ImageTransformBase,
     config: SKUMatchingConfig,
     mask_space: Literal["original", "final"] = "original",
+    bbox_xyxy: Optional[List[float]] = None,
 ) -> Optional[torch.Tensor]:
-    """Sample 3D points by sampling 2D mask pixels (original coords) then indexing scene_data."""
+    """Sample 3D points by sampling 2D mask pixels then indexing scene_data.
+
+    支持高斯加权采样：当 config.enable_gaussian_sampling=True 时，
+    在 mask 内部应用高斯权重，使采样点集中在物体中心区域。
+
+    Args:
+        scene_data: VGGT场景数据
+        img_idx: 图像索引
+        mask: 二值mask
+        transform: 图像变换
+        config: 配置参数
+        mask_space: mask坐标空间 ("original" 或 "final")
+        bbox_xyxy: 可选的bbox坐标，用于高斯采样的中心计算
+    """
     device = scene_data["depth"].device
     _, H, W, _ = scene_data["depth"].shape
 
+    # 使用高斯加权采样（如果启用）
     candidates_2d = sample_points_from_mask(
-        mask, max_points=int(config.max_3d_points_per_bbox) * 10
+        mask,
+        max_points=int(config.max_3d_points_per_bbox) * 10,
+        enable_gaussian=config.enable_gaussian_sampling,
+        gaussian_sigma=config.gaussian_sigma,
+        gaussian_truncate=config.gaussian_truncate,
+        bbox_xyxy=bbox_xyxy,
     )
     if candidates_2d.shape[0] == 0:
         return None
@@ -1181,43 +1277,35 @@ def maybe_run_sam3_for_reference(
     if not config.enable_sam3_mask_sampling:
         return None
     if not config.sam3_checkpoint_path:
-        logger.warning("SAM3 enabled but sam3_checkpoint_path is empty; falling back to bbox sampling.")
-        return None
+        raise ValueError("SAM3 enabled but sam3_checkpoint_path is empty.")
     if not image_paths or not (0 <= reference_image_idx < len(image_paths)):
-        logger.warning("SAM3 enabled but image_paths missing; falling back to bbox sampling.")
-        return None
+        raise ValueError("SAM3 enabled but image_paths missing or reference index out of range.")
     ckpt = Path(str(config.sam3_checkpoint_path))
     if not ckpt.exists():
-        logger.warning(f"SAM3 checkpoint not found: {ckpt}; falling back to bbox sampling.")
-        return None
+        raise FileNotFoundError(f"SAM3 checkpoint not found: {ckpt}")
 
-    try:
-        if config.sam3_use_self_exemplar:
-            # 使用self-exemplar模式：每个bbox作为自己的positive exemplar
-            logger.info(f"Using SAM3 self-exemplar mode for {len(ref_bboxes_xyxy)} bboxes")
-            masks = sam3_masks_self_exemplar(
-                image_path=image_paths[reference_image_idx],
-                bboxes_xyxy=ref_bboxes_xyxy,
-                checkpoint_path=str(ckpt),
-                device=normalize_device(config.device),
-                detection_threshold=config.sam3_self_exemplar_threshold,
-            )
-        else:
-            # 标准模式：使用predict_inst API
-            masks = sam3_masks_from_bboxes(
-                image_path=image_paths[reference_image_idx],
-                bboxes_xyxy=ref_bboxes_xyxy,
-                checkpoint_path=str(ckpt),
-                device=normalize_device(config.device),
-            )
+    if config.sam3_use_self_exemplar:
+        # 使用self-exemplar模式：每个bbox作为自己的positive exemplar
+        logger.info(f"Using SAM3 self-exemplar mode for {len(ref_bboxes_xyxy)} bboxes")
+        masks = sam3_masks_self_exemplar(
+            image_path=image_paths[reference_image_idx],
+            bboxes_xyxy=ref_bboxes_xyxy,
+            checkpoint_path=str(ckpt),
+            device=normalize_device(config.device),
+            detection_threshold=config.sam3_self_exemplar_threshold,
+        )
+    else:
+        # 标准模式：使用predict_inst API
+        masks = sam3_masks_from_bboxes(
+            image_path=image_paths[reference_image_idx],
+            bboxes_xyxy=ref_bboxes_xyxy,
+            checkpoint_path=str(ckpt),
+            device=normalize_device(config.device),
+        )
 
-        if output_mask_space == "final":
-            if transform is None:
-                logger.warning("SAM3 masks requested in final space but transform is None; falling back to bbox sampling.")
-                return None
-            return [mask_to_final_space(m, transform) for m in masks]
+    if output_mask_space == "final":
+        if transform is None:
+            raise ValueError("SAM3 masks requested in final space but transform is None.")
+        return [mask_to_final_space(m, transform) for m in masks]
 
-        return masks
-    except Exception as e:
-        logger.warning(f"SAM3 mask sampling failed; falling back to bbox sampling: {e}")
-        return None
+    return masks

@@ -620,6 +620,7 @@ def find_correspondences_3d_projection(
                         transform=ref_transform,
                         config=config,
                         mask_space="final",
+                        bbox_xyxy=ref_bbox_info['bbox'],
                     )
                 else:
                     points_3d = sample_3d_points_from_non_overlap_regions(
@@ -816,8 +817,17 @@ def find_correspondences_point_tracking(
             total_points = 0
             for b_orig, b_mapped, m in zip(ref_bboxes, mapped_bboxes, masks):
                 obj_id = int(b_orig["object_id"])
-                # masks 已经是 final 空间
-                pts_final = sample_points_from_mask(m, max_points=int(config.max_points_per_bbox))
+                # masks 已经是 final 空间，使用 mapped bbox 坐标
+                # 混合采样：SAM3 mask + 高斯加权
+                use_gaussian = config.enable_gaussian_sampling and config.enable_gaussian_in_sam3_mask
+                pts_final = sample_points_from_mask(
+                    m,
+                    max_points=int(config.max_points_per_bbox),
+                    enable_gaussian=use_gaussian,
+                    gaussian_sigma=config.gaussian_sigma,
+                    gaussian_truncate=config.gaussian_truncate,
+                    bbox_xyxy=b_mapped["bbox"],
+                )
                 if pts_final.shape[0] == 0:
                     continue
                 all_pts.append(pts_final)

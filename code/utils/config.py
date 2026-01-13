@@ -234,6 +234,7 @@ class SKUMatchingConfig:
     enable_gaussian_sampling: bool = True        # 是否启用高斯分布采样（中心密集，向外正态递减）
     gaussian_sigma: float = 0.3                  # 高斯分布标准差（相对于bbox半径，0.2-0.4推荐，越小中心越集中）
     gaussian_truncate: float = 3.0               # 高斯分布截断倍数（超过sigma*truncate的点权重接近0）
+    enable_gaussian_in_sam3_mask: bool = True    # SAM3 mask内是否也应用高斯加权采样（混合采样模式）
 
     # === 非重合区域采样参数 ===
     enable_non_overlap_sampling: bool = True     # 是否启用非重合区域采样
