@@ -127,7 +127,6 @@ def main():
 
         if not bboxes:
             logger.info(f"No boxes above threshold for {image_path.name}")
-            continue
 
         # 为对象生成稳定颜色
         object_ids = [b['object_id'] for b in bboxes]

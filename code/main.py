@@ -607,11 +607,17 @@ class SKUDetectionMain:
             logger.error(f"END reconstruct duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
 
-    def run_dedup_sequence(self, dataset_path: str) -> StepResult:
-        """顺序去重：对 1..N（或指定上界）生成去重后的检测 JSON。"""
+    def run_dedup_sequence(self, dataset_path: str, algorithm: str = 'point_tracking', backend: str | None = None) -> StepResult:
+        """顺序去重：对 1..N（或指定上界）生成去重后的检测 JSON。
+
+        Args:
+            dataset_path: 数据集路径
+            algorithm: 算法类型 'point_tracking'/'3d_projection'
+            backend: 3D算法后端 'vggt'/'pi3'，仅在algorithm='3d_projection'时生效
+        """
         start = perf_counter()
         try:
-            logger.info("开始顺序去重")
+            logger.info(f"开始顺序去重 (algorithm: {algorithm}, backend: {backend})")
             from modules.deduplicate_detections import resolve_dataset_paths, deduplicate_sequence
 
             dataset_dir = Path(dataset_path)
@@ -633,7 +639,9 @@ class SKUDetectionMain:
                 same_names=True,               # 默认同名输出 (1.json, 2.json, ...)
                 dedup_mode='any',              # 默认使用所有匹配进行去重
                 min_hit_ratio=0.0,             # 默认不过滤命中率
-                output_subdir='dedup_detections'  # 指定子目录名
+                output_subdir='dedup_detections',  # 指定子目录名
+                algorithm=algorithm,           # 传递算法类型
+                backend=backend                # 传递后端类型
             )
 
             # 实际输出路径是 output_base/dataset_name/dedup_detections/
@@ -701,7 +709,7 @@ class SKUDetectionMain:
         summary['improved_analysis'] = bool(analysis.get('success', False))
 
         # 4. 顺序去重（默认包含以便一键产出去重JSON）
-        dedup = self.run_dedup_sequence(dataset_path)
+        dedup = self.run_dedup_sequence(dataset_path, algorithm=algorithm, backend=match_backend)
         summary['dedup'] = bool(dedup.get('success', False))
 
         # 5. 去重后的检测框可视化

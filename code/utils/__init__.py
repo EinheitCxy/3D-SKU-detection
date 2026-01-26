@@ -32,8 +32,6 @@ if VGGT_ROOT.exists():
 # 基础模块 - 不依赖VGGT
 from .config import (
     SKUMatchingConfig,
-    DEFAULT_POINT_TRACKING_CONFIG,
-    DEFAULT_3D_PROJECTION_CONFIG,
     load_yaml_config,
     build_matching_config_from_yaml,
     extract_main_settings,
@@ -76,8 +74,6 @@ except ImportError:
 # 基础导出
 __all__ = [
     'SKUMatchingConfig',
-    'DEFAULT_POINT_TRACKING_CONFIG',
-    'DEFAULT_3D_PROJECTION_CONFIG',
     'load_detections',
     'extract_bboxes_from_detections',
     'save_correspondences_json',
