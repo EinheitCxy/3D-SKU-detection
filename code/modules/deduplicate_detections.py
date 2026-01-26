@@ -74,14 +74,28 @@ def load_detection_objects(json_path: Path) -> Tuple[Dict, List[Dict]]:
 
 
 def save_detection_objects(json_path: Path, original: Dict, new_objects: List[Dict]) -> None:
-    """将 new_objects 写回到原始结构中，并保存为 json_path。"""
-    data = original
-    if isinstance(data, dict) and 'skus' in data and isinstance(data['skus'], list) and data['skus']:
-        data['skus'][0]['objects'] = new_objects
-    elif isinstance(data, list) and data:
-        data[0]['objects'] = new_objects
-    elif isinstance(data, dict) and 'objects' in data:
-        data['objects'] = new_objects
+    """将 new_objects 写回到扁平格式 {classes, objects} 中，并保存为 json_path。"""
+    import copy
+
+    # 提取classes信息，构造扁平格式
+    if isinstance(original, dict) and 'skus' in original and isinstance(original['skus'], list) and original['skus']:
+        # 从skus[0]中提取classes
+        data = {
+            'classes': copy.deepcopy(original['skus'][0].get('classes', {})),
+            'objects': new_objects
+        }
+    elif isinstance(original, list) and original:
+        # 已经是[{classes, objects}]格式
+        data = {
+            'classes': copy.deepcopy(original[0].get('classes', {})),
+            'objects': new_objects
+        }
+    elif isinstance(original, dict) and 'objects' in original:
+        # 已经是{classes, objects}格式
+        data = {
+            'classes': copy.deepcopy(original.get('classes', {})),
+            'objects': new_objects
+        }
     else:
         raise ValueError("Unsupported detection JSON structure when saving")
 
@@ -94,7 +108,7 @@ def save_detection_objects(json_path: Path, original: Dict, new_objects: List[Di
 def save_merged_detections_with_gid(json_path: Path,
                                     images_data: Dict[int, Tuple[List[Dict], List[int]]],
                                     originals_by_image: Dict[int, Dict]) -> None:
-    """保存多张图片合并的带global_id的检出框JSON（去掉skus层，直接输出{classes, objects}结构）。
+    """保存多张图片合并的带global_id的检出框JSON（每个图片数据先转为JSON字符串，再作为列表元素）。
 
     Args:
         json_path: 输出文件路径
@@ -149,7 +163,9 @@ def save_merged_detections_with_gid(json_path: Path,
             logger.warning(f"Image {image_id}: unsupported structure, skipping")
             continue
 
-        merged_output.append(image_data)
+        # 将每个图片数据转换为JSON字符串后添加到列表
+        image_data_str = json.dumps(image_data, ensure_ascii=False)
+        merged_output.append(image_data_str)
 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     with json_path.open('w', encoding='utf-8') as f:
@@ -277,7 +293,8 @@ def _list_numeric_detection_indices(detections_dir: Path) -> List[int]:
 def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
                          max_image: int | None = None, same_names: bool = False,
                          dedup_mode: str = 'any', min_hit_ratio: float = 0.0,
-                         output_subdir: str = None) -> Dict[int, Path]:
+                         output_subdir: str = None, algorithm: str = 'point_tracking',
+                         backend: str | None = None) -> Dict[int, Path]:
     """对 1..N 序列依次去重：
     - 第1张保留原样
     - 第i张(i>1)去除在 1..i-1 中已出现过（有匹配）的 ref_id 在第i张对应的 target_id。
@@ -291,9 +308,22 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
         dedup_mode: 去重模式 'any'/'best'
         min_hit_ratio: 最小命中率阈值
         output_subdir: 输出子目录名（如'dedup_detections'），若为None则直接输出到dataset_name/
+        algorithm: 算法类型 'point_tracking'/'3d_projection'，决定匹配结果目录名
+        backend: 3D算法后端 'vggt'/'pi3'，仅在algorithm='3d_projection'时生效
     """
-    # 解析所有参考索引的匹配
-    summary_root = paths.dataset_dir / 'output_pt'
+    # 根据算法类型和后端动态计算匹配结果目录
+    if algorithm == 'point_tracking':
+        summary_root = paths.dataset_dir / 'output_pt'
+    elif algorithm == '3d_projection':
+        if backend:
+            summary_root = paths.dataset_dir / f'output_3dmapping_{backend}'
+        else:
+            summary_root = paths.dataset_dir / 'output_3dmapping'
+    else:
+        # 默认回退到 output_pt（向后兼容）
+        logger.warning(f"未知算法类型 '{algorithm}'，回退到 'output_pt'")
+        summary_root = paths.dataset_dir / 'output_pt'
+
     all_matches = parse_all_matches(summary_root)
 
     # 选择去重策略：'any' 使用所有匹配；'best' 使用一对一过滤
@@ -531,6 +561,10 @@ def main():
                         help="去重策略：any=使用所有匹配；best=一对一过滤后再去重（默认 any）")
     parser.add_argument('--min_hit_ratio', type=float, default=0.0,
                         help='最小命中率过滤阈值（默认0不过滤，例如 0.6）')
+    parser.add_argument('--algorithm', type=str, choices=['point_tracking', '3d_projection'], default='point_tracking',
+                        help='算法类型：point_tracking=点追踪；3d_projection=3D投影（默认 point_tracking）')
+    parser.add_argument('--backend', type=str, choices=['vggt', 'pi3'], default=None,
+                        help='3D算法后端：vggt或pi3（仅在algorithm=3d_projection时生效）')
 
     args = parser.parse_args()
 
@@ -553,7 +587,8 @@ def main():
     # 执行序列去重 1..N
     outputs = deduplicate_sequence(
         paths, output_root, args.max_image, same_names=args.same_names,
-        dedup_mode=args.dedup_mode, min_hit_ratio=args.min_hit_ratio
+        dedup_mode=args.dedup_mode, min_hit_ratio=args.min_hit_ratio,
+        algorithm=args.algorithm, backend=args.backend
     )
     logger.info("Dedup (sequence) completed. Outputs:")
     for k in sorted(outputs.keys()):
