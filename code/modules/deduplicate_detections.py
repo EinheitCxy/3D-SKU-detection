@@ -388,17 +388,20 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
         original, objects = load_detection_objects(src)
         originals_by_image[i] = original
 
-        if i == 1:
-            # 保留原样
+        # 判断是否为第一张图片（支持从0或1开始的编号）
+        is_first_image = (i == indices[0])
+
+        if is_first_image:
+            # 第一张图片保留原样，不进行去重
             dst = out_dir / (f"{i}.json" if same_names else f"{i}_dedup.json")
             save_detection_objects(dst, original, objects)
             outputs[i] = dst
             survivors_by_image[i] = set(range(len(objects)))
             objects_by_image[i] = objects
         else:
-            t0 = i - 1  # 0-based index of this image
-            drop_from_targets = drop_target_map.get(t0, set())
-            drop_from_refs = drop_ref_map.get(t0, set())
+            # 使用文件编号i作为target_idx（匹配结果中的索引与文件编号一致）
+            drop_from_targets = drop_target_map.get(i, set())
+            drop_from_refs = drop_ref_map.get(i, set())
             drop_ids = set(drop_from_targets) | set(drop_from_refs)
             new_objects = [obj for idx, obj in enumerate(objects) if idx not in drop_ids]
             survivors_by_image[i] = set(idx for idx in range(len(objects)) if idx not in drop_ids)
