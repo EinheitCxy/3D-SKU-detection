@@ -1,0 +1,825 @@
+{
+    "classes": {
+        "det": [
+            "8926^bottle"
+        ]
+    },
+    "objects": [
+        {
+            "position": [
+                1259,
+                1373,
+                1634,
+                1973
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9436085224151611
+            },
+            "global_id": 56,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                828,
+                1915,
+                1093,
+                2418
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9424856901168823
+            },
+            "global_id": 46,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1304,
+                1987,
+                1629,
+                2573
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9404960870742798
+            },
+            "global_id": 70,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1751,
+                203,
+                1982,
+                608
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9399911761283875
+            },
+            "global_id": 64,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1072,
+                1956,
+                1331,
+                2511
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9346781969070435
+            },
+            "global_id": 48,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                118,
+                1339,
+                322,
+                1755
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9345320463180542
+            },
+            "global_id": 1,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1958,
+                1866,
+                2142,
+                2288
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9337650537490845
+            },
+            "global_id": 73,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                1606,
+                1940,
+                1857,
+                2446
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9337037205696106
+            },
+            "global_id": 74,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                589,
+                1374,
+                828,
+                1845
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9308268427848816
+            },
+            "global_id": 8,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1554,
+                270,
+                1758,
+                643
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9271512627601624
+            },
+            "global_id": 66,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                487,
+                1829,
+                708,
+                2262
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9269464015960693
+            },
+            "global_id": 54,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1018,
+                1366,
+                1303,
+                1933
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.926888108253479
+            },
+            "global_id": 15,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1746,
+                684,
+                1977,
+                1053
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9254276156425476
+            },
+            "global_id": 61,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1974,
+                170,
+                2184,
+                592
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9245753288269043
+            },
+            "global_id": 14,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2020,
+                671,
+                2285,
+                1078
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9232139587402344
+            },
+            "global_id": 71,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2118,
+                1841,
+                2288,
+                2227
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9175458550453186
+            },
+            "global_id": 75,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                692,
+                1874,
+                896,
+                2329
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9154221415519714
+            },
+            "global_id": 44,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                813,
+                1376,
+                1044,
+                1891
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9152386784553528
+            },
+            "global_id": 17,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                0,
+                1335,
+                150,
+                1726
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9113898277282715
+            },
+            "global_id": 10,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                433,
+                1332,
+                605,
+                1812
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9105987548828125
+            },
+            "global_id": 11,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                863,
+                995,
+                1094,
+                1361
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9102813601493835
+            },
+            "global_id": 76,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                303,
+                1343,
+                456,
+                1778
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9084910750389099
+            },
+            "global_id": 12,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                174,
+                1763,
+                339,
+                2156
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9078359007835388
+            },
+            "global_id": 41,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1552,
+                901,
+                1835,
+                1369
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9013121724128723
+            },
+            "global_id": 68,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2173,
+                260,
+                2327,
+                653
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.9009082317352295
+            },
+            "global_id": 77,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                1804,
+                1904,
+                1972,
+                2354
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8997412323951721
+            },
+            "global_id": 78,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                1441,
+                320,
+                1566,
+                661
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8946560025215149
+            },
+            "global_id": 38,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2263,
+                1811,
+                2421,
+                2183
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8919540047645569
+            },
+            "global_id": 79,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                65,
+                1732,
+                211,
+                2112
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8904182314872742
+            },
+            "global_id": 6,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1582,
+                0,
+                1797,
+                189
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8752894997596741
+            },
+            "global_id": 67,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1227,
+                938,
+                1414,
+                1360
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8703509569168091
+            },
+            "global_id": 28,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                704,
+                1000,
+                880,
+                1352
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.868694543838501
+            },
+            "global_id": 19,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1097,
+                782,
+                1244,
+                1103
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8676338195800781
+            },
+            "global_id": 26,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1553,
+                715,
+                1741,
+                1028
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8666293621063232
+            },
+            "global_id": 50,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2203,
+                1381,
+                2403,
+                1792
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8665218949317932
+            },
+            "global_id": 9,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1384,
+                919,
+                1588,
+                1363
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8650917410850525
+            },
+            "global_id": 60,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1527,
+                1367,
+                1822,
+                1940
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8644362092018127
+            },
+            "global_id": 80,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                0,
+                1710,
+                96,
+                2071
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8609232306480408
+            },
+            "global_id": 33,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1780,
+                0,
+                2023,
+                128
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8568485379219055
+            },
+            "global_id": 81,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                310,
+                1799,
+                503,
+                2212
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8557118773460388
+            },
+            "global_id": 7,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1942,
+                1380,
+                2151,
+                1847
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8108692765235901
+            },
+            "global_id": 82,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                1456,
+                0,
+                1591,
+                218
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.8002027869224548
+            },
+            "global_id": 42,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2389,
+                1384,
+                2582,
+                1757
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.7905711531639099
+            },
+            "global_id": 83,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                1391,
+                742,
+                1562,
+                1032
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.772017776966095
+            },
+            "global_id": 53,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1866,
+                1116,
+                2100,
+                1425
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.7650756239891052
+            },
+            "global_id": 84,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                623,
+                1008,
+                728,
+                1346
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.756280779838562
+            },
+            "global_id": 25,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                1229,
+                757,
+                1401,
+                1077
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.7344173789024353
+            },
+            "global_id": 21,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2011,
+                0,
+                2236,
+                89
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.7235139012336731
+            },
+            "global_id": 69,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2375,
+                1790,
+                2476,
+                2110
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.7022145390510559
+            },
+            "global_id": 85,
+            "is_deduplicated": false
+        },
+        {
+            "position": [
+                2091,
+                1380,
+                2230,
+                1819
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.5103398561477661
+            },
+            "global_id": 5,
+            "is_deduplicated": true
+        },
+        {
+            "position": [
+                2225,
+                0,
+                2352,
+                141
+            ],
+            "classes": {
+                "det": 0
+            },
+            "confidences": {
+                "det": 0.35167884826660156
+            },
+            "global_id": 86,
+            "is_deduplicated": false
+        }
+    ]
+}

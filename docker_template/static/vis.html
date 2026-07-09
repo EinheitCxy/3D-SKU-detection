@@ -1,0 +1,210 @@
+<html>
+
+<head>
+    <title>VLM</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        
+        #previews {
+            width: 100%;
+            position: relative;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+        }
+        
+        .section h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        
+        .image-item {
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            padding: 10px;
+            text-align: center;
+            background: #f9f9f9;
+        }
+        
+        .image-item img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        
+        .image-meta {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        .stats {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        
+    </style>
+</head>
+
+<body>
+<div id="previews"></div> 
+</body>
+<script type="module">
+    import {BSON} from './bson.mjs'
+
+    window.BSON = BSON
+</script>
+<script> 
+    function init(inputBSON, outputBSON) {
+        try {
+            if (!inputBSON || !outputBSON) return
+            const inputs = BSON.deserialize(inputBSON)
+            const outputs = BSON.deserialize(outputBSON)
+            if (!inputs || !Object.keys(inputs).length || !outputs || !Object.keys(outputs).length) return
+            
+            renderVisualization(inputs, outputs)
+             
+        } catch (e) {
+            alert(e)
+        }
+    }
+
+    function renderVisualization(inputs, outputs) {
+        const previewsDiv = document.getElementById('previews')
+        previewsDiv.innerHTML = ''
+        
+        // 显示统计信息
+        const statsDiv = document.createElement('div')
+        statsDiv.className = 'stats'
+        
+        const cropImages = outputs.crop_images || []
+        const imagesIndex = outputs.images_index || []
+        const objects = outputs.objects || []
+        const originalImages = inputs.images || []
+        const detections = inputs.detections || []
+        
+        statsDiv.innerHTML = `
+            <h3>数据统计</h3>
+            <p><strong>原始图片数量:</strong> ${originalImages.length}</p>
+            <p><strong>检测数据数量:</strong> ${detections.length}</p>
+            <p><strong>裁剪图片数量:</strong> ${cropImages.length}</p>
+            <p><strong>检测对象数量:</strong> ${objects.length}</p>
+        `
+        previewsDiv.appendChild(statsDiv)
+        
+        // 按来源图片分组显示裁剪图片
+        if (cropImages.length > 0) {
+            // 按来源图片索引分组
+            const groupedImages = {}
+            cropImages.forEach((imageBytes, index) => {
+                const sourceIndex = imagesIndex[index] !== undefined ? imagesIndex[index] : -1
+                if (!groupedImages[sourceIndex]) {
+                    groupedImages[sourceIndex] = []
+                }
+                
+                // 解析对应的object信息
+                let objectInfo = null
+                if (objects[index]) {
+                    try {
+                        objectInfo = JSON.parse(objects[index])
+                    } catch (e) {
+                        console.error('Failed to parse object info:', e)
+                    }
+                }
+                
+                groupedImages[sourceIndex].push({ 
+                    imageBytes, 
+                    cropIndex: index,
+                    objectInfo 
+                })
+            })
+            
+            // 按来源图片索引排序
+            const sortedSourceIndices = Object.keys(groupedImages).sort((a, b) => parseInt(a) - parseInt(b))
+            
+            sortedSourceIndices.forEach(sourceIndex => {
+                const cropSection = document.createElement('div')
+                cropSection.className = 'section'
+                const sourceTitle = sourceIndex === '-1' ? '未知来源' : `原始图片 #${sourceIndex}`
+                cropSection.innerHTML = `<h2>${sourceTitle} 的裁剪结果 (${groupedImages[sourceIndex].length}张)</h2>`
+                
+                const cropGrid = document.createElement('div')
+                cropGrid.className = 'image-grid'
+                
+                groupedImages[sourceIndex].forEach(({ imageBytes, cropIndex, objectInfo }) => {
+                    const imageItem = document.createElement('div')
+                    imageItem.className = 'image-item'
+                    
+                    const img = document.createElement('img')
+                    
+                    // 处理图片字节数据
+                    let imageData;
+                    if (imageBytes.buffer) {
+                        imageData = imageBytes.buffer;
+                    } else if (imageBytes instanceof ArrayBuffer) {
+                        imageData = imageBytes;
+                    } else if (imageBytes instanceof Uint8Array) {
+                        imageData = imageBytes.buffer.slice(imageBytes.byteOffset, imageBytes.byteOffset + imageBytes.byteLength);
+                    } else {
+                        imageData = imageBytes;
+                    }
+                    
+                    // 创建Blob和URL
+                    const blob = new Blob([imageData], { type: 'image/png' });
+                    const url = URL.createObjectURL(blob);
+                    img.src = url;
+                    
+                    const meta = document.createElement('div')
+                    meta.className = 'image-meta'
+                    
+                    let metaHtml = `<strong>裁剪图片 #${cropIndex}</strong><br>`
+                    
+                    if (objectInfo) {
+                        if (objectInfo.position) {
+                            const [x1, y1, x2, y2] = objectInfo.position
+                            metaHtml += `坐标: (${x1}, ${y1}) - (${x2}, ${y2})<br>`
+                            metaHtml += `尺寸: ${x2-x1} × ${y2-y1}<br>`
+                        }
+                        
+                        if (objectInfo.classes && objectInfo.classes.det !== undefined) {
+                            metaHtml += `类别ID: ${objectInfo.classes.det}<br>`
+                        }
+                        
+                        if (objectInfo.confidences && objectInfo.confidences.det !== undefined) {
+                            const confidence = (objectInfo.confidences.det * 100).toFixed(1)
+                            metaHtml += `置信度: ${confidence}%`
+                        }
+                    }
+                    
+                    meta.innerHTML = metaHtml
+                    
+                    imageItem.appendChild(img)
+                    imageItem.appendChild(meta)
+                    cropGrid.appendChild(imageItem)
+                })
+                
+                cropSection.appendChild(cropGrid)
+                previewsDiv.appendChild(cropSection)
+            })
+        }
+    }
+
+    
+</script>
+</html>
