@@ -181,3 +181,33 @@ class ReconstructorBase:
 
         logger.info(f"总流程耗时: {time.time() - total_t0:.2f}s")
         return out_path
+
+
+# ---- 后端注册表 ----
+# 新增后端只需：实现 ReconstructorBase 子类 + 用 @register_reconstructor("<name>") 装饰，
+# 然后在 modules/__init__.py import 该子类（触发注册）。无需改动 main.py / config.py 的 if/else。
+RECONSTRUCTOR_REGISTRY: Dict[str, type] = {}
+
+
+def register_reconstructor(name: str):
+    """装饰器：注册 3D 重建后端类。"""
+
+    def decorator(cls: type) -> type:
+        if name in RECONSTRUCTOR_REGISTRY and RECONSTRUCTOR_REGISTRY[name] is not cls:
+            logger.debug(
+                f"重建后端 '{name}' 已注册，覆盖: "
+                f"{RECONSTRUCTOR_REGISTRY[name].__name__} -> {cls.__name__}"
+            )
+        RECONSTRUCTOR_REGISTRY[name] = cls
+        return cls
+
+    return decorator
+
+
+def get_reconstructor(name: str) -> type:
+    """按名称查表返回重建后端类；未注册则列出可用后端。"""
+    key = name.lower()
+    if key not in RECONSTRUCTOR_REGISTRY:
+        available = ", ".join(sorted(RECONSTRUCTOR_REGISTRY.keys())) or "(无)"
+        raise ValueError(f"未知重建后端: {name}. 已注册: {available}")
+    return RECONSTRUCTOR_REGISTRY[key]

@@ -50,7 +50,7 @@ if str(CODE_ROOT) not in sys.path:
     sys.path.insert(0, str(CODE_ROOT))
 
 # utils 中的通用设备与dtype选择
-from .reconstructor_base import ReconstructorBase
+from .reconstructor_base import ReconstructorBase, register_reconstructor
 
 
 def _to_nhwc_uint8(imgs: torch.Tensor | np.ndarray) -> np.ndarray:
@@ -404,6 +404,7 @@ class _ExportOptions:
     show_cam: bool = True
 
 
+@register_reconstructor("pi3")
 class PI33DReconstructor(ReconstructorBase):
     """Pi3 3D重建器（仅用于重建，可无缝替换现有 VGGT 重建流程）。"""
 

@@ -15,7 +15,7 @@ main:
 
 # 3D重建配置 (VGGT 或 PI3)
 reconstruction:
-  backend: "pi3"  # 3D重建后端: vggt(实时重建，灵活但较慢)/pi3(预计算缓存，快速适合批量)
+  backend: "pi3"  # 3D重建后端: vggt(实时重建，灵活但较慢)/pi3(预计算缓存，快速适合批量)/da3(Depth-Anything-3，高精度多视角)
   input_dir: "images"  # 输入图像目录(相对于数据集目录)
   output_file: "reconstruction.glb"  # 输出文件名，实际会自动添加后端名: reconstruction_vggt.glb或reconstruction_pi3.glb
   device: "cuda"  # 计算设备: cuda/cpu

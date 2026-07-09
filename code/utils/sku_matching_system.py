@@ -63,9 +63,9 @@ class SKUMatchingSystem:
                 self._set_random_seeds()
 
             # 根据 backend 条件加载模型
-            if self.config.backend == "pi3":
-                # Pi3 后端：不需要加载 VGGT 模型（直接从缓存加载 3D 数据）
-                logger.info("Pi3 后端：跳过 VGGT 模型加载，将从 pi3_cache 加载预重建数据")
+            if self.config.backend in ("pi3", "da3"):
+                # Pi3/DA3 后端：不需要加载 VGGT 模型（直接从缓存加载 3D 数据）
+                logger.info(f"{self.config.backend.upper()} 后端：跳过 VGGT 模型加载，将从 {self.config.backend}_cache 加载预重建数据")
                 self.vggt_model = None
             else:
                 # VGGT 后端：加载 VGGT 模型用于实时 3D 重建

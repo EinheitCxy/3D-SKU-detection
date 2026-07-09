@@ -59,7 +59,6 @@ try:
     from vggt.utils.pose_enc import pose_encoding_to_extri_intri
     from vggt.utils.geometry import unproject_depth_map_to_point_map
 except ImportError as e:
-    continue
     logger.error(f"VGGT模块导入失败: {e}")
     logger.error(f"VGGT路径: {VGGT_ROOT}")
     logger.error("请确保VGGT模块已正确安装: pip install -r vggt-main/requirements.txt")
@@ -67,9 +66,10 @@ except ImportError as e:
 
 # 使用统一的设备与精度选择逻辑：已在顶部导入
 
-from .reconstructor_base import ReconstructorBase
+from .reconstructor_base import ReconstructorBase, register_reconstructor
 
 
+@register_reconstructor("vggt")
 class VGGT3DReconstructor(ReconstructorBase):
     """VGGT 3D重构器"""
 

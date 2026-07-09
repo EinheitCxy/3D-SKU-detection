@@ -297,19 +297,19 @@ class SKUMatchingConfig:
         """根据 backend 自动推导 model_type
 
         Returns:
-            "pi3" 如果 backend == "pi3"，否则 "vggt"
+            "pi3" 如果 backend in ("pi3", "da3")，否则 "vggt"
         """
-        return "pi3" if self.backend == "pi3" else "vggt"
+        return "pi3" if self.backend in ("pi3", "da3") else "vggt"
 
     @property
     def transform_kwargs(self) -> dict:
         """根据 backend 自动推导 transform 构建参数
 
         Returns:
-            Pi3: {"pixel_limit": 255000}
+            Pi3/DA3: {"pixel_limit": 255000}
             VGGT: {"target_size": 518}
         """
-        if self.backend == "pi3":
+        if self.backend in ("pi3", "da3"):
             return {"pixel_limit": 255000}
         else:
             return {"target_size": 518}
@@ -319,15 +319,15 @@ class SKUMatchingConfig:
         """根据 backend 自动推导图像预处理模式
 
         Returns:
-            Pi3: "resize" (等比例缩放)
+            Pi3/DA3: "resize" (等比例缩放)
             VGGT: "crop" (裁剪+填充)
         """
-        return "resize" if self.backend == "pi3" else "crop"
+        return "resize" if self.backend in ("pi3", "da3") else "crop"
 
     def _validate_config(self):
         # Backend验证
-        if self.backend not in ("vggt", "pi3"):
-            raise ValueError(f"backend must be 'vggt' or 'pi3', got {self.backend}")
+        if self.backend not in ("vggt", "pi3", "da3"):
+            raise ValueError(f"backend must be 'vggt', 'pi3', or 'da3', got {self.backend}")
 
         if self.max_points_per_bbox <= 0:
             raise ValueError(f"max_points_per_bbox must be positive, got {self.max_points_per_bbox}")

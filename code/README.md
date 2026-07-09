@@ -15,7 +15,10 @@ code/
 │   ├── improved_sku_analyzer.py   # 一对多/多对一过滤（最佳一对一）
 │   ├── deduplicate_detections.py  # 顺序去重 + 全局ID聚合（robust 解析）
 │   ├── analyze_accuracy_metrics.py# 批量准确性指标分析
-│   └── vggt_3d_reconstructor.py   # 3D重建辅助
+│   ├── reconstructor_base.py      # 3D重建抽象基类 + 后端注册表
+│   ├── pi3_3d_reconstructor.py    # Pi3 后端（缓存式，快速批量）
+│   ├── da3_3d_reconstructor.py    # Depth-Anything-3 后端（高精度多视角）
+│   └── vggt_3d_reconstructor.py   # VGGT 后端（实时重建，当前已注释）
 ├── utils/                         # 可复用库模块
 │   ├── config.py, data_utils.py, transforms.py, point_utils.py
 │   ├── geometry_3d.py, matching_algorithms.py, visualization.py
@@ -37,6 +40,14 @@ uv run main.py --mode interactive
 
 # 完整流水线（校验→可视化→匹配→分析→顺序去重→评估）
 uv run main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Output
+
+# 使用 DA3 后端重建 + 匹配
+uv run main.py --mode pipeline --dataset imdata/floor_display2 \
+  --recon_backend da3 --match_backend da3 --algorithm 3d --save_root ./Output
+
+# 并行处理参考图（pi3/da3 后端推荐，4 线程）
+uv run main.py --mode concise --dataset imdata/floor_display2 \
+  --match_backend pi3 --algorithm 3d --parallel_refs 4 --save_root ./Output
 
 # 仅匹配（默认：对每张图片都作为参考图跑一遍）
 uv run main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output
@@ -211,6 +222,16 @@ print(matching_cfg)
 - 主入口自动加载（CLI 参数优先覆盖）：
   - 如果存在 `code/config.yaml`，`code/main.py` 会自动使用其中的 `main` 和 `reconstruction` 参数作为默认值；命令行显式传入的参数会覆盖 YAML 值。
   - 也可通过 `--config /path/to/config.yaml` 指定其它配置文件。
+
+## 🔧 3D 重建后端对比
+
+| 后端 | 速度 | 精度 | 缓存 | 适用场景 |
+|------|------|------|------|----------|
+| `vggt` | 慢（每次推理）| 高 | 无 | 单次调试 |
+| `pi3` | 快（读缓存）| 高 | `pi3_cache/` | 批量生产（推荐）|
+| `da3` | 中（读缓存）| 更高 | `da3_cache/` | 高精度场景 |
+
+新增后端只需：① 继承 `ReconstructorBase` ② 用 `@register_reconstructor("name")` 装饰 ③ 在 `modules/__init__.py` 导入即可，无需修改 `main.py`。
 
 ## 📝 开发说明
 

@@ -244,12 +244,14 @@ class SKUDetectionMain:
         save_json: bool = False,
         batch_all_refs: bool = True,
         backend: str = "vggt",
+        parallel_refs: int = 1,
     ) -> StepResult:
         """运行SKU匹配推理，支持批量将每张图片作为参考图像运行。
 
         - 当 batch_all_refs=True 时：遍历 images/ 中数字命名且在 detections_results/ 有有效 objects 的每个图片，依次作为参考图运行。
         - 否则：仅以 reference_idx 指定的单张图片作为参考图运行。
-        - backend: 3D重建模型后端 (vggt/pi3)，用于3D算法时选择数据源
+        - backend: 3D重建模型后端 (vggt/pi3/da3)，用于3D算法时选择数据源
+        - parallel_refs: 并行处理的参考图片数（>1 时启用线程池；推荐 pi3/da3 后端使用，vggt 不支持）
         """
         start = perf_counter()
         original_argv = sys.argv.copy()
@@ -273,13 +275,35 @@ class SKUDetectionMain:
                     logger.error(f"无法加载检测结果: {e}")
                     return {"success": False, "error": str(e), "duration_s": perf_counter() - start}
 
-                # 依次以每个有效图片为参考图片运行推理
-                for i, filename_idx in enumerate(valid_indices):
-                    # 使用对齐后的数组索引（enumerate的i），而不是文件ID减1
-                    # 因为帧对齐后，文件ID与数组索引的映射关系可能不连续
-                    system_ref_idx = i
-                    logger.debug(f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {system_ref_idx}")
-                    self._run_single_matching(dataset_path, algorithm, system_ref_idx, max_images, device, save_json, backend)
+                # 构建参数列表（list of (system_ref_idx, filename_idx)）
+                tasks = [(i, fn_idx) for i, fn_idx in enumerate(valid_indices)]
+
+                if parallel_refs > 1:
+                    # 并行处理：适合 pi3/da3 缓存后端（3D 数据只读，线程安全）
+                    from concurrent.futures import ThreadPoolExecutor, as_completed
+                    workers = min(parallel_refs, len(tasks))
+                    logger.info(f"并行处理 {len(tasks)} 个参考图片（worker 数: {workers}）")
+
+                    def _task(args):
+                        sys_idx, fn_idx = args
+                        logger.debug(f"[并行] 处理参考图片 {fn_idx} -> 系统索引: {sys_idx}")
+                        return self._run_single_matching(
+                            dataset_path, algorithm, sys_idx, max_images, device, save_json, backend
+                        )
+
+                    with ThreadPoolExecutor(max_workers=workers) as executor:
+                        futures = {executor.submit(_task, t): t for t in tasks}
+                        for fut in as_completed(futures):
+                            t = futures[fut]
+                            try:
+                                fut.result()
+                            except Exception as exc:
+                                logger.warning(f"参考图片 {t[1]} 处理失败: {exc}")
+                else:
+                    # 串行处理（默认）
+                    for i, filename_idx in tasks:
+                        logger.debug(f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {i}")
+                        self._run_single_matching(dataset_path, algorithm, i, max_images, device, save_json, backend)
 
                 duration = perf_counter() - start
                 logger.info(f"匹配完成 - 耗时 {duration:.2f}s，处理 {len(valid_indices)} 个参考图片")
@@ -552,8 +576,8 @@ class SKUDetectionMain:
         start = perf_counter()
         try:
             use_backend = (backend or "vggt").lower()
-            if use_backend not in ("vggt", "pi3"):
-                raise ValueError(f"未知重建后端: {backend}. 仅支持 vggt|pi3")
+            if use_backend not in ("vggt", "pi3", "da3"):
+                raise ValueError(f"未知重建后端: {backend}. 仅支持 vggt|pi3|da3")
 
             dataset = Path(dataset_path)
             if not dataset.exists():
@@ -591,6 +615,16 @@ class SKUDetectionMain:
                     mask_black_bg=mask_black_bg,
                     mask_white_bg=mask_white_bg,
                     mask_sky=mask_sky,
+                )
+            elif use_backend == "da3":
+                from modules.da3_3d_reconstructor import DA33DReconstructor
+                recon = DA33DReconstructor(device=device, model_path=model_path)
+                result_path = recon.reconstruct_from_directory(
+                    input_dir=str(image_dir),
+                    output_path=str(output_file),
+                    conf_thres=conf_thres,
+                    show_cam=show_cam,
+                    save_predictions=True,
                 )
             else:
                 from modules.pi3_3d_reconstructor import PI33DReconstructor
@@ -963,10 +997,12 @@ def main() -> None:
     # 3D重建/匹配专用参数
     parser.add_argument('--recon_conf_thres', type=float, default=float(yaml_recon.get('conf_thres', 50.0)), help="3D导出置信度阈值(0-100)")
     parser.add_argument('--recon_output', type=str, default=yaml_recon.get('output', 'reconstruction.glb'), help="3D重建输出文件名")
-    parser.add_argument('--recon_backend', type=str, default=yaml_recon.get('backend', 'vggt'), choices=['vggt','pi3'], help="3D重建后端 (vggt|pi3)")
+    parser.add_argument('--recon_backend', type=str, default=yaml_recon.get('backend', 'vggt'), choices=['vggt','pi3','da3'], help="3D重建后端 (vggt|pi3|da3)")
     parser.add_argument('--recon_model_path', type=str, default=yaml_recon.get('model_path', None), help="3D重建模型权重路径")
     parser.add_argument('--match_backend', type=str, default=yaml_recon.get('backend', 'pi3'),
-                        choices=['vggt', 'pi3'], help="SKU匹配 3D 后端 (vggt|pi3)，仅当算法包含3d时生效")
+                        choices=['vggt', 'pi3', 'da3'], help="SKU匹配 3D 后端 (vggt|pi3|da3)，仅当算法包含3d时生效")
+    parser.add_argument('--parallel_refs', type=int, default=1,
+                        help="batch_all_refs 并行线程数（>1 时启用线程池，推荐 pi3/da3 后端）")
 
     # Viewer 参数：复用 --save_root 和 --dataset，无需额外路径参数
     #   - output_dir: <save_root>/<dataset_name>
@@ -1029,6 +1065,7 @@ def main() -> None:
             device=args.device,
             save_json=args.save_json,
             backend=(args.match_backend if '3d' in args.algorithm else 'vggt'),
+            parallel_refs=args.parallel_refs,
         )
         app.run_accuracy_evaluation(args.dataset)
     elif args.mode == 'analyzer':

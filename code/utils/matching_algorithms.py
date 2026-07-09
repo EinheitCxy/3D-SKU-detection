@@ -300,15 +300,15 @@ def find_correspondences_3d_mapping(
         # 1. 全局3D场景重建（根据backend选择数据源）
         logger.info(f"使用 {config.backend} 后端进行3D场景重建...")
 
-        if config.backend == "pi3":
-            # 从Pi3缓存加载预先重建的数据
-            # 路径: Output/<dataset>/pi3_cache/predictions.npz
-            # output_dir格式: Output/<dataset>/output_3dmapping_pi3/<ref_idx>
+        if config.backend in ("pi3", "da3"):
+            # 从缓存加载预先重建的数据
+            # 路径: Output/<dataset>/<backend>_cache/predictions.npz
+            # output_dir格式: Output/<dataset>/output_3dmapping_<backend>/<ref_idx>
             output_path = Path(config.output_dir)
-            cache_path = output_path.parent.parent / "pi3_cache" / "predictions.npz"
+            cache_path = output_path.parent.parent / f"{config.backend}_cache" / "predictions.npz"
 
             if not cache_path.exists():
-                raise FileNotFoundError(f"Pi3缓存文件不存在: {cache_path}")
+                raise FileNotFoundError(f"{config.backend.upper()} 缓存文件不存在: {cache_path}")
 
             cache_key = f"{str(cache_path)}::{str(device)}"
             scene_data = PI3_SCENE_CACHE.get(cache_key)
@@ -354,9 +354,9 @@ def find_correspondences_3d_mapping(
                     "intrinsic": torch.from_numpy(intr_np).to(device),
                 }
                 PI3_SCENE_CACHE[cache_key] = scene_data
-                logger.info(f"加载Pi3缓存: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})")
+                logger.info(f"加载{config.backend.upper()}缓存: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})")
             else:
-                logger.info(f"复用 Pi3 场景缓存: {cache_path}")
+                logger.info(f"复用 {config.backend.upper()} 场景缓存: {cache_path}")
 
         else:  # backend == "vggt"
             # 原有VGGT逻辑
