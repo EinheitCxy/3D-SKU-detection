@@ -95,12 +95,16 @@ def _depth_to_world_points(
 class DA33DReconstructor(ReconstructorBase):
     """Depth-Anything-3 3D重建器（与 Pi3 接口兼容）。
 
-    推理后将结果缓存到 da3_cache/predictions.npz，
-    缓存格式与 pi3_cache 完全一致，无需修改下游 SKU 匹配代码。
+    通过 subprocess 调用 Depth-Anything-3/.venv 运行 DA3 推理（DA3 依赖 numpy<2 与
+    code/ 的 numpy>=2 冲突，故隔离在 DA3 自带 venv 中），结果缓存到 da3_cache/predictions.npz，
+    格式与 pi3_cache 完全一致，无需修改下游 SKU 匹配代码。
     """
 
     # HuggingFace 默认模型；可通过 model_path 覆盖
     DEFAULT_HF_REPO = "depth-anything/DA3NESTED-GIANT-LARGE"
+    # DA3 自带 venv（含 numpy<2 + omegaconf/addict/e3nn 等 DA3 依赖）
+    DA3_VENV_PYTHON = REPO_ROOT / "Depth-Anything-3" / ".venv" / "bin" / "python"
+    DA3_RUNNER = THIS_DIR / "da3_runner.py"
 
     def __init__(
         self,
@@ -110,26 +114,21 @@ class DA33DReconstructor(ReconstructorBase):
     ) -> None:
         super().__init__(device=device, model_path=model_path, backend_name="da3")
         self.model_name = model_name
-        # 延迟导入验证
-        try:
-            import depth_anything_3  # noqa: F401
-        except ImportError as e:
-            raise ImportError(
-                f"无法导入 depth_anything_3，请检查路径: {DA3_SRC}。错误: {e}"
+        # subprocess 模式：不在父进程加载 DA3（依赖隔离在 DA3 venv），仅校验 venv 与 runner 可用
+        if not self.DA3_VENV_PYTHON.exists():
+            raise FileNotFoundError(
+                f"DA3 venv 不存在: {self.DA3_VENV_PYTHON}。"
+                f"请在 Depth-Anything-3/ 下创建 venv 并安装 DA3 依赖（numpy<2, omegaconf, addict, e3nn）。"
             )
+        if not self.DA3_RUNNER.exists():
+            raise FileNotFoundError(f"DA3 runner 脚本不存在: {self.DA3_RUNNER}")
 
-    # ---- 模型加载 ----
+    # ---- 模型加载（subprocess 模式下为 no-op，真实加载在子进程） ----
 
     def load_model(self) -> None:
-        """加载 DA3 模型（本地路径 / HuggingFace Hub）。"""
-        from depth_anything_3.api import DepthAnything3
-
-        repo_or_path = self.model_path or self.DEFAULT_HF_REPO
-        logger.info(f"加载 DA3 模型: {repo_or_path} ...")
-        t0 = time.time()
-        self.model = DepthAnything3.from_pretrained(repo_or_path).to(self.device)
-        self.model.eval()
-        logger.info(f"DA3 模型加载完成，用时 {time.time() - t0:.2f}s")
+        """subprocess 模式：父进程不加载模型，仅标记就绪。"""
+        self.model = True  # 占位，满足基类模板的 self.model is None 检查
+        logger.info(f"DA3 subprocess 模式就绪: venv={self.DA3_VENV_PYTHON}")
 
     # ---- 图像加载 ----
 
@@ -145,77 +144,49 @@ class DA33DReconstructor(ReconstructorBase):
         logger.info(f"DA3 加载 {len(paths)} 张图片")
         return paths
 
-    # ---- 推理 ----
+    # ---- 推理（subprocess 调 da3_runner.py，在 DA3 venv 中跑） ----
 
     def run_inference(self, image_paths: List[str]) -> Dict[str, Any]:
-        """运行 DA3 推理，返回包含 depth/extrinsics/intrinsics/conf/images 的字典。
+        """subprocess 调 DA3 venv 运行 da3_runner.py，返回与 Pi3 缓存兼容的 pred 字典。
 
-        Returns:
-            pred 字典，键名与 Pi3 缓存兼容:
-            - depth          : np.ndarray (N, H, W)
-            - extrinsic      : np.ndarray (N, 4, 4)  W2C
-            - intrinsic      : np.ndarray (N, 3, 3)
-            - world_points   : np.ndarray (N, H, W, 3)
-            - conf           : np.ndarray (N, H, W)  置信度（可选）
-            - images         : np.ndarray (N, H, W, 3) uint8
-            - _prediction    : Prediction             原始 DA3 预测对象（供 export_glb 使用）
+        子进程直接写出 da3_cache/predictions.npz（含正确 shape），父进程读回返回。
         """
-        logger.info("运行 DA3 推理...")
+        import subprocess
+
+        if not image_paths:
+            raise ValueError("run_inference: image_paths 为空")
+
+        # 缓存路径：约定 Output/<dataset>/da3_cache/predictions.npz
+        # 由基类模板传入的 out_dir 决定；run_inference 无 out_dir，故用临时目录，
+        # save_predictions_cache 会把它移到最终 da3_cache/。这里写到 tmp。
+        import tempfile
+
+        tmp_npz = Path(tempfile.mkdtemp(prefix="da3_inf_")) / "predictions.npz"
+        input_dir = str(Path(image_paths[0]).parent)
+
+        cmd = [
+            str(self.DA3_VENV_PYTHON),
+            str(self.DA3_RUNNER),
+            "--input_dir", input_dir,
+            "--output_npz", str(tmp_npz),
+            "--model_path", self.model_path or self.DEFAULT_HF_REPO,
+            "--device", self.device,
+        ]
+        logger.info(f"DA3 subprocess: {' '.join(cmd)}")
         t0 = time.time()
-
-        from PIL import Image
-
-        pil_images = [Image.open(p).convert("RGB") for p in image_paths]
-
-        prediction = self.model.inference(
-            pil_images,
-            process_res=504,
-            process_res_method="upper_bound_resize",
-        )
-
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"DA3 runner 失败 (exit={proc.returncode}):\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+            )
+        if proc.stdout:
+            logger.info(proc.stdout.strip())
         logger.info(f"DA3 推理完成，用时 {time.time() - t0:.2f}s")
 
-        depth: np.ndarray = prediction.depth         # (N, H, W)
-        extrinsics: np.ndarray = prediction.extrinsics  # (N, 4, 4) or None
-        intrinsics: np.ndarray = prediction.intrinsics  # (N, 3, 3) or None
-        conf: Optional[np.ndarray] = prediction.conf    # (N, H, W) or None
-        proc_imgs: Optional[np.ndarray] = prediction.processed_images  # (N, H, W, 3)
-
-        N, H, W = depth.shape
-        logger.info(f"DA3 输出: N={N}, H={H}, W={W}")
-
-        # 计算 world_points
-        if extrinsics is not None and intrinsics is not None:
-            logger.info("从深度图 + 内外参计算 world_points ...")
-            world_points = _depth_to_world_points(depth, intrinsics, extrinsics)
-        else:
-            logger.warning("DA3 未返回相机参数，world_points 置零（匹配功能受限）")
-            world_points = np.zeros((N, H, W, 3), dtype=np.float32)
-
-        # 构建 images (N, H, W, 3) uint8
-        if proc_imgs is not None:
-            images_np = proc_imgs.astype(np.uint8) if proc_imgs.dtype != np.uint8 else proc_imgs
-        else:
-            # 回退：从文件重读缩放到推理尺寸
-            from PIL import Image as PILImage
-            images_list = []
-            for p in image_paths:
-                img = PILImage.open(p).convert("RGB").resize((W, H))
-                images_list.append(np.array(img))
-            images_np = np.stack(images_list, axis=0).astype(np.uint8)
-
-        pred: Dict[str, Any] = {
-            "depth": depth.astype(np.float32),
-            "depth_conf": conf.astype(np.float32) if conf is not None else np.ones((N, H, W), dtype=np.float32),
-            "world_points": world_points.astype(np.float32),
-            "world_points_conf": conf.astype(np.float32) if conf is not None else np.ones((N, H, W), dtype=np.float32),
-            "extrinsic": extrinsics.astype(np.float32) if extrinsics is not None else None,
-            "intrinsic": intrinsics.astype(np.float32) if intrinsics is not None else None,
-            "conf": conf.astype(np.float32) if conf is not None else None,
-            "images": images_np,
-            "_prediction": prediction,   # 保留原始对象供 export_glb 使用
-            "_image_paths": image_paths,
-        }
+        data = np.load(tmp_npz)
+        pred: Dict[str, Any] = {k: data[k] for k in data.files}
+        pred["_npz_path"] = tmp_npz  # 供 save_predictions_cache 直接复用
+        pred["_image_paths"] = image_paths
         return pred
 
     # ---- 导出 GLB ----
@@ -229,38 +200,9 @@ class DA33DReconstructor(ReconstructorBase):
         show_cam: bool = True,
         **_: Any,
     ) -> None:
-        """调用 DA3 内置 GLB 导出器。"""
-        from depth_anything_3.utils.export import export as da3_export
-
-        prediction = pred.get("_prediction")
-        if prediction is None:
-            logger.warning("DA3 export_glb: 缺少 _prediction 对象，跳过 GLB 导出")
-            return
-
-        out_dir = output_path.parent
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        # conf_thres 百分比 → DA3 的 conf_thresh_percentile
-        da3_export(
-            prediction,
-            export_format="glb",
-            export_dir=str(out_dir),
-            glb={
-                "conf_thresh_percentile": conf_thres,
-                "show_cameras": show_cam,
-                "num_max_points": 1_000_000,
-            },
-        )
-        # DA3 默认保存到 <export_dir>/exports/glb/scene.glb，重命名到期望路径
-        default_glb = out_dir / "exports" / "glb" / "scene.glb"
-        if default_glb.exists() and default_glb != output_path:
-            import shutil
-            shutil.move(str(default_glb), str(output_path))
-            logger.info(f"GLB 导出成功: {output_path}")
-        elif output_path.exists():
-            logger.info(f"GLB 已存在: {output_path}")
-        else:
-            logger.warning(f"GLB 导出可能失败，未找到文件: {output_path}")
+        """subprocess 模式跳过 GLB（无 _prediction 对象；SKU matching 仅需 npz 缓存）。"""
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(f"DA3 export_glb: subprocess 模式跳过 GLB（期望路径 {output_path}）")
 
     # ---- 保存缓存 ----
 

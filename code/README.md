@@ -233,6 +233,14 @@ print(matching_cfg)
 
 新增后端只需：① 继承 `ReconstructorBase` ② 用 `@register_reconstructor("name")` 装饰 ③ 在 `modules/__init__.py` 导入即可，无需修改 `main.py`。
 
+### DA3 后端的 subprocess 隔离
+
+Depth-Anything-3 要求 `numpy<2` + `omegaconf/addict/e3nn`，与 `code/` 的 `numpy>=2` venv 冲突。因此 `da3_3d_reconstructor.py` **不 in-process 加载 DA3**，而是通过 **subprocess** 调用 `Depth-Anything-3/.venv/bin/python modules/da3_runner.py`（自包含脚本，不 import `code/`）：
+
+- `da3_runner.py`：在 DA3 venv 中加载 `depth-anything/DA3NESTED-GIANT-LARGE`（6.3GB，米制，CC BY-NC 4.0），多视图批量推理，输出 `da3_cache/predictions.npz`（depth/extrinsics(w2c)/intrinsics，并反投影出 `world_points`，schema 与 `pi3_cache` 完全一致）。
+- `da3_3d_reconstructor.py`：`load_model` 为 no-op（仅校验 venv/runner 存在），`run_inference` 调 subprocess 生成 npz 后读回，`export_glb` 跳过（SKU matching 仅需 npz）。
+- 前置条件：`Depth-Anything-3/.venv` 必须存在且已装 DA3 依赖；HF 权重首次运行自动下载（6.3GB）。
+
 ## 📝 开发说明
 
 - `main.py` - 命令行入口，保持在根目录
