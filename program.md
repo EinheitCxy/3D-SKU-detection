@@ -5,7 +5,7 @@
 
 ## Setup Checklist
 - run tag: `da3-opt-{cycle:03d}`（如 da3-opt-001）
-- branch: `deep-anything-reconstructor`（当前），或新建 `da3-opt-loop` 分支隔离试验
+- branch: å新建 `da3-opt-loop` 分支隔离试验
 - environment: `uv`（code/.venv, Python 3.11）；命令一律 `cd code && uv run python ...`
 - dataset check: `imdata/floor_display2..12/`（images/ + detections_results/，只读）
 - benchmark: `imdata/picture_mapping_benchmark.csv`（人工标注 GT，只读）
@@ -25,25 +25,6 @@
 - 输出: `Output/da3/floor_displayN/output_3dmapping_da3/`（matching_summary.txt per ref）
 - 结果: `docs/accuracy_da3_vs_pi3.md`（当前对比表）
 - 模型库: `Pi3/`, `Depth-Anything-3/`, `sam3/`（只读，权重在 checkpoints/）
-
-## File Modification Boundary
-| Category | Files or directories | Rule |
-|---|---|---|
-| Editable | `code/utils/config.py`（SKUMatchingConfig 阈值/参数） | 阈值、字段默认值、backend-aware 分支可改 |
-| Editable | `code/utils/geometry_3d.py` | 采样函数、投影、几何验证（find_best_matching_bbox_with_3d_validation）可改 |
-| Editable | `code/utils/matching_algorithms.py` | find_correspondences_3d_mapping 主流程、Top-K、评分、唯一性约束可改 |
-| Editable | `code/utils/sku_matching_system.py` | process_images 编排、pairing 策略可改 |
-| Editable | `code/config.yaml` | inference 段阈值覆盖可改 |
-| Editable | `code/modules/da3_runner.py`, `da3_3d_reconstructor.py` | da3 cache 后处理可改（不重跑重建） |
-| Append-only | `progress.md`, `results.tsv` | append/update，不覆盖历史 |
-| Append-only | `docs/accuracy_da3_vs_pi3.md` | 评估后可更新 |
-| Read-only | `imdata/`, `imdata/picture_mapping_benchmark.csv` | 数据集 + GT，禁改 |
-| Read-only | `code/accuracy_annotation.py` | 评估器逻辑，禁改（保证评估一致） |
-| Read-only | `code/batch_accuracy_evaluation.sh`, `code/accuracy_evaluation.sh` | 评估脚本，禁改 |
-| Read-only | `Pi3/`, `Depth-Anything-3/`, `sam3/`, `*/checkpoints/` | 模型库 + 权重，禁改 |
-| Requires Rick approval | 引入新依赖（如 scipy.optimize/g2o） | P3 pose graph 等需新库 |
-| Requires Rick approval | 改 da3 cache 生成（da3_runner 推理逻辑） | 重跑重建耗时长 |
-| Requires Rick approval | 删 cache/checkpoint、`git reset --hard` | 破坏性 |
 
 ## Fixed Experiment Contract
 - dataset/splits: `imdata/floor_display2..12`（images/ + detections_results/，固定）
@@ -77,11 +58,6 @@
 - 用不同 seed/image 数/budget 比
 
 ## Commands
-### Setup
-```bash
-cd /home/xingyu/3D_Recognization/code
-uv sync  # 确保依赖
-```
 
 ### Smoke Check（单数据集快速验证，结果不入 ledger）
 ```bash
@@ -183,31 +159,38 @@ cat /home/xingyu/3D_Recognization/Output/da3/floor_displayN/accuracy_evaluation_
 - ledger policy: append-only；列：cycle, hypothesis, status, seed, commit, changed_files, command, recall, precision, tp_gt, verdict, reason
 
 ## Role Protocol
-| Role | Responsibility | Required output |
-|---|---|---|
-| Coordinator | 协议合规、状态、决策、budget 计时 | cycle status + next action |
-| Protocol Auditor | 检查改动是否在 editable surface | allow/reject/needs_user |
-| Planner | 探索匹配算法/采样/阈值/评分/几何，提一个可测假设 | hypothesis + evidence + alternatives + allowed changes + exact commands |
-| Executor | 应用改动、跑 smoke+official matching、failure recovery | changed files + command receipt + train summary |
-| Evaluator | 跑 batch_accuracy_evaluation | metric summary + keep/discard 建议 |
-| Critic | 挑战假设、找 confound、提替代 | vetoes + risk notes + better options |
-| Archivist | 更新 progress.md + 追加 results.tsv | ledger row + progress entry |
+- **思考类角色用 Opus（深度推理）**，执行类角色用 Sonnet（代码生成/运行）。
+- **Protocol Auditor 合并进 Planner**：Planner 自审边界，不再单独设 Auditor 角色。
+
+| Role | Model | Responsibility | Required output |
+|---|---|---|---|
+| Coordinator | Opus | 协议合规、状态、决策、budget 计时 | cycle status + next action |
+| Planner | Opus | 探索匹配算法/采样/阈值/评分/几何，**自审边界（allow/reject/needs_user）**，提一个可测假设 | hypothesis + evidence + 边界判定 + allowed changes + exact commands |
+| Executor | Sonnet | 应用改动、跑 smoke+official matching、failure recovery | changed files + command receipt + train summary |
+| Evaluator | Sonnet | 跑 batch_accuracy_evaluation | metric summary + keep/discard 建议 |
+| Critic | Opus | 挑战假设、找 confound、提替代 | vetoes + risk notes + better options |
+| Archivist | Sonnet | 更新 progress.md + 追加 results.tsv | ledger row + progress entry |
+
+### Planner 探索原则（重要）
+- **鼓励多探索方向**：每 cycle 探索 2-3 个不同方向再收敛到 1 个可测假设，不要只盯单一路径。方向覆盖：匹配算法、采样策略、阈值、评分权重、几何验证、唯一性约束、pairing、多帧聚合、平面约束、外观 disambiguation。
+- **基于事实推测而非凭空假设**：每个假设必须先读诊断数据/代码/summary 实证，再提改动。**禁止**未验证的猜测性改动（如"可能调低阈值有用"）。先看漏检点分布、投影命中、几何验证结果等事实，再设计假设。
+- **自审边界**：Planner 提假设时同步判定是否触及 read-only/forbidden（allow/reject/needs_user），避免无效提案。
+- 记录每假设的 evidence 来源（代码 file:line / 诊断数据 / 论文）。
 
 ## Cycle Protocol
 1. Load program.md, progress.md, results.tsv
-2. Planner 选一个假设（只改 editable surface，优先已有候选方向）
-3. Protocol Auditor 检查边界（allow/reject）
-4. Executor 应用改动 → smoke check（fd2 单数据集，crash/debug 用，不入 ledger）
-5. 若 smoke 通过，跑 official matching（全量 fd2-12，复用 cache）
-6. Evaluator 跑 batch_accuracy_evaluation（独立于 matching）
-7. 比较 Recall/Precision vs Current best（首 cycle 比 Initial baseline）
-8. Archivist 追加 results.tsv + 更新 progress.md
-9. keep → 推进 Current best；discard/crash → 保留旧 best，revert 改动（或保留作 reference）
+2. Planner 探索 2-3 个方向（基于诊断事实），自审边界（allow/reject），选一个可测假设
+3. Executor 应用改动 → smoke check（fd2 单数据集，crash/debug 用，不入 ledger）
+4. 若 smoke 通过，跑 official matching（全量 fd2-12，复用 cache）
+5. Evaluator 跑 batch_accuracy_evaluation（独立于 matching）
+6. 比较 Recall/Precision vs Current best（首 cycle 比 Initial baseline）
+7. Archivist 追加 results.tsv + 更新 progress.md
+8. keep -> 推进 Current best；discard/crash -> 保留旧 best，revert 改动（或保留作 reference）
 
 ## Git and File Hygiene
-- branch: 新建 `da3-opt-loop`（或沿用 deep-anything-reconstructor）
+- branch: 新建 `da3-opt-loop`
 - 每 keep 提交一次（commit message: `opt(da3): cycle N {hypothesis} R{x}/P{x}`）
-- discard 可保留改动在 worktree 供参考，或 git checkout 还原
+- discard 时候 git checkout 还原
 - `git reset --hard` 需 Rick 批准
 - 永不删 results.tsv/progress.md/cache/datasets/logs
 
