@@ -11,6 +11,7 @@ import logging
 from typing import Dict, List, Optional
 from pathlib import Path
 from contextlib import nullcontext
+from PIL import Image
 
 # VGGT相关导入（路径由 utils/__init__.py 统一配置）
 try:
@@ -129,24 +130,38 @@ class SKUMatchingSystem:
             # 2. 预处理图像和构建 transforms（使用 config 的衍生属性，消除参数冗余）
             if self.config.model_type == "pi3":
                 # Pi3: 先加载图像（动态尺寸），再根据实际尺寸构建 transforms
-                # 注意：必须使用 image_paths 列表，而不是直接扫描 image_folder，以确保与帧对齐后的检测结果一致
                 from pi3.utils.basic import load_images_as_tensor
                 images = load_images_as_tensor(
                     image_paths,
                     PIXEL_LIMIT=self.config.transform_kwargs["pixel_limit"]
                 )
                 images = images.to(self.config.device)
-
-                # Pi3 返回动态尺寸 [N, C, H, W]，需要从实际尺寸构建 transforms
                 _, _, H_actual, W_actual = images.shape
                 logger.info(f"Pi3 加载图像: {len(image_paths)} 张, 实际尺寸: ({W_actual}, {H_actual})")
-
-                # 使用实际尺寸构建 transforms（确保与 Pi3 重建时一致）
                 transforms_info = build_transforms(
                     image_paths,
                     model_type=self.config.model_type,
                     **self.config.transform_kwargs
                 )
+            elif self.config.model_type == "da3":
+                # DA3: transforms + images 均用 DA3 upper_bound_resize 算法从 process_res 派生，
+                # 目标尺寸与 da3_cache 一致（504×378 等），确保投影点与 cache/world_points 同坐标系。
+                transforms_info = build_transforms(
+                    image_paths,
+                    model_type=self.config.model_type,
+                    **self.config.transform_kwargs
+                )
+                # images resize 到 transforms target 尺寸（float [0,1]，与 pi3 的 ToTensor 格式一致）
+                from torchvision import transforms as _TF
+                TW = transforms_info[0].target_width
+                TH = transforms_info[0].target_height
+                to_tensor = _TF.ToTensor()
+                imgs = []
+                for p in image_paths:
+                    im = Image.open(p).convert("RGB").resize((TW, TH))
+                    imgs.append(to_tensor(im))
+                images = torch.stack(imgs, dim=0).to(self.config.device)
+                logger.info(f"DA3 加载图像: {len(image_paths)} 张, 尺寸: ({TW}, {TH})")
             else:
                 # VGGT: 先构建 transforms（固定 518×518），再加载图像
                 transforms_info = build_transforms(
@@ -430,8 +445,7 @@ class SKUMatchingSystem:
                 # 3D算法的额外信息
                 if self.config.enable_3d_mapping:
                     distance_3d = obj.get('3d_distance', 0.0)
-                    depth_consistency = obj.get('depth_consistency', 0.0)
-                    info_str += f", 3D_dist={distance_3d:.3f}m, depth_cons={depth_consistency:.3f}"
+                    info_str += f", 3D_dist={distance_3d:.3f}m"
                 
                 logger.info(info_str)
     

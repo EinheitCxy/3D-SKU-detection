@@ -6,12 +6,40 @@ SKU匹配系统3D几何处理模块
 
 import torch
 import logging
+import numpy as np
 from typing import Dict, List, Optional
 
 from .config import SKUMatchingConfig
 from .transforms import ImageTransformBase
 
 logger = logging.getLogger(__name__)
+
+
+def _fit_plane_svd(points_3d: torch.Tensor) -> tuple:
+    """SVD 拟合平面，返回 (normal: np.ndarray(3,), residual_rms: float)。
+
+    平面法向 = 去中心化后点云协方差矩阵的最小奇异向量；残差 RMS = 点到平面距离的均方根。
+    用于共面约束：同一物理面（如货架层板）法向应一致、残差应小。
+    """
+    pts = points_3d.detach().cpu().numpy().astype(np.float64)
+    if pts.shape[0] < 3:
+        # 点太少无法稳定拟合平面，返回零向量+大残差表示无效
+        return np.zeros(3), float("inf")
+    centroid = pts.mean(axis=0)
+    centered = pts - centroid
+    try:
+        _, _, vh = np.linalg.svd(centered, full_matrices=False)
+    except np.linalg.LinAlgError:
+        return np.zeros(3), float("inf")
+    normal = vh[-1]  # 最小奇异值方向 = 平面法向
+    # 归一化法向（SVD 返回的行向量已是单位向量，但保险起见）
+    norm = np.linalg.norm(normal)
+    if norm < 1e-9:
+        return np.zeros(3), float("inf")
+    normal = normal / norm
+    distances = centered @ normal  # 点到平面距离（带符号）
+    residual_rms = float(np.sqrt((distances ** 2).mean()))
+    return normal, residual_rms
 
 
 def transform_world_to_camera(points_3d: torch.Tensor, extrinsic: torch.Tensor) -> torch.Tensor:
@@ -261,9 +289,9 @@ def sample_3d_points_from_non_overlap_regions(
     if all_region_points:
         all_points = torch.cat(all_region_points, dim=0)
 
-        # 检查是否满足最小点数要求（10个）
-        if len(all_points) < 10:
-            logger.debug(f"检出框 {bbox} 深度一致点不足10个: {len(all_points)}，尝试降级策略")
+        # 检查是否满足最小点数要求（min_3d_sample_points）
+        if len(all_points) < config.min_3d_sample_points:
+            logger.debug(f"检出框 {bbox} 深度一致点不足{config.min_3d_sample_points}个: {len(all_points)}，尝试降级策略")
             # 继续执行降级策略
         else:
             # 最终采样限制
@@ -288,8 +316,8 @@ def sample_3d_points_from_non_overlap_regions(
             if point_3d is not None:
                 reconstructed_points.append(point_3d)
 
-        if len(reconstructed_points) < 10:
-            logger.debug(f"检出框 {bbox} 降级重建后仍不足10个点: {len(reconstructed_points)}")
+        if len(reconstructed_points) < config.min_3d_sample_points:
+            logger.debug(f"检出框 {bbox} 降级重建后仍不足{config.min_3d_sample_points}个点: {len(reconstructed_points)}")
             return None
 
         sampled_points = torch.stack(reconstructed_points)
@@ -398,11 +426,20 @@ def project_3d_to_2d(points_3d: torch.Tensor, extrinsic: torch.Tensor, intrinsic
 def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, target_bboxes: List[Dict],
                                              config: SKUMatchingConfig, scene_data: Dict, target_img_idx: int,
                                              target_transform: ImageTransformBase, ref_3d_center: torch.Tensor,
-                                             ref_depth_mean: float) -> Optional[Dict]:
-    """找到投影点最多落入的检出框，并进行3D几何验证"""
+                                             ref_depth_mean: float, ref_points_3d: Optional[torch.Tensor] = None) -> Optional[Dict]:
+    """找到投影点最多落入的检出框，并进行3D几何验证。
+
+    验证维度：投影命中率 + 3D质心距离 + 深度一致性 + 平面共面约束（法向对齐）。
+    平面约束针对货架场景：同一物理面（层板/商品正面）法向应一致，跨层误匹配法向偏差大。
+    """
     if len(projected_points) == 0:
         return None
-        
+
+    # 预拟合参考点平面（每个 ref 物体只拟合一次，候选验证复用）
+    ref_normal, ref_residual = (None, None)
+    if ref_points_3d is not None and len(ref_points_3d) >= 3:
+        ref_normal, ref_residual = _fit_plane_svd(ref_points_3d)
+
     best_match = None
     best_score = 0.0
     
@@ -430,34 +467,37 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
             target_transform, config, None  # 不传递other_bboxes，使用整个bbox
         )
         
-        if target_points_3d is None or len(target_points_3d) < 10:
+        if target_points_3d is None or len(target_points_3d) < config.min_3d_sample_points:
             continue
         
         # 计算目标3D点的统计信息
         target_3d_center = target_points_3d.mean(dim=0)
 
-        # 转换到相机坐标系计算深度
-        E_target = scene_data['extrinsic'][target_img_idx].to(target_points_3d.device)
-        target_points_cam = transform_world_to_camera(target_points_3d, E_target)
-        target_depth_mean = target_points_cam[:, 2].mean().item()
-
         # 3D距离验证
         spatial_distance = torch.norm(ref_3d_center - target_3d_center).item()
-        
-        # 深度一致性验证
-        depth_diff = abs(ref_depth_mean - target_depth_mean)
-        depth_consistency = max(0.0, 1.0 - depth_diff / config.max_depth_difference)
-        
-        # 组合评分：投影匹配 + 3D几何一致性
+
+        # 平面共面约束：法向对齐参与评分（不硬拒绝，低法向时 coplanar_score 低，由评分自然淘汰）
+        coplanar_score = 0.0
+        if ref_normal is not None:
+            tgt_normal, tgt_residual = _fit_plane_svd(target_points_3d)
+            if np.any(ref_normal) and np.any(tgt_normal):
+                normal_alignment = abs(float(np.dot(ref_normal, tgt_normal)))  # |cos|∈[0,1]
+                # 残差越小（点越共面）得分越高
+                residual_score = max(0.0, 1.0 - tgt_residual / config.max_3d_distance)
+                coplanar_score = normal_alignment * residual_score
+
+        # 组合评分：投影命中率 + 3D质心距离 + 平面共面约束（三因素）
         geometry_score = max(0.0, 1.0 - spatial_distance / config.max_3d_distance)
-        combined_score = match_ratio * 0.6 + geometry_score * 0.3 + depth_consistency * 0.1
-        
+        if ref_normal is not None:
+            combined_score = match_ratio * 0.5 + geometry_score * 0.2 + coplanar_score * 0.3
+        else:
+            # 无参考平面（点太少）时退化为投影+质心两因素
+            combined_score = match_ratio * 0.6 + geometry_score * 0.4
+
         # 严格筛选：必须满足3D几何约束
         if spatial_distance > config.max_3d_distance:
             continue
-        if depth_consistency < config.min_depth_consistency:
-            continue
-            
+
         if combined_score > best_score:
             best_match = {
                 'target_bbox_info': bbox_info,
@@ -465,11 +505,10 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
                 'total_points': len(projected_points),
                 'match_ratio': match_ratio,
                 '3d_distance': spatial_distance,
-                'depth_consistency': depth_consistency,
                 'combined_score': combined_score
             }
             best_score = combined_score
-            
+
     return best_match
 
 

@@ -46,49 +46,6 @@ if str(CODE_ROOT) not in sys.path:
 from .reconstructor_base import ReconstructorBase, register_reconstructor  # noqa: E402
 
 
-# ---- 工具函数 ----
-
-def _depth_to_world_points(
-    depth: np.ndarray,
-    intrinsics: np.ndarray,
-    extrinsics: np.ndarray,
-) -> np.ndarray:
-    """将深度图转为世界坐标系 3D 点云。
-
-    Args:
-        depth:      (N, H, W)   深度图（相机前向 z 值）
-        intrinsics: (N, 3, 3)   相机内参 K
-        extrinsics: (N, 4, 4)   W2C 外参矩阵
-
-    Returns:
-        world_points: (N, H, W, 3)  世界坐标系点云
-    """
-    N, H, W = depth.shape
-    ys, xs = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
-    # (H, W, 3) 齐次像素坐标
-    pixels = np.stack([xs, ys, np.ones_like(xs)], axis=-1).astype(np.float32)  # (H, W, 3)
-    pixels_flat = pixels.reshape(-1, 3)  # (H*W, 3)
-
-    world_points = np.zeros((N, H, W, 3), dtype=np.float32)
-    for i in range(N):
-        K = intrinsics[i]           # (3, 3)
-        W2C = extrinsics[i]         # (4, 4)
-        C2W = np.linalg.inv(W2C)    # (4, 4)
-        K_inv = np.linalg.inv(K)    # (3, 3)
-
-        d = depth[i].reshape(-1)    # (H*W,)
-        # 相机坐标系下 3D 点
-        p_cam = (K_inv @ pixels_flat.T).T * d[:, None]   # (H*W, 3)
-        # 齐次坐标
-        p_cam_h = np.concatenate(
-            [p_cam, np.ones((len(p_cam), 1), dtype=np.float32)], axis=-1
-        )  # (H*W, 4)
-        # 变换到世界坐标系
-        p_world = (C2W @ p_cam_h.T).T[:, :3]            # (H*W, 3)
-        world_points[i] = p_world.reshape(H, W, 3)
-    return world_points
-
-
 # ---- DA3 重建器 ----
 
 @register_reconstructor("da3")
@@ -183,7 +140,7 @@ class DA33DReconstructor(ReconstructorBase):
             logger.info(proc.stdout.strip())
         logger.info(f"DA3 推理完成，用时 {time.time() - t0:.2f}s")
 
-        data = np.load(tmp_npz)
+        data = np.load(tmp_npz, allow_pickle=True)
         pred: Dict[str, Any] = {k: data[k] for k in data.files}
         pred["_npz_path"] = tmp_npz  # 供 save_predictions_cache 直接复用
         pred["_image_paths"] = image_paths
@@ -242,6 +199,19 @@ class DA33DReconstructor(ReconstructorBase):
         if image_names is not None:
             image_ids = self.extract_image_ids(image_names)
             save_kwargs["image_ids"] = np.asarray(image_ids, dtype=np.int32)
+
+        # source_model（优先从 da3_runner 写入的 pred 透传，否则用默认）
+        src = predictions.get("source_model")
+        if src is not None and isinstance(src, np.ndarray):
+            save_kwargs["source_model"] = src
+        else:
+            save_kwargs["source_model"] = np.array(["depth-anything/DA3NESTED-GIANT-LARGE"], dtype=object)
+
+        # 帧对齐索引（对齐 pi3 schema，从 da3_runner 透传）
+        for fa_key in ("frame_alignment_sorted_indices", "frame_alignment_map_keys", "frame_alignment_map_values"):
+            fa_val = predictions.get(fa_key)
+            if fa_val is not None and isinstance(fa_val, np.ndarray):
+                save_kwargs[fa_key] = fa_val
 
         np.savez_compressed(cache_path, **save_kwargs)
         logger.info(f"保存 DA3 预测缓存: {cache_path}")

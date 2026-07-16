@@ -71,8 +71,13 @@ def load_yaml_config(path: str | Path) -> Dict[str, Any]:
     return data
 
 
-def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = None) -> "SKUMatchingConfig":
+def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = None, backend: str | None = None) -> "SKUMatchingConfig":
     """Build SKUMatchingConfig from a YAML file.
+
+    Args:
+        path: YAML 配置路径
+        algorithm: 可选算法覆盖
+        backend: 可选后端覆盖，优先于 YAML 的 inference.backend（使 CLI --match_backend 对 da3 生效 backend-aware 阈值）
 
     Expected schema (example):
     matching:
@@ -111,6 +116,7 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
     # Map allowed fields into overrides for dataclass builders
     overrides: Dict[str, Any] = {}
     for key in (
+        "backend",
         "device",
         "max_points_per_bbox",
         "confidence_threshold",
@@ -140,16 +146,19 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
         "max_3d_points_per_bbox",
         "projection_match_threshold",
         "max_3d_distance",
-        "max_depth_difference",
-        "min_depth_consistency",
+        "plane_normal_alignment_threshold",
         "enable_3d_mapping",
         "pairing_3d",
+        "min_3d_sample_points",
     ):
         if key in section:
             overrides[key] = section[key]
 
     if algo in ("3d", "3d_mapping", "mapping", "3d-2d"):
-        return SKUMatchingConfig.for_3d_mapping(**overrides)
+        # backend 优先级：显式传入参数 > YAML override > 默认 pi3
+        backend = backend if backend is not None else overrides.pop("backend", "pi3")
+        overrides.pop("backend", None)  # 避免重复传 key
+        return SKUMatchingConfig.for_3d_mapping(backend=backend, **overrides)
     return SKUMatchingConfig.for_point_tracking(**overrides)
 
 
@@ -245,6 +254,7 @@ class SKUMatchingConfig:
     # === 匹配阈值参数 ===
     confidence_threshold: float = 0.5            # 点追踪置信度阈值
     min_confident_points: int = 5                # 最小置信点数
+    min_3d_sample_points: int = 10             # 3D采样最少有效点数(不足则跳过该物体)，货架小bbox可调低
     min_hit_ratio: float = 0.4         # 最小命中率阈值
     projection_match_threshold: float = 0.3       # 3D投影匹配阈值
 
@@ -258,9 +268,8 @@ class SKUMatchingConfig:
 
     # === 3D几何验证参数 ===（基于实际场景：宽2.4m×高1.5m×深2.9m）
     max_3d_distance: float = 0.8                 # 最大3D空间距离阈值(米)
-    max_depth_difference: float = 2            # 最大深度差异容忍(米)
-    min_depth_consistency: float = 0.15          # 最小深度一致性阈值（降低以减少过滤）
-    depth_consistency_threshold: float = 0.5     # 深度一致性阈值(米)，用于3D点采样深度验证
+    depth_consistency_threshold: float = 0.5     # 深度一致性阈值(米)，用于3D点采样端cache自洽性验证
+    plane_normal_alignment_threshold: float = 0.2  # 平面法向对齐阈值(|cos|夹角)，低于此值(夹角>78°)判非同面拒绝；放宽因环绕多视角下同平面法向估计有视角偏转
 
     # === 3D验证性能优化参数 ===
     max_3d_validation_candidates: int = 5        # 最大3D验证候选框数量（预筛选Top-K，减少昂贵的3D采样）
@@ -297,22 +306,28 @@ class SKUMatchingConfig:
         """根据 backend 自动推导 model_type
 
         Returns:
-            "pi3" 如果 backend in ("pi3", "da3")，否则 "vggt"
+            "da3" / "pi3" / "vggt"
         """
-        return "pi3" if self.backend in ("pi3", "da3") else "vggt"
+        if self.backend == "da3":
+            return "da3"
+        if self.backend == "pi3":
+            return "pi3"
+        return "vggt"
 
     @property
     def transform_kwargs(self) -> dict:
         """根据 backend 自动推导 transform 构建参数
 
         Returns:
-            Pi3/DA3: {"pixel_limit": 255000}
+            DA3: {"process_res": 504}（upper_bound_resize 算法派生目标尺寸）
+            Pi3: {"pixel_limit": 255000}
             VGGT: {"target_size": 518}
         """
-        if self.backend in ("pi3", "da3"):
+        if self.backend == "da3":
+            return {"process_res": 504}
+        if self.backend == "pi3":
             return {"pixel_limit": 255000}
-        else:
-            return {"target_size": 518}
+        return {"target_size": 518}
 
     @property
     def preprocess_mode(self) -> str:
@@ -409,25 +424,40 @@ class SKUMatchingConfig:
         return cls(**algorithm_specific)
 
     @classmethod
-    def for_3d_mapping(cls, **overrides) -> 'SKUMatchingConfig':
+    def for_3d_mapping(cls, backend: str = "pi3", **overrides) -> 'SKUMatchingConfig':
         """创建3D映射算法的默认配置（仅覆盖算法特定参数，其他使用类默认值）
 
         Args:
-            **overrides: 覆盖默认值的参数
+            backend: 3D重建后端，da3 用 metric 深度+原始 conf 需独立阈值；pi3/vggt 用相对深度+sigmoid conf
+            **overrides: 覆盖默认值的参数（YAML/CLI 仍可覆盖 backend 设的值）
 
         Returns:
             配置好的SKUMatchingConfig实例
         """
-        # 仅覆盖3D投影算法特定的参数
+        # 共通 3D 算法参数
         algorithm_specific = {
             "max_bboxes": 500,
             "max_total_points": 100000,
             "min_confident_points": 5,
             "output_dir": "output_3dmapping",
             "enable_3d_mapping": True,
-            "min_depth": 0.1,
-            "max_depth": 3.0,
-            "max_depth_difference": 1.8
         }
+        if backend == "da3":
+            # da3: metric 米制深度 + 原始 conf[1,6] 未归一化，需独立标定
+            algorithm_specific.update({
+                "min_depth": 0.3,                       # 米: 30cm 近场下限
+                "max_depth": 8.0,                       # 米: 货架1-5m + 过道纵深
+                "depth_confidence_threshold": 1.5,     # da3 conf[1,6], 1.5 过滤低端噪声
+                "point_3d_confidence_threshold": 1.5,
+                "max_3d_distance": 0.5,                 # 米: 同物体跨视角中心应<0.1m, 0.5 容采样抖动
+                "depth_consistency_threshold": 0.3,     # 米: 采样端cache自洽性检查容差
+            })
+        else:
+            # pi3/vggt: 相对深度 + sigmoid conf（已标定，保持原值）
+            algorithm_specific.update({
+                "min_depth": 0.1,
+                "max_depth": 3.0,
+            })
+        algorithm_specific["backend"] = backend
         algorithm_specific.update(overrides)
         return cls(**algorithm_specific)

@@ -35,7 +35,7 @@ All three are local source trees (not pip packages), injected onto `sys.path` by
 - **SAM3** (`sam3/`): segmentation. **Mask-guided point sampling** inside detection boxes (sample matching points from the object mask, not the whole bbox). Optional, gated by `inference.enable_sam3_mask_sampling`. Weights: local `sam3/checkpoints/sam3.pt`. Path injection: `utils/sam3_utils.py:_ensure_sam3_in_path()`. Entry: `sam3/inference.py` (standalone demo).
 - **VGGT** (`vggt-main/`): 3D reconstruction, **real-time / flexible but slower** (re-infers every run). Produces point cloud + camera poses → `.glb`. Also used for 2D point-tracking matches. HF repo `facebook/VGGT-1B`. Path injection: `utils/__init__.py:_resolve_vggt_root()`. **Currently commented out in `modules/__init__.py`** — not the active backend.
 - **Pi3** (`Pi3/`): 3D reconstruction, **precomputed-cache / fast / batch-friendly** — the **active backend**. Infers once, caches `pi3_cache/predictions.npz`; the matching stage then loads **no model** and reads depth/world_points/extrinsic/intrinsic from cache. HF repo `yyfz233/Pi3`. Path injection: `modules/pi3_3d_reconstructor.py:PI3_ROOT`. Entry: `Pi3/example.py`.
-- **Depth-Anything-3** (`Depth-Anything-3/`): 3D reconstruction, **multi-view / higher-precision / subprocess-isolated**. DA3 requires `numpy<2` + `omegaconf/addict/e3nn`, conflicting with `code/`'s `numpy>=2` venv, so `modules/da3_3d_reconstructor.py` runs it via **subprocess** invoking `Depth-Anything-3/.venv/bin/python modules/da3_runner.py` (self-contained, does not import `code/`). DA3 outputs depth+extrinsics(w2c)+intrinsics; `da3_runner.py` back-projects to `world_points` and writes `da3_cache/predictions.npz` (schema identical to Pi3). HF repo `depth-anything/DA3NESTED-GIANT-LARGE` (6.3GB, metric, **CC BY-NC 4.0**). Registered via `@register_reconstructor("da3")`.
+- **Depth-Anything-3** (`Depth-Anything-3/`): 3D reconstruction, **multi-view / higher-precision / subprocess-isolated**. DA3 depends on `omegaconf/addict/e3nn/evo` etc. not in `code/`'s venv (both code/ and DA3 use numpy<2 -- no numpy conflict), so `modules/da3_3d_reconstructor.py` runs it via **subprocess** invoking `Depth-Anything-3/.venv/bin/python modules/da3_runner.py` (self-contained, does not import `code/`). DA3 outputs depth+extrinsics(w2c)+intrinsics; `da3_runner.py` back-projects to `world_points` and writes `da3_cache/predictions.npz` (schema identical to Pi3). HF repo `depth-anything/DA3NESTED-GIANT-LARGE` (6.3GB, metric, **CC BY-NC 4.0**). Registered via `@register_reconstructor("da3")`.
 
 `code/` selects backends via `--recon_backend` (reconstruction stage) and `--match_backend` (matching stage data source), each `vggt` | `pi3` | `da3`. New backends: subclass `ReconstructorBase` + `@register_reconstructor("<name>")` + import in `modules/__init__.py` (registry mechanism; CLI `choices` lists still need updating).
 
@@ -73,12 +73,12 @@ uv run python -m modules.inference --image_folder <path> --detection_dir <path> 
 uv run python -m modules.pi3_3d_reconstructor --input_dir <images> --output_file <out.glb>
 
 # Batch over all floor_display datasets
-bash scripts/batch_run_pipeline.sh         # PI3 3D over floor_display2..12
+bash batch_run_pipeline.sh         # PI3 3D over floor_display2..12
 bash scripts/k.sh                          # batch run + batch accuracy eval (sets CUDA_VISIBLE_DEVICES=1)
 
 # Accuracy vs human benchmark (imdata/picture_mapping_benchmark.csv)
 uv run python accuracy_annotation.py
-bash scripts/batch_accuracy_evaluation.sh floor_display2
+bash batch_accuracy_evaluation.sh floor_display2
 ```
 
 **`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `reconstruct` | `viewer`.
@@ -134,12 +134,11 @@ code/
 ├── config.yaml                  # all tunable params (Chinese-commented)
 ├── accuracy_annotation.py       # eval vs human benchmark CSV -> Precision/Recall/F1
 ├── aggregate_model_performance.py
-├── interactive_3d_viewer.py     # LEGACY standalone viewer (plotly/dash) — superseded by viewer/
 ├── modules/                     # pipeline stages
 │   ├── inference.py             # SKU matching entry; builds SKUMatchingSystem -> process_images()
 │   ├── reconstructor_base.py    # ReconstructorBase template (load_model->load_images->infer->export_glb->cache)
 │   ├── pi3_3d_reconstructor.py  # Pi3 backend (active) — infers + caches predictions.npz
-│   ├── da3_3d_reconstructor.py  # Depth-Anything-3 backend - subprocess to DA3 venv (numpy<2 isolation)
+│   ├── da3_3d_reconstructor.py  # Depth-Anything-3 backend - subprocess to DA3 venv (dependency-set isolation)
 │   ├── da3_runner.py            # DA3 inference script (runs in Depth-Anything-3/.venv; writes da3_cache npz)
 │   ├── vggt_3d_reconstructor.py # VGGT backend (real-time) — currently disabled in __init__.py
 │   ├── deduplicate_detections.py# sequential dedup + union-find global_id assignment

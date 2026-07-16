@@ -314,7 +314,7 @@ def find_correspondences_3d_mapping(
             scene_data = PI3_SCENE_CACHE.get(cache_key)
 
             if scene_data is None:
-                data = np.load(cache_path)
+                data = np.load(cache_path, allow_pickle=True)
 
                 # 验证必需字段
                 required_keys = ["depth", "depth_conf", "world_points", "world_points_conf", "extrinsic", "intrinsic"]
@@ -458,7 +458,7 @@ def find_correspondences_3d_mapping(
                         ref_transform, config, other_ref_bboxes
                     )
                 
-                if points_3d is None or len(points_3d) < 10:
+                if points_3d is None or len(points_3d) < config.min_3d_sample_points:
                     continue
 
                 # 计算参考3D点的统计信息用于几何验证
@@ -474,10 +474,23 @@ def find_correspondences_3d_mapping(
                     scene_data['extrinsic'][target_img_idx],
                     scene_data['intrinsic'][target_img_idx]
                 )
-                
+
+                if len(projected_points) > 0:
+                    px = projected_points[:, 0].float().cpu().numpy()
+                    py = projected_points[:, 1].float().cpu().numpy()
+                    hits=[]
+                    for bi,binfo in enumerate(target_bboxes):
+                        bx1,by1,bx2,by2=target_transform.map_bbox_to_final(binfo['bbox'])
+                        cnt=int(((px>=bx1)&(px<=bx2)&(py>=by1)&(py<=by2)).sum())
+                        h=cnt/max(len(px),1)
+                        if h>0.1: hits.append((bi,h,cnt))
+                    hits.sort(key=lambda x:-x[1])
+                    top3=hits[:3]
+                    logger.warning(f"[DIAG] ref{reference_image_idx} obj{ref_obj_id}: 采样={len(points_3d)} 投影={len(projected_points)} Top3框={[(t[0],f'{t[1]:.0%}',t[2]) for t in top3]}")
+
                 if len(projected_points) < 5:
                     continue
-                
+
                 # 将目标图像的检出框映射到VGGT坐标
                 target_bboxes_vggt = []
                 for bbox_info in target_bboxes:
@@ -523,7 +536,7 @@ def find_correspondences_3d_mapping(
                 best_match = find_best_matching_bbox_with_3d_validation(
                     projected_points, target_bboxes_for_validation, config,
                     scene_data, target_img_idx, target_transform,
-                    ref_3d_center, ref_depth_mean
+                    ref_3d_center, ref_depth_mean, ref_points_3d=points_3d
                 )
                 
                 if best_match:
@@ -553,7 +566,6 @@ def find_correspondences_3d_mapping(
                         'confidence': target_bbox_info['confidence'],
                         # 新增3D验证信息
                         '3d_distance': match.get('3d_distance', 0.0),
-                        'depth_consistency': match.get('depth_consistency', 0.0)
                     }
                     
                     matched_objects.append(match_result)

@@ -16,25 +16,6 @@ class ImprovedSKUCountAnalyzer:
         self.detection_dir = Path(detection_dir)
         self.summary_dir = Path(summary_dir)
 
-    def filter_best_matches(self, matches: List[Dict]) -> List[Dict]:
-        from collections import defaultdict
-
-        # 按 ref 分组
-        ref_groups = defaultdict(list)
-        for m in matches:
-            ref_groups[(m['ref_idx'], m['ref_id'])].append(m)
-        ref_best = [max(lst, key=lambda x: x['hit_ratio']) for lst in ref_groups.values()]
-
-        # 按 target 分组
-        tgt_groups = defaultdict(list)
-        for m in ref_best:
-            tgt_groups[(m['target_idx'], m['target_id'])].append(m)
-
-        final = []
-        for lst in tgt_groups.values():
-            final.append(max(lst, key=lambda x: x['hit_ratio']))
-        return final
-
     def analyze_with_filtering(self) -> Dict:
         """分析所有匹配结果并应用过滤"""
         all_matched_pairs: List[Dict] = []
@@ -82,7 +63,8 @@ class ImprovedSKUCountAnalyzer:
                     'total_points': int(m[4])
                 })
 
-        filtered = self.filter_best_matches(all_matched_pairs)
+        from .deduplicate_detections import filter_best_matches as _dedup_filter
+        filtered = _dedup_filter(all_matched_pairs)
         return {
             'original_matches': len(all_matched_pairs),
             'filtered_matches': len(filtered),

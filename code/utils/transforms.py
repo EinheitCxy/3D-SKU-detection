@@ -198,6 +198,48 @@ def build_pi3_transforms(
     return transforms
 
 
+def build_da3_transforms(
+    image_paths: List[str],
+    process_res: int = 504
+) -> List[Pi3ImageTransform]:
+    """构建 DA3 变换列表，目标尺寸用 DA3 upper_bound_resize 算法从 process_res 派生。
+
+    与 da3_runner.py 的 model.inference(process_res=, process_res_method="upper_bound_resize")
+    逐像素一致（算法源自 DA3 input_processor._resize_longest_side）。
+
+    Args:
+        image_paths: 图像路径列表
+        process_res: DA3 处理分辨率（默认504，须与 da3_runner 的 --process_res 一致）
+
+    Returns:
+        Pi3 变换对象列表（target 尺寸 = DA3 cache 尺寸）
+    """
+    if not image_paths:
+        return []
+
+    first_img = Image.open(image_paths[0]).convert("RGB")
+    W_orig, H_orig = first_img.size
+
+    # DA3 upper_bound_resize 算法：长边缩到 process_res，短边按比例（无 14 对齐）
+    longest = max(W_orig, H_orig)
+    scale = process_res / float(longest) if longest > 0 else 1.0
+    TARGET_W = max(1, int(round(W_orig * scale)))
+    TARGET_H = max(1, int(round(H_orig * scale)))
+
+    transforms = []
+    for img_path in image_paths:
+        img = Image.open(img_path).convert("RGB")
+        w, h = img.size
+        t = Pi3ImageTransform(w, h, TARGET_W, TARGET_H)
+        try:
+            t.image_id = int(Path(img_path).stem)
+        except (ValueError, TypeError):
+            t.image_id = None
+        transforms.append(t)
+
+    return transforms
+
+
 class VGGTImageTransform(ImageTransformBase):
     """修复版本的VGGT图像变换类，完全对齐load_and_preprocess_images(crop)的实现
 
@@ -458,10 +500,13 @@ def build_transforms(
     elif model_type == "pi3":
         pixel_limit = kwargs.get("pixel_limit", 255000)
         return build_pi3_transforms(image_paths, pixel_limit=pixel_limit)
+    elif model_type == "da3":
+        process_res = kwargs.get("process_res", 504)
+        return build_da3_transforms(image_paths, process_res=process_res)
     else:
         raise ValueError(
             f"不支持的模型类型: {model_type}。"
-            f"支持的类型: 'vggt', 'pi3'"
+            f"支持的类型: 'vggt', 'pi3', 'da3'"
         )
 
 

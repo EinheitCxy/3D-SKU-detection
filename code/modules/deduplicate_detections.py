@@ -320,7 +320,7 @@ def _list_numeric_detection_indices(detections_dir: Path) -> List[int]:
 
 def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
                          max_image: int | None = None, same_names: bool = False,
-                         dedup_mode: str = 'any', min_hit_ratio: float = 0.0,
+                         dedup_mode: str = 'any', min_hit_ratio: float = 0.4,
                          output_subdir: str = None, algorithm: str = 'point_tracking',
                          backend: str | None = None) -> Dict[int, Path]:
     """对 1..N 序列依次去重：
@@ -515,6 +515,9 @@ def build_global_mapping(
     - 组件: 使用并查集聚类；按图像顺序(1..N)和对象索引顺序为首次出现的组件分配自增ID(从1开始)
     - 值: 每个全局ID下是多个子字典，包含 image_id、object_id、bbox 等原始信息
     """
+    # 按置信度降序：高置信边先合并，使连通分量锚定在强匹配上，避免弱错误边污染聚类
+    matches = sorted(matches, key=lambda m: float(m.get('hit_ratio', 0.0)), reverse=True)
+
     # 并查集
     parent: Dict[Tuple[int, int], Tuple[int, int]] = {}
     rank: Dict[Tuple[int, int], int] = {}

@@ -52,9 +52,13 @@ def _depth_to_world_points(depth: np.ndarray, intrinsics: np.ndarray, extrinsics
         C2W = np.linalg.inv(W2C)
         K_inv = np.linalg.inv(K)
         d = depth[i].reshape(-1)
+        # 无效深度过滤（参考 DA3 export/glb.py: isfinite(d) & (d > 0)）
+        valid = np.isfinite(d) & (d > 0)
         p_cam = (K_inv @ pixels_flat.T).T * d[:, None]  # (H*W,3)
         p_cam_h = np.concatenate([p_cam, np.ones((len(p_cam), 1), dtype=np.float32)], axis=-1)
         p_world = (C2W @ p_cam_h.T).T[:, :3]
+        # 无效像素的 world_points 置 0
+        p_world[~valid] = 0.0
         world_points[i] = p_world.reshape(H, W, 3)
     return world_points
 
@@ -80,7 +84,7 @@ def main() -> None:
     from depth_anything_3.api import DepthAnything3
 
     input_dir = Path(args.input_dir)
-    paths = sorted(str(p) for p in input_dir.iterdir() if p.suffix.lower() in IMG_EXTS and p.is_file())
+    paths = sorted((str(p) for p in input_dir.iterdir() if p.suffix.lower() in IMG_EXTS and p.is_file()), key=lambda p: int(re.search(r"(\d+)", Path(p).stem).group(1)))
     if not paths:
         raise SystemExit(f"目录中未找到图片: {input_dir}")
     logger.info(f"[da3_runner] {len(paths)} imgs from {input_dir}")
@@ -97,7 +101,7 @@ def main() -> None:
     logger.info(f"[da3_runner] inference done ({time.time()-t1:.1f}s)")
 
     depth = np.asarray(prediction.depth, dtype=np.float32)          # (N,H,W)
-    extrinsics = np.asarray(prediction.extrinsics, dtype=np.float32)  # (N,4,4)
+    extrinsics = np.asarray(prediction.extrinsics, dtype=np.float32)  # (N,3,4) [R|t] w2c（非方阵，求逆时在 _depth_to_world_points 内补齐为 4x4）
     intrinsics = np.asarray(prediction.intrinsics, dtype=np.float32)  # (N,3,3)
     conf = prediction.conf
     conf = np.asarray(conf, dtype=np.float32) if conf is not None else np.ones_like(depth)
@@ -108,6 +112,13 @@ def main() -> None:
     world_points = _depth_to_world_points(depth, intrinsics, extrinsics)  # (N,H,W,3)
     images_np = np.asarray(proc_imgs, dtype=np.uint8) if proc_imgs is not None else np.zeros((N, H, W, 3), dtype=np.uint8)
     image_ids = _extract_image_ids(paths)
+    image_ids_array = np.asarray(image_ids, dtype=np.int32)
+
+    # 帧对齐索引（对齐 pi3 schema：sorted_indices + id->frame 映射）
+    sorted_indices = np.argsort(image_ids_array)
+    id_to_frame_map = {int(img_id): int(idx) for idx, img_id in enumerate(image_ids_array)}
+    map_keys = np.array(list(id_to_frame_map.keys()), dtype=np.int32)
+    map_values = np.array(list(id_to_frame_map.values()), dtype=np.int32)
 
     out = Path(args.output_npz)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -117,11 +128,14 @@ def main() -> None:
         depth_conf=conf.astype(np.float32),                    # (N,H,W)
         world_points=world_points.astype(np.float32),          # (N,H,W,3)
         world_points_conf=conf.astype(np.float32),              # (N,H,W)
-        extrinsic=extrinsics.astype(np.float32),                # (N,4,4) w2c
+        extrinsic=extrinsics.astype(np.float32),                # (N,3,4) [R|t] w2c（保存原始非方阵；matcher 与 _depth_to_world_points 内部按需补齐）
         intrinsic=intrinsics.astype(np.float32),               # (N,3,3)
         images=images_np.astype(np.uint8),                      # (N,H,W,3)
-        image_ids=np.asarray(image_ids, dtype=np.int32),        # (N,)
-        source_model=np.array(["da3"]),
+        image_ids=image_ids_array,                              # (N,)
+        source_model=np.array(["depth-anything/DA3NESTED-GIANT-LARGE"], dtype=object),
+        frame_alignment_sorted_indices=sorted_indices,
+        frame_alignment_map_keys=map_keys,
+        frame_alignment_map_values=map_values,
     )
     logger.info(f"[da3_runner] saved {out} (total {time.time()-t0:.1f}s)")
 

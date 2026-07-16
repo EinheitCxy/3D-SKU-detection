@@ -35,6 +35,7 @@ inference:
   confidence_threshold: 0.5  # 点追踪置信度阈值(0-1)，低于此值的追踪点被忽略
   min_confident_points: 10  # 最小置信点数，少于此数的物体跳过匹配
   min_hit_ratio: 0.4  # 最小命中率阈值(0-1)，落入目标框的点比例需超过此值才算匹配
+  min_3d_sample_points: 10  # 3D采样最少有效点数(货架小bbox可调低，如5)
   pairing_3d: "next"  # 3D配对策略: all=参考图与所有目标匹配，next=只与下一张匹配(环形)
 
   # SAM3 mask引导采样(可选，提高采样精度)

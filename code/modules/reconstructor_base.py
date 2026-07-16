@@ -134,10 +134,12 @@ class ReconstructorBase:
         images = self.load_images(input_dir)
         logger.info(f"图像加载/预处理耗时: {time.time() - t0:.2f}s")
 
-        # 记录输入顺序（日志用）
+        # 记录输入顺序（日志用，按文件名数字数值序避免≥10图时字典序错位如1,10,11,2）
+        import re as _re
         try:
             image_names = sorted(
-                [p for p in os.listdir(input_dir) if p.lower().endswith((".jpg", ".jpeg", ".png"))]
+                [p for p in os.listdir(input_dir) if p.lower().endswith((".jpg", ".jpeg", ".png"))],
+                key=lambda p: int(_re.search(r"(\d+)", os.path.splitext(p)[0]).group(1)) if _re.search(r"(\d+)", os.path.splitext(p)[0]) else p
             )
             logger.info(f"处理图片: {image_names}")
         except Exception:

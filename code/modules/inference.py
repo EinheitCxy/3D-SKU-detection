@@ -99,28 +99,34 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         "save_json": args.save_json,
         "output_dir": output_dir,
     }
+    # 可选 3D 阈值覆盖（网格扫描用，None=用 config 默认）
+    for _k in ("plane_normal_alignment_threshold", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
+        _v = getattr(args, _k, None)
+        if _v is not None:
+            overrides[_k] = _v
 
     if algorithm_type == "point_tracking":
         return SKUMatchingConfig.for_point_tracking(**overrides)
-    return SKUMatchingConfig.for_3d_mapping(**overrides)
+    backend = overrides.pop("backend", args.backend)
+    return SKUMatchingConfig.for_3d_mapping(backend=backend, **overrides)
 
 
 def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
     from utils import build_matching_config_from_yaml
 
-    cfg = build_matching_config_from_yaml(args.config, algorithm=algorithm_type)
+    cfg = build_matching_config_from_yaml(args.config, algorithm=algorithm_type, backend=getattr(args, "backend", None))
     # Always route outputs to per-ref subdir like CLI path does
     cfg.output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx, getattr(args, "backend", None))
     # Override a few runtime knobs from CLI
     cfg.device = args.device
     cfg.save_json = bool(args.save_json)
     cfg.seed = args.seed
-    # 统一 backend：优先使用命令行参数，其次使用 YAML 中的配置
-    try:
-        cfg.backend = args.backend
-    except AttributeError:
-        # 旧调用路径没有 backend 参数时，保留 YAML 中的设置或默认值
-        pass
+    # 可选 3D 阈值覆盖（网格扫描用，None=保留 YAML/默认值）
+    # 注：main.py concise 路径总是传 --config，本函数是实际生效路径
+    for _k in ("plane_normal_alignment_threshold", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
+        _v = getattr(args, _k, None)
+        if _v is not None:
+            setattr(cfg, _k, _v)
     return cfg
 
 
@@ -326,6 +332,13 @@ def main() -> None:
     parser.add_argument("--confidence_threshold", type=float, default=0.0, help="点追踪置信度阈值")
     parser.add_argument("--min_confident_points", type=int, default=10, help="每个bbox的最小置信点数")
     parser.add_argument("--min_hit_ratio", type=float, default=0.5, help="最小命中率阈值")
+    # 可选 3D 阈值覆盖（网格扫描用，default=None 表示用 config 默认）
+    parser.add_argument("--plane_normal_alignment_threshold", type=float, default=None, help="平面法向对齐阈值(覆盖config)")
+    parser.add_argument("--max_3d_distance", type=float, default=None, help="3D空间距离阈值(覆盖config)")
+    parser.add_argument("--max_depth", type=float, default=None, help="最大深度(覆盖config)")
+    parser.add_argument("--depth_confidence_threshold", type=float, default=None, help="深度置信度阈值(覆盖config)")
+    parser.add_argument("--min_3d_sample_points", type=int, default=None, help="3D采样最少有效点数(覆盖config)")
+    parser.add_argument("--pairing_3d", type=str, default=None, choices=["all","next"], help="3D配对策略(覆盖config)")
     args = parser.parse_args()
     
     try:

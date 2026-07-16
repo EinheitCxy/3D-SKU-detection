@@ -245,6 +245,7 @@ class SKUDetectionMain:
         batch_all_refs: bool = True,
         backend: str = "vggt",
         parallel_refs: int = 1,
+        match_overrides: dict = None,
     ) -> StepResult:
         """运行SKU匹配推理，支持批量将每张图片作为参考图像运行。
 
@@ -288,7 +289,7 @@ class SKUDetectionMain:
                         sys_idx, fn_idx = args
                         logger.debug(f"[并行] 处理参考图片 {fn_idx} -> 系统索引: {sys_idx}")
                         return self._run_single_matching(
-                            dataset_path, algorithm, sys_idx, max_images, device, save_json, backend
+                            dataset_path, algorithm, sys_idx, max_images, device, save_json, backend, match_overrides
                         )
 
                     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -303,14 +304,14 @@ class SKUDetectionMain:
                     # 串行处理（默认）
                     for i, filename_idx in tasks:
                         logger.debug(f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {i}")
-                        self._run_single_matching(dataset_path, algorithm, i, max_images, device, save_json, backend)
+                        self._run_single_matching(dataset_path, algorithm, i, max_images, device, save_json, backend, match_overrides)
 
                 duration = perf_counter() - start
                 logger.info(f"匹配完成 - 耗时 {duration:.2f}s，处理 {len(valid_indices)} 个参考图片")
                 return {"success": True, "duration_s": duration}
             else:
                 # 单个参考图片处理
-                return self._run_single_matching(dataset_path, algorithm, reference_idx, max_images, device, save_json, backend)
+                return self._run_single_matching(dataset_path, algorithm, reference_idx, max_images, device, save_json, backend, match_overrides)
 
         except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
@@ -320,7 +321,8 @@ class SKUDetectionMain:
             sys.argv = original_argv
 
     def _run_single_matching(self, dataset_path: str, algorithm: str, reference_idx: int,
-                           max_images: int, device: str, save_json: bool, backend: str = "vggt") -> StepResult:
+                           max_images: int, device: str, save_json: bool, backend: str = "vggt",
+                           match_overrides: dict = None) -> StepResult:
         """运行单个参考图片的SKU匹配推理（内部使用）。
 
         Args:
@@ -354,6 +356,10 @@ class SKUDetectionMain:
                 argv.append('--save_json')
             if self.config_path is not None:
                 argv.extend(['--config', str(self.config_path)])
+            # 透传 3D 阈值覆盖（网格扫描用）
+            if match_overrides:
+                for _k, _v in match_overrides.items():
+                    argv.extend([f'--{_k}', str(_v)])
 
             sys.argv = argv
             inference_main()
@@ -406,6 +412,8 @@ class SKUDetectionMain:
                 '--image_dir', str(image_dir),
                 '--detection_dir', str(detection_dir),
                 '--output_dir', str(output_viz_dir),
+                '--no_confidence',
+                '--no_class'
             ]
 
             viz_main()
@@ -568,16 +576,20 @@ class SKUDetectionMain:
         mask_white_bg: bool = True,
         mask_sky: bool = True,
     ) -> StepResult:
-        """生成3D点云/GLB（支持后端：VGGT 或 PI3）。
+        """生成3D点云/GLB（支持后端：已注册的 ReconstructorBase 子类，当前 da3/pi3；vggt 可选）。
 
         - 输入图片目录：<dataset>/images
         - 输出GLB：<save_root>/<dataset_name>/reconstruction_{backend}.glb（或 <dataset>/reconstruction_{backend}.glb）
+        - 后端实例化走 RECONSTRUCTOR_REGISTRY（modules/__init__.py 注册），新增后端无需改本方法。
         """
         start = perf_counter()
         try:
+            from modules import RECONSTRUCTOR_REGISTRY, get_reconstructor
             use_backend = (backend or "vggt").lower()
-            if use_backend not in ("vggt", "pi3", "da3"):
-                raise ValueError(f"未知重建后端: {backend}. 仅支持 vggt|pi3|da3")
+            if use_backend not in RECONSTRUCTOR_REGISTRY:
+                available = ", ".join(sorted(RECONSTRUCTOR_REGISTRY)) or "(无)"
+                hint = "（如需启用 vggt，请取消 modules/__init__.py 中 VGGT3DReconstructor 的导入注释）" if use_backend == "vggt" else ""
+                raise ValueError(f"未知/未启用的重建后端: {backend}. 已注册: {available}{hint}")
 
             dataset = Path(dataset_path)
             if not dataset.exists():
@@ -604,38 +616,26 @@ class SKUDetectionMain:
 
             logger.info(f"开始3D重建[{use_backend}]: {image_dir} → {output_file}")
 
+            # 通过注册表获取后端类（新增后端只需 @register_reconstructor + 在 modules/__init__.py 导入）
+            recon_cls = get_reconstructor(use_backend)
+            recon = recon_cls(device=device, model_path=model_path)
+            # vggt 的 export_glb 需要 mask_* 参数（经 reconstruct_from_directory 的 **kwargs 透传）；
+            # da3/pi3 无此参数，忽略即可。
+            extra_kwargs: dict = {}
             if use_backend == "vggt":
-                from modules.vggt_3d_reconstructor import VGGT3DReconstructor
-                recon = VGGT3DReconstructor(device=device, model_path=model_path)
-                result_path = recon.reconstruct_from_directory(
-                    input_dir=str(image_dir),
-                    output_path=str(output_file),
-                    conf_thres=conf_thres,
-                    show_cam=show_cam,
-                    mask_black_bg=mask_black_bg,
-                    mask_white_bg=mask_white_bg,
-                    mask_sky=mask_sky,
-                )
-            elif use_backend == "da3":
-                from modules.da3_3d_reconstructor import DA33DReconstructor
-                recon = DA33DReconstructor(device=device, model_path=model_path)
-                result_path = recon.reconstruct_from_directory(
-                    input_dir=str(image_dir),
-                    output_path=str(output_file),
-                    conf_thres=conf_thres,
-                    show_cam=show_cam,
-                    save_predictions=True,
-                )
-            else:
-                from modules.pi3_3d_reconstructor import PI33DReconstructor
-                recon = PI33DReconstructor(device=device, model_path=model_path)
-                result_path = recon.reconstruct_from_directory(
-                    input_dir=str(image_dir),
-                    output_path=str(output_file),
-                    conf_thres=conf_thres,
-                    show_cam=show_cam,
-                    save_predictions=True,
-                )
+                extra_kwargs = {
+                    "mask_black_bg": mask_black_bg,
+                    "mask_white_bg": mask_white_bg,
+                    "mask_sky": mask_sky,
+                }
+            result_path = recon.reconstruct_from_directory(
+                input_dir=str(image_dir),
+                output_path=str(output_file),
+                conf_thres=conf_thres,
+                show_cam=show_cam,
+                save_predictions=True,
+                **extra_kwargs,
+            )
 
             duration = perf_counter() - start
             logger.info(f"3D重建完成 - 耗时 {duration:.2f}s")
@@ -691,7 +691,7 @@ class SKUDetectionMain:
             logger.error(f"END dedup_sequence duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
 
-    def run_complete_pipeline(self, dataset_path: str, algorithm: str = 'point_tracking') -> Dict[str, bool]:
+    def run_complete_pipeline(self, dataset_path: str, algorithm: str = 'point_tracking', model_path: str | None = None) -> Dict[str, bool]:
         """运行完整的SKU计数流水线（包含3D重建），返回每步是否成功的摘要。"""
         logger.info("开始完整的SKU计数流水线（包含3D重建）")
         summary: Dict[str, bool] = {}
@@ -719,7 +719,7 @@ class SKUDetectionMain:
                 summary['reconstruction'] = True
             else:
                 logger.info(f"步骤1: 3D重建 (backend: {match_backend})")
-                recon = self.run_reconstruction(dataset_path, backend=match_backend)
+                recon = self.run_reconstruction(dataset_path, backend=match_backend, model_path=model_path)
                 summary['reconstruction'] = bool(recon.get('success', False))
 
                 if not summary['reconstruction']:
@@ -813,7 +813,7 @@ class SKUDetectionMain:
             print("1. 运行完整流水线")
             print("2. 运行精简流水线 (SKU Matching + Accuracy evaluation)")
             print("3. 更改数据集路径")
-            print("4. 3D重建 (VGGT/PI3)")
+            print("4. 3D重建 (VGGT/PI3/DA3)")
             print("5. 3D可视化 (Viewer)")
             print("0. 退出")
 
@@ -832,8 +832,8 @@ class SKUDetectionMain:
                 algorithm = input("选择算法 (point_tracking/3d) [默认: point_tracking]: ").strip() or 'point_tracking'
                 if '3d' in algorithm:
                     while True:
-                        backend = input("选择3D匹配后端 (vggt/pi3): ").strip().lower()
-                        if backend in ('vggt', 'pi3'):
+                        backend = input("选择3D匹配后端 (vggt/pi3/da3): ").strip().lower()
+                        if backend in ('vggt', 'pi3', 'da3'):
                             break
                         logger.warning(f"无效的后端 '{backend}'，请重新输入")
                     self.match_backend = backend
@@ -842,8 +842,8 @@ class SKUDetectionMain:
                 algorithm = input("选择算法 (point_tracking/3d/both) [默认: both]: ").strip() or 'both'
                 if '3d' in algorithm:
                     while True:
-                        backend = input("选择3D匹配后端 (vggt/pi3): ").strip().lower()
-                        if backend in ('vggt', 'pi3'):
+                        backend = input("选择3D匹配后端 (vggt/pi3/da3): ").strip().lower()
+                        if backend in ('vggt', 'pi3', 'da3'):
                             break
                         logger.warning(f"无效的后端 '{backend}'，请重新输入")
                     self.match_backend = backend
@@ -868,8 +868,8 @@ class SKUDetectionMain:
                         logger.warning(f"数据集 '{dataset_name}' 验证失败，保持当前数据集")
             elif choice == '4':
                 while True:
-                    backend = input("选择重建后端 (vggt/pi3): ").strip().lower()
-                    if backend in ('vggt', 'pi3'):
+                    backend = input("选择重建后端 (vggt/pi3/da3): ").strip().lower()
+                    if backend in ('vggt', 'pi3', 'da3'):
                         break
                     logger.warning(f"无效的后端 '{backend}'，请重新输入")
                 res = self.run_reconstruction(self.default_dataset, backend=backend)
@@ -887,7 +887,7 @@ class SKUDetectionMain:
                 # 从cache目录查找reconstruction文件
                 recon_default = None
                 cache_default = None
-                for backend in ['vggt', 'pi3']:
+                for backend in ['vggt', 'pi3', 'da3']:
                     cache_dir = output_dir / f'{backend}_cache'
                     candidate = cache_dir / f'reconstruction_{backend}.glb'
                     if candidate.exists():
@@ -1003,6 +1003,13 @@ def main() -> None:
                         choices=['vggt', 'pi3', 'da3'], help="SKU匹配 3D 后端 (vggt|pi3|da3)，仅当算法包含3d时生效")
     parser.add_argument('--parallel_refs', type=int, default=1,
                         help="batch_all_refs 并行线程数（>1 时启用线程池，推荐 pi3/da3 后端）")
+    # 可选 3D 阈值覆盖（网格扫描用，default=None 表示用 config 默认）
+    parser.add_argument('--plane_normal_alignment_threshold', type=float, default=None, help="平面法向对齐阈值(覆盖config)")
+    parser.add_argument('--max_3d_distance', type=float, default=None, help="3D空间距离阈值(覆盖config)")
+    parser.add_argument('--max_depth', type=float, default=None, help="最大深度(覆盖config)")
+    parser.add_argument('--depth_confidence_threshold', type=float, default=None, help="深度置信度阈值(覆盖config)")
+    parser.add_argument('--min_3d_sample_points', type=int, default=None, help="3D采样最少有效点数(覆盖config)")
+    parser.add_argument('--pairing_3d', type=str, default=None, choices=['all','next'], help="3D配对策略 all/next(覆盖config)")
 
     # Viewer 参数：复用 --save_root 和 --dataset，无需额外路径参数
     #   - output_dir: <save_root>/<dataset_name>
@@ -1054,9 +1061,14 @@ def main() -> None:
     if args.mode == 'interactive':
         app.interactive_mode()
     elif args.mode == 'pipeline':
-        app.run_complete_pipeline(args.dataset, args.algorithm)
+        app.run_complete_pipeline(args.dataset, args.algorithm, model_path=args.recon_model_path)
     elif args.mode == 'concise':
         # 在精简流水线中，先匹配后评估；匹配透传关键参数
+        _ov = {}
+        for _k in ("plane_normal_alignment_threshold", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
+            _v = getattr(args, _k, None)
+            if _v is not None:
+                _ov[_k] = _v
         app.run_sku_matching(
             args.dataset,
             args.algorithm,
@@ -1066,6 +1078,7 @@ def main() -> None:
             save_json=args.save_json,
             backend=(args.match_backend if '3d' in args.algorithm else 'vggt'),
             parallel_refs=args.parallel_refs,
+            match_overrides=_ov,
         )
         app.run_accuracy_evaluation(args.dataset)
     elif args.mode == 'analyzer':

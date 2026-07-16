@@ -1,223 +1,115 @@
 #!/bin/bash
-# 该脚本用于批量处理 floor_display2 到 floor_display12 的所有数据集，
-# 依次调用 accuracy_evaluation.sh 进行准确性评估，并生成跨数据集汇总报告。
+# 批量评估 floor_display<start..end> 的 SKU 匹配准确率，按后端隔离。
+# 用法: bash batch_accuracy_evaluation.sh --backend <pt|pi3|da3> --start 2 --end 12 --save-root ../Output/pi3
+set -euo pipefail
 
-# 设置脚本参数
-set -e  # 遇到错误时退出
-set -u  # 使用未定义变量时退出
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; B='\033[1m'; NC='\033[0m'
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
-
-# 配置路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# 数据集范围配置
-START_FD="${1:-2}"   # 起始数据集编号，默认2
-END_FD="${2:-12}"    # 结束数据集编号，默认12
-
-# 跨数据集汇总报告
-GLOBAL_SUMMARY_DIR="$PROJECT_ROOT/imdata/batch_accuracy_results"
-GLOBAL_SUMMARY_REPORT="$GLOBAL_SUMMARY_DIR/global_summary_${TIMESTAMP}.txt"
-
-# 创建全局结果目录
-mkdir -p "$GLOBAL_SUMMARY_DIR"
-
-# 初始化
-echo ""
-echo -e "${BOLD}${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║          SKU匹配准确性 - 多数据集批量评估                      ║${NC}"
-echo -e "${BOLD}${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${BLUE}开始时间: $(date)${NC}"
-echo -e "${BLUE}数据集范围: floor_display${START_FD} ~ floor_display${END_FD}${NC}"
-echo ""
-
-# 检查单数据集评估脚本是否存在
-if [ ! -f "$SCRIPT_DIR/accuracy_evaluation.sh" ]; then
-    echo -e "${RED}错误: 单数据集评估脚本不存在: $SCRIPT_DIR/accuracy_evaluation.sh${NC}"
-    exit 1
-fi
-
-# 统计变量
-total_datasets=0
-successful_datasets=0
-failed_datasets=0
-skipped_datasets=0
-
-# 存储各数据集结果
-declare -a dataset_results=()
-
-# 初始化全局汇总报告
-cat > "$GLOBAL_SUMMARY_REPORT" << EOF
-================================================================================
-SKU匹配准确性 - 多数据集批量评估汇总报告
-================================================================================
-生成时间: $(date)
-数据集范围: floor_display${START_FD} ~ floor_display${END_FD}
-
-================================================================================
-各数据集评估结果
-================================================================================
-
-EOF
-
-# 遍历所有数据集
-for fd_num in $(seq $START_FD $END_FD); do
-    FD="floor_display${fd_num}"
-    FD_DIR="$PROJECT_ROOT/imdata/$FD"
-    OUTPUT_PT_DIR="$FD_DIR/output_pt"
-
-    total_datasets=$((total_datasets + 1))
-
-    echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}[$fd_num/$END_FD] 处理数据集: $FD${NC}"
-    echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-    # 检查数据集目录是否存在
-    if [ ! -d "$FD_DIR" ]; then
-        echo -e "${YELLOW}  ⚠ 跳过: 数据集目录不存在 ($FD_DIR)${NC}"
-        skipped_datasets=$((skipped_datasets + 1))
-        echo "[$FD] 跳过 - 数据集目录不存在" >> "$GLOBAL_SUMMARY_REPORT"
-        echo "" >> "$GLOBAL_SUMMARY_REPORT"
-        continue
-    fi
-
-    # 检查output_pt目录是否存在
-    if [ ! -d "$OUTPUT_PT_DIR" ]; then
-        echo -e "${YELLOW}  ⚠ 跳过: output_pt目录不存在 ($OUTPUT_PT_DIR)${NC}"
-        skipped_datasets=$((skipped_datasets + 1))
-        echo "[$FD] 跳过 - output_pt目录不存在" >> "$GLOBAL_SUMMARY_REPORT"
-        echo "" >> "$GLOBAL_SUMMARY_REPORT"
-        continue
-    fi
-
-    # 检查是否有matching_summary.txt文件
-    matching_count=$(find "$OUTPUT_PT_DIR" -name "matching_summary.txt" 2>/dev/null | wc -l)
-    if [ "$matching_count" -eq 0 ]; then
-        echo -e "${YELLOW}  ⚠ 跳过: 无匹配结果文件${NC}"
-        skipped_datasets=$((skipped_datasets + 1))
-        echo "[$FD] 跳过 - 无matching_summary.txt文件" >> "$GLOBAL_SUMMARY_REPORT"
-        echo "" >> "$GLOBAL_SUMMARY_REPORT"
-        continue
-    fi
-
-    echo -e "${BLUE}  发现 $matching_count 个匹配结果文件${NC}"
-
-    # 调用单数据集评估脚本
-    echo -e "${BLUE}  执行评估...${NC}"
-
-    # 使用set +e临时允许错误，以便捕获失败
-    set +e
-    bash "$SCRIPT_DIR/accuracy_evaluation.sh" "$FD" 2>&1 | tee "$GLOBAL_SUMMARY_DIR/${FD}_log.txt"
-    eval_result=$?
-    set -e
-
-    if [ $eval_result -eq 0 ]; then
-        successful_datasets=$((successful_datasets + 1))
-        echo -e "${GREEN}  ✓ $FD 评估完成${NC}"
-
-        # 提取该数据集的汇总信息
-        DATASET_SUMMARY="$FD_DIR/accuracy_evaluation/summary.txt"
-        if [ -f "$DATASET_SUMMARY" ]; then
-            echo "--------------------------------------------------------------------------------" >> "$GLOBAL_SUMMARY_REPORT"
-            echo "[$FD] 评估成功" >> "$GLOBAL_SUMMARY_REPORT"
-            echo "--------------------------------------------------------------------------------" >> "$GLOBAL_SUMMARY_REPORT"
-
-            # 提取关键统计信息
-            grep -E "处理的图片对总数|成功评估数量|失败评估数量|成功率" "$DATASET_SUMMARY" >> "$GLOBAL_SUMMARY_REPORT" 2>/dev/null || true
-            echo "" >> "$GLOBAL_SUMMARY_REPORT"
-
-            # 提取各图片对的指标
-            grep -A3 "参考图片.*评估结果" "$DATASET_SUMMARY" >> "$GLOBAL_SUMMARY_REPORT" 2>/dev/null || true
-            echo "" >> "$GLOBAL_SUMMARY_REPORT"
-
-            # 存储结果供后续统计
-            success_count=$(grep "成功评估数量" "$DATASET_SUMMARY" | grep -oE '[0-9]+' | head -1 || echo "0")
-            dataset_results+=("$FD:$success_count")
-        fi
-    else
-        failed_datasets=$((failed_datasets + 1))
-        echo -e "${RED}  ✗ $FD 评估失败${NC}"
-        echo "[$FD] 评估失败 (退出码: $eval_result)" >> "$GLOBAL_SUMMARY_REPORT"
-        echo "" >> "$GLOBAL_SUMMARY_REPORT"
-    fi
-
-    echo ""
+BACKEND="pt"; START=2; END=12; SAVE_ROOT=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --backend)    BACKEND="$2"; shift 2 ;;
+        --start)      START="$2"; shift 2 ;;
+        --end)        END="$2"; shift 2 ;;
+        --save-root)  SAVE_ROOT="${2%/}"; shift 2 ;;
+        *)            echo "未知参数: $1" >&2; exit 1 ;;
+    esac
 done
 
-# 生成全局统计
-cat >> "$GLOBAL_SUMMARY_REPORT" << EOF
+case "$BACKEND" in
+    pt|point_tracking) OUT_SUB="output_pt"; BACKEND="pt" ;;
+    pi3)               OUT_SUB="output_3dmapping_pi3" ;;
+    da3)               OUT_SUB="output_3dmapping_da3" ;;
+    *)                 echo -e "${RED}未知 backend: $BACKEND (pt|pi3|da3)${NC}"; exit 1 ;;
+esac
 
-================================================================================
-全局统计汇总
-================================================================================
-数据集范围: floor_display${START_FD} ~ floor_display${END_FD}
-总数据集数量: $total_datasets
-成功评估数量: $successful_datasets
-失败评估数量: $failed_datasets
-跳过数量: $skipped_datasets
+DATA_ROOT="${SAVE_ROOT:-$PROJECT_ROOT/imdata}"
+BENCHMARK_CSV="$PROJECT_ROOT/imdata/picture_mapping_benchmark.csv"
+TS=$(date +%Y%m%d_%H%M%S)
+SUMMARY_DIR="$PROJECT_ROOT/imdata/batch_accuracy_results_${BACKEND}"
+GLOBAL_REPORT="$SUMMARY_DIR/global_summary_${BACKEND}_${TS}.txt"
+mkdir -p "$SUMMARY_DIR"
 
-EOF
+[ -f "$BENCHMARK_CSV" ] || { echo -e "${RED}缺 benchmark CSV: $BENCHMARK_CSV${NC}"; exit 1; }
+[ -f "$SCRIPT_DIR/accuracy_evaluation.sh" ] || { echo -e "${RED}缺 accuracy_evaluation.sh${NC}"; exit 1; }
 
-# 计算成功率
-if [ $total_datasets -gt 0 ]; then
-    success_rate=$(echo "scale=2; $successful_datasets * 100 / $total_datasets" | bc -l)
-    echo "数据集评估成功率: ${success_rate}%" >> "$GLOBAL_SUMMARY_REPORT"
+echo -e "${B}${CYAN}=== 批量准确率评估 [${BACKEND}] floor_display${START}..${END} ===${NC}"
+echo -e "${BLUE}数据根: $DATA_ROOT | 匹配目录: $OUT_SUB${NC}"
+echo -e "${BLUE}开始: $(date)${NC}"
+
+{
+echo "================================================================================"
+echo "SKU匹配准确率批量评估 [${BACKEND}]"
+echo "================================================================================"
+echo "生成时间: $(date)"
+echo "后端: $BACKEND | 数据根: $DATA_ROOT | 范围: floor_display${START}..${END}"
+echo ""
+} > "$GLOBAL_REPORT"
+
+total=0; ok=0; fail=0; skip=0
+declare -a results=()
+
+for fd in $(seq "$START" "$END"); do
+    FD="floor_display${fd}"
+    FD_DIR="$DATA_ROOT/$FD"
+    MATCH_DIR="$FD_DIR/$OUT_SUB"
+    total=$((total+1))
+    echo -e "${YELLOW}[$fd/$END] $FD${NC}"
+
+    [ -d "$FD_DIR" ] || { echo -e "  ${YELLOW}跳过: 无目录${NC}"; skip=$((skip+1)); echo "[$FD] 跳过-无目录" >> "$GLOBAL_REPORT"; continue; }
+    [ -d "$MATCH_DIR" ] || { echo -e "  ${YELLOW}跳过: 无 $OUT_SUB${NC}"; skip=$((skip+1)); echo "[$FD] 跳过-无匹配输出目录" >> "$GLOBAL_REPORT"; continue; }
+    mc=$(find "$MATCH_DIR" -name "matching_summary.txt" 2>/dev/null | wc -l)
+    [ "$mc" -eq 0 ] && { echo -e "  ${YELLOW}跳过: 无 matching_summary.txt${NC}"; skip=$((skip+1)); echo "[$FD] 跳过-无matching_summary" >> "$GLOBAL_REPORT"; continue; }
+
+    echo -e "  ${BLUE}发现 $mc 个 matching_summary，评估中...${NC}"
+    set +e
+    ACC_ARGS=("$FD" "--backend" "$BACKEND")
+    [ -n "$SAVE_ROOT" ] && ACC_ARGS+=("--save-root" "$SAVE_ROOT")
+    bash "$SCRIPT_DIR/accuracy_evaluation.sh" "${ACC_ARGS[@]}" 2>&1 | tee "$SUMMARY_DIR/${FD}_log.txt"
+    rc=${PIPESTATUS[0]}
+    set -e
+
+    if [ "$rc" -eq 0 ]; then
+        ok=$((ok+1)); echo -e "  ${GREEN}✓ $FD 完成${NC}"
+        S="$FD_DIR/accuracy_evaluation_${BACKEND}/summary.txt"
+        if [ -f "$S" ]; then
+            {
+            echo "--------------------------------------------------------------------------------"
+            echo "[$FD] 评估成功"
+            grep -E "总体召回率|有效率|映射准确率" "$S" 2>/dev/null || true
+            echo ""
+            } >> "$GLOBAL_REPORT"
+            r=$(grep "总体召回率" "$S" | grep -oE '[0-9.]+%' | head -1); r="${r:-0%}"
+            results+=("$FD:$r")
+        fi
+    else
+        fail=$((fail+1)); echo -e "  ${RED}✗ $FD 失败($rc)${NC}"
+        echo "[$FD] 失败($rc)" >> "$GLOBAL_REPORT"
+    fi
+done
+
+{
+echo ""
+echo "================================================================================"
+echo "全局统计 [${BACKEND}]"
+echo "================================================================================"
+echo "总: $total | 成功: $ok | 失败: $fail | 跳过: $skip"
+echo ""
+echo "各数据集召回率:"
+if [ ${#results[@]} -gt 0 ]; then
+    for r in "${results[@]}"; do echo "  $r"; done
+else
+    echo "  (无成功数据集)"
 fi
+echo ""
+echo "报告时间: $(date)"
+} >> "$GLOBAL_REPORT"
 
-# 各数据集评估图片对数量统计
-if [ ${#dataset_results[@]} -gt 0 ]; then
-    echo "" >> "$GLOBAL_SUMMARY_REPORT"
-    echo "各数据集评估图片对数量:" >> "$GLOBAL_SUMMARY_REPORT"
-    total_pairs=0
-    for result in "${dataset_results[@]}"; do
-        fd_name=$(echo "$result" | cut -d: -f1)
-        pair_count=$(echo "$result" | cut -d: -f2)
-        echo "  $fd_name: $pair_count 对" >> "$GLOBAL_SUMMARY_REPORT"
-        total_pairs=$((total_pairs + pair_count))
-    done
-    echo "  总计: $total_pairs 对" >> "$GLOBAL_SUMMARY_REPORT"
-fi
-
-echo "" >> "$GLOBAL_SUMMARY_REPORT"
-echo "报告生成时间: $(date)" >> "$GLOBAL_SUMMARY_REPORT"
-
-# 输出最终统计
 echo ""
-echo -e "${BOLD}${CYAN}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BOLD}${CYAN}║                      批量评估完成                              ║${NC}"
-echo -e "${BOLD}${CYAN}╚════════════════════════════════════════════════════════════════╝${NC}"
-echo ""
-echo -e "${GREEN}统计信息:${NC}"
-echo "  数据集范围: floor_display${START_FD} ~ floor_display${END_FD}"
-echo "  总数据集数量: $total_datasets"
-echo -e "  成功: ${GREEN}$successful_datasets${NC}"
-echo -e "  失败: ${RED}$failed_datasets${NC}"
-echo -e "  跳过: ${YELLOW}$skipped_datasets${NC}"
-echo ""
-echo -e "${BLUE}输出文件:${NC}"
-echo "  全局汇总报告: $GLOBAL_SUMMARY_REPORT"
-echo "  各数据集日志: $GLOBAL_SUMMARY_DIR/floor_display*_log.txt"
-echo "  各数据集详细报告: \$PROJECT_ROOT/imdata/floor_display*/accuracy_evaluation/"
-echo ""
-echo -e "${BLUE}结束时间: $(date)${NC}"
-echo ""
-
-# 显示汇总报告预览
-if [ -f "$GLOBAL_SUMMARY_REPORT" ]; then
-    echo -e "${CYAN}全局汇总报告预览:${NC}"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    head -40 "$GLOBAL_SUMMARY_REPORT"
-    echo "..."
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo -e "${CYAN}完整报告请查看: $GLOBAL_SUMMARY_REPORT${NC}"
-fi
+echo -e "${B}${CYAN}=== 完成 [${BACKEND}] ===${NC}"
+echo "总:$total 成功:$ok 失败:$fail 跳过:$skip"
+echo -e "${BLUE}报告: $GLOBAL_REPORT${NC}"
+echo -e "${BLUE}结束: $(date)${NC}"

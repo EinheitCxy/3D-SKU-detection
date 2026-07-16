@@ -15,10 +15,31 @@ NC='\033[0m' # No Color
 # 配置路径
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-FD="${1:-floor_display3}"  # 支持命令行参数，默认floor_display3
 BENCHMARK_CSV="$PROJECT_ROOT/imdata/picture_mapping_benchmark.csv"
-OUTPUT_BASE_DIR="$PROJECT_ROOT/imdata/$FD/output_pt"
-RESULT_BASE_DIR="$PROJECT_ROOT/code/Output/$FD/accuracy_evaluation_pi3_sam3"
+
+# 参数: 位置=数据集名(兼容旧用法), --backend pt|pi3|da3 (默认pt=point_tracking), --save-root <dir>(默认 imdata)
+FD=""; BACKEND="pt"; SAVE_ROOT=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --backend)    BACKEND="$2"; shift 2 ;;
+        --save-root)  SAVE_ROOT="${2%/}"; shift 2 ;;
+        -*)           echo "未知选项: $1" >&2; exit 1 ;;
+        *)            FD="${FD:-$1}"; shift ;;
+    esac
+done
+FD="${FD:-floor_display3}"
+
+case "$BACKEND" in
+    pt|point_tracking) OUT_SUB="output_pt"; BACKEND="pt" ;;
+    pi3)               OUT_SUB="output_3dmapping_pi3" ;;
+    da3)               OUT_SUB="output_3dmapping_da3" ;;
+    *)                 echo "错误: 未知 backend: $BACKEND (pt|pi3|da3)" >&2; exit 1 ;;
+esac
+
+DATA_ROOT="${SAVE_ROOT:-$PROJECT_ROOT/imdata}"
+OUTPUT_BASE_DIR="$DATA_ROOT/$FD/$OUT_SUB"
+RESULT_BASE_DIR="$DATA_ROOT/$FD/accuracy_evaluation_${BACKEND}"
+echo "[accuracy_eval] backend=$BACKEND 匹配输出=$OUTPUT_BASE_DIR 结果=$RESULT_BASE_DIR"
 
 
 # 创建结果目录

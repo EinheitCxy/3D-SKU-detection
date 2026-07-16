@@ -1,7 +1,5 @@
 # SKU匹配与顺序去重（模块化版本）
 
-[English Version](README_EN.md)
-
 重构后的 SKU 匹配与顺序去重系统，提供统一 CLI 入口、鲁棒的匹配日志解析、序列去重与全局 ID 聚合（global_mapping）。
 
 ## 📁 项目结构（已对目录调整后）
@@ -24,7 +22,7 @@ code/
 │   ├── geometry_3d.py, matching_algorithms.py, visualization.py
 │   ├── sku_matching_system.py, bbox_utils.py
 │   └── process_image_orientation.py
-├── batch_run_inference.sh         # 批量匹配脚本
+├── scripts/batch.sh                # 批量匹配脚本（参考索引 0..N）
 ├── batch_accuracy_evaluation.sh   # 批量评估脚本
 ├── output_viz/, output_logs/, output_dedup/    # 运行产物（默认目录）
 ├── pyproject.toml, uv.lock
@@ -66,7 +64,7 @@ uv run main.py --mode analyzer --dataset imdata/floor_display2 --save_root ./Out
 uv run main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output
 
 # 批量匹配（参考索引 0..N，等价于 main.py concise）
-bash batch_run_inference.sh floor_display2 4
+bash scripts/batch.sh floor_display2 4
 ```
 
 ### 重要参数
@@ -235,7 +233,7 @@ print(matching_cfg)
 
 ### DA3 后端的 subprocess 隔离
 
-Depth-Anything-3 要求 `numpy<2` + `omegaconf/addict/e3nn`，与 `code/` 的 `numpy>=2` venv 冲突。因此 `da3_3d_reconstructor.py` **不 in-process 加载 DA3**，而是通过 **subprocess** 调用 `Depth-Anything-3/.venv/bin/python modules/da3_runner.py`（自包含脚本，不 import `code/`）：
+Depth-Anything-3 依赖 `omegaconf/addict/e3nn/evo` 等 `code/` 未安装的包（code/ 与 DA3 均为 numpy<2，无 numpy 冲突）。因此 `da3_3d_reconstructor.py` **不 in-process 加载 DA3**，而是通过 **subprocess** 调用 `Depth-Anything-3/.venv/bin/python modules/da3_runner.py`（自包含脚本，不 import `code/`）：
 
 - `da3_runner.py`：在 DA3 venv 中加载 `depth-anything/DA3NESTED-GIANT-LARGE`（6.3GB，米制，CC BY-NC 4.0），多视图批量推理，输出 `da3_cache/predictions.npz`（depth/extrinsics(w2c)/intrinsics，并反投影出 `world_points`，schema 与 `pi3_cache` 完全一致）。
 - `da3_3d_reconstructor.py`：`load_model` 为 no-op（仅校验 venv/runner 存在），`run_inference` 调 subprocess 生成 npz 后读回，`export_glb` 跳过（SKU matching 仅需 npz）。
