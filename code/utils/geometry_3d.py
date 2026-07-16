@@ -429,8 +429,12 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
                                              ref_depth_mean: float, ref_points_3d: Optional[torch.Tensor] = None) -> Optional[Dict]:
     """找到投影点最多落入的检出框，并进行3D几何验证。
 
-    验证维度：投影命中率 + 3D质心距离 + 深度一致性 + 平面共面约束（法向对齐）。
+    验证维度：投影命中率 + 3D质心距离 + 平面共面约束（法向对齐）。
     平面约束针对货架场景：同一物理面（层板/商品正面）法向应一致，跨层误匹配法向偏差大。
+
+    返回：最佳匹配 dict（兼容旧调用）。验证过的全部候选也通过返回 dict 的
+    'validated_candidates' 字段携带（按 combined_score 降序），供唯一性 fallback 分配复用，
+    避免被同 target 框竞争淘汰的 ref 重新采样/验证即可取其次优非冲突框。
     """
     if len(projected_points) == 0:
         return None
@@ -442,34 +446,35 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
 
     best_match = None
     best_score = 0.0
-    
+    validated_candidates = []
+
     for bbox_info in target_bboxes:
         bbox = bbox_info['bbox']
         x1, y1, x2, y2 = bbox
-        
+
         # 1. 基础投影匹配
         points_in_bbox = (
-            (projected_points[:, 0] >= x1) & 
+            (projected_points[:, 0] >= x1) &
             (projected_points[:, 0] <= x2) &
-            (projected_points[:, 1] >= y1) & 
+            (projected_points[:, 1] >= y1) &
             (projected_points[:, 1] <= y2)
         ).sum().item()
-        
+
         match_ratio = points_in_bbox / len(projected_points)
-        
+
         if match_ratio < config.projection_match_threshold:
             continue
-        
+
         # 2. 3D几何验证：从目标检出框采样3D点进行比较
         target_points_3d = sample_3d_points_from_non_overlap_regions(
             scene_data, target_img_idx,
             target_transform.map_bbox_to_original(bbox),
             target_transform, config, None  # 不传递other_bboxes，使用整个bbox
         )
-        
+
         if target_points_3d is None or len(target_points_3d) < config.min_3d_sample_points:
             continue
-        
+
         # 计算目标3D点的统计信息
         target_3d_center = target_points_3d.mean(dim=0)
 
@@ -498,56 +503,72 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
         if spatial_distance > config.max_3d_distance:
             continue
 
+        candidate = {
+            'target_bbox_info': bbox_info,
+            'points_in_bbox': points_in_bbox,
+            'total_points': len(projected_points),
+            'match_ratio': match_ratio,
+            '3d_distance': spatial_distance,
+            'combined_score': combined_score
+        }
+        validated_candidates.append(candidate)
+
         if combined_score > best_score:
-            best_match = {
-                'target_bbox_info': bbox_info,
-                'points_in_bbox': points_in_bbox,
-                'total_points': len(projected_points),
-                'match_ratio': match_ratio,
-                '3d_distance': spatial_distance,
-                'combined_score': combined_score
-            }
+            best_match = candidate
             best_score = combined_score
+
+    # 携带全部验证候选（降序），供唯一性 fallback 分配复用
+    if best_match is not None:
+        validated_candidates.sort(key=lambda c: c['combined_score'], reverse=True)
+        best_match['validated_candidates'] = validated_candidates
 
     return best_match
 
 
 def apply_uniqueness_constraint(candidate_matches: List[Dict]) -> List[Dict]:
-    """应用唯一性约束：每个目标框只能匹配一个参考框（选择最佳匹配）"""
+    """应用唯一性约束 + 贪心 fallback 分配。
+
+    每个目标框只能匹配一个参考框（选最高分）。被同 target 框竞争淘汰的 ref 不再直接丢弃，
+    而是取其验证候选列表('validated_candidates')中的次优非冲突框--已分配给别 ref 的框跳过。
+    救回竞争淘汰漏检(同 ref 多 obj 抢同一框,输者本可匹配次优框却无 fallback)。
+
+    贪心策略:所有 (ref, candidate) 对按 combined_score 全局降序,高分优先占框;
+    低分 ref 在其候选链中找首个未被占用 target 框。
+    """
     if not candidate_matches:
         return []
-    
-    # 按目标框ID分组
-    target_groups = {}
+
+    all_pairs = []
     for match in candidate_matches:
-        target_id = match['target_bbox_info']['object_id']
-        if target_id not in target_groups:
-            target_groups[target_id] = []
-        target_groups[target_id].append(match)
-    
+        ref_obj_id = match.get('ref_obj_id', 'unknown')
+        cands = match.get('validated_candidates')
+        if not cands:
+            cands = [match]
+        for c in cands:
+            all_pairs.append((ref_obj_id, c))
+
+    all_pairs.sort(key=lambda rc: rc[1].get('combined_score', 0.0), reverse=True)
+
+    assigned_targets = set()
+    assigned_refs = set()
     final_matches = []
-    
-    for target_id, matches in target_groups.items():
-        if len(matches) == 1:
-            # 只有一个匹配，直接使用
-            final_matches.append(matches[0])
-        else:
-            # 多个匹配，选择综合评分最高的
-            best_match = max(matches, key=lambda x: x['combined_score'])
-            final_matches.append(best_match)
-            
-            # 记录被过滤的匹配
-            filtered_matches = [m for m in matches if m != best_match]
-            for filtered in filtered_matches:
-                ref_obj_id = filtered.get('ref_obj_id', 'unknown')
-                filtered_score = filtered.get('combined_score', 0.0)
-                best_score = best_match.get('combined_score', 0.0)
-                logger.debug(
-                    f"Filtered duplicate: ref {ref_obj_id} → target {target_id} "
-                    f"(score: {filtered_score:.3f} < {best_score:.3f})"
-                )
-    
+
+    for ref_obj_id, cand in all_pairs:
+        if ref_obj_id in assigned_refs:
+            continue
+        target_id = cand['target_bbox_info']['object_id']
+        if target_id in assigned_targets:
+            continue
+        assigned_refs.add(ref_obj_id)
+        assigned_targets.add(target_id)
+        m = dict(cand)
+        m['ref_obj_id'] = ref_obj_id
+        m.pop('validated_candidates', None)
+        final_matches.append(m)
+
+    evicted = len(candidate_matches) - len(final_matches)
     logger.debug(
-        f"Applied uniqueness constraint: {len(candidate_matches)} → {len(final_matches)} matches"
+        f"Applied uniqueness constraint: {len(candidate_matches)} candidates -> {len(final_matches)} matches "
+        f"(evicted {evicted} refs found no free target)"
     )
     return final_matches
