@@ -21,18 +21,20 @@ Python **3.11** everywhere. **GPU (CUDA) is required** for matching/reconstructi
 |---|---|---|
 | `code/` | Core R&D system: 3D SKU detection, matching, dedup, reconstruction, viewer. Own `pyproject.toml` + `.venv`. | Config-driven CLI (`main.py`, class `SKUDetectionMain`) |
 | `frame_sampler/` | Standalone video frame-extraction FastAPI service (also CLI). | Docker (port 80) / CLI |
-| `sam3/`, `vggt-main/`, `Pi3/`, `Depth-Anything-3/` | Vendored model libs at root. | Vendored |
+| `sam3/`, `Pi3/`, `Depth-Anything-3/` | Vendored model libs at root — **core source tracked in git** (env/weights/assets gitignored). | Vendored (tracked) |
+| `vggt-main/` | VGGT model lib — fully gitignored (backend disabled); re-clone if needed. | Vendored (untracked) |
+| `auto-research-loop/` | Autoresearch loop work state (`program*.md`, `progress*.md`, `results*.tsv`). Local-only, gitignored. | Work state |
 | `imdata/` | Datasets: `floor_display1..12/`, each with `images/` + `detections_results/`. | Data |
 
 > **Note**: Docker service wrappers (`Global-ID-Mapping/`, `Dockered_GlobalIDMapping/`, `docker_template/`) were removed in the 2026-07-16 repo cleanup (commit `9d9503f`). The canonical pipeline now lives only in `code/`; the old Docker BSON `/api` deployment is no longer in-tree.
 
 ### The three model libraries and their roles
 
-All three are local source trees (not pip packages), injected onto `sys.path` by `code/`:
+All three are local source trees (not pip packages), injected onto `sys.path` by `code/`. Since 2026-07-17 their **core source is tracked in this repo** (nested `.git` removed; `.venv/`, `checkpoints/`, weights, `assets/`, `examples/` and other non-core content stay gitignored — weights must be re-fetched per each lib's README):
 
 - **SAM3** (`sam3/`): segmentation. **Mask-guided point sampling** inside detection boxes (sample matching points from the object mask, not the whole bbox). Optional, gated by `inference.enable_sam3_mask_sampling`. Weights: local `sam3/checkpoints/sam3.pt`. Path injection: `utils/sam3_utils.py:_ensure_sam3_in_path()`. Entry: `sam3/inference.py` (standalone demo).
 - **VGGT** (`vggt-main/`): 3D reconstruction, **real-time / flexible but slower** (re-infers every run). Produces point cloud + camera poses → `.glb`. Also used for 2D point-tracking matches. HF repo `facebook/VGGT-1B`. Path injection: `utils/__init__.py:_resolve_vggt_root()`. **Currently commented out in `modules/__init__.py`** — not the active backend.
-- **Pi3** (`Pi3/`): 3D reconstruction, **precomputed-cache / fast / batch-friendly** — the **active backend**. Infers once, caches `pi3_cache/predictions.npz`; the matching stage then loads **no model** and reads depth/world_points/extrinsic/intrinsic from cache. HF repo `yyfz233/Pi3`. Path injection: `modules/pi3_3d_reconstructor.py:PI3_ROOT`. Entry: `Pi3/example.py`.
+- **Pi3** (`Pi3/`): 3D reconstruction, **precomputed-cache / fast / batch-friendly** — the **active backend**. Infers once, caches `pi3_cache/predictions.npz`; the matching stage then loads **no model** and reads depth/world_points/extrinsic/intrinsic from cache. HF repo `yyfz233/Pi3`. Path injection: `modules/pi3_3d_reconstructor.py:PI3_ROOT`. Entry: `Pi3/example.py`. Carries a **local patch** (`pi3/utils/basic.py`: `load_images_as_tensor` also accepts a list of image paths for frame-aligned loading) — preserved in-repo since 2026-07-17.
 - **Depth-Anything-3** (`Depth-Anything-3/`): 3D reconstruction, **multi-view / higher-precision / subprocess-isolated**. DA3 depends on `omegaconf/addict/e3nn/evo` etc. not in `code/`'s venv (both code/ and DA3 use numpy<2 -- no numpy conflict), so `modules/da3_3d_reconstructor.py` runs it via **subprocess** invoking `Depth-Anything-3/.venv/bin/python modules/da3_runner.py` (self-contained, does not import `code/`). DA3 outputs depth+extrinsics(w2c)+intrinsics; `da3_runner.py` back-projects to `world_points` and writes `da3_cache/predictions.npz` (schema identical to Pi3). HF repo `depth-anything/DA3NESTED-GIANT-LARGE` (6.3GB, metric, **CC BY-NC 4.0**). Registered via `@register_reconstructor("da3")`.
 
 `code/` selects backends via `--recon_backend` (reconstruction stage) and `--match_backend` (matching stage data source), each `vggt` | `pi3` | `da3`. New backends: subclass `ReconstructorBase` + `@register_reconstructor("<name>")` + import in `modules/__init__.py` (registry mechanism; CLI `choices` lists still need updating).
@@ -172,7 +174,8 @@ The `Global-ID-Mapping/` Docker service (and the older `Dockered_GlobalIDMapping
 ## Conventions
 
 - `code/` is now the single canonical copy (the Docker-bundled `code/` copies were removed with the services in commit `9d9503f`).
-- Vendored model libs (`sam3/`, `vggt-main/`, `Pi3/`, `Depth-Anything-3/`) live at root only; root copies are canonical for local dev.
+- Vendored model libs (`sam3/`, `Pi3/`, `Depth-Anything-3/`) live at root; their core source is tracked in git (env/weights/assets gitignored) and root copies are canonical. `vggt-main/` is fully gitignored (disabled backend).
+- Autoresearch loop state (`program*.md`, `progress*.md`, `results*.tsv`) lives in `auto-research-loop/` (gitignored, local-only); it was moved out of the repo root and untracked on 2026-07-17.
 - `config.yaml` is the single source of tunable params for `code/`; `utils/config.py` holds `SKUMatchingConfig` defaults that the `inference:` section overrides.
 - `imdata/floor_display*/` is the canonical benchmark dataset family; `picture_mapping_benchmark.csv` is the human-labeled ground truth for accuracy eval.
 - Run logs: `code/main.py` writes one `run_<timestamp>.log` per run under `save_root` (default `Output/`).

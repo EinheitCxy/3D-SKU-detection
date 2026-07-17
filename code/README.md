@@ -16,6 +16,7 @@ code/
 │   ├── reconstructor_base.py      # 3D重建抽象基类 + 后端注册表
 │   ├── pi3_3d_reconstructor.py    # Pi3 后端（缓存式，快速批量）
 │   ├── da3_3d_reconstructor.py    # Depth-Anything-3 后端（高精度多视角）
+│   ├── da3_runner.py              # DA3 推理脚本（subprocess，在 Depth-Anything-3/.venv 中运行）
 │   └── vggt_3d_reconstructor.py   # VGGT 后端（实时重建，当前已注释）
 ├── utils/                         # 可复用库模块
 │   ├── config.py, data_utils.py, transforms.py, point_utils.py
@@ -95,9 +96,9 @@ uv run main.py --help
 | `transforms.py` | VGGT坐标变换 | PIL, numpy |
 | `point_utils.py` | 点采样工具 | numpy, torch |
 | `geometry_3d.py` | 3D几何处理 | torch |
-| `matching_algorithms.py` | 匹配算法核心 | **需要VGGT** |
+| `matching_algorithms.py` | 匹配算法核心（point_tracking 需 VGGT；3d 投影读 pi3/da3 缓存） | torch |
 | `visualization.py` | 结果可视化 | opencv, numpy |
-| `sku_matching_system.py` | 系统封装 | **需要VGGT** |
+| `sku_matching_system.py` | 系统封装（pi3/da3/vggt 后端） | torch |
 | `bbox_utils.py` | 检出框工具 | 基础Python |
 | `process_image_orientation.py` | 图像方向修复 | PIL |
 
@@ -108,7 +109,7 @@ uv run main.py --help
 系统采用**渐进式依赖**设计：
 
 - **基础功能**：配置管理、坐标变换、数据处理等功能随时可用
-- **完整功能**：需要VGGT环境才能运行完整的匹配系统
+- **完整功能**：3D 匹配需 Pi3/DA3 重建缓存（`pi3_cache/` / `da3_cache/`，无需 VGGT）；仅 `point_tracking` 算法需要 VGGT 环境
 
 检查依赖状态：
 ```python

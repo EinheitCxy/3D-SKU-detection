@@ -24,11 +24,16 @@
 │   ├── scripts/            # 批量/评估脚本（batch.sh / k.sh 等）
 │   └── config.yaml         # 单一可调参数源
 ├── bbox_gen.py             # YOLO SKU 检测 CLI（生成 detections_results，code/ 上游）
-├── Depth-Anything-3/       # DA3 模型库（独立 .venv；被 code/ subprocess 调用）
-├── Pi3/, sam3/, vggt-main/, Depth-Anything-3/ # vendored 模型库（sys.path 注入）
+├── Pi3/                    # Pi3 重建模型库（核心源码已入库，sys.path 注入）
+├── sam3/                   # SAM3 分割模型库（核心源码已入库，mask 引导采样）
+├── Depth-Anything-3/       # DA3 模型库（核心源码已入库；独立 .venv 被 code/ subprocess 调用）
+├── vggt-main/              # VGGT 模型库（后端已禁用，整体 gitignore 不入库）
 ├── imdata/                 # 数据集（floor_display*/，images/ + detections_results/）
+├── auto-research-loop/     # autoresearch 循环工作区（program/progress/results，本地不入库）
 └── frame_sampler/          # 抽帧 Docker 服务（其余 Docker 服务已在 2026-07-16 清理，commit 9d9503f）
 ```
+
+> **git 跟踪策略**：三个 vendored 模型库（sam3 / Pi3 / Depth-Anything-3）的**核心源码已入库**（约 374 文件 / 12MB），库内环境与非核心内容（`.venv/`、`checkpoints/`、权重、`assets/`、`examples/`、构建与运行产物）由 `.gitignore` 排除；权重需按各库 README 另行下载。`vggt-main/`（后端已禁用）与 `auto-research-loop/`（循环工作区）整体不入库。
 
 ## 环境与依赖
 
@@ -103,7 +108,7 @@ DA3 因依赖集与 `code/` 不同（需 omegaconf/e3nn 等，code/ 与 DA3 均�
 | C5 | `_DA3_TRANSFORMS_CACHE`（transforms_info 跨 ref 复用） | 240s | 0pt 位级 |
 | C6 | build_da3 `.size` 懒读 + 移除每 ref `PI3_SCENE_CACHE.clear()` + DIAG 降级 | 180s | 0pt 位级 |
 
-剩余瓶颈 `sam3_mask` 占 64%（GPU compute-bound，单次 forward/ref，CUDA 跨线程串行不可并行化）。`--parallel_refs` 对 SAM3 **无效**（GPU-bound）且破坏等价性（RNG 非确定）。详见 `program_time.md` / `progress_time.md` / `docs/profiling_breakdown.md`。
+剩余瓶颈 `sam3_mask` 占 64%（GPU compute-bound，单次 forward/ref，CUDA 跨线程串行不可并行化）。`--parallel_refs` 对 SAM3 **无效**（GPU-bound）且破坏等价性（RNG 非确定）。详见 `docs/profiling_breakdown.md`；循环工作记录见 `auto-research-loop/program_time.md` / `progress_time.md`（本地未入库）。
 
 ## 检测数据格式
 
@@ -122,7 +127,7 @@ DA3 因依赖集与 `code/` 不同（需 omegaconf/e3nn 等，code/ 与 DA3 均�
 }
 ```
 
-可用 `bbox_gen.py` 从图片生成该格式（见 [README_bbox_gen.md](README_bbox_gen.md)）。
+可用 `bbox_gen.py` 从图片生成该格式（用法见 `uv run python bbox_gen.py -h`）。
 
 ## 输出与日志
 
