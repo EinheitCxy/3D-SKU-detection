@@ -217,8 +217,8 @@ def build_da3_transforms(
     if not image_paths:
         return []
 
-    first_img = Image.open(image_paths[0]).convert("RGB")
-    W_orig, H_orig = first_img.size
+    # PIL 懒读取：仅需 (W,H) 尺寸，不 convert("RGB") 触发完整解码
+    W_orig, H_orig = Image.open(image_paths[0]).size
 
     # DA3 upper_bound_resize 算法：长边缩到 process_res，短边按比例（无 14 对齐）
     longest = max(W_orig, H_orig)
@@ -228,8 +228,8 @@ def build_da3_transforms(
 
     transforms = []
     for img_path in image_paths:
-        img = Image.open(img_path).convert("RGB")
-        w, h = img.size
+        # PIL 懒读取尺寸，不 convert("RGB")（Pi3ImageTransform 只用 w/h 数值）
+        w, h = Image.open(img_path).size
         t = Pi3ImageTransform(w, h, TARGET_W, TARGET_H)
         try:
             t.image_id = int(Path(img_path).stem)

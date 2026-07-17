@@ -1206,14 +1206,9 @@ def sam3_masks_self_exemplar(
     # 清空CUDA缓存，为SAM3腾出显存空间
     # 这对于已经加载了其他大模型（如VGGT）的情况特别重要
     if device.startswith("cuda") and torch.cuda.is_available():
-        # 清空PI3场景缓存（GPU tensors占用大量显存）
-        try:
-            from .matching_algorithms import PI3_SCENE_CACHE
-            if PI3_SCENE_CACHE:
-                logger.info(f"Clearing PI3 scene cache ({len(PI3_SCENE_CACHE)} entries) to free GPU memory...")
-                PI3_SCENE_CACHE.clear()
-        except ImportError:
-            pass
+        # NOTE(Cycle6): 移除 PI3_SCENE_CACHE.clear() —— scene_data 是只读 npz cache，
+        # 跨 ref 复用可省去重复 scene_data_build（11次->1次）。
+        # OOM 监控由 smoke 验证；若显存累积则恢复 clear。
 
         # 强制垃圾回收和清空缓存
         import gc

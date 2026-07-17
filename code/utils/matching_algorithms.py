@@ -498,7 +498,7 @@ def find_correspondences_3d_mapping(
                         if h>0.1: hits.append((bi,h,cnt))
                     hits.sort(key=lambda x:-x[1])
                     top3=hits[:3]
-                    logger.warning(f"[DIAG] ref{reference_image_idx} obj{ref_obj_id}: 采样={len(points_3d)} 投影={len(projected_points)} Top3框={[(t[0],f'{t[1]:.0%}',t[2]) for t in top3]}")
+                    logger.debug(f"[DIAG] ref{reference_image_idx} obj{ref_obj_id}: 采样={len(points_3d)} 投影={len(projected_points)} Top3框={[(t[0],f'{t[1]:.0%}',t[2]) for t in top3]}")
 
                 if len(projected_points) < 5:
                     StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)

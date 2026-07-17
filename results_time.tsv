@@ -3,3 +3,4 @@ cycle	hypothesis	status	seed	commit	changed_files	command	wall_clock_s	recall	pr
 2	max_batch_size5->32	keep	42	255f4f2	config.py+config.yaml+sam3_utils.py	config sam3_max_batch_size:32	565	83.56	93.71	keep	baseline5 720s->565s(-21.5%),R-0.45pt/P-0.35pt gate内,sam3-38%
 3	image_tensor_cross_ref_cache	keep	42	10c7abc	utils/sku_matching_system.py	_DA3_IMAGE_CACHE module-level	402	83.56	93.71	keep	fd6 image_load 67->6.9s(-90%), wall 565->402s(-29%), R/P 0pt位级一致(images只读缓存)
 5	transforms_info_cross_ref_cache	keep	42	a2d8831	utils/sku_matching_system.py	_DA3_TRANSFORMS_CACHE module-level	240	83.56	93.71	keep	build_transforms 36->5.5s(-85%), wall 402->240s(-40.3%), R/P 0pt位级一致(transforms只读缓存)
+6	merge3opts(.size+noPI3clear+DIAG)	keep	42	fe7cf47	transforms.py+sam3_utils.py+matching_algorithms.py	build_da3.size+remove_clear+DIAG_debug	180	83.56	93.71	keep	build_transforms 5.52->0.007s,scene_data 11->1calls, wall 240->180s(-25%), R/P 0pt, GPU16.6GB安全
