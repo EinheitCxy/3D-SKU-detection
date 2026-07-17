@@ -49,3 +49,6 @@ temp_bbox.json
 
 # Test videos (bulky, regenerable)
 small_fd_video/
+
+# Work summaries (personal weekly reports, not tracked in repo)
+*SUMMARY*.md
