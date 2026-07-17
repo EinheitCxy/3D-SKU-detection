@@ -43,6 +43,7 @@ inference:
   sam3_checkpoint_path: "../sam3/checkpoints/sam3.pt"  # SAM3模型权重路径，null=从HuggingFace下载
   sam3_use_self_exemplar: true  # 是否使用self-exemplar模式，每个bbox作为自己的视觉样本进行分割
   sam3_self_exemplar_threshold: 0.5  # self-exemplar检测阈值(0-1)，控制分割mask的置信度过滤
+  sam3_max_batch_size: 32  # self-exemplar每批最多bbox数(128/64 OOM,32通过);fd6实测sam3 -38% wall-clock -15% R -0.51pt边界
 
 # 检出框可视化配置 (modules/draw_detection_boxes.py)
 visualization:

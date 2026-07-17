@@ -246,6 +246,7 @@ class SKUDetectionMain:
         backend: str = "vggt",
         parallel_refs: int = 1,
         match_overrides: dict = None,
+        enable_profiling: bool = False,
     ) -> StepResult:
         """运行SKU匹配推理，支持批量将每张图片作为参考图像运行。
 
@@ -253,7 +254,15 @@ class SKUDetectionMain:
         - 否则：仅以 reference_idx 指定的单张图片作为参考图运行。
         - backend: 3D重建模型后端 (vggt/pi3/da3)，用于3D算法时选择数据源
         - parallel_refs: 并行处理的参考图片数（>1 时启用线程池；推荐 pi3/da3 后端使用，vggt 不支持）
+        - enable_profiling: 启用 per-stage 计时 instrumentation（默认 False，零开销）
         """
+        from utils.profiling import (
+            set_enabled as _set_prof_enabled,
+            StageTimer as _StageTimer,
+            dump_stages as _dump_prof,
+            log_stages_sorted as _log_prof,
+        )
+        _set_prof_enabled(enable_profiling)
         start = perf_counter()
         original_argv = sys.argv.copy()
         try:
@@ -289,7 +298,8 @@ class SKUDetectionMain:
                         sys_idx, fn_idx = args
                         logger.debug(f"[并行] 处理参考图片 {fn_idx} -> 系统索引: {sys_idx}")
                         return self._run_single_matching(
-                            dataset_path, algorithm, sys_idx, max_images, device, save_json, backend, match_overrides
+                            dataset_path, algorithm, sys_idx, max_images, device, save_json, backend, match_overrides,
+                            enable_profiling=enable_profiling,
                         )
 
                     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -304,25 +314,39 @@ class SKUDetectionMain:
                     # 串行处理（默认）
                     for i, filename_idx in tasks:
                         logger.debug(f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {i}")
-                        self._run_single_matching(dataset_path, algorithm, i, max_images, device, save_json, backend, match_overrides)
+                        self._run_single_matching(
+                            dataset_path, algorithm, i, max_images, device, save_json, backend, match_overrides,
+                            enable_profiling=enable_profiling,
+                        )
 
                 duration = perf_counter() - start
+                _StageTimer.record("batch_all_refs_total", duration)
                 logger.info(f"匹配完成 - 耗时 {duration:.2f}s，处理 {len(valid_indices)} 个参考图片")
                 return {"success": True, "duration_s": duration}
             else:
                 # 单个参考图片处理
-                return self._run_single_matching(dataset_path, algorithm, reference_idx, max_images, device, save_json, backend, match_overrides)
+                return self._run_single_matching(
+                    dataset_path, algorithm, reference_idx, max_images, device, save_json, backend, match_overrides,
+                    enable_profiling=enable_profiling,
+                )
 
         except (ImportError, ModuleNotFoundError, OSError, RuntimeError, ValueError) as e:
             duration = perf_counter() - start
+            _StageTimer.record("batch_all_refs_total", duration)
             logger.error(f"END matching duration={duration:.2f}s result=fail error={e}", exc_info=True)
             return {"success": False, "error": str(e), "duration_s": duration}
         finally:
+            if enable_profiling:
+                _prof_dir = (self.save_root / Path(dataset_path).name) if self.save_root else Path(dataset_path)
+                _prof_path = _prof_dir / f"profiling_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                _dump_prof(str(_prof_path))
+                _log_prof(logger)
+                logger.info(f"[PROF] dumped to {_prof_path}")
             sys.argv = original_argv
 
     def _run_single_matching(self, dataset_path: str, algorithm: str, reference_idx: int,
                            max_images: int, device: str, save_json: bool, backend: str = "vggt",
-                           match_overrides: dict = None) -> StepResult:
+                           match_overrides: dict = None, enable_profiling: bool = False) -> StepResult:
         """运行单个参考图片的SKU匹配推理（内部使用）。
 
         Args:
@@ -354,6 +378,8 @@ class SKUDetectionMain:
             ]
             if save_json:
                 argv.append('--save_json')
+            if enable_profiling:
+                argv.append('--enable_profiling')
             if self.config_path is not None:
                 argv.extend(['--config', str(self.config_path)])
             # 透传 3D 阈值覆盖（网格扫描用）
@@ -1010,6 +1036,8 @@ def main() -> None:
     parser.add_argument('--depth_confidence_threshold', type=float, default=None, help="深度置信度阈值(覆盖config)")
     parser.add_argument('--min_3d_sample_points', type=int, default=None, help="3D采样最少有效点数(覆盖config)")
     parser.add_argument('--pairing_3d', type=str, default=None, choices=['all','next'], help="3D配对策略 all/next(覆盖config)")
+    parser.add_argument('--enable_profiling', action='store_true', default=False,
+                        help="启用 per-stage 计时 instrumentation（默认关闭，零开销 no-op；输出 profiling_<ts>.json）")
 
     # Viewer 参数：复用 --save_root 和 --dataset，无需额外路径参数
     #   - output_dir: <save_root>/<dataset_name>
@@ -1079,6 +1107,7 @@ def main() -> None:
             backend=(args.match_backend if '3d' in args.algorithm else 'vggt'),
             parallel_refs=args.parallel_refs,
             match_overrides=_ov,
+            enable_profiling=args.enable_profiling,
         )
         app.run_accuracy_evaluation(args.dataset)
     elif args.mode == 'analyzer':

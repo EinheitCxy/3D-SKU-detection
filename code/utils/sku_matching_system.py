@@ -6,6 +6,7 @@ SKU匹配系统主模块
 
 import os
 import json
+import time
 import torch
 import logging
 from typing import Dict, List, Optional
@@ -25,6 +26,7 @@ from .data_utils import save_correspondences_json, load_detections
 from .transforms import build_transforms
 from .matching_algorithms import find_object_correspondences
 from .visualization import visualize_results, save_visualization_summary
+from .profiling import StageTimer
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +118,8 @@ class SKUMatchingSystem:
         """
         if not self._is_initialized:
             self.initialize()
-            
+
+        _proc_t0 = time.perf_counter()
         try:
             # 1. 加载和预处理数据
             logger.info("Loading images and detection results...")
@@ -157,9 +160,10 @@ class SKUMatchingSystem:
                 TH = transforms_info[0].target_height
                 to_tensor = _TF.ToTensor()
                 imgs = []
-                for p in image_paths:
-                    im = Image.open(p).convert("RGB").resize((TW, TH))
-                    imgs.append(to_tensor(im))
+                with StageTimer("image_load_resize"):
+                    for p in image_paths:
+                        im = Image.open(p).convert("RGB").resize((TW, TH))
+                        imgs.append(to_tensor(im))
                 images = torch.stack(imgs, dim=0).to(self.config.device)
                 logger.info(f"DA3 加载图像: {len(image_paths)} 张, 尺寸: ({TW}, {TH})")
             else:
@@ -187,7 +191,9 @@ class SKUMatchingSystem:
         except (RuntimeError, ValueError, FileNotFoundError) as e:
             logger.error(f"Failed to process images: {e}")
             raise
-    
+        finally:
+            StageTimer.record("process_images", time.perf_counter() - _proc_t0)
+
     def _load_data(
         self,
         image_folder: str,
@@ -199,6 +205,7 @@ class SKUMatchingSystem:
 
         该方法确保图像编号与检测编号严格对应，并自动处理顺序不一致的情况。
         """
+        _load_t0 = time.perf_counter()
         from utils.frame_alignment import ReconstructionDetectionAligner
 
         image_folder_path = Path(image_folder)
@@ -283,6 +290,7 @@ class SKUMatchingSystem:
         # else:
         #     logger.info(f"Perfect alignment: {len(aligned_image_paths)} frames")
 
+        StageTimer.record("load_data", time.perf_counter() - _load_t0)
         return aligned_image_paths, aligned_detections
     
     def _run_matching(
@@ -364,6 +372,7 @@ class SKUMatchingSystem:
         image_paths: List[str]
     ) -> None:
         """后处理结果：可视化和保存"""
+        _post_t0 = time.perf_counter()
         if correspondences:
             visualize_results(
                 images, reference_image_idx, points_per_object,
@@ -417,7 +426,9 @@ class SKUMatchingSystem:
 
         if not correspondences:
             logger.warning(f"No object correspondences found for reference image {reference_image_idx}")
-    
+
+        StageTimer.record("post_process", time.perf_counter() - _post_t0)
+
     def _print_results_summary(self, correspondences: Dict[int, List[Dict]]) -> None:
         """打印结果摘要"""
         total_matches = sum(len(matches) for matches in correspondences.values())

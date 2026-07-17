@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import threading
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
@@ -39,6 +40,10 @@ _SAM3_BATCH_API_CACHE: Dict[Tuple[Any, ...], Tuple[object, object, object]] = {}
 
 # Global counter for batch inference query IDs
 _BATCH_QUERY_COUNTER = 0
+
+# Lock guarding _BATCH_QUERY_COUNTER for thread-safe allocation under
+# parallel_refs ThreadPoolExecutor (query_id must be unique across threads).
+_BATCH_QUERY_LOCK = threading.Lock()
 
 
 def _infer_transform_output_size(
@@ -469,8 +474,9 @@ def _add_visual_prompt(
         )
 
     h_img, w_img = datapoint.images[0].size  # (height, width)
-    query_id = _BATCH_QUERY_COUNTER
-    _BATCH_QUERY_COUNTER += 1
+    with _BATCH_QUERY_LOCK:
+        query_id = _BATCH_QUERY_COUNTER
+        _BATCH_QUERY_COUNTER += 1
 
     datapoint.find_queries.append(
         FindQueryLoaded(
@@ -516,8 +522,9 @@ def _add_text_prompt(datapoint: Any, text_query: str) -> int:
         raise ValueError("Please set exactly one image first")
 
     h_img, w_img = datapoint.images[0].size  # (height, width)
-    query_id = _BATCH_QUERY_COUNTER
-    _BATCH_QUERY_COUNTER += 1
+    with _BATCH_QUERY_LOCK:
+        query_id = _BATCH_QUERY_COUNTER
+        _BATCH_QUERY_COUNTER += 1
 
     datapoint.find_queries.append(
         FindQueryLoaded(
@@ -1430,6 +1437,7 @@ def maybe_run_sam3_for_reference(
             detection_threshold=config.sam3_self_exemplar_threshold,
             fallback_size=fallback_size,
             skip_resize=False,  # 必须为 False，SAM3 ViT 使用 RoPE 需要正方形输入
+            max_batch_size=int(getattr(config, "sam3_max_batch_size", 5)),
         )
     else:
         # 标准模式：使用predict_inst API

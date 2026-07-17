@@ -34,6 +34,7 @@ from .sam3_utils import (
     sample_3d_points_from_mask,
     sample_points_from_mask,
 )
+from .profiling import StageTimer
 
 logger = logging.getLogger(__name__)
 
@@ -314,7 +315,8 @@ def find_correspondences_3d_mapping(
             scene_data = PI3_SCENE_CACHE.get(cache_key)
 
             if scene_data is None:
-                data = np.load(cache_path, allow_pickle=True)
+                with StageTimer("cache_npz_load"):
+                    data = np.load(cache_path, allow_pickle=True)
 
                 # 验证必需字段
                 required_keys = ["depth", "depth_conf", "world_points", "world_points_conf", "extrinsic", "intrinsic"]
@@ -392,14 +394,15 @@ def find_correspondences_3d_mapping(
         ref_transform = transforms_info[reference_image_idx]
 
         sam_masks_by_obj_id: Dict[int, "np.ndarray"] = {}
-        masks = maybe_run_sam3_for_reference(
-            config=config,
-            image_paths=image_paths,
-            reference_image_idx=reference_image_idx,
-            ref_bboxes_xyxy=[b["bbox"] for b in ref_bboxes],
-            transform=ref_transform,
-            output_mask_space="final",
-        )
+        with StageTimer("sam3_mask"):
+            masks = maybe_run_sam3_for_reference(
+                config=config,
+                image_paths=image_paths,
+                reference_image_idx=reference_image_idx,
+                ref_bboxes_xyxy=[b["bbox"] for b in ref_bboxes],
+                transform=ref_transform,
+                output_mask_space="final",
+            )
         if masks is not None:
             for b, m in zip(ref_bboxes, masks):
                 sam_masks_by_obj_id[int(b["object_id"])] = m
@@ -442,21 +445,22 @@ def find_correspondences_3d_mapping(
                 
                 # 从参考图像的检出框采样3D点（使用非重合区域）
                 other_ref_bboxes = [other['bbox'] for other in ref_bboxes if other['object_id'] != ref_obj_id]
-                if int(ref_obj_id) in sam_masks_by_obj_id:
-                    points_3d = sample_3d_points_from_mask(
-                        scene_data=scene_data,
-                        img_idx=reference_image_idx,
-                        mask=sam_masks_by_obj_id[int(ref_obj_id)],
-                        transform=ref_transform,
-                        config=config,
-                        mask_space="final",
-                        bbox_xyxy=ref_bbox_info['bbox'],
-                    )
-                else:
-                    points_3d = sample_3d_points_from_non_overlap_regions(
-                        scene_data, reference_image_idx, ref_bbox_info['bbox'],
-                        ref_transform, config, other_ref_bboxes
-                    )
+                with StageTimer("ref_point_sampling"):
+                    if int(ref_obj_id) in sam_masks_by_obj_id:
+                        points_3d = sample_3d_points_from_mask(
+                            scene_data=scene_data,
+                            img_idx=reference_image_idx,
+                            mask=sam_masks_by_obj_id[int(ref_obj_id)],
+                            transform=ref_transform,
+                            config=config,
+                            mask_space="final",
+                            bbox_xyxy=ref_bbox_info['bbox'],
+                        )
+                    else:
+                        points_3d = sample_3d_points_from_non_overlap_regions(
+                            scene_data, reference_image_idx, ref_bbox_info['bbox'],
+                            ref_transform, config, other_ref_bboxes
+                        )
                 
                 if points_3d is None or len(points_3d) < config.min_3d_sample_points:
                     continue
@@ -469,11 +473,12 @@ def find_correspondences_3d_mapping(
                 ref_depth_mean = points_cam[:, 2].mean().item()  # 相机坐标系的Z才是深度
 
                 # 投影到目标图像
-                projected_points = project_3d_to_2d(
-                    points_3d,
-                    scene_data['extrinsic'][target_img_idx],
-                    scene_data['intrinsic'][target_img_idx]
-                )
+                with StageTimer("projection_3d_to_2d"):
+                    projected_points = project_3d_to_2d(
+                        points_3d,
+                        scene_data['extrinsic'][target_img_idx],
+                        scene_data['intrinsic'][target_img_idx]
+                    )
 
                 if len(projected_points) > 0:
                     px = projected_points[:, 0].float().cpu().numpy()
@@ -533,11 +538,12 @@ def find_correspondences_3d_mapping(
                     target_bboxes_for_validation = target_bboxes_vggt
 
                 # 找到最匹配的目标框（仅对预筛选后的候选框进行昂贵的3D验证）
-                best_match = find_best_matching_bbox_with_3d_validation(
-                    projected_points, target_bboxes_for_validation, config,
-                    scene_data, target_img_idx, target_transform,
-                    ref_3d_center, ref_depth_mean, ref_points_3d=points_3d
-                )
+                with StageTimer("target_bbox_match"):
+                    best_match = find_best_matching_bbox_with_3d_validation(
+                        projected_points, target_bboxes_for_validation, config,
+                        scene_data, target_img_idx, target_transform,
+                        ref_3d_center, ref_depth_mean, ref_points_3d=points_3d
+                    )
                 
                 if best_match:
                     # 添加更多3D验证信息

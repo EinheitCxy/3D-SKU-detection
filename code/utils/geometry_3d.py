@@ -6,11 +6,13 @@ SKU匹配系统3D几何处理模块
 
 import torch
 import logging
+import time
 import numpy as np
 from typing import Dict, List, Optional
 
 from .config import SKUMatchingConfig
 from .transforms import ImageTransformBase
+from .profiling import StageTimer
 
 logger = logging.getLogger(__name__)
 
@@ -538,6 +540,7 @@ def apply_uniqueness_constraint(candidate_matches: List[Dict]) -> List[Dict]:
     if not candidate_matches:
         return []
 
+    _uni_t0 = time.perf_counter()
     all_pairs = []
     for match in candidate_matches:
         ref_obj_id = match.get('ref_obj_id', 'unknown')
@@ -571,4 +574,5 @@ def apply_uniqueness_constraint(candidate_matches: List[Dict]) -> List[Dict]:
         f"Applied uniqueness constraint: {len(candidate_matches)} candidates -> {len(final_matches)} matches "
         f"(evicted {evicted} refs found no free target)"
     )
+    StageTimer.record("uniqueness_constraint", time.perf_counter() - _uni_t0)
     return final_matches

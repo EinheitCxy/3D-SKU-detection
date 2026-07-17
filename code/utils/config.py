@@ -136,6 +136,7 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
         "sam3_device",
         "sam3_max_queries_per_forward",
         "sam3_batch_image_size",
+        "sam3_max_batch_size",
         "sam3_max_dets_per_query",
         "sam3_min_cuda_free_gb",
         # 3D-specific (safe to include; unused for PT)
@@ -237,6 +238,7 @@ class SKUMatchingConfig:
     sam3_device: str = "auto"                   # SAM3单独设备: auto/cuda/cpu
     sam3_max_queries_per_forward: int = 16       # self-exemplar时每次forward的最大query数（降低显存峰值）
     sam3_batch_image_size: int = 1008            # batch API resize尺寸（默认1008，显存紧张可降到768/640）
+    sam3_max_batch_size: int = 5                  # self-exemplar每批最多bbox数(单ref一次forward的batch上限,大值=少forward overhead)
     sam3_max_dets_per_query: int = 8             # batch API每个query保留的最大候选数（越小越省显存）
     sam3_min_cuda_free_gb: float = 10.0          # sam3_device=auto 时启用 CUDA 的最小可用显存(GB)
 

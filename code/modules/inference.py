@@ -16,9 +16,10 @@ try:
     # 添加父目录到路径以便导入utils模块
     sys.path.insert(0, str(Path(__file__).parent.parent))
     from utils import (
-        SKUMatchingConfig, 
+        SKUMatchingConfig,
         SKUMatchingSystem
     )
+    from utils.profiling import set_enabled, StageTimer
 except ImportError as e:
     logger.error(f"模块导入错误: {e}")
     logger.error("请确保VGGT模块已正确安装和配置")
@@ -273,6 +274,7 @@ def run_3d_mapping(args) -> dict:
         logger.info(
             f"matched_total={total_matches} saved_json={bool(config.save_json)} output_dir={config.output_dir} duration={duration:.2f}s"
         )
+        StageTimer.record("per_ref_total", duration)
         system.cleanup()
         return correspondences
     else:
@@ -339,6 +341,8 @@ def main() -> None:
     parser.add_argument("--depth_confidence_threshold", type=float, default=None, help="深度置信度阈值(覆盖config)")
     parser.add_argument("--min_3d_sample_points", type=int, default=None, help="3D采样最少有效点数(覆盖config)")
     parser.add_argument("--pairing_3d", type=str, default=None, choices=["all","next"], help="3D配对策略(覆盖config)")
+    parser.add_argument("--enable_profiling", action="store_true", default=False,
+                       help="启用 per-stage 计时 instrumentation（默认关闭，零开销 no-op）")
     args = parser.parse_args()
     
     try:
@@ -353,7 +357,9 @@ def main() -> None:
         logger.info(f"参考图像索引: {args.reference_idx}")
         logger.info(f"算法选择: {args.algorithm}")
         logger.info("==================")
-        
+
+        set_enabled(args.enable_profiling)
+
         correspondences_point_tracking = None
         correspondences_3d = None
         
