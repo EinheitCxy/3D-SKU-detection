@@ -35,6 +35,11 @@ logger = logging.getLogger(__name__)
 # key = (image_paths 排序 str tuple) :: TW :: TH :: device，不同 dataset/尺寸/device 各自缓存。
 _DA3_IMAGE_CACHE: Dict[str, torch.Tensor] = {}
 
+# DA3 transforms_info 模块级缓存：transforms_info 是纯只读数据对象（w,h,TARGET_W,TARGET_H,image_id），
+# build_da3_transforms 仅 PIL open 读尺寸无副作用；跨 ref 复用省 N×len(image_paths) 次 PIL 解码。
+# key = (image_paths 排序 str tuple) :: model_type :: process_res。
+_DA3_TRANSFORMS_CACHE: Dict[str, list] = {}
+
 
 class SKUMatchingSystem:
     """SKU匹配系统类
@@ -154,11 +159,21 @@ class SKUMatchingSystem:
             elif self.config.model_type == "da3":
                 # DA3: transforms + images 均用 DA3 upper_bound_resize 算法从 process_res 派生，
                 # 目标尺寸与 da3_cache 一致（504×378 等），确保投影点与 cache/world_points 同坐标系。
-                transforms_info = build_transforms(
-                    image_paths,
-                    model_type=self.config.model_type,
-                    **self.config.transform_kwargs
-                )
+                # transforms_info 是纯只读数据对象（w,h,TARGET_W,TARGET_H,image_id），跨 ref 复用
+                # 省 N×len(image_paths) 次 PIL open 解码；build_da3_transforms 无副作用，缓存位级等价。
+                _da3_pr = self.config.transform_kwargs.get("process_res", 504)
+                _tcache_key = f"{tuple(sorted(str(p) for p in image_paths))}::{self.config.model_type}::{_da3_pr}"
+                with StageTimer("build_transforms"):
+                    _tcached = _DA3_TRANSFORMS_CACHE.get(_tcache_key)
+                    if _tcached is not None:
+                        transforms_info = _tcached
+                    else:
+                        transforms_info = build_transforms(
+                            image_paths,
+                            model_type=self.config.model_type,
+                            **self.config.transform_kwargs
+                        )
+                        _DA3_TRANSFORMS_CACHE[_tcache_key] = transforms_info
                 # images resize 到 transforms target 尺寸（float [0,1]，与 pi3 的 ToTensor 格式一致）
                 TW = transforms_info[0].target_width
                 TH = transforms_info[0].target_height

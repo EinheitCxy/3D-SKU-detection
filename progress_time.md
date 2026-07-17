@@ -90,13 +90,31 @@
 | scene_data_build | 2.1s | (11次,因SAM3清cache) |
 | 其余 | <3s | |
 
-## Cycle 5 [待启动] 缓存 transforms_info
-- 假设: 模块级缓存 transforms_info(key=sorted paths+process_res), 跨ref复用, 省N×build_transforms
-- 事实: build_transforms ~36s(95%残余), build_da3_transforms 对每张图 PIL open 仅读尺寸, transforms_info 是 List[Pi3ImageTransform] 纯数据对象无副作用
-- 验证: transforms_info 后续全只读(读target_width/height+传_run_matching+可视化) -> 缓存应位级等价(同image tensor缓存)
-- 预期: build_transforms 36s->3.6s(仅首ref), per_ref 107.5->71s, 全量 402->~330s
-- 边界: allow(执行路径不改算法),风险低(只读)
-- 次要候选: [DIAG]降debug省~1-2s; scene_data_build重复(需评估显存)
+### Cycle 5 [KEEP ✅] 缓存 transforms_info
+- 假设: 模块级缓存 transforms_info(_DA3_TRANSFORMS_CACHE, key=sorted paths+model_type+process_res), 跨ref复用, 省N×build_transforms
+- 改动: utils/sku_matching_system.py 加 _DA3_TRANSFORMS_CACHE + da3分支查cache命中复用
+- 结果(Cycle3 402s口径): wall 402->240s(**-40.3%**), build_transforms fd6 36->5.52s(**-85%**)
+- 等价性: R/P **0pt位级一致**(TP554/GT663,correct551/common588) -> transforms只读缓存铁证 ✅
+- Current best: wall=240s R83.56%/P93.71% (config sam3_max_batch_size=32 + _DA3_IMAGE_CACHE + _DA3_TRANSFORMS_CACHE)
+- 剩余: build_transforms首ref仍5.52s(build_da3_transforms对每图Image.open().convert(RGB)触发完整JPEG解码非仅读尺寸)
+
+### 瓶颈结构(Cycle5后, fd6 per_ref=90.7s)
+| stage | total | 占per_ref |
+|---|---|---|
+| **sam3_mask** | 58.1s | **64%** ⭐绝对主瓶颈 |
+| projection_postprocess | 9.65s | 11% |
+| build_transforms | 5.52s | 6%(首ref,缓存后) |
+| image_load | 5.16s | 6% |
+| scene_data_build | 2.39s | 3%(11次重复) |
+| 其余 | <3s | 残余~6s(已基本全覆盖) |
+
+## Cycle 6 [待评估] 方向
+- sam3_mask 58s(64%)是绝对主瓶颈, 但Cycle2已优化max_batch_size=32, 单次forward已是compute-bound
+- 候选(收益递减):
+  1. build_da3_transforms用Image.open().size不convert(省build_transforms首ref 5.5s,占比小)
+  2. 修scene_data_build重复(因SAM3清PI3_SCENE_CACHE, 省~2s+避免cache失效)
+  3. SAM3 forward本身(58s/11ref=5.3s/ref, GPU compute-bound难降除非降精度破坏等价性)
+- 收益已递减(240s中sam3占64%不可破), 需 Rick 决定是否继续或收尾
 
 ## Notes
 - 与 program.md 精度优化正交: 不改算法语义，只改执行路径
