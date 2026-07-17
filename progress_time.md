@@ -71,10 +71,32 @@
 - per_ref_total 113s 但 sam3+image_load+循环=60s -> **63s未计时**(build_transforms/find_object_correspondences非匹配部分/Python/torch/可视化)
 - Cycle4方向: 补计时定位63s未计时开销
 
-## Cycle 4 [待启动] 补计时定位未计时开销
-- 事实: per_ref_total 113s vs 已计时stage 60s = 63s(56%)未覆盖
-- 候选未计时区: build_transforms(sku_matching_system.py:152)、find_object_correspondences_3d_mapping整体(matching_algorithms.py:279-560非sam3非projection部分)、_post_process可视化、torch tensor操作
-- 任务: 补细化计时(子stage)定位63s主因, 再设计优化
+## Cycle 4 [诊断完成] 补计时定位 63s 未计时开销
+- 改动: matching_algorithms.py 加 4 stage(scene_data_build/world_to_camera/projection_postprocess/mask_postprocess)
+- R/P 87.37/96.07 与 Cycle3 完全一致(证计时纯加法)
+- **真凶定位**: build_transforms(build_da3_transforms) ~36-39s(占残余95%)
+  - utils/sku_matching_system.py:157 未计时, utils/transforms.py:230 build_da3_transforms 对每张图 Image.open().convert("RGB") 仅读尺寸(w,h)
+  - 每 ref 132次PIL解码, 11ref=36.3s(与残余38s吻合)
+  - **未缓存**(对比 _DA3_IMAGE_CACHE 已缓存image tensor, transforms_info 没有)
+- 次要: scene_data_build 11次调用(应1次,因sam3_utils每ref清PI3_SCENE_CACHE)+[DIAG]logger.warning 476次(projection_postprocess内,可降debug)
+
+### 瓶颈结构(Cycle4诊断后, fd6 per_ref=107.5s)
+| stage | total | 说明 |
+|---|---|---|
+| **build_transforms** | ~36s | ⭐ 真凶(未计时,每ref重复PIL读尺寸) |
+| sam3_mask | 51s | (Cycle2已优化,绝对值降) |
+| projection_postprocess | 6.5s | (投影点numpy+bbox命中循环) |
+| image_load | 5.8s | (Cycle3已优化) |
+| scene_data_build | 2.1s | (11次,因SAM3清cache) |
+| 其余 | <3s | |
+
+## Cycle 5 [待启动] 缓存 transforms_info
+- 假设: 模块级缓存 transforms_info(key=sorted paths+process_res), 跨ref复用, 省N×build_transforms
+- 事实: build_transforms ~36s(95%残余), build_da3_transforms 对每张图 PIL open 仅读尺寸, transforms_info 是 List[Pi3ImageTransform] 纯数据对象无副作用
+- 验证: transforms_info 后续全只读(读target_width/height+传_run_matching+可视化) -> 缓存应位级等价(同image tensor缓存)
+- 预期: build_transforms 36s->3.6s(仅首ref), per_ref 107.5->71s, 全量 402->~330s
+- 边界: allow(执行路径不改算法),风险低(只读)
+- 次要候选: [DIAG]降debug省~1-2s; scene_data_build重复(需评估显存)
 
 ## Notes
 - 与 program.md 精度优化正交: 不改算法语义，只改执行路径

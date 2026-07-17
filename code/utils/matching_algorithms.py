@@ -347,6 +347,7 @@ def find_correspondences_3d_mapping(
                         logger.warning(f"帧对齐失败，使用原始顺序: {e}")
 
                 # 构建scene_data
+                _t_scene = time.perf_counter()
                 scene_data = {
                     "depth": torch.from_numpy(depth_np).to(device),
                     "depth_conf": torch.from_numpy(data["depth_conf"]).to(device),
@@ -355,6 +356,7 @@ def find_correspondences_3d_mapping(
                     "extrinsic": torch.from_numpy(extr_np).to(device),
                     "intrinsic": torch.from_numpy(intr_np).to(device),
                 }
+                StageTimer.record("scene_data_build", time.perf_counter() - _t_scene)
                 PI3_SCENE_CACHE[cache_key] = scene_data
                 logger.info(f"加载{config.backend.upper()}缓存: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})")
             else:
@@ -403,9 +405,11 @@ def find_correspondences_3d_mapping(
                 transform=ref_transform,
                 output_mask_space="final",
             )
+        _t_mask_post = time.perf_counter()
         if masks is not None:
             for b, m in zip(ref_bboxes, masks):
                 sam_masks_by_obj_id[int(b["object_id"])] = m
+        StageTimer.record("mask_postprocess", time.perf_counter() - _t_mask_post)
 
         correspondences = {}
         points_per_object = {}
@@ -468,9 +472,11 @@ def find_correspondences_3d_mapping(
                 # 计算参考3D点的统计信息用于几何验证
                 ref_3d_center = points_3d.mean(dim=0)  # (3,)
                 # 使用参考相机坐标系的Z作为深度（extrinsic为world->camera）
+                _t_w2c = time.perf_counter()
                 E = scene_data['extrinsic'][reference_image_idx].to(points_3d.device)
                 points_cam = transform_world_to_camera(points_3d, E)
                 ref_depth_mean = points_cam[:, 2].mean().item()  # 相机坐标系的Z才是深度
+                StageTimer.record("world_to_camera", time.perf_counter() - _t_w2c)
 
                 # 投影到目标图像
                 with StageTimer("projection_3d_to_2d"):
@@ -480,6 +486,7 @@ def find_correspondences_3d_mapping(
                         scene_data['intrinsic'][target_img_idx]
                     )
 
+                _t_proj_post = time.perf_counter()
                 if len(projected_points) > 0:
                     px = projected_points[:, 0].float().cpu().numpy()
                     py = projected_points[:, 1].float().cpu().numpy()
@@ -494,6 +501,7 @@ def find_correspondences_3d_mapping(
                     logger.warning(f"[DIAG] ref{reference_image_idx} obj{ref_obj_id}: 采样={len(points_3d)} 投影={len(projected_points)} Top3框={[(t[0],f'{t[1]:.0%}',t[2]) for t in top3]}")
 
                 if len(projected_points) < 5:
+                    StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
                     continue
 
                 # 将目标图像的检出框映射到VGGT坐标
@@ -536,6 +544,7 @@ def find_correspondences_3d_mapping(
                     target_bboxes_for_validation = top_candidates
                 else:
                     target_bboxes_for_validation = target_bboxes_vggt
+                StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
 
                 # 找到最匹配的目标框（仅对预筛选后的候选框进行昂贵的3D验证）
                 with StageTimer("target_bbox_match"):
