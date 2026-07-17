@@ -25,9 +25,9 @@
 │   └── config.yaml         # 单一可调参数源
 ├── bbox_gen.py             # YOLO SKU 检测 CLI（生成 detections_results，code/ 上游）
 ├── Depth-Anything-3/       # DA3 模型库（独立 .venv；被 code/ subprocess 调用）
-├── Pi3/, sam3/, vggt-main/ # vendored 模型库（sys.path 注入）
+├── Pi3/, sam3/, vggt-main/, Depth-Anything-3/ # vendored 模型库（sys.path 注入）
 ├── imdata/                 # 数据集（floor_display*/，images/ + detections_results/）
-└── Global-ID-Mapping/, Dockered_GlobalIDMapping/, frame_sampler/, docker_template/  # Docker 服务/模板
+└── frame_sampler/          # 抽帧 Docker 服务（其余 Docker 服务已在 2026-07-16 清理，commit 9d9503f）
 ```
 
 ## 环境与依赖
@@ -89,6 +89,21 @@ bash batch_accuracy_evaluation.sh 2 12
 新增后端只需：① 继承 `ReconstructorBase` ② `@register_reconstructor("name")` ③ 在 `modules/__init__.py` 导入——无需改 `main.py`。
 
 DA3 因依赖集与 `code/` 不同（需 omegaconf/e3nn 等，code/ 与 DA3 均为 numpy<2，无 numpy 冲突），通过 subprocess 调用 `Depth-Anything-3/.venv` 运行 `modules/da3_runner.py`，输出与 Pi3 schema 一致的 `da3_cache/predictions.npz`。权重 `DA3NESTED-GIANT-LARGE` 为 **CC BY-NC 4.0（非商用）**。
+
+### 匹配阶段性能优化（2026-07，da3）
+
+`--mode concise` batch_all_refs（每图作参考，N ref 串行匹配）经 per-stage profiling（`utils/profiling.py` + `--enable_profiling`）定位瓶颈并优化：**fd5/6/7 全量 720s -> 180s（-75%）**，R/P 全程等价（R83.56%/P93.71%，gate ±0.5pt 内，多 cycle 位级一致验证）。
+
+| Cycle | 优化 | wall-clock | 等价性 |
+|---|---|---|---|
+| baseline | max_batch_size=5，无缓存 | 720s | R84.01/P94.06 |
+| C2 | `sam3_max_batch_size` 5->32（避免 >5 bbox/ref 时 N×forward） | 565s | R-0.45/P-0.35pt |
+| C3 | `_DA3_IMAGE_CACHE`（图像 tensor 跨 ref 复用） | 402s | 0pt 位级 |
+| C4 | 诊断（定位 build_transforms 36s 真凶） | - | - |
+| C5 | `_DA3_TRANSFORMS_CACHE`（transforms_info 跨 ref 复用） | 240s | 0pt 位级 |
+| C6 | build_da3 `.size` 懒读 + 移除每 ref `PI3_SCENE_CACHE.clear()` + DIAG 降级 | 180s | 0pt 位级 |
+
+剩余瓶颈 `sam3_mask` 占 64%（GPU compute-bound，单次 forward/ref，CUDA 跨线程串行不可并行化）。`--parallel_refs` 对 SAM3 **无效**（GPU-bound）且破坏等价性（RNG 非确定）。详见 `program_time.md` / `progress_time.md` / `docs/profiling_breakdown.md`。
 
 ## 检测数据格式
 

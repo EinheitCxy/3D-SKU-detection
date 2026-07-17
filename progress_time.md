@@ -90,31 +90,19 @@
 | scene_data_build | 2.1s | (11次,因SAM3清cache) |
 | 其余 | <3s | |
 
-### Cycle 5 [KEEP ✅] 缓存 transforms_info
-- 假设: 模块级缓存 transforms_info(_DA3_TRANSFORMS_CACHE, key=sorted paths+model_type+process_res), 跨ref复用, 省N×build_transforms
-- 改动: utils/sku_matching_system.py 加 _DA3_TRANSFORMS_CACHE + da3分支查cache命中复用
-- 结果(Cycle3 402s口径): wall 402->240s(**-40.3%**), build_transforms fd6 36->5.52s(**-85%**)
-- 等价性: R/P **0pt位级一致**(TP554/GT663,correct551/common588) -> transforms只读缓存铁证 ✅
-- Current best: wall=240s R83.56%/P93.71% (config sam3_max_batch_size=32 + _DA3_IMAGE_CACHE + _DA3_TRANSFORMS_CACHE)
-- 剩余: build_transforms首ref仍5.52s(build_da3_transforms对每图Image.open().convert(RGB)触发完整JPEG解码非仅读尺寸)
+## 最终成果 (速度优化循环收尾)
+- **baseline 720s -> Cycle6 180s (-75%)**, R/P 全程等价(R83.56%/P93.71%, gate内)
+- 6 cycle(4 keep + 1诊断 + 1收尾): C2 max_batch_size/C3 image cache/C4诊断/C5 transforms cache/C6 merge3opts
+- 唯一 discard: C1 parallel_refs(SAM3 GPU-bound CUDA串行无效)
+- **剩余瓶颈 sam3_mask 64% 是 GPU compute-bound 不可破**(Cycle2已优化max_batch_size=32)
+- 收尾: 更新 README/CLAUDE.md/accuracy docs 记录速度优化
 
-### 瓶颈结构(Cycle5后, fd6 per_ref=90.7s)
-| stage | total | 占per_ref |
-|---|---|---|
-| **sam3_mask** | 58.1s | **64%** ⭐绝对主瓶颈 |
-| projection_postprocess | 9.65s | 11% |
-| build_transforms | 5.52s | 6%(首ref,缓存后) |
-| image_load | 5.16s | 6% |
-| scene_data_build | 2.39s | 3%(11次重复) |
-| 其余 | <3s | 残余~6s(已基本全覆盖) |
-
-## Cycle 6 [待评估] 方向
-- sam3_mask 58s(64%)是绝对主瓶颈, 但Cycle2已优化max_batch_size=32, 单次forward已是compute-bound
-- 候选(收益递减):
-  1. build_da3_transforms用Image.open().size不convert(省build_transforms首ref 5.5s,占比小)
-  2. 修scene_data_build重复(因SAM3清PI3_SCENE_CACHE, 省~2s+避免cache失效)
-  3. SAM3 forward本身(58s/11ref=5.3s/ref, GPU compute-bound难降除非降精度破坏等价性)
-- 收益已递减(240s中sam3占64%不可破), 需 Rick 决定是否继续或收尾
+### Cycle 6 [KEEP ✅] 合并3小优化(收尾)
+- 改动(3文件8+/13-): transforms.py(build_da3 .size懒读)+sam3_utils.py(移除PI3_SCENE_CACHE.clear)+matching_algorithms.py(DIAG降debug)
+- 结果(Cycle5 240s口径): wall 240->180s(**-25%**), fd6 100->55s(-45%), build_transforms 5.52->0.007s, scene_data_build 11->1calls
+- 等价性: R/P **0pt逐数字一致**(TP554/GT663,correct551/common588) ✅
+- GPU: smoke峰值16.6GB<24GB安全(优化2单进程不跨进程累积)
+- Current best: wall=180s R83.56%/P93.71%
 
 ## Notes
 - 与 program.md 精度优化正交: 不改算法语义，只改执行路径
