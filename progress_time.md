@@ -54,12 +54,27 @@
 - 结果(可靠baseline5 720s): wall 720->565s(-21.5%), sam3 fd6 91.8->56.8s(-38%), R-0.45pt/P-0.35pt gate内
 - 新瓶颈: image_load_resize 35% -> Cycle 3
 
-### Cycle 3 [进行中] 跨 ref 缓存图像 tensor
-- 假设: 模块级缓存图像tensor(key=dataset+TW+TH),跨ref复用,省N×image_load(35%新瓶颈)
-- 事实: image_load_resize fd6 67.3s(35%), da3每ref逐张PIL open+resize(line 163-167), N ref重复N次; image_paths/TW/TH每ref相同
-- 验证: images在da3路径只读(仅shape/device用法,vggt_model不调用因backend=da3) -> 缓存安全
-- 模板: PI3_SCENE_CACHE 模式(模块级dict+cache_key+load-if-None+复用)
-- 边界: allow(执行路径不改算法),风险低(图像只读)
+### Cycle 3 [KEEP ✅] 跨 ref 缓存图像 tensor
+- 假设: 模块级缓存图像tensor(_DA3_IMAGE_CACHE, key=sorted paths+TW+TH+device), 跨ref复用, 省N×image_load
+- 改动: utils/sku_matching_system.py 加 _DA3_IMAGE_CACHE + da3 分支查cache命中复用
+- 结果(Cycle2 565s口径): wall 565->402s(**-29%**), image_load fd6 67.3->6.9s(**-90%**)
+- 等价性: R/P **0pt位级一致**(TP554/GT663,correct551/common588 完全相同) -> images只读缓存假设铁证 ✅
+- Current best: wall=402s R83.56%/P93.71% (config sam3_max_batch_size=32 + _DA3_IMAGE_CACHE)
+
+### 瓶颈结构(Cycle3后, fd6 profiling)
+| stage | total | 占per_ref |
+|---|---|---|
+| **未计时开销** | ~63s | **56%** ⭐(待补计时定位) |
+| sam3_mask | 50.2s | 44%(已Cycle2优化,绝对值降) |
+| image_load | 6.9s | 6%(已Cycle3优化) |
+| 三重循环 | ~3s | 3% |
+- per_ref_total 113s 但 sam3+image_load+循环=60s -> **63s未计时**(build_transforms/find_object_correspondences非匹配部分/Python/torch/可视化)
+- Cycle4方向: 补计时定位63s未计时开销
+
+## Cycle 4 [待启动] 补计时定位未计时开销
+- 事实: per_ref_total 113s vs 已计时stage 60s = 63s(56%)未覆盖
+- 候选未计时区: build_transforms(sku_matching_system.py:152)、find_object_correspondences_3d_mapping整体(matching_algorithms.py:279-560非sam3非projection部分)、_post_process可视化、torch tensor操作
+- 任务: 补细化计时(子stage)定位63s主因, 再设计优化
 
 ## Notes
 - 与 program.md 精度优化正交: 不改算法语义，只改执行路径

@@ -30,6 +30,11 @@ from .profiling import StageTimer
 
 logger = logging.getLogger(__name__)
 
+# DA3 图像 tensor 模块级缓存：images 在 da3 路径只读（仅用 shape/device/供 transforms/可视化，
+# vggt_model 不调用因 backend=da3），跨 ref 复用避免每 ref 重复 PIL open+resize+to_tensor。
+# key = (image_paths 排序 str tuple) :: TW :: TH :: device，不同 dataset/尺寸/device 各自缓存。
+_DA3_IMAGE_CACHE: Dict[str, torch.Tensor] = {}
+
 
 class SKUMatchingSystem:
     """SKU匹配系统类
@@ -155,16 +160,24 @@ class SKUMatchingSystem:
                     **self.config.transform_kwargs
                 )
                 # images resize 到 transforms target 尺寸（float [0,1]，与 pi3 的 ToTensor 格式一致）
-                from torchvision import transforms as _TF
                 TW = transforms_info[0].target_width
                 TH = transforms_info[0].target_height
-                to_tensor = _TF.ToTensor()
-                imgs = []
+                # 模块级缓存：images 在 da3 路径只读（find_correspondences_3d_mapping 仅用 shape/device，
+                # vggt_model 不调用因 backend=da3），跨 ref 复用避免每 ref 重复 PIL open+resize+to_tensor。
+                cache_key = f"{tuple(sorted(str(p) for p in image_paths))}::{TW}::{TH}::{self.config.device}"
                 with StageTimer("image_load_resize"):
-                    for p in image_paths:
-                        im = Image.open(p).convert("RGB").resize((TW, TH))
-                        imgs.append(to_tensor(im))
-                images = torch.stack(imgs, dim=0).to(self.config.device)
+                    cached = _DA3_IMAGE_CACHE.get(cache_key)
+                    if cached is not None:
+                        images = cached  # 命中缓存，耗时近 0
+                    else:
+                        from torchvision import transforms as _TF
+                        to_tensor = _TF.ToTensor()
+                        imgs = []
+                        for p in image_paths:
+                            im = Image.open(p).convert("RGB").resize((TW, TH))
+                            imgs.append(to_tensor(im))
+                        images = torch.stack(imgs, dim=0).to(self.config.device)
+                        _DA3_IMAGE_CACHE[cache_key] = images
                 logger.info(f"DA3 加载图像: {len(image_paths)} 张, 尺寸: ({TW}, {TH})")
             else:
                 # VGGT: 先构建 transforms（固定 518×518），再加载图像
