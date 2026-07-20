@@ -6,9 +6,9 @@
 
 ## 核心能力
 
-- **跨图 SKU 匹配**：点追踪（`point_tracking`）与 3D→2D 投影（`3d`）两套算法，可独立或并行
+- **跨图 SKU 匹配**：3D→2D 投影（`3d`，唯一算法）
 - **顺序去重 + 全局 ID**：并查集连通分量聚类，跨图传递性匹配 -> 唯一 `global_id`
-- **多 3D 重建后端**：Pi3（缓存式，批量推荐）/ DA3（多视图高精度，subprocess 隔离）/ VGGT（实时，可选）
+- **单一 3D 重建后端**：DA3（Depth-Anything-3，多视图高精度，subprocess 隔离运行于 `Depth-Anything-3/.venv`，缓存 `da3_cache/predictions.npz`）
 - **交互式 3D viewer**：基于 Viser，GPU 加速 KNN 与点云下采样
 - **准确性评估**：对照人工标注计算 Precision/Recall/F1
 
@@ -24,16 +24,14 @@
 │   ├── scripts/            # 批量/评估脚本（batch.sh / k.sh 等）
 │   └── config.yaml         # 单一可调参数源
 ├── bbox_gen.py             # YOLO SKU 检测 CLI（生成 detections_results，code/ 上游）
-├── Pi3/                    # Pi3 重建模型库（核心源码已入库，sys.path 注入）
 ├── sam3/                   # SAM3 分割模型库（核心源码已入库，mask 引导采样）
 ├── Depth-Anything-3/       # DA3 模型库（核心源码已入库；独立 .venv 被 code/ subprocess 调用）
-├── vggt-main/              # VGGT 模型库（后端已禁用，整体 gitignore 不入库）
 ├── imdata/                 # 数据集（floor_display*/，images/ + detections_results/）
 ├── auto-research-loop/     # autoresearch 循环工作区（program/progress/results，本地不入库）
 └── frame_sampler/          # 抽帧 Docker 服务（其余 Docker 服务已在 2026-07-16 清理，commit 9d9503f）
 ```
 
-> **git 跟踪策略**：三个 vendored 模型库（sam3 / Pi3 / Depth-Anything-3）的**核心源码已入库**（约 374 文件 / 12MB），库内环境与非核心内容（`.venv/`、`checkpoints/`、权重、`assets/`、`examples/`、构建与运行产物）由 `.gitignore` 排除；权重需按各库 README 另行下载。`vggt-main/`（后端已禁用）与 `auto-research-loop/`（循环工作区）整体不入库。
+> **git 跟踪策略**：两个 vendored 模型库（sam3 / Depth-Anything-3）的**核心源码已入库**（约 374 文件 / 12MB），库内环境与非核心内容（`.venv/`、`checkpoints/`、权重、`assets/`、`examples/`、构建与运行产物）由 `.gitignore` 排除；权重需按各库 README 另行下载。`auto-research-loop/`（循环工作区）整体不入库。Pi3 与 vggt-main 源码树已从仓库删除（da3 为唯一 3D 重建后端）。
 
 ## 环境与依赖
 
@@ -41,7 +39,7 @@
 
 | 环境 | 位置 | 用途 | numpy |
 |---|---|---|---|
-| 核心 | `code/.venv` | 匹配/重建/Pi3/SAM3/VGGT | 1.26.x |
+| 核心 | `code/.venv` | 匹配/重建/SAM3 | 1.26.x |
 | DA3 | `Depth-Anything-3/.venv` | DA3 推理（依赖 omegaconf/e3nn/evo 等 code/ 未装包） | 1.26.x |
 | bbox_gen | 根 `.venv` | YOLO 检测（ultralytics） | 2.3.5 |
 
@@ -58,19 +56,16 @@ GPU（CUDA）为匹配/重建必需。`uv` 是唯一 Python 工具。
 ```bash
 cd code
 
-# 完整流水线（Pi3 后端，3D 匹配 —— 推荐）
-uv run python main.py --mode pipeline --dataset ../imdata/floor_display2 \
-    --algorithm 3d --match_backend pi3 --recon_backend pi3
-
-# --floor N 是 --dataset ../imdata/floor_displayN 的快捷方式
+# 完整流水线（da3 后端，3D 匹配 -- 唯一后端，参数可省略）
 uv run python main.py --mode pipeline --floor 2
+# 等价于 --dataset ../imdata/floor_display2 --algorithm 3d --match_backend da3 --recon_backend da3
 
 # 交互模式
 uv run python main.py --mode interactive
 
 # 仅 3D 重建 / 仅匹配 / 仅去重 / 仅分析 / 3D viewer
-uv run python main.py --mode reconstruct --recon_backend pi3
-uv run python main.py --mode concise   --match_backend pi3 --algorithm 3d
+uv run python main.py --mode reconstruct
+uv run python main.py --mode concise   --algorithm 3d
 uv run python main.py --mode dedup
 uv run python main.py --mode analyzer
 uv run python main.py --mode viewer
@@ -80,20 +75,16 @@ bash batch_accuracy_evaluation.sh 2 12
 ```
 
 **`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `reconstruct` | `viewer`
-**`--algorithm`**: `point_tracking` | `3d` | `both`
-**`--recon_backend` / `--match_backend`**: `vggt` | `pi3` | `da3`（默认来自 `config.yaml`）
+**`--algorithm`**: `3d`（唯一算法）
+**`--recon_backend` / `--match_backend`**: `da3`（唯一可选，默认 da3，可省略）
 
 ## 3D 重建后端
 
-| 后端 | 速度 | 精度 | 缓存 | 适用 |
-|---|---|---|---|---|
-| `pi3` | 快（读缓存） | 高 | `pi3_cache/` | 批量生产（推荐） |
-| `da3` | 中（subprocess） | 更高（多视图） | `da3_cache/` | 高精度场景 |
-| `vggt` | 慢（每次推理） | 高 | 无 | 单次调试（当前默认禁用） |
+唯一后端为 **DA3（Depth-Anything-3）**，Pi3 与 VGGT 源码树已从仓库删除。
 
-新增后端只需：① 继承 `ReconstructorBase` ② `@register_reconstructor("name")` ③ 在 `modules/__init__.py` 导入——无需改 `main.py`。
+DA3 因依赖集与 `code/` 不同（需 omegaconf/e3nn 等，code/ 与 DA3 均为 numpy<2，无 numpy 冲突），通过 subprocess 调用 `Depth-Anything-3/.venv` 运行 `modules/da3_runner.py`（自包含，不 import `code/`）。DA3 多视图批量推理后反投影出 `world_points`，写入 `da3_cache/predictions.npz`（depth/extrinsics(w2c)/intrinsics/world_points/image_ids）。匹配阶段不加载任何模型，仅读 npz 缓存。权重 `depth-anything/DA3NESTED-GIANT-LARGE`（6.3GB，米制）为 **CC BY-NC 4.0（非商用）**。
 
-DA3 因依赖集与 `code/` 不同（需 omegaconf/e3nn 等，code/ 与 DA3 均为 numpy<2，无 numpy 冲突），通过 subprocess 调用 `Depth-Anything-3/.venv` 运行 `modules/da3_runner.py`，输出与 Pi3 schema 一致的 `da3_cache/predictions.npz`。权重 `DA3NESTED-GIANT-LARGE` 为 **CC BY-NC 4.0（非商用）**。
+`--recon_backend`/`--match_backend` 参数保留但仅接受 `da3`（默认 da3，可省略）。新增后端只需：① 继承 `ReconstructorBase` ② `@register_reconstructor("name")` ③ 在 `modules/__init__.py` 导入（CLI `choices` 列表同步更新）--无需改 `main.py`。
 
 ### 匹配阶段性能优化（2026-07，da3）
 
@@ -106,7 +97,7 @@ DA3 因依赖集与 `code/` 不同（需 omegaconf/e3nn 等，code/ 与 DA3 均�
 | C3 | `_DA3_IMAGE_CACHE`（图像 tensor 跨 ref 复用） | 402s | 0pt 位级 |
 | C4 | 诊断（定位 build_transforms 36s 真凶） | - | - |
 | C5 | `_DA3_TRANSFORMS_CACHE`（transforms_info 跨 ref 复用） | 240s | 0pt 位级 |
-| C6 | build_da3 `.size` 懒读 + 移除每 ref `PI3_SCENE_CACHE.clear()` + DIAG 降级 | 180s | 0pt 位级 |
+| C6 | build_da3 `.size` 懒读 + 移除每 ref `SCENE_CACHE.clear()` + DIAG 降级 | 180s | 0pt 位级 |
 
 剩余瓶颈 `sam3_mask` 占 64%（GPU compute-bound，单次 forward/ref，CUDA 跨线程串行不可并行化）。`--parallel_refs` 对 SAM3 **无效**（GPU-bound）且破坏等价性（RNG 非确定）。详见 `docs/profiling_breakdown.md`；循环工作记录见 `auto-research-loop/program_time.md` / `progress_time.md`（本地未入库）。
 
@@ -133,6 +124,6 @@ DA3 因依赖集与 `code/` 不同（需 omegaconf/e3nn 等，code/ 与 DA3 均�
 
 - 每次运行生成一个日志：`<save_root>/run_YYYYMMDD_HHMMSS.log`（控制台 INFO，文件 DEBUG）
 - 去重产物：`<save_root>/<dataset>/dedup_detections/{<i>.json, global_mapping.json, global_skus.json}`
-- 重建产物：`<save_root>/<dataset>/{pi3_cache,da3_cache}/predictions.npz` + `reconstruction_<backend>.glb`
+- 重建产物：`<save_root>/<dataset>/da3_cache/predictions.npz` + `reconstruction_da3.glb`
 
 更多细节见 [code/README.md](code/README.md)。

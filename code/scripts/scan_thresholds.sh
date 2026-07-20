@@ -17,9 +17,9 @@ for mdd in 0.6 0.8 1.0; do
     rm -rf ../Output/da3/floor_display${FD}/output_3dmapping_da3 ../Output/da3/floor_display${FD}/accuracy_evaluation_da3
     CUDA_VISIBLE_DEVICES=$GPU PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
       uv run python main.py --mode concise --dataset ../imdata/floor_display${FD} \
-      --algorithm 3d --match_backend da3 --recon_backend da3 --save_root ../Output/da3 \
+      --algorithm 3d --save_root ../Output/da3 \
       --max_depth_difference $mdd --plane_normal_alignment_threshold $pthr > "$RESULTS/fd${FD}_${mdd}_${pthr}.log" 2>&1
-    bash accuracy_evaluation.sh floor_display${FD} --backend da3 --save-root ../Output/da3 > /dev/null 2>&1
+    bash accuracy_evaluation.sh floor_display${FD} --save-root ../Output/da3 > /dev/null 2>&1
     uv run python -c "
 import re
 txt=open('../Output/da3/floor_display${FD}/accuracy_evaluation_da3/summary.txt').read()

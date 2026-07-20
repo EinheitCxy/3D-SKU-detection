@@ -8,16 +8,14 @@
 code/
 ├── main.py                        # 统一 CLI 入口（interactive/pipeline/concise/analyzer/dedup）
 ├── modules/                       # 可执行/流水线脚本集合
-│   ├── inference.py               # 匹配引擎（点追踪/3D-2D/两者）
+│   ├── inference.py               # 匹配引擎（3D-2D 投影，唯一算法）
 │   ├── draw_detection_boxes.py    # 检出框可视化
 │   ├── improved_sku_analyzer.py   # 一对多/多对一过滤（最佳一对一）
 │   ├── deduplicate_detections.py  # 顺序去重 + 全局ID聚合（robust 解析）
 │   ├── analyze_accuracy_metrics.py# 批量准确性指标分析
 │   ├── reconstructor_base.py      # 3D重建抽象基类 + 后端注册表
-│   ├── pi3_3d_reconstructor.py    # Pi3 后端（缓存式，快速批量）
-│   ├── da3_3d_reconstructor.py    # Depth-Anything-3 后端（高精度多视角）
-│   ├── da3_runner.py              # DA3 推理脚本（subprocess，在 Depth-Anything-3/.venv 中运行）
-│   └── vggt_3d_reconstructor.py   # VGGT 后端（实时重建，当前已注释）
+│   ├── da3_3d_reconstructor.py    # Depth-Anything-3 后端（唯一后端，subprocess 隔离）
+│   └── da3_runner.py              # DA3 推理脚本（subprocess，在 Depth-Anything-3/.venv 中运行）
 ├── utils/                         # 可复用库模块
 │   ├── config.py, data_utils.py, transforms.py, point_utils.py
 │   ├── geometry_3d.py, matching_algorithms.py, visualization.py
@@ -37,22 +35,19 @@ code/
 # 交互模式
 uv run main.py --mode interactive
 
-# 完整流水线（校验→可视化→匹配→分析→顺序去重→评估）
+# 完整流水线（da3 后端唯一，参数可省略）
 uv run main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Output
+# 等价于 --algorithm 3d --match_backend da3 --recon_backend da3
 
-# 使用 DA3 后端重建 + 匹配
-uv run main.py --mode pipeline --dataset imdata/floor_display2 \
-  --recon_backend da3 --match_backend da3 --algorithm 3d --save_root ./Output
-
-# 并行处理参考图（pi3/da3 后端推荐，4 线程）
+# 并行处理参考图（da3 后端，4 线程）
 uv run main.py --mode concise --dataset imdata/floor_display2 \
-  --match_backend pi3 --algorithm 3d --parallel_refs 4 --save_root ./Output
+  --algorithm 3d --parallel_refs 4 --save_root ./Output
 
 # 仅匹配（默认：对每张图片都作为参考图跑一遍）
-uv run main.py --mode concise --dataset imdata/floor_display2 --algorithm both --save_root ./Output
+uv run main.py --mode concise --dataset imdata/floor_display2 --algorithm 3d --save_root ./Output
 
 # 仅跑单个参考图（直接调用引擎）
-uv run modules/inference.py --algorithm point_tracking \
+uv run modules/inference.py --algorithm 3d \
   --image_folder imdata/floor_display2/images \
   --detection_dir imdata/floor_display2/detections_results \
   --output_dir imdata/floor_display2 \
@@ -74,7 +69,7 @@ bash scripts/batch.sh floor_display2 4
 uv run main.py \
   --mode concise \
   --dataset imdata/floor_display2 \
-  --algorithm both \
+  --algorithm 3d \
   --reference_idx 0 \
   --max_images 20 \
   --device cuda \
@@ -93,12 +88,12 @@ uv run main.py --help
 |------|------|------|
 | `config.py` | 配置参数管理 | 无 |
 | `data_utils.py` | 数据加载和处理 | 基础Python |
-| `transforms.py` | VGGT坐标变换 | PIL, numpy |
+| `transforms.py` | 图像坐标变换（resize） | PIL, numpy |
 | `point_utils.py` | 点采样工具 | numpy, torch |
 | `geometry_3d.py` | 3D几何处理 | torch |
-| `matching_algorithms.py` | 匹配算法核心（point_tracking 需 VGGT；3d 投影读 pi3/da3 缓存） | torch |
+| `matching_algorithms.py` | 匹配算法核心（3d 投影读 da3 缓存） | torch |
 | `visualization.py` | 结果可视化 | opencv, numpy |
-| `sku_matching_system.py` | 系统封装（pi3/da3/vggt 后端） | torch |
+| `sku_matching_system.py` | 系统封装（da3 后端） | torch |
 | `bbox_utils.py` | 检出框工具 | 基础Python |
 | `process_image_orientation.py` | 图像方向修复 | PIL |
 
@@ -109,29 +104,25 @@ uv run main.py --help
 系统采用**渐进式依赖**设计：
 
 - **基础功能**：配置管理、坐标变换、数据处理等功能随时可用
-- **完整功能**：3D 匹配需 Pi3/DA3 重建缓存（`pi3_cache/` / `da3_cache/`，无需 VGGT）；仅 `point_tracking` 算法需要 VGGT 环境
+- **完整功能**：3D 匹配需 DA3 重建缓存（`da3_cache/`）
 
 检查依赖状态：
 ```python
 from utils import check_dependencies
 deps = check_dependencies()
-print(deps)  # {'vggt_modules': False, 'visualization': True}
+print(deps)  # {'visualization': True, ...}
 ```
 
 ## 🎯 支持的算法
 
-### 1. 传统点追踪匹配
-- 基于VGGT点追踪的物体匹配
-- 输出目录：`<dataset>/output_pt/<ref_idx>/`
-
-### 2. 3D-2D投影匹配  
-- 基于3D几何重建的投影匹配
+### 3D-2D投影匹配
+- 基于 DA3 3D 重建的投影匹配（唯一算法）
 - 包含3D几何验证
-- 输出目录：`<dataset>/output_3dmapping/<ref_idx>/`
+- 输出目录：`<dataset>/output_3dmapping_da3/<ref_idx>/`
 
 ## 📊 输出结果（关键）
 
-- 匹配可视化与摘要：生成在 `dataset/output_pt/<ref_idx>/`（由匹配引擎写入）
+- 匹配可视化与摘要：生成在 `dataset/output_3dmapping_da3/<ref_idx>/`（由匹配引擎写入）
 - 可视化导出：`output_viz/<dataset_name>/`（或 `--save_root/output_viz/<dataset_name>/`）
 - 改进分析报告：`output_reports/<dataset_name>/report_*.txt`（或 `--save_root/output_reports/<dataset_name>/`）
 - 顺序去重（同名输出）：`<save_root>/<dataset_name>/1.json..X.json`
@@ -145,7 +136,7 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
   - `START visualization|matching|improved_analysis|evaluation|dedup_sequence|reconstruct`
   - `END <stage> duration=Ns result=ok|fail [output=…|count=…]`
 - 匹配阶段（modules/inference.py）额外输出：
-  - 开始：`stage=match algo=point_tracking|3d ref=R images=N detections=M`
+  - 开始：`stage=match algo=3d ref=R images=N detections=M`
   - 结束：`matched_total=T saved_json=True|False output_dir=… duration=…s`
 - 调试细节（仅在日志文件中）：
   - 检测加载汇总：`load_detections summary: skipped_non_numeric=K empty_objects=L`
@@ -186,7 +177,7 @@ uv run modules/inference.py --algorithm both --max_images 2
 main:
   dataset: imdata/floor_display2
   mode: concise
-  algorithm: both
+  algorithm: 3d
   save_root: ./Output
   device: cuda
   reference_idx: 0
@@ -194,7 +185,7 @@ main:
   save_json: true
 
 matching:
-  algorithm: point_tracking  # 或 3d / 3d_projection
+  algorithm: 3d
   max_points_per_bbox: 50
   confidence_threshold: 0.5
   min_confident_points: 7
@@ -222,21 +213,17 @@ print(matching_cfg)
   - 如果存在 `code/config.yaml`，`code/main.py` 会自动使用其中的 `main` 和 `reconstruction` 参数作为默认值；命令行显式传入的参数会覆盖 YAML 值。
   - 也可通过 `--config /path/to/config.yaml` 指定其它配置文件。
 
-## 🔧 3D 重建后端对比
+## 🔧 3D 重建后端
 
-| 后端 | 速度 | 精度 | 缓存 | 适用场景 |
-|------|------|------|------|----------|
-| `vggt` | 慢（每次推理）| 高 | 无 | 单次调试 |
-| `pi3` | 快（读缓存）| 高 | `pi3_cache/` | 批量生产（推荐）|
-| `da3` | 中（读缓存）| 更高 | `da3_cache/` | 高精度场景 |
+唯一后端为 **DA3（Depth-Anything-3）**，Pi3 与 VGGT 后端已随源码树删除。`--recon_backend`/`--match_backend` 参数保留但仅接受 `da3`（默认 da3，可省略）。
 
-新增后端只需：① 继承 `ReconstructorBase` ② 用 `@register_reconstructor("name")` 装饰 ③ 在 `modules/__init__.py` 导入即可，无需修改 `main.py`。
+新增后端只需：① 继承 `ReconstructorBase` ② 用 `@register_reconstructor("name")` 装饰 ③ 在 `modules/__init__.py` 导入（CLI `choices` 同步更新）即可，无需修改 `main.py`。
 
 ### DA3 后端的 subprocess 隔离
 
 Depth-Anything-3 依赖 `omegaconf/addict/e3nn/evo` 等 `code/` 未安装的包（code/ 与 DA3 均为 numpy<2，无 numpy 冲突）。因此 `da3_3d_reconstructor.py` **不 in-process 加载 DA3**，而是通过 **subprocess** 调用 `Depth-Anything-3/.venv/bin/python modules/da3_runner.py`（自包含脚本，不 import `code/`）：
 
-- `da3_runner.py`：在 DA3 venv 中加载 `depth-anything/DA3NESTED-GIANT-LARGE`（6.3GB，米制，CC BY-NC 4.0），多视图批量推理，输出 `da3_cache/predictions.npz`（depth/extrinsics(w2c)/intrinsics，并反投影出 `world_points`，schema 与 `pi3_cache` 完全一致）。
+- `da3_runner.py`：在 DA3 venv 中加载 `depth-anything/DA3NESTED-GIANT-LARGE`（6.3GB，米制，CC BY-NC 4.0），多视图批量推理，输出 `da3_cache/predictions.npz`（depth/extrinsics(w2c)/intrinsics，并反投影出 `world_points`）。
 - `da3_3d_reconstructor.py`：`load_model` 为 no-op（仅校验 venv/runner 存在），`run_inference` 调 subprocess 生成 npz 后读回，`export_glb` 跳过（SKU matching 仅需 npz）。
 - 前置条件：`Depth-Anything-3/.venv` 必须存在且已装 DA3 依赖；HF 权重首次运行自动下载（6.3GB）。
 

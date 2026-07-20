@@ -54,18 +54,13 @@ def _infer_transform_output_size(
 
     target_w = getattr(transform, "target_width", None)
     target_h = getattr(transform, "target_height", None)
-    if isinstance(target_w, int) and isinstance(target_h, int) and target_w > 0 and target_h > 0:
-        return "pi3", (target_w, target_h)
-
-    padded_w = getattr(transform, "padded_width", None)
-    padded_h = getattr(transform, "padded_height", None)
-    if isinstance(padded_w, int) and isinstance(padded_h, int) and padded_w > 0 and padded_h > 0:
-        return "vggt", (padded_w, padded_h)
-
-    final_w = getattr(transform, "final_width", None)
-    final_h = getattr(transform, "final_height", None)
-    if isinstance(final_w, int) and isinstance(final_h, int) and final_w > 0 and final_h > 0:
-        return "vggt", (final_w, final_h)
+    if (
+        isinstance(target_w, int)
+        and isinstance(target_h, int)
+        and target_w > 0
+        and target_h > 0
+    ):
+        return "resize", (target_w, target_h)
 
     return None, None
 
@@ -126,7 +121,9 @@ def _ensure_sam3_in_path() -> Path:
     return sam3_repo
 
 
-def _get_sam3_model_and_processor(checkpoint_path: str, device: str) -> Tuple[object, object]:
+def _get_sam3_model_and_processor(
+    checkpoint_path: str, device: str
+) -> Tuple[object, object]:
     """Load SAM3 model+processor from local `sam3/` directory (no HF download).
 
     This is for the predict_inst API (fast single-image inference).
@@ -138,8 +135,8 @@ def _get_sam3_model_and_processor(checkpoint_path: str, device: str) -> Tuple[ob
 
     _ensure_sam3_in_path()
 
-    from sam3.model_builder import build_sam3_image_model  # type: ignore
     from sam3.model.sam3_image_processor import Sam3Processor  # type: ignore
+    from sam3.model_builder import build_sam3_image_model  # type: ignore
 
     model = build_sam3_image_model(
         checkpoint_path=str(checkpoint_path),
@@ -180,7 +177,10 @@ def _build_sam3_batch_transform(
     return ComposeAPI(
         transforms=[
             RandomResizeAPI(
-                sizes=fallback, max_size=fallback, square=True, consistent_transform=False
+                sizes=fallback,
+                max_size=fallback,
+                square=True,
+                consistent_transform=False,
             ),
             ToTensorAPI(),
             NormalizeAPI(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
@@ -243,7 +243,9 @@ def _get_sam3_batch_components(
     model.eval()
 
     # Transform aligned to backend geometry when possible.
-    transform = _build_sam3_batch_transform(fallback_size=fallback_size, skip_resize=skip_resize)
+    transform = _build_sam3_batch_transform(
+        fallback_size=fallback_size, skip_resize=skip_resize
+    )
 
     # Postprocessor for extracting masks
     postprocessor = PostProcessImage(
@@ -263,6 +265,7 @@ def _get_sam3_batch_components(
 # ============================================================================
 # Batch Inference API Helper Functions
 # ============================================================================
+
 
 def _create_empty_datapoint() -> Any:
     """Create an empty Datapoint for batch inference.
@@ -306,7 +309,7 @@ def _resize_mask_nearest(mask: np.ndarray, width: int, height: int) -> np.ndarra
 def _prepare_sam3_input_image(
     pil_image: Any, transform: Optional[ImageTransformBase]
 ) -> Tuple[Any, bool]:
-    """Align SAM3 input image to backend final space."""
+    """Align SAM3 input image to model input final space (resize only)."""
     if transform is None:
         return pil_image, False
 
@@ -315,95 +318,38 @@ def _prepare_sam3_input_image(
     img = pil_image.convert("RGB") if hasattr(pil_image, "convert") else pil_image
     backend, out_size = _infer_transform_output_size(transform)
 
-    if backend == "pi3" and out_size is not None:
+    if backend == "resize" and out_size is not None:
         resized = img.resize(out_size, Image.Resampling.LANCZOS)
         return resized, True
-
-    # VGGT: resize -> crop -> pad (match transform fields).
-    proc_w = getattr(transform, "proc_width", None)
-    proc_h = getattr(transform, "proc_height", None)
-    if backend == "vggt" and isinstance(proc_w, int) and isinstance(proc_h, int) and proc_w > 0 and proc_h > 0:
-        resized = img.resize((proc_w, proc_h), Image.Resampling.BICUBIC)
-
-        crop_applied = bool(getattr(transform, "crop_applied", False))
-        crop_start_y = int(getattr(transform, "crop_start_y", 0))
-        final_w = int(getattr(transform, "final_width", proc_w))
-        final_h = int(getattr(transform, "final_height", proc_h))
-
-        if crop_applied:
-            y0 = max(0, min(proc_h, crop_start_y))
-            y1 = max(0, min(proc_h, y0 + final_h))
-            cropped = resized.crop((0, y0, final_w, y1))
-        else:
-            cropped = resized
-            if cropped.size != (final_w, final_h):
-                cropped = cropped.crop((0, 0, final_w, final_h))
-
-        padded_w, padded_h = out_size if out_size is not None else (final_w, final_h)
-        pad_left = int(getattr(transform, "batch_pad_left", 0))
-        pad_top = int(getattr(transform, "batch_pad_top", 0))
-
-        if padded_w != final_w or padded_h != final_h or pad_left or pad_top:
-            canvas = Image.new("RGB", (padded_w, padded_h), (255, 255, 255))
-            canvas.paste(cropped, (pad_left, pad_top))
-            return canvas, True
-
-        return cropped, True
 
     return img, False
 
 
-def map_mask_to_final_space(mask: np.ndarray, transform: ImageTransformBase) -> np.ndarray:
+def map_mask_to_final_space(
+    mask: np.ndarray, transform: ImageTransformBase
+) -> np.ndarray:
     """把原图坐标系的mask映射到 transform 定义的 final 空间。
 
-    - Pi3: 原图 -> resize到 (target_height, target_width)
-    - VGGT: 原图 -> resize到(proc_h, proc_w) -> (可选)按crop_start_y裁剪到final_h -> 按batch_pad_top/left pad到 padded_h/w
+    - resize: 原图 -> resize到 (target_height, target_width)
 
     全程 nearest，保证mask二值属性。
     """
     mask_bool = mask.astype(bool, copy=False)
 
-    # ---- Pi3：只做resize ----
+    # ---- resize：只做等比例缩放 ----
     target_w = getattr(transform, "target_width", None)
     target_h = getattr(transform, "target_height", None)
-    if isinstance(target_w, int) and isinstance(target_h, int) and target_w > 0 and target_h > 0:
+    if (
+        isinstance(target_w, int)
+        and isinstance(target_h, int)
+        and target_w > 0
+        and target_h > 0
+    ):
         return _resize_mask_nearest(mask_bool, width=target_w, height=target_h)
 
-    # ---- VGGT：resize -> crop -> pad ----
-    proc_w = getattr(transform, "proc_width", None)
-    proc_h = getattr(transform, "proc_height", None)
-    if isinstance(proc_w, int) and isinstance(proc_h, int) and proc_w > 0 and proc_h > 0:
-        resized = _resize_mask_nearest(mask_bool, width=proc_w, height=proc_h)
-
-        crop_applied = bool(getattr(transform, "crop_applied", False))
-        crop_start_y = int(getattr(transform, "crop_start_y", 0))
-        final_h = int(getattr(transform, "final_height", resized.shape[0]))
-        final_w = int(getattr(transform, "final_width", resized.shape[1]))
-
-        if crop_applied:
-            y0 = max(0, min(resized.shape[0], crop_start_y))
-            y1 = max(0, min(resized.shape[0], y0 + final_h))
-            cropped = resized[y0:y1, :final_w]
-        else:
-            cropped = resized[:final_h, :final_w]
-
-        pad_left = int(getattr(transform, "batch_pad_left", 0))
-        pad_top = int(getattr(transform, "batch_pad_top", 0))
-        padded_w = int(getattr(transform, "padded_width", cropped.shape[1] + max(0, pad_left)))
-        padded_h = int(getattr(transform, "padded_height", cropped.shape[0] + max(0, pad_top)))
-        padded_w = max(1, padded_w)
-        padded_h = max(1, padded_h)
-
-        out = np.zeros((padded_h, padded_w), dtype=bool)
-        x0 = max(0, pad_left)
-        y0 = max(0, pad_top)
-        x1 = min(padded_w, x0 + cropped.shape[1])
-        y1 = min(padded_h, y0 + cropped.shape[0])
-        if x1 > x0 and y1 > y0:
-            out[y0:y1, x0:x1] = cropped[: (y1 - y0), : (x1 - x0)]
-        return out
-
-    logger.warning("map_mask_to_final_space: unsupported transform; returning original mask.")
+    logger.warning(
+        "map_mask_to_final_space: unsupported transform; returning original mask."
+    )
     return mask_bool
 
 
@@ -600,7 +546,9 @@ def sam3_masks_from_bboxes_predict_inst(
     if len(bboxes_xyxy) == 0:
         return []
 
-    model, processor = _get_sam3_model_and_processor(checkpoint_path=checkpoint_path, device=device)
+    model, processor = _get_sam3_model_and_processor(
+        checkpoint_path=checkpoint_path, device=device
+    )
     image = Image.open(image_path).convert("RGB")
     state = processor.set_image(image)
     w, h = image.size
@@ -720,7 +668,9 @@ def sam3_masks_from_bboxes_predict_inst(
                 )
             out.append(mask2c)
         except Exception as e:
-            logger.error("SAM3 mask fallback (center-point) failed for bbox=%s: %s", bbox, e)
+            logger.error(
+                "SAM3 mask fallback (center-point) failed for bbox=%s: %s", bbox, e
+            )
             raise RuntimeError(f"SAM3 failed to generate mask for bbox {bbox}") from e
 
     return out
@@ -729,6 +679,7 @@ def sam3_masks_from_bboxes_predict_inst(
 # ============================================================================
 # Batch Inference API - Full Visual Exemplar Support
 # ============================================================================
+
 
 def sam3_masks_from_bboxes_batch_api(
     image_path: str,
@@ -816,8 +767,8 @@ def sam3_masks_from_bboxes_batch_api(
 
     # Import batch inference utilities
     _ensure_sam3_in_path()
-    from sam3.train.data.collator import collate_fn_api as collate  # type: ignore
     from sam3.model.utils.misc import copy_data_to_device  # type: ignore
+    from sam3.train.data.collator import collate_fn_api as collate  # type: ignore
 
     # Load and prepare image
     pil_image = Image.open(image_path).convert("RGB")
@@ -872,7 +823,9 @@ def sam3_masks_from_bboxes_batch_api(
             logger.info(f"Using batch API with text-only prompt: '{text_prompt}'")
             query_id = _add_text_prompt(datapoint, text_prompt)
         else:
-            logger.warning("No exemplars and no text prompt provided, results may be empty")
+            logger.warning(
+                "No exemplars and no text prompt provided, results may be empty"
+            )
             return []
 
     # Apply transforms
@@ -902,7 +855,9 @@ def sam3_masks_from_bboxes_batch_api(
 
     # Extract masks from results
     if query_id not in processed_results:
-        logger.warning(f"Query ID {query_id} not found in results, returning empty masks")
+        logger.warning(
+            f"Query ID {query_id} not found in results, returning empty masks"
+        )
         return []
 
     result = processed_results[query_id]
@@ -918,7 +873,9 @@ def sam3_masks_from_bboxes_batch_api(
         masks_np = masks_tensor.squeeze(1).cpu().numpy().astype(bool)
     else:
         # Handle list of tensors
-        masks_np = np.stack([m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor], axis=0)
+        masks_np = np.stack(
+            [m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor], axis=0
+        )
 
     # Convert to list of masks
     out_masks: List[np.ndarray] = []
@@ -1042,7 +999,7 @@ def sample_points_from_mask(
     distances = np.sqrt(dx_norm**2 + dy_norm**2)
 
     # 计算高斯权重
-    weights = np.exp(-distances**2 / (2 * gaussian_sigma**2))
+    weights = np.exp(-(distances**2) / (2 * gaussian_sigma**2))
 
     # 截断距离过大的点
     truncate_distance = gaussian_sigma * gaussian_truncate
@@ -1072,7 +1029,9 @@ def sample_points_from_mask(
     return pts
 
 
-def map_points_to_final_space(transform: ImageTransformBase, points_xy: np.ndarray) -> np.ndarray:
+def map_points_to_final_space(
+    transform: ImageTransformBase, points_xy: np.ndarray
+) -> np.ndarray:
     fn = getattr(transform, "map_points_to_final", None)
     if callable(fn):
         return fn(points_xy).astype(np.float32)
@@ -1098,7 +1057,7 @@ def sample_3d_points_from_mask(
     在 mask 内部应用高斯权重，使采样点集中在物体中心区域。
 
     Args:
-        scene_data: VGGT场景数据
+        scene_data: 3D重建场景数据
         img_idx: 图像索引
         mask: 二值mask
         transform: 图像变换
@@ -1148,7 +1107,9 @@ def sample_3d_points_from_mask(
 
     wp = wp[valid]
     if wp.shape[0] > int(config.max_3d_points_per_bbox):
-        idx = torch.randperm(wp.shape[0], device=wp.device)[: int(config.max_3d_points_per_bbox)]
+        idx = torch.randperm(wp.shape[0], device=wp.device)[
+            : int(config.max_3d_points_per_bbox)
+        ]
         wp = wp[idx]
     return wp
 
@@ -1204,22 +1165,28 @@ def sam3_masks_self_exemplar(
         return []
 
     # 清空CUDA缓存，为SAM3腾出显存空间
-    # 这对于已经加载了其他大模型（如VGGT）的情况特别重要
+    # 这对于已经加载了其他大模型的情况特别重要
     if device.startswith("cuda") and torch.cuda.is_available():
-        # NOTE(Cycle6): 移除 PI3_SCENE_CACHE.clear() —— scene_data 是只读 npz cache，
+        # NOTE(Cycle6): 移除 SCENE_CACHE.clear() —— scene_data 是只读 npz cache，
         # 跨 ref 复用可省去重复 scene_data_build（11次->1次）。
         # OOM 监控由 smoke 验证；若显存累积则恢复 clear。
 
         # 强制垃圾回收和清空缓存
         import gc
+
         gc.collect()
         torch.cuda.empty_cache()
         torch.cuda.synchronize()  # 等待所有CUDA操作完成
 
         mem_allocated = torch.cuda.memory_allocated() / 1024**3
         mem_reserved = torch.cuda.memory_reserved() / 1024**3
-        mem_free = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()) / 1024**3
-        logger.info(f"GPU memory before SAM3: allocated={mem_allocated:.2f}GB, reserved={mem_reserved:.2f}GB, free={mem_free:.2f}GB")
+        mem_free = (
+            torch.cuda.get_device_properties(0).total_memory
+            - torch.cuda.memory_allocated()
+        ) / 1024**3
+        logger.info(
+            f"GPU memory before SAM3: allocated={mem_allocated:.2f}GB, reserved={mem_reserved:.2f}GB, free={mem_free:.2f}GB"
+        )
 
     # Load batch inference components
     model, transform, postprocessor = _get_sam3_batch_components(
@@ -1233,8 +1200,8 @@ def sam3_masks_self_exemplar(
 
     # Import batch inference utilities
     _ensure_sam3_in_path()
-    from sam3.train.data.collator import collate_fn_api as collate  # type: ignore
     from sam3.model.utils.misc import copy_data_to_device  # type: ignore
+    from sam3.train.data.collator import collate_fn_api as collate  # type: ignore
 
     # Load and prepare image (只加载一次)
     if isinstance(image_path, (str, Path)):
@@ -1250,7 +1217,9 @@ def sam3_masks_self_exemplar(
     num_batches = (num_bboxes + max_batch_size - 1) // max_batch_size  # 向上取整
 
     if num_batches > 1:
-        logger.info(f"Processing {num_bboxes} bboxes in {num_batches} batches (max_batch_size={max_batch_size})")
+        logger.info(
+            f"Processing {num_bboxes} bboxes in {num_batches} batches (max_batch_size={max_batch_size})"
+        )
     else:
         logger.info(f"Processing {num_bboxes} bboxes in single batch")
 
@@ -1263,7 +1232,9 @@ def sam3_masks_self_exemplar(
         end_idx = min((batch_idx + 1) * max_batch_size, num_bboxes)
         batch_bboxes = bboxes_xyxy[start_idx:end_idx]
 
-        logger.info(f"Batch {batch_idx + 1}/{num_batches}: processing bboxes [{start_idx}:{end_idx}] ({len(batch_bboxes)} bboxes)")
+        logger.info(
+            f"Batch {batch_idx + 1}/{num_batches}: processing bboxes [{start_idx}:{end_idx}] ({len(batch_bboxes)} bboxes)"
+        )
 
         # 为当前批次创建datapoint
         datapoint = _create_empty_datapoint()
@@ -1305,30 +1276,41 @@ def sam3_masks_self_exemplar(
         processed_results = postprocessor.process_results(output, batch.find_metadatas)
 
         # 提取当前批次的结果
-        batch_result_masks: List[np.ndarray] = [np.zeros((h, w), dtype=bool) for _ in batch_bboxes]
+        batch_result_masks: List[np.ndarray] = [
+            np.zeros((h, w), dtype=bool) for _ in batch_bboxes
+        ]
 
         for query_id, local_idx in query_id_to_local_idx.items():
             bbox = batch_bboxes[local_idx]
 
             if query_id not in processed_results:
-                logger.warning(f"Query ID {query_id} not found for batch {batch_idx}, bbox {local_idx}")
+                logger.warning(
+                    f"Query ID {query_id} not found for batch {batch_idx}, bbox {local_idx}"
+                )
                 continue
 
             result = processed_results[query_id]
             masks_tensor = result.get("masks")
 
             if masks_tensor is None or len(masks_tensor) == 0:
-                logger.warning(f"No masks returned for batch {batch_idx}, bbox {local_idx}")
+                logger.warning(
+                    f"No masks returned for batch {batch_idx}, bbox {local_idx}"
+                )
                 continue
 
             # Convert masks to numpy (max_dets_per_img=1 确保只返回1个最佳mask)
             if isinstance(masks_tensor, torch.Tensor):
                 masks_np = masks_tensor.squeeze(1).cpu().numpy().astype(bool)
             else:
-                masks_np = np.stack([m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor], axis=0)
+                masks_np = np.stack(
+                    [m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor],
+                    axis=0,
+                )
 
             # 取第一个mask (postprocessor已经按score排序，只保留Top-1)
-            best_mask = masks_np[0] if len(masks_np) > 0 else np.zeros((h, w), dtype=bool)
+            best_mask = (
+                masks_np[0] if len(masks_np) > 0 else np.zeros((h, w), dtype=bool)
+            )
 
             # Ensure mask is correct size
             if best_mask.shape != (h, w):
@@ -1343,8 +1325,13 @@ def sam3_masks_self_exemplar(
         all_result_masks.extend(batch_result_masks)
 
         # 批次间清理GPU缓存（仅清理临时tensors，不清理模型）
-        if device.startswith("cuda") and torch.cuda.is_available() and batch_idx < num_batches - 1:
+        if (
+            device.startswith("cuda")
+            and torch.cuda.is_available()
+            and batch_idx < num_batches - 1
+        ):
             import gc
+
             # 显式删除所有批次临时变量（从大到小的顺序）
             # 1. processed_results 包含GPU tensor，必须先删除
             del processed_results
@@ -1367,14 +1354,22 @@ def sam3_masks_self_exemplar(
 
             # 记录清理后的显存状态
             mem_allocated = torch.cuda.memory_allocated() / 1024**3
-            mem_free = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()) / 1024**3
-            logger.debug(f"Cleared GPU cache after batch {batch_idx + 1}: allocated={mem_allocated:.2f}GB, free={mem_free:.2f}GB")
+            mem_free = (
+                torch.cuda.get_device_properties(0).total_memory
+                - torch.cuda.memory_allocated()
+            ) / 1024**3
+            logger.debug(
+                f"Cleared GPU cache after batch {batch_idx + 1}: allocated={mem_allocated:.2f}GB, free={mem_free:.2f}GB"
+            )
 
-    logger.info(f"Self-exemplar segmentation complete: {len(all_result_masks)} masks for {num_bboxes} bboxes ({num_batches} batches)")
+    logger.info(
+        f"Self-exemplar segmentation complete: {len(all_result_masks)} masks for {num_bboxes} bboxes ({num_batches} batches)"
+    )
 
     # SAM3推理完成后，立即清理GPU显存
     if device.startswith("cuda") and torch.cuda.is_available():
         import gc
+
         gc.collect()
         torch.cuda.empty_cache()
         logger.info("GPU cache cleared after SAM3 inference")
@@ -1401,14 +1396,18 @@ def maybe_run_sam3_for_reference(
     if not config.sam3_checkpoint_path:
         raise ValueError("SAM3 enabled but sam3_checkpoint_path is empty.")
     if not image_paths or not (0 <= reference_image_idx < len(image_paths)):
-        raise ValueError("SAM3 enabled but image_paths missing or reference index out of range.")
+        raise ValueError(
+            "SAM3 enabled but image_paths missing or reference index out of range."
+        )
     ckpt = Path(str(config.sam3_checkpoint_path))
     if not ckpt.exists():
         raise FileNotFoundError(f"SAM3 checkpoint not found: {ckpt}")
 
     masks_are_final = False
     if config.sam3_use_self_exemplar:
-        fallback_size = int(config.sam3_batch_image_size) if config.sam3_batch_image_size else 1008
+        fallback_size = (
+            int(config.sam3_batch_image_size) if config.sam3_batch_image_size else 1008
+        )
         sam3_image_input: Union[str, Path, Any] = image_paths[reference_image_idx]
         sam3_bboxes = ref_bboxes_xyxy
 
@@ -1416,6 +1415,7 @@ def maybe_run_sam3_for_reference(
         # SAM3 内部会再 resize 到 1008x1008 正方形（skip_resize=False），输出 mask 会 resize 回 final 尺寸
         if transform is not None and output_mask_space == "final":
             from PIL import Image
+
             pil_image = Image.open(image_paths[reference_image_idx]).convert("RGB")
             aligned_image, aligned = _prepare_sam3_input_image(pil_image, transform)
             if aligned:
@@ -1445,7 +1445,9 @@ def maybe_run_sam3_for_reference(
 
     if output_mask_space == "final":
         if transform is None:
-            raise ValueError("SAM3 masks requested in final space but transform is None.")
+            raise ValueError(
+                "SAM3 masks requested in final space but transform is None."
+            )
         # 如果已经在 final 空间处理，直接返回；否则需要转换
         if masks_are_final:
             return masks

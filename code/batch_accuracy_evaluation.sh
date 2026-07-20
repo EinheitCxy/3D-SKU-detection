@@ -1,6 +1,6 @@
 #!/bin/bash
-# 批量评估 floor_display<start..end> 的 SKU 匹配准确率，按后端隔离。
-# 用法: bash batch_accuracy_evaluation.sh --backend <pt|pi3|da3> --start 2 --end 12 --save-root ../Output/pi3
+# 批量评估 floor_display<start..end> 的 SKU 匹配准确率 (da3)。
+# 用法: bash batch_accuracy_evaluation.sh --start 2 --end 12 --save-root ../Output/da3
 set -euo pipefail
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'; B='\033[1m'; NC='\033[0m'
@@ -8,10 +8,9 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; CY
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-BACKEND="pt"; START=2; END=12; SAVE_ROOT=""
+START=2; END=12; SAVE_ROOT=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --backend)    BACKEND="$2"; shift 2 ;;
         --start)      START="$2"; shift 2 ;;
         --end)        END="$2"; shift 2 ;;
         --save-root)  SAVE_ROOT="${2%/}"; shift 2 ;;
@@ -19,12 +18,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-case "$BACKEND" in
-    pt|point_tracking) OUT_SUB="output_pt"; BACKEND="pt" ;;
-    pi3)               OUT_SUB="output_3dmapping_pi3" ;;
-    da3)               OUT_SUB="output_3dmapping_da3" ;;
-    *)                 echo -e "${RED}未知 backend: $BACKEND (pt|pi3|da3)${NC}"; exit 1 ;;
-esac
+BACKEND="da3"
+OUT_SUB="output_3dmapping_da3"
 
 DATA_ROOT="${SAVE_ROOT:-$PROJECT_ROOT/imdata}"
 BENCHMARK_CSV="$PROJECT_ROOT/imdata/picture_mapping_benchmark.csv"
@@ -66,7 +61,7 @@ for fd in $(seq "$START" "$END"); do
 
     echo -e "  ${BLUE}发现 $mc 个 matching_summary，评估中...${NC}"
     set +e
-    ACC_ARGS=("$FD" "--backend" "$BACKEND")
+    ACC_ARGS=("$FD")
     [ -n "$SAVE_ROOT" ] && ACC_ARGS+=("--save-root" "$SAVE_ROOT")
     bash "$SCRIPT_DIR/accuracy_evaluation.sh" "${ACC_ARGS[@]}" 2>&1 | tee "$SUMMARY_DIR/${FD}_log.txt"
     rc=${PIPESTATUS[0]}

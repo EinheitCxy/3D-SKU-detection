@@ -8,14 +8,57 @@ from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
-from .types import ViewerArtifacts, ViewerRuntimeConfig
 from utils.kdtree_utils import build_kdtree
+
+from .paths import _resolve_da3_cache_dir
+from .types import ViewerArtifacts, ViewerRuntimeConfig
 
 logger = logging.getLogger(__name__)
 
 
+def _closed_form_inverse_se3(se3: np.ndarray) -> np.ndarray:
+    """w2c 的 SE3 求逆（c2w）：R^T, -R^T·t。
+
+    支持输入 (3,4)/(4,4)/(N,3,4)/(N,4,4)，返回同形状逆矩阵。
+    输入不足 4x4 时先补 [0,0,0,1] 行，求逆后裁回原形状。
+    （替代 vggt.utils.geometry.closed_form_inverse_se3，da3 缓存 extrinsic 为 (N,3,4) w2c。）
+    """
+    arr = np.asarray(se3, dtype=np.float64)
+    orig_shape = arr.shape
+    single = arr.ndim == 2
+    if single:
+        arr = arr[None, ...]  # (1, H, W)
+    # 补齐到 4x4（若输入是 3x4 / (N,3,4)）
+    if arr.shape[-2] == 3:
+        pad_row = np.zeros(arr.shape[:-2] + (1, arr.shape[-1]), dtype=arr.dtype)
+        pad_row[..., -1] = 1.0
+        arr = np.concatenate([arr, pad_row], axis=-2)
+    # arr: (N, 4, 4) 形如 [R|t; 0 1]
+    R = arr[..., :3, :3]
+    t = arr[..., :3, 3:4]
+    R_inv = np.swapaxes(R, -1, -2)  # R^T
+    t_inv = -np.matmul(R_inv, t)  # -R^T·t
+    inv = np.empty_like(arr)
+    inv[..., :3, :3] = R_inv
+    inv[..., :3, 3:4] = t_inv
+    inv[..., 3, :3] = 0.0
+    inv[..., 3, 3] = 1.0
+    if single:
+        inv = inv[0]
+    # 裁回原形状（输入为 3x4 时返回 3x4）
+    if inv.shape != orig_shape:
+        inv = inv[..., : orig_shape[-2], : orig_shape[-1]]
+    return inv
+
+
 class ViserViewer:
-    def __init__(self, artifacts: ViewerArtifacts, runtime: ViewerRuntimeConfig, image_dir: Path, global_mapping: Path):
+    def __init__(
+        self,
+        artifacts: ViewerArtifacts,
+        runtime: ViewerRuntimeConfig,
+        image_dir: Path,
+        global_mapping: Path,
+    ):
         self.artifacts = artifacts
         self.runtime = runtime
         self.image_dir = image_dir
@@ -27,7 +70,11 @@ class ViserViewer:
     def _is_right_or_middle_button(evt) -> bool:
         """检查鼠标事件是否为右键或中键"""
         try:
-            btn = str(evt.button).lower() if hasattr(evt, "button") and evt.button is not None else "left"
+            btn = (
+                str(evt.button).lower()
+                if hasattr(evt, "button") and evt.button is not None
+                else "left"
+            )
             return "right" in btn or "middle" in btn
         except (AttributeError, ValueError):
             return False
@@ -48,10 +95,7 @@ class ViserViewer:
         return False
 
     def _register_pointer_event(
-        self,
-        event_type: str,
-        callback: Callable,
-        skip_right_middle: bool = True
+        self, event_type: str, callback: Callable, skip_right_middle: bool = True
     ) -> bool:
         """安全注册指针事件，封装try/except和按钮过滤逻辑。
 
@@ -60,6 +104,7 @@ class ViserViewer:
         这里捕获 AssertionError 并跳过注册，以保证服务器不崩溃。
         """
         try:
+
             @self.server.scene.on_pointer_event(event_type=event_type)
             def _handler(evt) -> None:
                 # 统一的按钮过滤
@@ -67,6 +112,7 @@ class ViserViewer:
                     return
                 # 调用实际业务逻辑
                 callback(evt)
+
             return True
         except (AttributeError, RuntimeError, AssertionError, ValueError) as e:
             logger.debug(f"Failed to register {event_type} pointer event: {e}")
@@ -84,12 +130,16 @@ class ViserViewer:
         with self.artifacts.index_cache_path.open("r", encoding="utf-8") as f:
             self.index = json.load(f)
         if self.colors.dtype != np.uint8:
-            self.colors = np.clip(self.colors * (255.0 if self.colors.max() <= 1.0 else 1.0), 0, 255).astype(np.uint8)
+            self.colors = np.clip(
+                self.colors * (255.0 if self.colors.max() <= 1.0 else 1.0), 0, 255
+            ).astype(np.uint8)
 
-    def _load_camera_data(self) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, List[int]]]:
+    def _load_camera_data(
+        self,
+    ) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, List[int]]]:
         try:
             dataset_root = self.artifacts.pcd_cache_path.parent.parent
-            pred = dataset_root / "vggt_cache" / "predictions.npz"
+            pred = _resolve_da3_cache_dir(dataset_root) / "predictions.npz"
             if not pred.exists():
                 return None
             data = np.load(pred)
@@ -99,20 +149,19 @@ class ViserViewer:
             if images.ndim == 4 and images.shape[1] == 3:
                 images = images.transpose(0, 2, 3, 1)
             if images.dtype != np.uint8:
-                images = np.clip(images * (255.0 if images.max() <= 1.0 else 1.0), 0, 255).astype(np.uint8)
+                images = np.clip(
+                    images * (255.0 if images.max() <= 1.0 else 1.0), 0, 255
+                ).astype(np.uint8)
             if "image_ids" in data:
                 image_ids = data["image_ids"].tolist()
             else:
                 image_ids = list(range(extr.shape[0]))
 
-            # 延迟导入VGGT模块（路径由utils/__init__.py统一注入，通过main.py调用链确保）
-            from vggt.utils.geometry import closed_form_inverse_se3
-
-
-            cam2world = closed_form_inverse_se3(extr)[:, :3, :]
+            # 本地实现 SE3 求逆（替代 vggt.utils.geometry.closed_form_inverse_se3）
+            cam2world = _closed_form_inverse_se3(extr)[:, :3, :]
             cam2world[..., -1] -= self.scene_center
             return cam2world, intr, images, image_ids
-        except (FileNotFoundError, KeyError, ImportError) as e:
+        except (FileNotFoundError, KeyError) as e:
             logger.debug(f"Failed to load camera data: {e}")
             return None
 
@@ -127,12 +176,18 @@ class ViserViewer:
 
         logger.info(f"Starting Viser server on port {self.runtime.port}")
         self.server = viser.ViserServer(host="0.0.0.0", port=self.runtime.port)
-        self.server.gui.configure_theme(titlebar_content=None, control_layout="collapsible")
+        self.server.gui.configure_theme(
+            titlebar_content=None, control_layout="collapsible"
+        )
 
         points_centered = self.points_centered
         span = (np.max(points_centered, axis=0) - np.min(points_centered, axis=0)).max()
         dist = span * 2.0 if span > 0 else 1.0
-        initial_camera_position = (float(dist * 0.7), float(dist * 0.5), float(dist * 0.7))
+        initial_camera_position = (
+            float(dist * 0.7),
+            float(dist * 0.5),
+            float(dist * 0.7),
+        )
 
         @self.server.on_client_connect
         def _(client: viser.ClientHandle) -> None:
@@ -149,10 +204,18 @@ class ViserViewer:
 
         # Controls
         gui_conf = self.server.gui.add_slider(
-            "Confidence %", min=0, max=100, step=0.1, initial_value=float(self.runtime.default_conf_percentile)
+            "Confidence %",
+            min=0,
+            max=100,
+            step=0.1,
+            initial_value=float(self.runtime.default_conf_percentile),
         )
         gui_point_size = self.server.gui.add_slider(
-            "Point Size", min=0.0001, max=0.005, step=0.0001, initial_value=float(self.runtime.default_point_size)
+            "Point Size",
+            min=0.0001,
+            max=0.005,
+            step=0.0001,
+            initial_value=float(self.runtime.default_point_size),
         )
         unique_gids = np.unique(self.global_ids[self.global_ids >= 0])
         gid_options = [str(x) for x in sorted(unique_gids)]
@@ -199,20 +262,39 @@ class ViserViewer:
             gui_gid.value = gid_options[(idx + 1) % len(gid_options)]
 
         with self.server.gui.add_folder("📋 Selected ID Info", expand_by_default=True):
-            gui_info_gid = self.server.gui.add_text("Global ID", initial_value="(None)", disabled=True)
-            gui_info_images = self.server.gui.add_text("Images", initial_value="-", disabled=True)
-            gui_info_objects = self.server.gui.add_text("Objects ID", initial_value="-", disabled=True)
-            gui_info_status = self.server.gui.add_text("Status (Active/Filtered)", initial_value="-", disabled=True)
-            self.server.gui.add_markdown("*Tip: Enable Pick Mode and click on point cloud, or select from dropdown above.*")
+            gui_info_gid = self.server.gui.add_text(
+                "Global ID", initial_value="(None)", disabled=True
+            )
+            gui_info_images = self.server.gui.add_text(
+                "Images", initial_value="-", disabled=True
+            )
+            gui_info_objects = self.server.gui.add_text(
+                "Objects ID", initial_value="-", disabled=True
+            )
+            gui_info_status = self.server.gui.add_text(
+                "Status (Active/Filtered)", initial_value="-", disabled=True
+            )
+            self.server.gui.add_markdown(
+                "*Tip: Enable Pick Mode and click on point cloud, or select from dropdown above.*"
+            )
 
         with self.server.gui.add_folder("🔍 Point Picking"):
-            gui_pick_mode = self.server.gui.add_checkbox("Enable Pick Mode", initial_value=False)
+            gui_pick_mode = self.server.gui.add_checkbox(
+                "Enable Pick Mode", initial_value=False
+            )
             # radius proportional to span
             rmin, rmax, rinit = span * 0.0002, span * 0.02, span * 0.0005
             gui_pick_radius = self.server.gui.add_slider(
-                "Pick Radius", min=float(max(rmin, 1e-9)), max=float(max(rmax, 1e-6)), step=float(max((rmax - rmin) / 100.0, 1e-6)), initial_value=float(max(rinit, 1e-9))
+                "Pick Radius",
+                min=float(max(rmin, 1e-9)),
+                max=float(max(rmax, 1e-6)),
+                step=float(max((rmax - rmin) / 100.0, 1e-6)),
+                initial_value=float(max(rinit, 1e-9)),
             )
-            gui_show_pick = self.server.gui.add_checkbox("Show Pick Sphere", initial_value=bool(self.runtime.show_pick_sphere_default))
+            gui_show_pick = self.server.gui.add_checkbox(
+                "Show Pick Sphere",
+                initial_value=bool(self.runtime.show_pick_sphere_default),
+            )
 
         with self.server.gui.add_folder("🔷 Mesh Generation", expand_by_default=False):
             gui_mesh_method = self.server.gui.add_dropdown(
@@ -222,15 +304,28 @@ class ViserViewer:
                 "Poisson Depth", min=6, max=12, step=1, initial_value=9
             )
             btn_generate_mesh = self.server.gui.add_button("Generate Mesh")
-            gui_show_mesh = self.server.gui.add_checkbox("Show Mesh", initial_value=False)
-            gui_show_points = self.server.gui.add_checkbox("Show Points", initial_value=True)
-            gui_mesh_status = self.server.gui.add_text("Status", initial_value="No mesh generated", disabled=True)
+            gui_show_mesh = self.server.gui.add_checkbox(
+                "Show Mesh", initial_value=False
+            )
+            gui_show_points = self.server.gui.add_checkbox(
+                "Show Points", initial_value=True
+            )
+            gui_mesh_status = self.server.gui.add_text(
+                "Status", initial_value="No mesh generated", disabled=True
+            )
 
         with self.server.gui.add_folder("⚙️ Advanced Options", expand_by_default=False):
-            gui_sampling = self.server.gui.add_slider("Display Sample %", min=10, max=100, step=10, initial_value=100)
-            gui_hide_unknown = self.server.gui.add_checkbox("Hide Unknown IDs (-1)", initial_value=bool(self.runtime.hide_unknown_default))
+            gui_sampling = self.server.gui.add_slider(
+                "Display Sample %", min=10, max=100, step=10, initial_value=100
+            )
+            gui_hide_unknown = self.server.gui.add_checkbox(
+                "Hide Unknown IDs (-1)",
+                initial_value=bool(self.runtime.hide_unknown_default),
+            )
             # 说明：默认相机交互始终可用（左键旋转 / 右键平移 / 滚轮缩放）
-            self.server.gui.add_markdown("Default camera: left=rotate, right=pan, wheel=zoom")
+            self.server.gui.add_markdown(
+                "Default camera: left=rotate, right=pan, wheel=zoom"
+            )
 
         # Camera viz
         camera_data = self._load_camera_data()
@@ -243,7 +338,12 @@ class ViserViewer:
             for idx in range(extr.shape[0]):
                 T = viser_tf.SE3.from_matrix(extr[idx])
                 frame_axis = self.server.scene.add_frame(
-                    f"camera_{idx}", wxyz=T.rotation().wxyz, position=T.translation(), axes_length=0.1, axes_radius=0.005, origin_radius=0.005
+                    f"camera_{idx}",
+                    wxyz=T.rotation().wxyz,
+                    position=T.translation(),
+                    axes_length=0.1,
+                    axes_radius=0.005,
+                    origin_radius=0.005,
                 )
                 frames.append(frame_axis)
                 img = images[idx]
@@ -251,16 +351,25 @@ class ViserViewer:
                 fy = intr[idx][1, 1]
                 fov = 2 * np.arctan2(h / 2, fy)
                 fr = self.server.scene.add_camera_frustum(
-                    f"camera_{idx}/frustum", fov=float(fov), aspect=w / h, scale=0.1, image=img, line_width=1.0
+                    f"camera_{idx}/frustum",
+                    fov=float(fov),
+                    aspect=w / h,
+                    scale=0.1,
+                    image=img,
+                    line_width=1.0,
                 )
                 frustums.append(fr)
+
                 @fr.on_click
                 def _(_, frame=frame_axis):
                     for client in self.server.get_clients().values():
                         client.camera.wxyz = frame.wxyz
                         client.camera.position = frame.position
 
-            gui_show_cameras = self.server.gui.add_checkbox("Show Cameras", initial_value=bool(self.runtime.show_cameras_default))
+            gui_show_cameras = self.server.gui.add_checkbox(
+                "Show Cameras", initial_value=bool(self.runtime.show_cameras_default)
+            )
+
             @gui_show_cameras.on_update
             def _(_):
                 for f in frames:
@@ -272,17 +381,31 @@ class ViserViewer:
         gui_frame_selector = None
         if self.frame_indices is not None:
             fids = sorted(np.unique(self.frame_indices).tolist())
-            gui_frame_selector = self.server.gui.add_dropdown("Show Points from Frame", options=["All"] + [str(x) for x in fids], initial_value="All")
+            gui_frame_selector = self.server.gui.add_dropdown(
+                "Show Points from Frame",
+                options=["All"] + [str(x) for x in fids],
+                initial_value="All",
+            )
 
         # Status bar (always visible)
-        gui_status = self.server.gui.add_text("Status", initial_value="-", disabled=True)
+        gui_status = self.server.gui.add_text(
+            "Status", initial_value="-", disabled=True
+        )
 
         # Point cloud and pick sphere
         point_cloud = self.server.scene.add_point_cloud(
-            name="sku_pcd", points=self.rotated_points[:1], colors=self.colors[:1], point_size=gui_point_size.value, point_shape="circle"
+            name="sku_pcd",
+            points=self.rotated_points[:1],
+            colors=self.colors[:1],
+            point_size=gui_point_size.value,
+            point_shape="circle",
         )
         pick_sphere = self.server.scene.add_icosphere(
-            name="pick_sphere", radius=gui_pick_radius.value, color=(255, 255, 0), position=(0.0, 0.0, 0.0), visible=False
+            name="pick_sphere",
+            radius=gui_pick_radius.value,
+            color=(255, 255, 0),
+            position=(0.0, 0.0, 0.0),
+            visible=False,
         )
 
         # Mesh state
@@ -308,7 +431,9 @@ class ViserViewer:
                 return
             gui_info_gid.value = gid_str
             gui_info_images.value = ", ".join(map(str, info["images"]))
-            gui_info_objects.value = ", ".join(map(str, info["objects"][:10])) + ("..." if len(info["objects"]) > 10 else "")
+            gui_info_objects.value = ", ".join(map(str, info["objects"][:10])) + (
+                "..." if len(info["objects"]) > 10 else ""
+            )
             gui_info_status.value = f"{info['active_count']} / {info['removed_count']}"
 
         def update_point_cloud():
@@ -322,7 +447,11 @@ class ViserViewer:
                 frame_mask = self.frame_indices == int(gui_frame_selector.value)
             else:
                 frame_mask = np.ones(len(self.global_ids), dtype=bool)
-            known_mask = (self.global_ids >= 0) if gui_hide_unknown.value else np.ones(len(self.global_ids), dtype=bool)
+            known_mask = (
+                (self.global_ids >= 0)
+                if gui_hide_unknown.value
+                else np.ones(len(self.global_ids), dtype=bool)
+            )
             sample_mask = display_rand <= (gui_sampling.value / 100.0)
             mask = conf_mask & id_mask & frame_mask & known_mask & sample_mask
 
@@ -331,7 +460,11 @@ class ViserViewer:
             # Update status
             try:
                 total = int(len(self.points))
-                frame_lbl = gui_frame_selector.value if gui_frame_selector is not None else "All"
+                frame_lbl = (
+                    gui_frame_selector.value
+                    if gui_frame_selector is not None
+                    else "All"
+                )
                 id_lbl = gui_gid.value
                 gui_status.value = f"Visible: {n_vis}/{total} | ID: {id_lbl} | Frame: {frame_lbl} | Conf≥{gui_conf.value:.1f}%"
             except (AttributeError, ValueError) as e:
@@ -373,11 +506,15 @@ class ViserViewer:
             if gui_pick_mode.value and not click_handler_registered["val"]:
                 # 启用Pick Mode - 注册click事件
                 try:
+
                     @self.server.scene.on_pointer_event(event_type="click")
                     def _on_click(evt) -> None:
                         if not gui_pick_mode.value:
                             return
-                        if not hasattr(evt, "ray_direction") or evt.ray_direction is None:
+                        if (
+                            not hasattr(evt, "ray_direction")
+                            or evt.ray_direction is None
+                        ):
                             return
                         ray = np.asarray(evt.ray_direction)
                         o = np.asarray(evt.ray_origin)
@@ -397,6 +534,7 @@ class ViserViewer:
                             handle_pick(self.rotated_points[best_idx])
                         else:
                             clear_info()
+
                     click_handler_registered["val"] = True
                     logger.info("Pick Mode enabled - click on point cloud to select")
                 except Exception as e:
@@ -429,6 +567,7 @@ class ViserViewer:
             update_point_cloud()
 
         if gui_frame_selector is not None:
+
             @gui_frame_selector.on_update
             def _(_):
                 update_point_cloud()
@@ -455,7 +594,11 @@ class ViserViewer:
                     id_mask = np.ones(len(self.global_ids), dtype=bool)
                 else:
                     id_mask = self.global_ids == int(gui_gid.value)
-                known_mask = (self.global_ids >= 0) if gui_hide_unknown.value else np.ones(len(self.global_ids), dtype=bool)
+                known_mask = (
+                    (self.global_ids >= 0)
+                    if gui_hide_unknown.value
+                    else np.ones(len(self.global_ids), dtype=bool)
+                )
                 mask = conf_mask & id_mask & known_mask
 
                 points_for_mesh = self.rotated_points[mask]
@@ -471,13 +614,17 @@ class ViserViewer:
                     points_for_mesh,
                     colors_for_mesh,
                     method=gui_mesh_method.value,
-                    depth=int(gui_mesh_depth.value)
+                    depth=int(gui_mesh_depth.value),
                 )
 
                 # Store mesh data
                 mesh_data["vertices"] = vertices
                 mesh_data["faces"] = faces
-                mesh_data["colors"] = vertex_colors if vertex_colors is not None else np.tile([200, 200, 200], (len(vertices), 1)).astype(np.uint8)
+                mesh_data["colors"] = (
+                    vertex_colors
+                    if vertex_colors is not None
+                    else np.tile([200, 200, 200], (len(vertices), 1)).astype(np.uint8)
+                )
 
                 # Remove old mesh if exists
                 if mesh_handle is not None:
@@ -490,12 +637,16 @@ class ViserViewer:
                     faces=faces,
                     color=(200, 200, 200),
                     wireframe=False,
-                    visible=True
+                    visible=True,
                 )
 
                 gui_show_mesh.value = True
-                gui_mesh_status.value = f"Mesh: {len(vertices)} vertices, {len(faces)} faces"
-                logger.info(f"Mesh generated: {len(vertices)} vertices, {len(faces)} faces")
+                gui_mesh_status.value = (
+                    f"Mesh: {len(vertices)} vertices, {len(faces)} faces"
+                )
+                logger.info(
+                    f"Mesh generated: {len(vertices)} vertices, {len(faces)} faces"
+                )
 
             except ImportError as e:
                 gui_mesh_status.value = "Error: Open3D not installed"

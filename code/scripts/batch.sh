@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # SKU匹配批量处理脚本
-# 用法: ./batch.sh [floor_display] [max_idx] [algorithm]
-# 示例: ./batch.sh floor_display2 4 point_tracking
+# 用法: ./batch.sh [floor_display] [max_idx]
+# 示例: ./batch.sh floor_display2 4
 
 # 参数设置
 FLOOR_DISPLAY="${1:-floor_display2}"
 MAX_IDX="${2:-4}"
 
 # 路径变量
-ALGORITHM="point_tracking"
+ALGORITHM="3d"
 IMAGE_FOLDER="../imdata/$FLOOR_DISPLAY/images"
 DETECTION_DIR="../imdata/$FLOOR_DISPLAY/detections_results"
 OUTPUT_DIR="../imdata/$FLOOR_DISPLAY"
@@ -108,11 +108,5 @@ done
 echo ""
 echo "========================================"
 echo "批量处理完成!"
-if [ "$ALGORITHM" = "point_tracking" ]; then
-    echo "结果保存在: $OUTPUT_DIR/output_pt/"
-elif [ "$ALGORITHM" = "3d" ]; then
-    echo "结果保存在: $OUTPUT_DIR/output_3dmapping/"
-else
-    echo "结果保存在: $OUTPUT_DIR/output_pt/ 和 $OUTPUT_DIR/output_3dmapping/"
-fi
+echo "结果保存在: $OUTPUT_DIR/output_3dmapping_da3/"
 echo "========================================"

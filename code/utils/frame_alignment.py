@@ -7,18 +7,20 @@
 3. 生成详细的对齐报告
 
 精简版：仅保留核心对齐逻辑，移除未使用的辅助功能
-适用于所有3D重建模型（VGGT、PI3等）
+适用于所有3D重建后端
 """
 
-import numpy as np
-from typing import Dict, List, Tuple, Optional, Any
 import logging
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
 
 class FrameAlignmentError(Exception):
     """帧对齐错误异常"""
+
     pass
 
 
@@ -31,7 +33,7 @@ class ReconstructionDetectionAligner:
         detections: List[Dict],
         detection_indices: Optional[List[int]] = None,
         reconstruction_image_ids: Optional[List[int]] = None,
-        strict_mode: bool = True
+        strict_mode: bool = True,
     ) -> Tuple[Dict[str, np.ndarray], List[Dict], Dict[str, Any]]:
         """
         验证并对齐3D重建输出与检测结果
@@ -80,7 +82,10 @@ class ReconstructionDetectionAligner:
 
         # 3. 对齐分析
         alignment_report = ReconstructionDetectionAligner._analyze_alignment(
-            reconstruction_image_ids, detection_indices, recon_frame_count, detection_count
+            reconstruction_image_ids,
+            detection_indices,
+            recon_frame_count,
+            detection_count,
         )
 
         # 4. 决定处理策略
@@ -91,12 +96,18 @@ class ReconstructionDetectionAligner:
         elif not strict_mode:
             logger.warning("检测到帧对齐问题，尝试自动修复...")
             return ReconstructionDetectionAligner._attempt_repair(
-                reconstruction_data, detections, reconstruction_image_ids, detection_indices, alignment_report
+                reconstruction_data,
+                detections,
+                reconstruction_image_ids,
+                detection_indices,
+                alignment_report,
             )
 
         else:
             # 严格模式：报错
-            error_msg = ReconstructionDetectionAligner._format_alignment_error(alignment_report)
+            error_msg = ReconstructionDetectionAligner._format_alignment_error(
+                alignment_report
+            )
             raise FrameAlignmentError(error_msg)
 
     @staticmethod
@@ -104,7 +115,7 @@ class ReconstructionDetectionAligner:
         reconstruction_image_ids: List[int],
         detection_indices: List[int],
         recon_frame_count: int,
-        detection_count: int
+        detection_count: int,
     ) -> Dict[str, Any]:
         """分析对齐状况"""
 
@@ -118,14 +129,14 @@ class ReconstructionDetectionAligner:
 
         # 检查顺序一致性
         common_ids_sorted = sorted(common_ids)
-        recon_order_matches = (reconstruction_image_ids == common_ids_sorted)
-        detection_order_matches = (detection_indices == common_ids_sorted)
+        recon_order_matches = reconstruction_image_ids == common_ids_sorted
+        detection_order_matches = detection_indices == common_ids_sorted
 
         is_perfectly_aligned = (
-            recon_frame_count == detection_count and
-            reconstruction_image_ids == detection_indices and
-            len(recon_only) == 0 and
-            len(detection_only) == 0
+            recon_frame_count == detection_count
+            and reconstruction_image_ids == detection_indices
+            and len(recon_only) == 0
+            and len(detection_only) == 0
         )
 
         alignment_report = {
@@ -153,7 +164,7 @@ class ReconstructionDetectionAligner:
         detections: List[Dict],
         reconstruction_image_ids: List[int],
         detection_indices: List[int],
-        alignment_report: Dict[str, Any]
+        alignment_report: Dict[str, Any],
     ) -> Tuple[Dict[str, np.ndarray], List[Dict], Dict[str, Any]]:
         """尝试修复对齐问题"""
 
@@ -165,8 +176,12 @@ class ReconstructionDetectionAligner:
         logger.info(f"修复对齐：保留{len(common_ids)}个共同图像")
 
         # 创建映射表
-        recon_id_to_idx = {img_id: idx for idx, img_id in enumerate(reconstruction_image_ids)}
-        detection_id_to_idx = {img_id: idx for idx, img_id in enumerate(detection_indices)}
+        recon_id_to_idx = {
+            img_id: idx for idx, img_id in enumerate(reconstruction_image_ids)
+        }
+        detection_id_to_idx = {
+            img_id: idx for idx, img_id in enumerate(detection_indices)
+        }
 
         # 构建对齐后的索引
         aligned_recon_indices = []
@@ -196,16 +211,19 @@ class ReconstructionDetectionAligner:
         aligned_detections = [detections[i] for i in aligned_detection_indices]
 
         # 更新报告
-        alignment_report.update({
-            "repair_applied": True,
-            "repaired_frame_count": len(aligned_image_ids),
-            "repaired_image_ids": aligned_image_ids,
-            "dropped_recon_frames": len(reconstruction_image_ids) - len(aligned_image_ids),
-            "dropped_detection_frames": len(detections) - len(aligned_image_ids),
-        })
+        alignment_report.update(
+            {
+                "repair_applied": True,
+                "repaired_frame_count": len(aligned_image_ids),
+                "repaired_image_ids": aligned_image_ids,
+                "dropped_frames": len(reconstruction_image_ids)
+                - len(aligned_image_ids),
+                "dropped_detection_frames": len(detections) - len(aligned_image_ids),
+            }
+        )
 
         logger.info(f"修复完成：{len(aligned_image_ids)}帧对齐")
-        logger.debug(f"   丢弃3D重建帧: {alignment_report['dropped_recon_frames']}")
+        logger.debug(f"   丢弃3D重建帧: {alignment_report['dropped_frames']}")
         logger.debug(f"   丢弃检测帧: {alignment_report['dropped_detection_frames']}")
 
         return aligned_recon_data, aligned_detections, alignment_report
@@ -221,18 +239,20 @@ class ReconstructionDetectionAligner:
             f"覆盖率: {alignment_report['coverage_ratio']:.2%}",
         ]
 
-        if alignment_report['recon_only_count'] > 0:
+        if alignment_report["recon_only_count"] > 0:
             error_lines.append(f"仅在3D重建中: {alignment_report['recon_only_ids']}")
 
-        if alignment_report['detection_only_count'] > 0:
+        if alignment_report["detection_only_count"] > 0:
             error_lines.append(f"仅在检测中: {alignment_report['detection_only_ids']}")
 
-        error_lines.extend([
-            "",
-            "解决方案:",
-            "1. 设置 strict_mode=False 启用自动修复",
-            "2. 检查图像文件名和编号一致性",
-            "3. 确保3D重建和检测使用相同的图像集合"
-        ])
+        error_lines.extend(
+            [
+                "",
+                "解决方案:",
+                "1. 设置 strict_mode=False 启用自动修复",
+                "2. 检查图像文件名和编号一致性",
+                "3. 确保3D重建和检测使用相同的图像集合",
+            ]
+        )
 
         return "\n".join(error_lines)

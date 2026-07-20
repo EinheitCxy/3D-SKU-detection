@@ -8,12 +8,16 @@ from typing import Optional
 @dataclass
 class ViewerConfig:
     global_mapping: Path
-    reconstruction: Path
     image_dir: Path
     detection_dir: Optional[Path]
     cache_dir: Path
+    reconstruction: Optional[Path] = (
+        None  # GLB 可选；da3 不产 GLB，回退 da3_cache/predictions.npz
+    )
     downsample_ratio: float = 1.0
-    points_source: str = "glb"  # 'glb' | 'predictions'
+    points_source: str = (
+        "predictions"  # 'glb' | 'predictions'（da3 默认走 predictions）
+    )
     force_rebuild: bool = False
 
 
@@ -33,4 +37,3 @@ class ViewerRuntimeConfig:
     hide_unknown_default: bool = True
     show_cameras_default: bool = True
     show_pick_sphere_default: bool = False
-

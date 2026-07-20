@@ -9,7 +9,7 @@ Global ID Mapper - 全局ID数据管理工具类
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class InstanceInfo:
             "image_id": self.image_id,
             "object_id": self.object_id,
             "bbox": self.bbox,
-            "removed": self.removed
+            "removed": self.removed,
         }
 
 
@@ -84,7 +84,7 @@ class GlobalIDMapper:
 
         logger.info(f"Loading global ID mapping from: {json_path}")
 
-        with path.open('r', encoding='utf-8') as f:
+        with path.open("r", encoding="utf-8") as f:
             raw_data = json.load(f)
 
         # 解析为 InstanceInfo 对象
@@ -92,16 +92,20 @@ class GlobalIDMapper:
         for global_id_str, instances_list in raw_data.items():
             instances = []
             for inst_dict in instances_list:
-                instances.append(InstanceInfo(
-                    image_id=inst_dict['image_id'],
-                    object_id=inst_dict['object_id'],
-                    bbox=inst_dict['bbox'],
-                    removed=inst_dict.get('removed', False)
-                ))
+                instances.append(
+                    InstanceInfo(
+                        image_id=inst_dict["image_id"],
+                        object_id=inst_dict["object_id"],
+                        bbox=inst_dict["bbox"],
+                        removed=inst_dict.get("removed", False),
+                    )
+                )
             self.data[global_id_str] = instances
 
         self.json_path = path
-        logger.info(f"Loaded {len(self.data)} global IDs with {self._count_total_instances()} total instances")
+        logger.info(
+            f"Loaded {len(self.data)} global IDs with {self._count_total_instances()} total instances"
+        )
 
     def _count_total_instances(self) -> int:
         """统计总实例数"""
@@ -169,7 +173,9 @@ class GlobalIDMapper:
         object_ids = [inst.object_id for inst in instances]
         return sorted(object_ids)
 
-    def get_bbox_for_instance(self, global_id: int, image_id: int) -> Optional[List[float]]:
+    def get_bbox_for_instance(
+        self, global_id: int, image_id: int
+    ) -> Optional[List[float]]:
         """
         获取特定实例的bbox坐标
 
@@ -217,7 +223,7 @@ class GlobalIDMapper:
             "total_instances": total_instances,
             "active_instances": active_instances,
             "removed_instances": removed_instances,
-            "images_count": len(all_image_ids)
+            "images_count": len(all_image_ids),
         }
 
     def find_instances_in_image(self, image_id: int) -> Dict[int, List[InstanceInfo]]:
@@ -272,7 +278,12 @@ def _main() -> int:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Global ID mapper inspector")
     parser.add_argument("json", type=str, help="Path to global_mapping.json")
-    parser.add_argument("--gid", type=int, default=None, help="Optional: print details for a specific Global ID")
+    parser.add_argument(
+        "--gid",
+        type=int,
+        default=None,
+        help="Optional: print details for a specific Global ID",
+    )
     args = parser.parse_args()
 
     mapper = GlobalIDMapper(args.json)

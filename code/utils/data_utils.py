@@ -6,8 +6,8 @@ SKU匹配系统数据处理模块
 
 import json
 import logging
-from typing import Dict, List
 from pathlib import Path
+from typing import Dict, List
 
 from .config import SKUMatchingConfig
 
@@ -17,15 +17,15 @@ logger = logging.getLogger(__name__)
 
 def load_detections(detection_dir: str, return_index_map: bool = False) -> List[Dict]:
     """加载检测结果文件
-    
+
     Args:
         detection_dir: 检测结果目录路径，包含按数字命名的JSON文件(1.json, 2.json, ...)
         return_index_map: 若为True，按 [(file_number, processed_data), ...] 返回，便于对齐图像编号
-        
+
     Returns:
         - 当 return_index_map=False: 检测结果列表，按文件名数字顺序排列
         - 当 return_index_map=True: [(文件编号, 检测结果)] 列表
-        
+
     Raises:
         FileNotFoundError: 目录不存在时抛出
         ValueError: 文件格式不正确时抛出
@@ -33,10 +33,10 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
     detection_path = Path(detection_dir)
     if not detection_path.exists():
         raise FileNotFoundError(f"Detection directory not found: {detection_dir}")
-    
+
     if not detection_path.is_dir():
         raise ValueError(f"Path is not a directory: {detection_dir}")
-    
+
     try:
         # 获取所有JSON文件并按数字顺序排序
         json_files = []
@@ -50,36 +50,41 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
                 skipped_non_numeric += 1
                 logger.debug(f"Skipping non-numeric JSON file: {file_path.name}")
                 continue
-        
+
         # 按数字顺序排序
         json_files.sort(key=lambda x: x[0])
-        
+
         if not json_files:
             raise ValueError(f"No valid JSON files found in {detection_dir}")
-        
+
         detections: List[Dict] = []
         detections_with_numbers: List[tuple[int, Dict]] = []
         empty_objects_count = 0
         for file_number, file_path in json_files:
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, "r", encoding="utf-8") as f:
                     file_detections = json.load(f)
-                
+
                 # 处理不同的检测结果格式
                 processed_data = None
-                
+
                 if isinstance(file_detections, list) and len(file_detections) > 0:
                     # floor_display1 格式: [{"classes": {...}, "objects": [...]}]
                     processed_data = file_detections[0]
                 elif isinstance(file_detections, dict):
-                    if 'skus' in file_detections:
+                    if "skus" in file_detections:
                         # floor_display2 格式: {"skus": [{"classes": {...}, "objects": [...]}]}
-                        if isinstance(file_detections['skus'], list) and len(file_detections['skus']) > 0:
-                            processed_data = file_detections['skus'][0]
+                        if (
+                            isinstance(file_detections["skus"], list)
+                            and len(file_detections["skus"]) > 0
+                        ):
+                            processed_data = file_detections["skus"][0]
                         else:
                             # 空 skus 数组：视为“无检测结果”的有效文件，保留占位
                             processed_data = {"objects": []}
-                            logger.debug(f"Empty skus array in {file_path.name}, treating as empty detection")
+                            logger.debug(
+                                f"Empty skus array in {file_path.name}, treating as empty detection"
+                            )
                             empty_objects_count += 1
                     else:
                         # 直接的字典格式: {"classes": {...}, "objects": [...]}
@@ -87,26 +92,37 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
                 else:
                     logger.debug(f"Invalid format in file {file_path.name}, skipping")
                     continue
-                
+
                 # 验证处理后的数据是否包含必要字段
-                if processed_data and 'objects' in processed_data:
+                if processed_data and "objects" in processed_data:
                     # 即使 objects 为空，也保留该检测文件，用于帧对齐
                     detections.append(processed_data)
                     detections_with_numbers.append((file_number, processed_data))
-                    if processed_data['objects']:
-                        logger.debug(f"Loaded {len(processed_data['objects'])} objects from {file_path.name}")
+                    if processed_data["objects"]:
+                        logger.debug(
+                            f"Loaded {len(processed_data['objects'])} objects from {file_path.name}"
+                        )
                     else:
-                        logger.debug(f"No objects found in {file_path.name}, keeping empty detection entry")
+                        logger.debug(
+                            f"No objects found in {file_path.name}, keeping empty detection entry"
+                        )
                         empty_objects_count += 1
                 else:
-                    logger.debug(f"No 'objects' field found in {file_path.name}, skipping")
+                    logger.debug(
+                        f"No 'objects' field found in {file_path.name}, skipping"
+                    )
                     empty_objects_count += 1
                     continue
-                    
-            except (FileNotFoundError, json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
+
+            except (
+                FileNotFoundError,
+                json.JSONDecodeError,
+                KeyError,
+                UnicodeDecodeError,
+            ) as e:
                 logger.error(f"Failed to load detection from {file_path.name}: {e}")
                 continue
-        
+
         logger.info(f"Loaded {len(detections)} detection files")
         logger.debug(
             f"load_detections summary: skipped_non_numeric={skipped_non_numeric} empty_objects={empty_objects_count}"
@@ -114,53 +130,59 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
         if return_index_map:
             return detections_with_numbers
         return detections
-        
+
     except (FileNotFoundError, PermissionError) as e:
         logger.error(f"Failed to load detections from directory {detection_dir}: {e}")
         raise
 
 
-def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, config: SKUMatchingConfig) -> List[Dict]:
+def extract_bboxes_from_detections(
+    detections: List[Dict], image_idx: int, config: SKUMatchingConfig
+) -> List[Dict]:
     """从检测结果中提取边界框
-    
+
     Args:
         detections: 检测结果列表
         image_idx: 图像索引
         config: 配置参数
-        
+
     Returns:
         边界框列表
-        
+
     Raises:
         ValueError: 图像索引超出范围或检测数据无效时抛出
     """
     if not detections:
         raise ValueError("Detections list is empty")
-        
+
     if image_idx >= len(detections):
-        raise ValueError(f"Image index {image_idx} out of range (max: {len(detections) - 1})")
-    
+        raise ValueError(
+            f"Image index {image_idx} out of range (max: {len(detections) - 1})"
+        )
+
     detection_data = detections[image_idx]
     if not detection_data:
         raise ValueError(f"Detection data for image {image_idx} is None or empty")
-        
-    if 'objects' not in detection_data:
-        raise ValueError(f"No 'objects' field found in detection data for image {image_idx}")
-        
-    objects = detection_data['objects']
+
+    if "objects" not in detection_data:
+        raise ValueError(
+            f"No 'objects' field found in detection data for image {image_idx}"
+        )
+
+    objects = detection_data["objects"]
     if not objects:
         logger.warning(f"No objects found in detection data for image {image_idx}")
         return []
-    
+
     bboxes = []
     total_with_position = 0
     below_conf = 0
     below_area = 0
     for obj_idx, obj in enumerate(objects):
-        if 'position' in obj:
+        if "position" in obj:
             total_with_position += 1
-            x1, y1, x2, y2 = obj['position']
-            confidence = obj.get('confidences', {}).get('det', 0.0)
+            x1, y1, x2, y2 = obj["position"]
+            confidence = obj.get("confidences", {}).get("det", 0.0)
             if confidence < config.detection_confidence_threshold:
                 below_conf += 1
                 continue
@@ -169,21 +191,21 @@ def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, confi
                 below_area += 1
                 continue
             bbox_info = {
-                'bbox': [x1, y1, x2, y2],
-                'center': [(x1 + x2) / 2, (y1 + y2) / 2],
-                'confidence': confidence,
-                'object_id': obj_idx,
-                'area': area
+                "bbox": [x1, y1, x2, y2],
+                "center": [(x1 + x2) / 2, (y1 + y2) / 2],
+                "confidence": confidence,
+                "object_id": obj_idx,
+                "area": area,
             }
             bboxes.append(bbox_info)
-    
+
     # 按面积排序并限制数量
-    bboxes.sort(key=lambda x: x['area'], reverse=True)
+    bboxes.sort(key=lambda x: x["area"], reverse=True)
     kept_before_cap = len(bboxes)
     truncated = 0
     if len(bboxes) > config.max_bboxes:
         truncated = len(bboxes) - config.max_bboxes
-        bboxes = bboxes[:config.max_bboxes]
+        bboxes = bboxes[: config.max_bboxes]
 
     logger.debug(
         "bbox_filter image_idx=%d total=%d with_position=%d below_det_conf=%d below_min_area=%d "
@@ -200,7 +222,7 @@ def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, confi
         config.detection_confidence_threshold,
         config.max_bboxes,
     )
-    
+
     return bboxes
 
 
@@ -211,7 +233,7 @@ def save_correspondences_json(
     meta: Dict = None,
 ) -> Path:
     """将匹配结果保存为 JSON 文件
-    
+
     Args:
         correspondences: 匹配结果
         points_per_object: 参考图像对象点信息
@@ -223,15 +245,22 @@ def save_correspondences_json(
     try:
         result = {
             "correspondences": correspondences,
-            "reference_points": points_per_object if points_per_object is not None else {},
+            "reference_points": (
+                points_per_object if points_per_object is not None else {}
+            ),
             "meta": meta or {},
         }
         out_path = Path(config.output_dir) / config.json_filename
         out_path.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
-        with open(out_path, 'w', encoding='utf-8') as f:
+        with open(out_path, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved correspondences JSON to '{out_path}'")
         return out_path
-    except (FileNotFoundError, PermissionError, json.JSONEncodeError, UnicodeEncodeError) as e:
+    except (
+        FileNotFoundError,
+        PermissionError,
+        json.JSONEncodeError,
+        UnicodeEncodeError,
+    ) as e:
         logger.error(f"Failed to save correspondences JSON: {e}")
         raise

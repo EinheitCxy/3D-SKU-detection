@@ -12,10 +12,8 @@ __pycache__/
 *.bin
 checkpoints/
 
-# Vendored model libraries: core source is tracked (sam3/ Pi3/ Depth-Anything-3/);
+# Vendored model libraries: core source is tracked (sam3/ Depth-Anything-3/);
 # only env/weights/non-core artifacts inside them are ignored (see CLAUDE.md).
-# vggt-main stays fully ignored (backend disabled in code/modules/__init__.py; re-clone if needed)
-vggt-main/
 
 # sam3 interior exclusions (env/checkpoints/pycache/weights already covered globally)
 sam3/assets/
@@ -24,10 +22,6 @@ sam3/test_dir/
 sam3/outputs/
 sam3/build/
 sam3/*.backup
-
-# Pi3 interior exclusions
-Pi3/assets/
-Pi3/examples/
 
 # Depth-Anything-3 interior exclusions
 Depth-Anything-3/assets/

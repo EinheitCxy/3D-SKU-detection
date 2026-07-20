@@ -1,11 +1,11 @@
-"""  
+"""
 检出框处理工具模块
 
 包含重合检测、非重合区域计算等功能
 """
 
 import logging
-from typing import List, Dict
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -14,29 +14,29 @@ def calculate_bbox_overlap(bbox1: List[float], bbox2: List[float]) -> float:
     """计算两个检出框的重合比例(IoU)"""
     x1_1, y1_1, x2_1, y2_1 = bbox1
     x1_2, y1_2, x2_2, y2_2 = bbox2
-    
+
     # 计算重合区域
     x1_overlap = max(x1_1, x1_2)
     y1_overlap = max(y1_1, y1_2)
     x2_overlap = min(x2_1, x2_2)
     y2_overlap = min(y2_1, y2_2)
-    
+
     # 如果没有重合，返回0
     if x1_overlap >= x2_overlap or y1_overlap >= y2_overlap:
         return 0.0
-    
+
     # 计算重合面积
     overlap_area = (x2_overlap - x1_overlap) * (y2_overlap - y1_overlap)
-    
+
     # 计算两个框的面积
     area1 = (x2_1 - x1_1) * (y2_1 - y1_1)
     area2 = (x2_2 - x1_2) * (y2_2 - y1_2)
-    
+
     # 计算IoU
     union_area = area1 + area2 - overlap_area
     if union_area <= 0:
         return 0.0
-    
+
     return overlap_area / union_area
 
 
@@ -44,17 +44,19 @@ def _get_overlap_region(bbox1: List[float], bbox2: List[float]) -> List[float]:
     """获取两个检出框的重合区域（内部使用）"""
     x1_1, y1_1, x2_1, y2_1 = bbox1
     x1_2, y1_2, x2_2, y2_2 = bbox2
-    
+
     # 计算重合区域
     x1_overlap = max(x1_1, x1_2)
     y1_overlap = max(y1_1, y1_2)
     x2_overlap = min(x2_1, x2_2)
     y2_overlap = min(y2_1, y2_2)
-    
+
     return [x1_overlap, y1_overlap, x2_overlap, y2_overlap]
 
 
-def _subtract_bbox_from_bbox(target_bbox: List[float], subtract_bbox: List[float]) -> List[List[float]]:
+def _subtract_bbox_from_bbox(
+    target_bbox: List[float], subtract_bbox: List[float]
+) -> List[List[float]]:
     """从目标bbox中减去重叠bbox，返回非重叠的矩形区域（Smart矩形分割算法）
 
     核心思想：将目标bbox分割为最多4个非重叠矩形（上、下、左、右）。
@@ -109,8 +111,11 @@ def _subtract_bbox_from_bbox(target_bbox: List[float], subtract_bbox: List[float
     return non_overlap_regions
 
 
-def compute_non_overlap_regions(bbox: List[float], other_bboxes: List[List[float]],
-                               min_overlap_threshold: float = 0.1) -> List[List[float]]:
+def compute_non_overlap_regions(
+    bbox: List[float],
+    other_bboxes: List[List[float]],
+    min_overlap_threshold: float = 0.1,
+) -> List[List[float]]:
     """计算一个检出框的非重合区域（Smart矩形分割算法）
 
     使用矩形分割算法，逐步减去重叠区域，保留非重叠部分。
@@ -173,51 +178,59 @@ def compute_non_overlap_regions(bbox: List[float], other_bboxes: List[List[float
         # 中心区域大小：取bbox较小边的30%，但不超过50像素
         center_size = min((x2 - x1) * 0.3, (y2 - y1) * 0.3, 50)
         center_region = [
-            center_x - center_size/2, center_y - center_size/2,
-            center_x + center_size/2, center_y + center_size/2
+            center_x - center_size / 2,
+            center_y - center_size / 2,
+            center_x + center_size / 2,
+            center_y + center_size / 2,
         ]
         valid_regions = [center_region]
 
     return valid_regions
 
 
-def analyze_bbox_overlaps(bboxes_info: List[Dict], min_overlap_threshold: float = 0.1) -> Dict:
+def analyze_bbox_overlaps(
+    bboxes_info: List[Dict], min_overlap_threshold: float = 0.1
+) -> Dict:
     """分析检出框重合情况"""
     total_boxes = len(bboxes_info)
     overlap_stats = {
-        'total_boxes': total_boxes,
-        'overlapping_boxes': set(),
-        'overlap_pairs': [],
-        'max_overlap': 0.0,
-        'avg_overlap': 0.0
+        "total_boxes": total_boxes,
+        "overlapping_boxes": set(),
+        "overlap_pairs": [],
+        "max_overlap": 0.0,
+        "avg_overlap": 0.0,
     }
-    
+
     if total_boxes < 2:
         return overlap_stats
-    
+
     total_overlap = 0.0
     overlap_count = 0
-    
+
     for i in range(total_boxes):
         for j in range(i + 1, total_boxes):
-            bbox1 = bboxes_info[i]['bbox']
-            bbox2 = bboxes_info[j]['bbox']
+            bbox1 = bboxes_info[i]["bbox"]
+            bbox2 = bboxes_info[j]["bbox"]
             overlap_ratio = calculate_bbox_overlap(bbox1, bbox2)
-            
+
             if overlap_ratio > min_overlap_threshold:
-                overlap_stats['overlap_pairs'].append((i, j, overlap_ratio))
-                overlap_stats['overlapping_boxes'].add(i)
-                overlap_stats['overlapping_boxes'].add(j)
-                overlap_stats['max_overlap'] = max(overlap_stats['max_overlap'], overlap_ratio)
+                overlap_stats["overlap_pairs"].append((i, j, overlap_ratio))
+                overlap_stats["overlapping_boxes"].add(i)
+                overlap_stats["overlapping_boxes"].add(j)
+                overlap_stats["max_overlap"] = max(
+                    overlap_stats["max_overlap"], overlap_ratio
+                )
                 total_overlap += overlap_ratio
                 overlap_count += 1
-    
+
     if overlap_count > 0:
-        overlap_stats['avg_overlap'] = total_overlap / overlap_count
-    
-    overlap_stats['overlapping_boxes'] = list(overlap_stats['overlapping_boxes'])
-    
-    logger.info(f"检出框重合分析: {len(overlap_stats['overlapping_boxes'])}/{total_boxes} 个框有重合, "
-               f"平均重合度: {overlap_stats['avg_overlap']:.3f}, 最大重合度: {overlap_stats['max_overlap']:.3f}")
-    
+        overlap_stats["avg_overlap"] = total_overlap / overlap_count
+
+    overlap_stats["overlapping_boxes"] = list(overlap_stats["overlapping_boxes"])
+
+    logger.info(
+        f"检出框重合分析: {len(overlap_stats['overlapping_boxes'])}/{total_boxes} 个框有重合, "
+        f"平均重合度: {overlap_stats['avg_overlap']:.3f}, 最大重合度: {overlap_stats['max_overlap']:.3f}"
+    )
+
     return overlap_stats

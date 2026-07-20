@@ -17,11 +17,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BENCHMARK_CSV="$PROJECT_ROOT/imdata/picture_mapping_benchmark.csv"
 
-# 参数: 位置=数据集名(兼容旧用法), --backend pt|pi3|da3 (默认pt=point_tracking), --save-root <dir>(默认 imdata)
-FD=""; BACKEND="pt"; SAVE_ROOT=""
+# 参数: 位置=数据集名, --save-root <dir>(默认 imdata); 后端固定 da3
+FD=""; SAVE_ROOT=""
 while [ $# -gt 0 ]; do
     case "$1" in
-        --backend)    BACKEND="$2"; shift 2 ;;
         --save-root)  SAVE_ROOT="${2%/}"; shift 2 ;;
         -*)           echo "未知选项: $1" >&2; exit 1 ;;
         *)            FD="${FD:-$1}"; shift ;;
@@ -29,12 +28,8 @@ while [ $# -gt 0 ]; do
 done
 FD="${FD:-floor_display3}"
 
-case "$BACKEND" in
-    pt|point_tracking) OUT_SUB="output_pt"; BACKEND="pt" ;;
-    pi3)               OUT_SUB="output_3dmapping_pi3" ;;
-    da3)               OUT_SUB="output_3dmapping_da3" ;;
-    *)                 echo "错误: 未知 backend: $BACKEND (pt|pi3|da3)" >&2; exit 1 ;;
-esac
+BACKEND="da3"
+OUT_SUB="output_3dmapping_da3"
 
 DATA_ROOT="${SAVE_ROOT:-$PROJECT_ROOT/imdata}"
 OUTPUT_BASE_DIR="$DATA_ROOT/$FD/$OUT_SUB"
@@ -86,7 +81,7 @@ declare -a all_results=()
 
 echo -e "${BLUE}开始扫描匹配输出目录...${NC}"
 
-# 遍历所有output_pt子目录
+# 遍历所有匹配输出子目录
 for ref_dir in "$OUTPUT_BASE_DIR"/*/; do
     if [ -d "$ref_dir" ]; then
         ref_num=$(basename "$ref_dir")
@@ -106,14 +101,14 @@ for ref_dir in "$OUTPUT_BASE_DIR"/*/; do
             total_pairs=$((total_pairs + 1))
             
             # 运行准确性评估到临时文件
-            echo "  执行命令: uv run python accuracy_annotation.py --benchmark-csv '$BENCHMARK_CSV' --vggt-result '$matching_summary' --dataset-filter "$FD" --output '$temp_report'"
+            echo "  执行命令: uv run python accuracy_annotation.py --benchmark-csv '$BENCHMARK_CSV' --system-result '$matching_summary' --dataset-filter "$FD" --output '$temp_report'"
             
             # 切换到脚本目录并运行
             cd "$SCRIPT_DIR"
             
             if uv run python accuracy_annotation.py \
                 --benchmark-csv "$BENCHMARK_CSV" \
-                --vggt-result "$matching_summary" \
+                --system-result "$matching_summary" \
                 --dataset-filter "$FD" \
                 --output "$temp_report" 2>&1; then
                 
@@ -145,7 +140,7 @@ for ref_dir in "$OUTPUT_BASE_DIR"/*/; do
                     
                     # 提取关键指标（适应新的百分比格式）
                     recall=$(grep "总体召回率" "$output_report" | head -1)
-                    effectiveness=$(grep -E "VGGT有效率|模型有效率" "$output_report" | head -1)
+                    effectiveness=$(grep -E "模型有效率" "$output_report" | head -1)
                     precision=$(grep "Reference ID映射准确率" "$output_report" | head -1)
                     
                     if [ -n "$recall" ] && [ -n "$effectiveness" ] && [ -n "$precision" ]; then

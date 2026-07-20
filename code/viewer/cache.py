@@ -10,10 +10,16 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from utils.global_id_mapper import GlobalIDMapper
-from .types import ViewerConfig, ViewerArtifacts
-from .datasource import load_points_from_glb, load_points_from_npz, normalize_colors_to_uint8
+
+from .datasource import (
+    load_points_from_glb,
+    load_points_from_npz,
+    normalize_colors_to_uint8,
+)
 from .id_assign import assign_global_ids_to_points
 from .indexer import build_global_object_index
+from .paths import resolve_predictions_npz
+from .types import ViewerArtifacts, ViewerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +35,10 @@ class CacheValidator:
         raise ValueError("Only mtime method supported in viewer.cache")
 
     @staticmethod
-    def create_metadata(config: ViewerConfig, statistics: Dict[str, Any]) -> Dict[str, Any]:
+    def create_metadata(
+        config: ViewerConfig, statistics: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        source_path = _resolve_point_source_path(config)
         return {
             "version": CacheValidator.CACHE_VERSION,
             "created_at": datetime.utcnow().isoformat() + "Z",
@@ -41,12 +50,16 @@ class CacheValidator:
                 "global_mapping.json": {
                     "path": str(config.global_mapping),
                     "hash": CacheValidator.compute_file_hash(config.global_mapping),
-                    "mtime": datetime.fromtimestamp(config.global_mapping.stat().st_mtime).isoformat(),
+                    "mtime": datetime.fromtimestamp(
+                        config.global_mapping.stat().st_mtime
+                    ).isoformat(),
                 },
-                "reconstruction.glb": {
-                    "path": str(config.reconstruction),
-                    "hash": CacheValidator.compute_file_hash(config.reconstruction),
-                    "mtime": datetime.fromtimestamp(config.reconstruction.stat().st_mtime).isoformat(),
+                "point_source": {
+                    "path": str(source_path),
+                    "hash": CacheValidator.compute_file_hash(source_path),
+                    "mtime": datetime.fromtimestamp(
+                        source_path.stat().st_mtime
+                    ).isoformat(),
                 },
             },
             "statistics": statistics,
@@ -71,17 +84,20 @@ class CacheValidator:
             return False
         try:
             gm_hash = data["source_files"]["global_mapping.json"]["hash"]
-            rc_hash = data["source_files"]["reconstruction.glb"]["hash"]
+            src_hash = data["source_files"]["point_source"]["hash"]
             if gm_hash != CacheValidator.compute_file_hash(config.global_mapping):
                 return False
-            if rc_hash != CacheValidator.compute_file_hash(config.reconstruction):
+            source_path = _resolve_point_source_path(config)
+            if src_hash != CacheValidator.compute_file_hash(source_path):
                 return False
-        except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError):
+        except (FileNotFoundError, json.JSONDecodeError, UnicodeDecodeError, KeyError):
             return False
         return True
 
 
-def _downsample(points: np.ndarray, colors: Optional[np.ndarray], ratio: float, seed: int = 42) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+def _downsample(
+    points: np.ndarray, colors: Optional[np.ndarray], ratio: float, seed: int = 42
+) -> Tuple[np.ndarray, Optional[np.ndarray]]:
     if ratio >= 1.0:
         return points, colors
     n = max(1, int(len(points) * ratio))
@@ -90,6 +106,28 @@ def _downsample(points: np.ndarray, colors: Optional[np.ndarray], ratio: float, 
     pts = points[idx]
     cols = colors[idx] if colors is not None else None
     return pts, cols
+
+
+def _resolve_point_source_path(config: ViewerConfig) -> Path:
+    """解析实际用于加载点云的源文件路径（GLB 或 da3_cache/predictions.npz）。
+
+    优先级：
+    1. config.reconstruction 显式指向 .npz -> 该 npz；
+    2. points_source == 'predictions' -> da3_cache/predictions.npz（base 为
+       reconstruction.parent 或 cache_dir.parent）；
+    3. config.reconstruction 指向存在的 GLB -> 该 GLB；
+    4. 回退：cache_dir.parent 下的 da3_cache/predictions.npz。
+    """
+    recon = config.reconstruction
+    if recon is not None and recon.suffix == ".npz" and recon.exists():
+        return recon
+    if config.points_source == "predictions":
+        base = recon.parent if recon is not None else config.cache_dir.parent
+        return resolve_predictions_npz(base)
+    if recon is not None and recon.exists():
+        return recon
+    # da3 无 GLB：回退到 cache_dir.parent 下的 da3_cache
+    return resolve_predictions_npz(config.cache_dir.parent)
 
 
 def build_cache(config: ViewerConfig) -> ViewerArtifacts:
@@ -105,16 +143,17 @@ def build_cache(config: ViewerConfig) -> ViewerArtifacts:
     logger.info("开始构建缓存…")
     t0 = time.time()
 
-    # 1) 加载点云
-    if config.points_source == "predictions":
-        pred_path = config.reconstruction.parent / "vggt_cache" / "predictions.npz"
-        try:
-            points, colors = load_points_from_npz(pred_path)
-        except (FileNotFoundError, ValueError, KeyError) as e:
-            logger.warning(f"加载NPZ失败，回退GLB: {e}")
-            points, colors = load_points_from_glb(config.reconstruction)
+    # 1) 加载点云：da3 默认走 da3_cache/predictions.npz，GLB 可选
+    source_path = _resolve_point_source_path(config)
+    if source_path.suffix == ".npz":
+        points, colors = load_points_from_npz(source_path)
     else:
-        points, colors = load_points_from_glb(config.reconstruction)
+        try:
+            points, colors = load_points_from_glb(source_path)
+        except (FileNotFoundError, ValueError, KeyError) as e:
+            logger.warning(f"加载GLB失败，回退da3_cache: {e}")
+            pred_path = resolve_predictions_npz(config.cache_dir.parent)
+            points, colors = load_points_from_npz(pred_path)
 
     # 2) 下采样
     points, colors = _downsample(points, colors, config.downsample_ratio)
@@ -163,4 +202,3 @@ def build_cache(config: ViewerConfig) -> ViewerArtifacts:
 
     logger.info("缓存构建完成")
     return ViewerArtifacts(pcd_cache_path, index_cache_path, metadata_path)
-

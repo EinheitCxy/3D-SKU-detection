@@ -34,7 +34,7 @@
 - **加速方向**: 跨 ref 模块级缓存图像 tensor（图像只读）
 
 ### 非瓶颈（已优化或极小）
-- cache_npz_load (0.002s): PI3_SCENE_CACHE 模块级缓存生效，仅首 ref load
+- cache_npz_load (0.002s): SCENE_CACHE 模块级缓存生效，仅首 ref load
 - projection_3d_to_2d (0.145s): 逐点投影非瓶颈（曾怀疑，profiling 证否）
 - 三重 Python 循环（target_bbox_match+ref_point_sampling+projection 合计 2.5s，3.3%）: CPU-bound 但占比小，向量化收益有限
 - uniqueness_constraint (0.001s): 贪心 fallback 极快

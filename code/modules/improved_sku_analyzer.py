@@ -12,7 +12,7 @@ from typing import Dict, List
 class ImprovedSKUCountAnalyzer:
     """改进的SKU计数分析器 - 解决过度聚类问题"""
 
-    def __init__(self, detection_dir: str, summary_dir: str = "output_pt"):
+    def __init__(self, detection_dir: str, summary_dir: str = "output_3dmapping_da3"):
         self.detection_dir = Path(detection_dir)
         self.summary_dir = Path(summary_dir)
 
@@ -31,53 +31,63 @@ class ImprovedSKUCountAnalyzer:
             summary_file = self.summary_dir / str(ref_idx) / "matching_summary.txt"
             if not summary_file.exists():
                 continue
-            content = summary_file.read_text(encoding='utf-8', errors='ignore')
+            content = summary_file.read_text(encoding="utf-8", errors="ignore")
 
-            match_pattern = r'Matched ref (\d+) → target (\d+) \(hit ratio: ([\d.]+) (\d+)/(\d+)\)'
+            match_pattern = (
+                r"Matched ref (\d+) → target (\d+) \(hit ratio: ([\d.]+) (\d+)/(\d+)\)"
+            )
             matches = re.findall(match_pattern, content)
-            
+
             # 方案一：两遍解析法
             # 第一遍：收集所有目标图像映射信息
             target_mapping = {}
-            for line in content.split('\n'):
+            for line in content.split("\n"):
                 # 查找 "Matching objects between reference image X and target image Y"
-                section_match = re.search(r'reference image (\d+) and target image (\d+)', line)
+                section_match = re.search(
+                    r"reference image (\d+) and target image (\d+)", line
+                )
                 if section_match:
-                    ref_img, target_img = int(section_match.group(1)), int(section_match.group(2))
+                    ref_img, target_img = int(section_match.group(1)), int(
+                        section_match.group(2)
+                    )
                     target_mapping[ref_img] = target_img
-            
+
             # 第二遍：解析匹配行，使用映射关系确定target_idx
             for m in matches:
                 ref_id = int(m[0])
                 # 根据ref_id推断属于哪个参考图像（这里的逻辑需要根据实际情况调整）
                 # 由于是从ref_idx目录下读取的，所以目标图像就是映射中对应的值
                 target_idx = target_mapping.get(ref_idx, None)
-                
-                all_matched_pairs.append({
-                    'ref_idx': ref_idx,
-                    'ref_id': ref_id,
-                    'target_idx': target_idx,
-                    'target_id': int(m[1]),
-                    'hit_ratio': float(m[2]),
-                    'matched_points': int(m[3]),
-                    'total_points': int(m[4])
-                })
+
+                all_matched_pairs.append(
+                    {
+                        "ref_idx": ref_idx,
+                        "ref_id": ref_id,
+                        "target_idx": target_idx,
+                        "target_id": int(m[1]),
+                        "hit_ratio": float(m[2]),
+                        "matched_points": int(m[3]),
+                        "total_points": int(m[4]),
+                    }
+                )
 
         from .deduplicate_detections import filter_best_matches as _dedup_filter
+
         filtered = _dedup_filter(all_matched_pairs)
         return {
-            'original_matches': len(all_matched_pairs),
-            'filtered_matches': len(filtered),
-            'pairs': filtered
+            "original_matches": len(all_matched_pairs),
+            "filtered_matches": len(filtered),
+            "pairs": filtered,
         }
 
 
 def main():
-    analyzer = ImprovedSKUCountAnalyzer("../imdata/detections_results", "output_pt")
+    analyzer = ImprovedSKUCountAnalyzer(
+        "../imdata/detections_results", "output_3dmapping_da3"
+    )
     res = analyzer.analyze_with_filtering()
     print(res)
 
 
 if __name__ == "__main__":
     main()
-

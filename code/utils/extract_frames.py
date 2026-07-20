@@ -54,9 +54,13 @@ def extract_with_cv2(video_path: Path, output_dir: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Extract one JPG frame per second from a video.")
+    parser = argparse.ArgumentParser(
+        description="Extract one JPG frame per second from a video."
+    )
     parser.add_argument("-video", help="Path to the input video")
-    parser.add_argument("-o", "--output", default="output", help="Output directory (default: output)")
+    parser.add_argument(
+        "-o", "--output", default="output", help="Output directory (default: output)"
+    )
     args = parser.parse_args()
 
     video_path = Path(args.video).expanduser().resolve()
@@ -76,7 +80,10 @@ def main() -> int:
         extract_with_cv2(video_path, output_dir)
         return 0
     except ModuleNotFoundError:
-        print("Need either ffmpeg or opencv-python. Install one of them first.", file=sys.stderr)
+        print(
+            "Need either ffmpeg or opencv-python. Install one of them first.",
+            file=sys.stderr,
+        )
         return 1
 
 

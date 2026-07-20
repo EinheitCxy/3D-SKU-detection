@@ -22,7 +22,9 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def _ensure_shapes(D: np.ndarray, I: np.ndarray, k: int) -> Tuple[np.ndarray, np.ndarray]:
+def _ensure_shapes(
+    D: np.ndarray, I: np.ndarray, k: int
+) -> Tuple[np.ndarray, np.ndarray]:
     """将 FAISS/KDTree 返回的 D, I 统一到期望形状。
 
     - k == 1 → 扁平化为 (M,)
@@ -40,7 +42,9 @@ def _ensure_shapes(D: np.ndarray, I: np.ndarray, k: int) -> Tuple[np.ndarray, np
     return D, I
 
 
-def nn_search(source_points: np.ndarray, target_points: np.ndarray, k: int = 1) -> Tuple[np.ndarray, np.ndarray]:
+def nn_search(
+    source_points: np.ndarray, target_points: np.ndarray, k: int = 1
+) -> Tuple[np.ndarray, np.ndarray]:
     """最近邻搜索（FAISS-GPU → FAISS-CPU → KDTree）。
 
     参数
@@ -62,7 +66,9 @@ def nn_search(source_points: np.ndarray, target_points: np.ndarray, k: int = 1) 
     if source_points.size == 0 or target_points.size == 0:
         # 空输入的安全返回
         if k == 1:
-            return np.zeros((target_points.shape[0],), dtype=np.float32), np.full((target_points.shape[0],), -1, dtype=np.int64)
+            return np.zeros((target_points.shape[0],), dtype=np.float32), np.full(
+                (target_points.shape[0],), -1, dtype=np.int64
+            )
         else:
             return (
                 np.zeros((target_points.shape[0], k), dtype=np.float32),
@@ -103,10 +109,11 @@ def nn_search(source_points: np.ndarray, target_points: np.ndarray, k: int = 1) 
         # 兜底：返回无效值，但不抛出，避免中断上层流程
         logger.error(f"KNN: KDTree fallback failed: {e}")
         if k == 1:
-            return np.zeros((target_points.shape[0],), dtype=np.float32), np.full((target_points.shape[0],), -1, dtype=np.int64)
+            return np.zeros((target_points.shape[0],), dtype=np.float32), np.full(
+                (target_points.shape[0],), -1, dtype=np.int64
+            )
         else:
             return (
                 np.zeros((target_points.shape[0], k), dtype=np.float32),
                 np.full((target_points.shape[0], k), -1, dtype=np.int64),
             )
-

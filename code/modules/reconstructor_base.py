@@ -1,7 +1,7 @@
 """
 通用 3D 重建器抽象基类。
 
-为不同后端（VGGT、Pi3、Dust3r 等）提供统一的模板方法：
+为 3D 重建后端提供统一的模板方法：
 - 设备/精度选择与日志
 - 模型加载、图像加载、推理与导出 GLB 的接口
 - 可选的 predictions 缓存保存钩子
@@ -16,17 +16,16 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-import logging
 import gc
+import logging
 import os
 import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import torch
 
 from utils.config import get_optimal_device_config
-
 
 logger = logging.getLogger(__name__)
 
@@ -37,11 +36,20 @@ class ReconstructorBase:
     子类应实现模型相关的方法；本类提供统一的 `reconstruct_from_directory` 模板流程。
     """
 
-    def __init__(self, device: Optional[str] = None, model_path: Optional[str] = None, backend_name: str = "vggt") -> None:
+    def __init__(
+        self,
+        device: Optional[str] = None,
+        model_path: Optional[str] = None,
+        backend_name: str = "da3",
+    ) -> None:
         optimal_device, optimal_dtype = get_optimal_device_config(verbose=True)
         if device is None:
             self.device = str(optimal_device)
-            self.dtype = optimal_dtype if str(optimal_device).startswith("cuda") else torch.float32
+            self.dtype = (
+                optimal_dtype
+                if str(optimal_device).startswith("cuda")
+                else torch.float32
+            )
         else:
             if device == "cuda" and not torch.cuda.is_available():
                 logger.warning("CUDA 不可用，回退 CPU")
@@ -52,11 +60,15 @@ class ReconstructorBase:
                 self.dtype = torch.float32
             else:
                 self.device = device
-                self.dtype = optimal_dtype if str(optimal_device).startswith("cuda") else torch.float32
+                self.dtype = (
+                    optimal_dtype
+                    if str(optimal_device).startswith("cuda")
+                    else torch.float32
+                )
 
         self.model_path = model_path
         self.model: Any = None
-        self.backend_name = backend_name  # 用于生成cache目录名称：vggt_cache 或 pi3_cache
+        self.backend_name = backend_name  # 用于生成cache目录名称（如 da3_cache）
 
     # ---- 子类需实现的方法 ----
     def load_model(self) -> None:
@@ -136,10 +148,19 @@ class ReconstructorBase:
 
         # 记录输入顺序（日志用，按文件名数字数值序避免≥10图时字典序错位如1,10,11,2）
         import re as _re
+
         try:
             image_names = sorted(
-                [p for p in os.listdir(input_dir) if p.lower().endswith((".jpg", ".jpeg", ".png"))],
-                key=lambda p: int(_re.search(r"(\d+)", os.path.splitext(p)[0]).group(1)) if _re.search(r"(\d+)", os.path.splitext(p)[0]) else p
+                [
+                    p
+                    for p in os.listdir(input_dir)
+                    if p.lower().endswith((".jpg", ".jpeg", ".png"))
+                ],
+                key=lambda p: (
+                    int(_re.search(r"(\d+)", os.path.splitext(p)[0]).group(1))
+                    if _re.search(r"(\d+)", os.path.splitext(p)[0])
+                    else p
+                ),
             )
             logger.info(f"处理图片: {image_names}")
         except Exception:
@@ -157,7 +178,12 @@ class ReconstructorBase:
             try:
                 t0 = time.time()
                 self.save_predictions_cache(
-                    predictions, images, out_dir, image_names=image_names, input_dir=input_dir, **kwargs
+                    predictions,
+                    images,
+                    out_dir,
+                    image_names=image_names,
+                    input_dir=input_dir,
+                    **kwargs,
                 )
                 logger.info(f"缓存保存耗时: {time.time() - t0:.2f}s")
             except Exception as e:  # noqa: BLE001 - 容忍缓存失败不影响 GLB

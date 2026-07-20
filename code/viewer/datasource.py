@@ -28,13 +28,17 @@ def load_points_from_glb(glb_path: Path) -> Tuple[np.ndarray, np.ndarray]:
                 if hasattr(geom, "visual") and hasattr(geom.visual, "vertex_colors"):
                     colors_list.append(geom.visual.vertex_colors[:, :3] / 255.0)
                 else:
-                    colors_list.append(np.ones((len(geom.vertices), 3), dtype=np.float32) * 0.8)
+                    colors_list.append(
+                        np.ones((len(geom.vertices), 3), dtype=np.float32) * 0.8
+                    )
     elif hasattr(scene, "vertices"):
         points_list.append(scene.vertices)
         if hasattr(scene, "visual") and hasattr(scene.visual, "vertex_colors"):
             colors_list.append(scene.visual.vertex_colors[:, :3] / 255.0)
         else:
-            colors_list.append(np.ones((len(scene.vertices), 3), dtype=np.float32) * 0.8)
+            colors_list.append(
+                np.ones((len(scene.vertices), 3), dtype=np.float32) * 0.8
+            )
 
     if not points_list:
         raise ValueError("No point cloud data found in GLB file")
@@ -67,7 +71,9 @@ def load_points_from_npz(pred_path: Path) -> Tuple[np.ndarray, np.ndarray]:
             scale = 255.0 if maxv <= 1.0 else 1.0
             colors = np.clip(colors * scale, 0, 255).astype(np.uint8)
     else:
-        colors = (np.ones((points.shape[0], 3), dtype=np.float32) * 204).astype(np.uint8)
+        colors = (np.ones((points.shape[0], 3), dtype=np.float32) * 204).astype(
+            np.uint8
+        )
 
     logger.info(f"Loaded {len(points)} points from predictions (S={S}, H={H}, W={W})")
     return points, colors
@@ -84,4 +90,3 @@ def normalize_colors_to_uint8(colors: np.ndarray) -> np.ndarray:
         return np.clip(col, 0, 255).astype(np.uint8)
     except (ValueError, AttributeError, TypeError):
         return colors.astype(np.uint8, copy=False)
-

@@ -2,18 +2,19 @@
 简化与裁剪对齐的 2D 边界框 → 3D 点云提取器
 
 本版本重点：
-- 直接支持 VGGT 裁剪与批量填充的坐标映射（可选传入 transforms）
+- 直接支持模型输入坐标空间的坐标映射（可选传入 transforms）
 - 修正 (image_id, object_id) 反向映射的 off-by-one（image_id 为 1-based）
 - 简化实现：默认不再预分配内存，逻辑更清晰
 - 可选每 bbox 自适应置信度阈值与边界内缩
 """
 
-from typing import Any, Dict, List, Optional, Tuple, Union
 import logging
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 
 try:
-    # 支持VGGT和Pi3两种坐标变换（统一基类）
+    # 坐标变换统一基类
     from .transforms import ImageTransformBase
 except ImportError:  # pragma: no cover - 运行环境可能未用到
     ImageTransformBase = None  # type: ignore
@@ -23,10 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 def extract_3d_from_bboxes(
-    world_points: np.ndarray,      # (S, H, W, 3) or (H, W, 3)
-    world_points_conf: np.ndarray, # (S, H, W) or (H, W)
-    detections: List[Dict],        # 按图像顺序的检测结果（与 world_points 对齐）
-    reverse_mapping: Dict[Tuple[int, int], int],  # (image_id, object_id) -> global_id（image_id为1-based）
+    world_points: np.ndarray,  # (S, H, W, 3) or (H, W, 3)
+    world_points_conf: np.ndarray,  # (S, H, W) or (H, W)
+    detections: List[Dict],  # 按图像顺序的检测结果（与 world_points 对齐）
+    reverse_mapping: Dict[
+        Tuple[int, int], int
+    ],  # (image_id, object_id) -> global_id（image_id为1-based）
     image_ids: Optional[List[int]] = None,  # 真实图像ID列表（与detections对齐）
     conf_threshold: float = 0.1,
     use_adaptive_threshold: bool = False,
@@ -34,17 +37,19 @@ def extract_3d_from_bboxes(
     bbox_margin: int = 0,
     filter_invalid_ids: bool = True,
     return_stats: bool = False,
-    vggt_transforms: Optional[List["ImageTransformBase"]] = None,  # 若提供则进行VGGT/Pi3坐标对齐
+    transforms: Optional[
+        List["ImageTransformBase"]
+    ] = None,  # 若提供则进行模型输入坐标对齐
 ) -> Union[Tuple[np.ndarray, np.ndarray, np.ndarray], Dict[str, Any]]:
-    """从2D检测框提取3D点并赋全局ID（兼容VGGT裁剪/填充）
+    """从2D检测框提取3D点并赋全局ID（可选坐标变换）
 
     核心要点：
-    - detections 的顺序必须与 world_points 的第0维一致；若传入 vggt_transforms，其长度也需一致。
+    - detections 的顺序必须与 world_points 的第0维一致；若传入 transforms，其长度也需一致。
     - reverse_mapping 使用 (image_id, object_id) 作为键，其中 image_id 按 1 开始计数。
     - **关键修复**：优先使用检测结果中的真实 object_id，避免顺序索引导致的ID偏差
 
     Args:
-        world_points: VGGT 预测的世界坐标点云。
+        world_points: 3D重建预测的世界坐标点云。
         world_points_conf: 与 world_points 对齐的置信度图。
         detections: 单张图的检测数据，需包含 objects 列表，每个对象有 position[bbox]。
         reverse_mapping: (image_id(1-based), object_id) -> global_id。
@@ -55,7 +60,7 @@ def extract_3d_from_bboxes(
         bbox_margin: 在 world_points 空间（最终输入空间）内对 bbox 做内缩像素。
         filter_invalid_ids: 过滤未命中映射的 bbox（global_id == -1）。
         return_stats: 返回统计信息。
-        vggt_transforms: 若提供，使用其进行原图 → 模型输入空间（VGGT含裁剪/填充，Pi3仅resize）的精确映射。
+        transforms: 若提供，使用其进行原图 → 模型输入空间的精确映射。
 
     Returns:
         - 默认返回三元组 (points_3d, global_ids, confidences)。
@@ -70,17 +75,26 @@ def extract_3d_from_bboxes(
     S, H, W, _ = world_points.shape
 
     if len(detections) < S:
-        logger.warning("detections 张数(%d)少于 world_points 帧数(%d)，仅处理前者", len(detections), S)
+        logger.warning(
+            "detections 张数(%d)少于 world_points 帧数(%d)，仅处理前者",
+            len(detections),
+            S,
+        )
         S = len(detections)
     elif len(detections) > S:
-        logger.warning("detections 张数(%d)多于 world_points 帧数(%d)，将忽略多余部分", len(detections), S)
-
-    if vggt_transforms is not None and len(vggt_transforms) != S:
         logger.warning(
-            "vggt_transforms 数量(%d)与处理帧数(%d)不一致，将按最小长度对齐",
-            len(vggt_transforms), S,
+            "detections 张数(%d)多于 world_points 帧数(%d)，将忽略多余部分",
+            len(detections),
+            S,
         )
-        S = min(S, len(vggt_transforms))
+
+    if transforms is not None and len(transforms) != S:
+        logger.warning(
+            "transforms 数量(%d)与处理帧数(%d)不一致，将按最小长度对齐",
+            len(transforms),
+            S,
+        )
+        S = min(S, len(transforms))
 
     # 统计
     stats: Dict[str, Any] = {
@@ -99,7 +113,12 @@ def extract_3d_from_bboxes(
 
     for img_idx in range(S):
         det = detections[img_idx]
-        img_stats = {"image_idx": img_idx, "bboxes_count": 0, "valid_bboxes": 0, "points_extracted": 0}
+        img_stats = {
+            "image_idx": img_idx,
+            "bboxes_count": 0,
+            "valid_bboxes": 0,
+            "points_extracted": 0,
+        }
 
         # 将不同格式统一为"扁平 objects 列表"
         objects = _flatten_objects(det)
@@ -119,16 +138,18 @@ def extract_3d_from_bboxes(
                 fallback_object_id += 1
                 continue
 
-            # 将 bbox 原图坐标映射到 VGGT 最终输入坐标（包含裁剪与批量填充）
-            if vggt_transforms is not None:
-                t = vggt_transforms[img_idx]
+            # 将 bbox 原图坐标映射到模型输入坐标
+            if transforms is not None:
+                t = transforms[img_idx]
                 x1f, y1f, x2f, y2f = _map_bbox_to_final_with_transform(t, bbox_orig)
             else:
                 # 无变换信息时，假定检测已与 world_points 空间对齐
                 x1f, y1f, x2f, y2f = bbox_orig
 
             # 应用边界内缩与裁剪到 [0,W)×[0,H)
-            x1i, y1i, x2i, y2i = _shrink_and_clip_bbox(x1f, y1f, x2f, y2f, W, H, bbox_margin)
+            x1i, y1i, x2i, y2i = _shrink_and_clip_bbox(
+                x1f, y1f, x2f, y2f, W, H, bbox_margin
+            )
             if x2i <= x1i or y2i <= y1i:
                 stats["skipped_outofbound"] += 1
                 fallback_object_id += 1
@@ -154,11 +175,11 @@ def extract_3d_from_bboxes(
 
             # **关键修复**：优先使用检测结果中的真实object_id
             # 尝试多种可能的字段名：object_id, id, obj_id
-            real_object_id = obj.get('object_id')
+            real_object_id = obj.get("object_id")
             if real_object_id is None:
-                real_object_id = obj.get('id')
+                real_object_id = obj.get("id")
             if real_object_id is None:
-                real_object_id = obj.get('obj_id')
+                real_object_id = obj.get("obj_id")
             if real_object_id is None:
                 # 回退到顺序索引
                 real_object_id = fallback_object_id
@@ -200,16 +221,18 @@ def extract_3d_from_bboxes(
             img_stats["points_extracted"] += int(len(valid_points))
 
             if return_stats:
-                stats["per_bbox"].append({
-                    "image_idx": img_idx,
-                    "image_id": real_image_id,
-                    "object_id": real_object_id,
-                    "global_id": gid,
-                    "bbox_final": [int(x1i), int(y1i), int(x2i), int(y2i)],
-                    "points_count": int(len(valid_points)),
-                    "conf_mean": float(np.mean(valid_confs)),
-                    "conf_std": float(np.std(valid_confs)),
-                })
+                stats["per_bbox"].append(
+                    {
+                        "image_idx": img_idx,
+                        "image_id": real_image_id,
+                        "object_id": real_object_id,
+                        "global_id": gid,
+                        "bbox_final": [int(x1i), int(y1i), int(x2i), int(y2i)],
+                        "points_count": int(len(valid_points)),
+                        "conf_mean": float(np.mean(valid_confs)),
+                        "conf_std": float(np.std(valid_confs)),
+                    }
+                )
 
             fallback_object_id += 1
 
@@ -229,11 +252,19 @@ def extract_3d_from_bboxes(
 
     logger.info(
         "提取完成: %d 点, %d 唯一ID, 有效bbox %d/%d",
-        stats["total_points"], stats["unique_global_ids"], stats["valid_bboxes"], stats["total_bboxes"],
+        stats["total_points"],
+        stats["unique_global_ids"],
+        stats["valid_bboxes"],
+        stats["total_bboxes"],
     )
 
     if return_stats:
-        return {"points": points_3d, "global_ids": global_ids, "confidences": confidences, "stats": stats}
+        return {
+            "points": points_3d,
+            "global_ids": global_ids,
+            "confidences": confidences,
+            "stats": stats,
+        }
     return points_3d, global_ids, confidences
 
 
@@ -258,7 +289,9 @@ def _flatten_objects(det_data: Dict) -> List[Dict]:
     return []
 
 
-def _map_bbox_to_final_with_transform(t: "ImageTransformBase", bbox: List[float]) -> Tuple[float, float, float, float]:
+def _map_bbox_to_final_with_transform(
+    t: "ImageTransformBase", bbox: List[float]
+) -> Tuple[float, float, float, float]:
     x1, y1, x2, y2 = bbox
     xf1, yf1 = t.map_xy_to_final(x1, y1)
     xf2, yf2 = t.map_xy_to_final(x2, y2)

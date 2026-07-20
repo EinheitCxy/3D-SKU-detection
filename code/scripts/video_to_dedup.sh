@@ -4,7 +4,7 @@
 # 链路:
 #   [1] 抽帧   cv2 按 fps 采样 -> images/0.JPG,1.JPG,... (直接 0-based, 对齐 code 输入约定)
 #   [2] SKU检测 -> detections_results/0.json,1.json,...   ⚠️ 缺口, 见下
-#   [3] pipeline main.py --mode pipeline (pi3 + 3d) -> 匹配+去重+global_id
+#   [3] pipeline main.py --mode pipeline (da3 + 3d) -> 匹配+去重+global_id
 #   [4] 提取   去重SKU数目 = global_mapping.json 的 key 数; 带框图 = dedup_imgs_w_bboxes/
 #
 # ⚠️ 关键缺口 - SKU 检测:
@@ -97,15 +97,14 @@ EOF
   fi
 }
 
-# ---------- [3] 运行 pipeline (main.py --mode pipeline, pi3/3d) ----------
+# ---------- [3] 运行 pipeline (main.py --mode pipeline, da3/3d) ----------
 run_pipeline() {
-  echo "[3/4] 运行 pipeline: main.py --mode pipeline (pi3 + 3d)"
+  echo "[3/4] 运行 pipeline: main.py --mode pipeline (da3 + 3d)"
   cd "$CODE_DIR"
   # pipeline 末尾的 accuracy_evaluation 对无 benchmark 的 video 数据可能失败, 但去重结果在此之前已生成;
   # 故允许非0退出, 由 extract_results 检查 global_mapping.json 是否存在来判定.
   uv run python main.py --mode pipeline --dataset "$DATASET_DIR" \
-    --algorithm 3d --match_backend pi3 --recon_backend pi3 \
-    --save_root "$SAVE_ROOT" || echo "  [warn] pipeline 退出码非0, 继续检查结果..."
+    --algorithm 3d --save_root "$SAVE_ROOT" || echo "  [warn] pipeline 退出码非0, 继续检查结果..."
 }
 
 # ---------- [4] 提取结果 ----------

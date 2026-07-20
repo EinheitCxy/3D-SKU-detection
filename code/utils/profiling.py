@@ -14,9 +14,9 @@ Usage:
     StageTimer.record("uniqueness_constraint", time.perf_counter() - t0)
 """
 
-import time
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -102,5 +102,7 @@ def log_stages_sorted(logger_obj=None) -> None:
         log.info("[PROF] no stage timings recorded")
         return
     log.info("[PROF] stage breakdown (sorted by total desc):")
-    for name, rec in sorted(_STAGES.items(), key=lambda kv: kv[1]["total"], reverse=True):
+    for name, rec in sorted(
+        _STAGES.items(), key=lambda kv: kv[1]["total"], reverse=True
+    ):
         log.info(f"[PROF] {name}: total={rec['total']:.3f}s calls={rec['calls']}")

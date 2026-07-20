@@ -1,6 +1,7 @@
 """Mesh generation utilities for point cloud surface reconstruction."""
 
 import logging
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -31,18 +32,24 @@ def pointcloud_to_mesh(points, colors=None, method="poisson", depth=9):
     pcd.points = o3d.utility.Vector3dVector(points.astype(np.float64))
 
     if colors is not None:
-        colors_norm = colors.astype(np.float64) / 255.0 if colors.dtype == np.uint8 else colors
+        colors_norm = (
+            colors.astype(np.float64) / 255.0 if colors.dtype == np.uint8 else colors
+        )
         pcd.colors = o3d.utility.Vector3dVector(colors_norm)
 
     # Estimate normals
     bbox = pcd.get_axis_aligned_bounding_box()
     radius = np.linalg.norm(bbox.get_extent()) * 0.01
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=radius, max_nn=30))
+    pcd.estimate_normals(
+        search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=radius, max_nn=30)
+    )
     pcd.orient_normals_consistent_tangent_plane(k=15)
 
     # Surface reconstruction
     if method == "poisson":
-        mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=depth)
+        mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
+            pcd, depth=depth
+        )
         # Remove low-density vertices (3-5% threshold for robustness)
         densities = np.asarray(densities)
         threshold = np.quantile(densities, 0.05)  # 调整为5%，更稳健
@@ -94,7 +101,11 @@ def save_mesh(vertices, faces, output_path, vertex_colors=None):
     mesh.triangles = o3d.utility.Vector3iVector(faces.astype(np.int32))
 
     if vertex_colors is not None:
-        colors_norm = vertex_colors.astype(np.float64) / 255.0 if vertex_colors.dtype == np.uint8 else vertex_colors
+        colors_norm = (
+            vertex_colors.astype(np.float64) / 255.0
+            if vertex_colors.dtype == np.uint8
+            else vertex_colors
+        )
         mesh.vertex_colors = o3d.utility.Vector3dVector(colors_norm)
 
     mesh.compute_vertex_normals()
