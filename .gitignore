@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+**/.venv/
+
+# Model weights & checkpoints (GitHub 100MB/file limit; re-fetch separately)
+*.pt
+*.safetensors
+*.pth
+*.onnx
+*.bin
+checkpoints/
+
+# Vendored model libraries: core source is tracked (sam3/ Depth-Anything-3/);
+# only env/weights/non-core artifacts inside them are ignored (see CLAUDE.md).
+
+# sam3 interior exclusions (env/checkpoints/pycache/weights already covered globally)
+sam3/assets/
+sam3/examples/
+sam3/test_dir/
+sam3/outputs/
+sam3/build/
+sam3/*.backup
+
+# Depth-Anything-3 interior exclusions
+Depth-Anything-3/assets/
+Depth-Anything-3/output/
+Depth-Anything-3/notebooks/
+
+# Service-dir duplicate code copies (repo-level dedup: root code/ is canonical)
+Global-ID-Mapping/code/
+Dockered_GlobalIDMapping/code/
+
+# Excluded: standalone Lingmou GitLab project (own repo, keep out of this repo)
+frame_sampler/
+
+# Datasets (large; keep only the benchmark CSV at imdata root)
+imdata/*/
+imdata/*.gltf
+imdata/.~*
+!imdata/picture_mapping_benchmark.csv
+
+# Run outputs & logs
+Output/
+Output*/
+runs/
+*.glb
+*.npz
+*.log
+api_result.json
+sku_detection.json
+dedup_imgs_w_bboxes/
+temp_bbox.json
+
+# OS / editor
+.DS_Store
+*.swp
+*~
+
+# Test videos (bulky, regenerable)
+small_fd_video/
+
+# Work summaries (personal weekly reports, not tracked in repo)
+*SUMMARY*.md
+
+# Autoresearch loop work state (program/progress/results ledgers; local-only, not tracked)
+auto-research-loop/
