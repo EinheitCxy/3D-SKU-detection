@@ -10,6 +10,7 @@ from typing import Dict, List
 from pathlib import Path
 
 from .config import SKUMatchingConfig
+from .detection_objects import flatten_detection_objects
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -65,26 +66,9 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
                 with open(file_path, 'r', encoding='utf-8') as f:
                     file_detections = json.load(f)
                 
-                # 处理不同的检测结果格式
-                processed_data = None
-                
-                if isinstance(file_detections, list) and len(file_detections) > 0:
-                    # floor_display1 格式: [{"classes": {...}, "objects": [...]}]
-                    processed_data = file_detections[0]
-                elif isinstance(file_detections, dict):
-                    if 'skus' in file_detections:
-                        # floor_display2 格式: {"skus": [{"classes": {...}, "objects": [...]}]}
-                        if isinstance(file_detections['skus'], list) and len(file_detections['skus']) > 0:
-                            processed_data = file_detections['skus'][0]
-                        else:
-                            # 空 skus 数组：视为“无检测结果”的有效文件，保留占位
-                            processed_data = {"objects": []}
-                            logger.debug(f"Empty skus array in {file_path.name}, treating as empty detection")
-                            empty_objects_count += 1
-                    else:
-                        # 直接的字典格式: {"classes": {...}, "objects": [...]}
-                        processed_data = file_detections
-                else:
+                try:
+                    processed_data = {"objects": flatten_detection_objects(file_detections)}
+                except ValueError:
                     logger.debug(f"Invalid format in file {file_path.name}, skipping")
                     continue
                 

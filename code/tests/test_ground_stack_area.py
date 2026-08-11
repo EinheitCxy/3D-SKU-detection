@@ -7,7 +7,9 @@ import cv2
 import numpy as np
 import pytest
 
+from modules.deduplicate_detections import build_global_mapping, load_detection_objects
 from modules.ground_stack_area_stage import run_ground_stack_area
+from utils.data_utils import load_detections
 
 from utils.ground_stack_area import (
     BBoxAreaError,
@@ -126,6 +128,84 @@ def test_stage_writes_report_without_mutating_inputs(tmp_path):
     assert detection_path.read_bytes() == detection_before
     assert (report_path.parent / "selected_instances.json").is_file()
     assert (report_path.parent / "annotated_frames" / "0.jpg").is_file()
+
+
+def test_stage_uses_only_anchor_frame_observations_for_calibration(tmp_path):
+    dataset, save_root, _, mapping_path = make_measurement_fixture(tmp_path)
+    assert cv2.imwrite(
+        str(dataset / "images" / "1.jpg"),
+        np.full((100, 100, 3), 255, dtype=np.uint8),
+    )
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "1": [
+                    {"image_id": 0, "object_id": 0, "bbox": [10, 10, 30, 20]},
+                ],
+                "2": [
+                    {"image_id": 0, "object_id": 1, "bbox": [40, 10, 50, 15]},
+                    {"image_id": 1, "object_id": 0, "bbox": [0, 0, 20, 20]},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_ground_stack_area(str(dataset), save_root, 0, 0, 20.0, 10.0)
+
+    report = json.loads(Path(result["report_path"]).read_text(encoding="utf-8"))
+    instances = json.loads(Path(result["instances_path"]).read_text(encoding="utf-8"))
+    assert result["success"] is True
+    assert report["value_cm2"] == pytest.approx(250.0)
+    assert instances["instances"][1]["image_id"] == 0
+    assert instances["instances"][1]["area_cm2"] == pytest.approx(50.0)
+
+
+def test_second_sku_group_can_be_anchor_and_global_mapping_member(tmp_path):
+    dataset = tmp_path / "multi_sku_stack"
+    images = dataset / "images"
+    detections = dataset / "detections_results"
+    images.mkdir(parents=True)
+    detections.mkdir()
+    assert cv2.imwrite(
+        str(images / "0.jpg"), np.full((100, 100, 3), 255, dtype=np.uint8)
+    )
+    detection_path = detections / "0.json"
+    detection_path.write_text(
+        json.dumps(
+            {
+                "skus": [
+                    {"objects": [{"position": [10, 10, 30, 20]}]},
+                    {"objects": [{"position": [40, 10, 60, 20]}]},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    matching_detections = load_detections(str(detections), return_index_map=True)
+    assert [
+        object_["position"] for object_ in matching_detections[0][1]["objects"]
+    ] == [[10, 10, 30, 20], [40, 10, 60, 20]]
+    _, objects = load_detection_objects(detection_path)
+    mapping = build_global_mapping(
+        matches=[],
+        survivors_by_image={0: set(range(len(objects)))},
+        objects_by_image={0: objects},
+        image_indices=[0],
+    )
+    save_root = tmp_path / "Output"
+    mapping_path = (
+        save_root / "multi_sku_stack" / "dedup_detections" / "global_mapping.json"
+    )
+    mapping_path.parent.mkdir(parents=True)
+    mapping_path.write_text(json.dumps(mapping), encoding="utf-8")
+
+    result = run_ground_stack_area(str(dataset), save_root, 0, 1, 20.0, 10.0)
+
+    report = json.loads(Path(result["report_path"]).read_text(encoding="utf-8"))
+    assert result["success"] is True
+    assert report["accepted_global_ids"] == 2
+    assert report["value_cm2"] == pytest.approx(400.0)
 
 
 def test_main_ground_stack_area_mode_runs_stage(tmp_path):

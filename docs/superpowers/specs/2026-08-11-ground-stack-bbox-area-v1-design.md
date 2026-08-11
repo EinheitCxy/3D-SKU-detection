@@ -53,9 +53,9 @@ The anchor box is retrieved from `detections_results/<frame>.json`; it is not du
 
 ## Calibration and instance selection
 
-1. Read the anchor bbox `(x1, y1, x2, y2)` and map its four corners to the physical rectangle `(0,0)`, `(width_cm,0)`, `(width_cm,height_cm)`, `(0,height_cm)` with a homography.
-2. Transform each candidate bbox's four corners through that homography and calculate the mapped quadrilateral area with the shoelace formula.
-3. For every global ID, select the accepted observation with the largest original pixel bbox area. This makes the chosen box less sensitive to quantisation; it does not change the one-count-per-ID rule.
+1. Read the anchor bbox `(x1, y1, x2, y2)` and derive independent axis-aligned centimetre-per-pixel scales from its known width and height.
+2. For every global ID, only consider observations from `anchor_frame`; this prevents camera motion or perspective changes in another frame from corrupting the anchor calibration.
+3. Convert the selected bbox pixel area with those two scales. A global ID without a valid anchor-frame observation is rejected.
 4. Reject, rather than silently repair, invalid boxes, non-finite calibration results, non-positive mapped area, or a global ID for which no valid observation remains.
 
 The report records whether an instance was accepted or rejected and why. It makes no claim about boxes never detected in the video.
@@ -103,7 +103,7 @@ ground_stack_area/
     "anchor_object": 3,
     "anchor_width_cm": 32.0,
     "anchor_height_cm": 24.0,
-    "method": "bbox_planar_homography"
+    "method": "axis_aligned_bbox_scale_same_frame"
   },
   "warnings": [],
   "artifacts": {

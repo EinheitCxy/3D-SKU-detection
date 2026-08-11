@@ -81,5 +81,5 @@ batch_accuracy:
 # 必须经CLI明确提供锚点帧、对象索引和正面宽高；本节不提供隐式默认锚点。
 ground_stack_area:
   metric: "calibrated_bbox_area_sum"  # 每个global_id仅取一个bbox并累计物理等效面积
-  calibration_method: "bbox_planar_homography"  # 假设被测商品正面与锚点近似共面
+  calibration_method: "axis_aligned_bbox_scale_same_frame"  # 只计锚点帧，假设正面近似共面
   estimate_hidden_instances: false  # 不推断未检测或被遮挡商品

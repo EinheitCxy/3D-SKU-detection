@@ -28,6 +28,8 @@ from typing import Dict, List, Tuple, Set
 # 添加父目录到路径以便导入utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from utils.detection_objects import flatten_detection_objects
+
 
 logger = logging.getLogger(__name__)
 
@@ -54,23 +56,7 @@ def load_detection_objects(json_path: Path) -> Tuple[Dict, List[Dict]]:
     with json_path.open('r', encoding='utf-8') as f:
         data = json.load(f)
 
-    # 归一化结构
-    if isinstance(data, dict) and 'skus' in data:
-        if isinstance(data['skus'], list) and data['skus']:
-            node = data['skus'][0]
-            if 'objects' not in node:
-                raise ValueError(f"No 'objects' in {json_path}")
-            return data, node['objects']
-        raise ValueError(f"Empty 'skus' array in {json_path}")
-    elif isinstance(data, list) and data:
-        node = data[0]
-        if 'objects' not in node:
-            raise ValueError(f"No 'objects' in {json_path}")
-        return data, node['objects']
-    elif isinstance(data, dict) and 'objects' in data:
-        return data, data['objects']
-    else:
-        raise ValueError(f"Unsupported detection JSON structure: {json_path}")
+    return data, flatten_detection_objects(data)
 
 
 def save_detection_objects(json_path: Path, original: Dict, new_objects: List[Dict]) -> None:

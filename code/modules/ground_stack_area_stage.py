@@ -9,7 +9,7 @@ from typing import Any
 
 import cv2
 
-from utils.bbox_3d_extractor import _flatten_objects
+from utils.detection_objects import flatten_detection_objects
 from utils.ground_stack_area import (
     BBoxAreaError,
     RejectedInstance,
@@ -48,7 +48,7 @@ def _load_anchor_bbox(dataset_dir: Path, frame_id: int, object_id: int) -> tuple
     if not detection_path.is_file():
         raise BBoxAreaError(f"anchor detection does not exist: {detection_path}")
     detection = json.loads(detection_path.read_text(encoding="utf-8"))
-    objects = _flatten_objects(detection)
+    objects = flatten_detection_objects(detection)
     if object_id < 0 or object_id >= len(objects):
         raise BBoxAreaError(
             f"anchor object index {object_id} is outside detection objects ({len(objects)})"
@@ -155,7 +155,7 @@ def _base_report(
             "anchor_object": anchor_object,
             "anchor_width_cm": anchor_width_cm,
             "anchor_height_cm": anchor_height_cm,
-            "method": "bbox_planar_homography",
+            "method": "axis_aligned_bbox_scale_same_frame",
         },
         "warnings": [],
         "artifacts": {
@@ -213,7 +213,9 @@ def run_ground_stack_area(
         calibration = calibrate_from_anchor(
             anchor_bbox, anchor_width_cm, anchor_height_cm
         )
-        selected, rejected = select_best_instances(global_mapping)
+        selected, rejected = select_best_instances(
+            global_mapping, required_image_id=anchor_frame
+        )
         rejected_payload = [_rejection_payload(instance) for instance in rejected]
 
         for instance in selected:

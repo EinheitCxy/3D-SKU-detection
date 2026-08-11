@@ -120,7 +120,8 @@ def _validated_observation(
 
 
 def select_best_instances(
-    global_mapping: Mapping[str, Sequence[Mapping[str, Any]]]
+    global_mapping: Mapping[str, Sequence[Mapping[str, Any]]],
+    required_image_id: int | None = None,
 ) -> tuple[list[SelectedInstance], list[RejectedInstance]]:
     """Select the largest valid bbox observation for each global ID.
 
@@ -136,12 +137,18 @@ def select_best_instances(
         errors: list[str] = []
         for observation in observations:
             try:
-                candidates.append(_validated_observation(global_id, observation))
+                candidate = _validated_observation(global_id, observation)
+                if required_image_id is None or candidate.image_id == required_image_id:
+                    candidates.append(candidate)
             except BBoxAreaError as exc:
                 errors.append(str(exc))
 
         if not candidates:
-            reason = errors[0] if errors else "global ID has no observations"
+            reason = errors[0] if errors else (
+                f"global ID has no valid observation in frame {required_image_id}"
+                if required_image_id is not None
+                else "global ID has no observations"
+            )
             rejected.append(RejectedInstance(global_id=global_id, reason=reason))
             continue
 
