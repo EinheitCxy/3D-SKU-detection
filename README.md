@@ -54,6 +54,17 @@ uv pip install -e .                # bbox_gen（根目录）
 
 GPU（CUDA）为匹配/重建必需。`uv` 是唯一 Python 工具。
 
+### 视频到去重结果
+
+`code/scripts/video_to_dedup.sh` 会先用根目录 `.venv` 中的 `bbox_gen.py` 在 CPU 上生成每帧 `detections_results/`，再用 `code/.venv` 运行 Pi3 匹配和去重；不会创建新的虚拟环境。重复运行会只重置该脚本工作目录中的数字帧和检测 JSON，避免旧帧被重复计入。若主机没有可通信的 NVIDIA GPU，脚本会在检测完成后停止，并且不会写出不可信的 `global_mapping.json`。
+
+```bash
+cd code
+bash scripts/video_to_dedup.sh ../small_fd_video/fd_area_test.mp4 2.0 0
+```
+
+可用 `DETECTOR_ROOT`、`DETECTOR_ENV`、`CODE_ENV` 覆盖已有检测器与两个环境的位置，`DETECTOR_DEVICE` 默认为 `cpu`。
+
 ## 快速开始
 
 ```bash
