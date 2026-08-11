@@ -60,7 +60,9 @@ class DA33DReconstructor(ReconstructorBase):
     # HuggingFace 默认模型；可通过 model_path 覆盖
     DEFAULT_HF_REPO = "depth-anything/DA3NESTED-GIANT-LARGE"
     # DA3 自带 venv（含 numpy<2 + omegaconf/addict/e3nn 等 DA3 依赖）
-    DA3_VENV_PYTHON = REPO_ROOT / "Depth-Anything-3" / ".venv" / "bin" / "python"
+    DEFAULT_DA3_VENV_PYTHON = (
+        REPO_ROOT / "Depth-Anything-3" / ".venv" / "bin" / "python"
+    )
     DA3_RUNNER = THIS_DIR / "da3_runner.py"
 
     def __init__(
@@ -71,11 +73,14 @@ class DA33DReconstructor(ReconstructorBase):
     ) -> None:
         super().__init__(device=device, model_path=model_path, backend_name="da3")
         self.model_name = model_name
+        self.da3_venv_python = Path(
+            os.environ.get("DA3_VENV_PYTHON", self.DEFAULT_DA3_VENV_PYTHON)
+        ).expanduser()
         # subprocess 模式：不在父进程加载 DA3（依赖隔离在 DA3 venv），仅校验 venv 与 runner 可用
-        if not self.DA3_VENV_PYTHON.exists():
+        if not self.da3_venv_python.is_file():
             raise FileNotFoundError(
-                f"DA3 venv 不存在: {self.DA3_VENV_PYTHON}。"
-                f"请在 Depth-Anything-3/ 下创建 venv 并安装 DA3 依赖（numpy<2, omegaconf, addict, e3nn）。"
+                f"DA3 Python 不存在: {self.da3_venv_python}。"
+                "请设置 DA3_VENV_PYTHON 指向已有的 Depth-Anything-3/.venv/bin/python。"
             )
         if not self.DA3_RUNNER.exists():
             raise FileNotFoundError(f"DA3 runner 脚本不存在: {self.DA3_RUNNER}")
@@ -85,7 +90,7 @@ class DA33DReconstructor(ReconstructorBase):
     def load_model(self) -> None:
         """subprocess 模式：父进程不加载模型，仅标记就绪。"""
         self.model = True  # 占位，满足基类模板的 self.model is None 检查
-        logger.info(f"DA3 subprocess 模式就绪: venv={self.DA3_VENV_PYTHON}")
+        logger.info(f"DA3 subprocess 模式就绪: python={self.da3_venv_python}")
 
     # ---- 图像加载 ----
 
@@ -122,7 +127,7 @@ class DA33DReconstructor(ReconstructorBase):
         input_dir = str(Path(image_paths[0]).parent)
 
         cmd = [
-            str(self.DA3_VENV_PYTHON),
+            str(self.da3_venv_python),
             str(self.DA3_RUNNER),
             "--input_dir", input_dir,
             "--output_npz", str(tmp_npz),
@@ -180,10 +185,23 @@ class DA33DReconstructor(ReconstructorBase):
 
         save_kwargs: Dict[str, Any] = {}
 
-        for key in ("depth", "depth_conf", "world_points", "world_points_conf", "images"):
+        for key in (
+            "depth",
+            "depth_conf",
+            "world_points",
+            "world_points_conf",
+            "images",
+            "source_to_processed_affine",
+        ):
             val = predictions.get(key)
             if val is not None and isinstance(val, np.ndarray):
                 save_kwargs[key] = val.astype(np.float32 if key != "images" else np.uint8, copy=False)
+
+        source_image_sizes = predictions.get("source_image_sizes")
+        if source_image_sizes is not None and isinstance(source_image_sizes, np.ndarray):
+            save_kwargs["source_image_sizes"] = source_image_sizes.astype(
+                np.int32, copy=False
+            )
 
         for key in ("extrinsic", "intrinsic"):
             val = predictions.get(key)

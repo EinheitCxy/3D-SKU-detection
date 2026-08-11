@@ -281,6 +281,8 @@ def test_main_ground_stack_area_mode_runs_stage(tmp_path):
             "main.py",
             "--mode",
             "ground-stack-area",
+            "--area-mode",
+            "calibrated_bbox",
             "--dataset",
             str(dataset),
             "--save_root",
@@ -304,3 +306,375 @@ def test_main_ground_stack_area_mode_runs_stage(tmp_path):
     assert (
         save_root / "stack" / "ground_stack_area" / "measurement_report.json"
     ).is_file()
+
+
+def test_main_da3_metric_area_sums_each_global_id_once_without_anchor(tmp_path):
+    dataset = tmp_path / "metric_stack"
+    images = dataset / "images"
+    images.mkdir(parents=True)
+    for image_id in (0, 1):
+        assert cv2.imwrite(
+            str(images / f"{image_id}.jpg"),
+            np.full((100, 100, 3), 255, dtype=np.uint8),
+        )
+
+    u, v = np.meshgrid(np.arange(10, dtype=np.float32), np.arange(10, dtype=np.float32))
+    plane = np.stack((u * 0.1, v * 0.2, np.ones_like(u)), axis=-1)
+    world_points = np.stack((plane, plane), axis=0)
+    save_root = tmp_path / "Output"
+    cache_dir = save_root / "metric_stack" / "da3_cache"
+    cache_dir.mkdir(parents=True)
+    np.savez_compressed(
+        cache_dir / "predictions.npz",
+        world_points=world_points,
+        world_points_conf=np.ones((2, 10, 10), dtype=np.float32),
+        image_ids=np.array([0, 1], dtype=np.int32),
+        source_image_sizes=np.array([[100, 100], [100, 100]], dtype=np.int32),
+        source_to_processed_affine=np.array(
+            [[[0.1, 0.0, 0.0], [0.0, 0.1, 0.0]]] * 2, dtype=np.float32
+        ),
+    )
+    mapping_path = (
+        save_root / "metric_stack" / "dedup_detections" / "global_mapping.json"
+    )
+    mapping_path.parent.mkdir(parents=True)
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "1": [
+                    {"image_id": 0, "object_id": 0, "bbox": [0, 0, 100, 100]},
+                    {"image_id": 1, "object_id": 0, "bbox": [0, 0, 100, 110]},
+                ],
+                "2": [{"image_id": 0, "object_id": 1, "bbox": [0, 0, 100, 100]}],
+                "3": [{"image_id": 1, "object_id": 1, "bbox": [0, 0, 100, 110]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    mapping_before = mapping_path.read_bytes()
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--mode",
+            "ground-stack-area",
+            "--area-mode",
+            "da3_metric",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+        ],
+        cwd=Path(__file__).parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(
+        (
+            save_root / "metric_stack" / "ground_stack_area" / "measurement_report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["metric"] == "da3_metric_bbox_area_sum"
+    assert report["accepted_global_ids"] == 2
+    assert report["rejected_global_ids"] == 1
+    assert report["status"] == "accepted_with_warnings"
+    assert report["warnings"][0].startswith("global_id 3: ")
+    assert report["rejections"] == [
+        {
+            "global_id": "3",
+            "reason": "bbox is outside source image bounds",
+            "observation_diagnostics": [
+                {
+                    "observation_index": 0,
+                    "status": "rejected",
+                    "reason": "bbox is outside source image bounds",
+                }
+            ],
+        }
+    ]
+    assert report["value_m2"] == pytest.approx(2 * 0.9 * 1.8)
+    instances = json.loads(
+        (
+            save_root / "metric_stack" / "ground_stack_area" / "selected_instances.json"
+        ).read_text(encoding="utf-8")
+    )
+    first = instances["instances"][0]
+    assert first["selected_observation_index"] == 0
+    assert [item["status"] for item in first["observation_diagnostics"]] == [
+        "eligible",
+        "rejected",
+    ]
+    assert mapping_path.read_bytes() == mapping_before
+
+
+def test_main_da3_metric_area_uses_center_scale_when_bbox_edge_is_background(tmp_path):
+    dataset = tmp_path / "edge_background_stack"
+    images = dataset / "images"
+    images.mkdir(parents=True)
+    assert cv2.imwrite(
+        str(images / "0.jpg"), np.full((100, 100, 3), 255, dtype=np.uint8)
+    )
+
+    u, v = np.meshgrid(np.arange(10, dtype=np.float32), np.arange(10, dtype=np.float32))
+    plane = np.stack((u * 0.1, v * 0.2, np.ones_like(u)), axis=-1)
+    plane[[0, -1], :, 0] += 5.0
+    plane[:, [0, -1], 0] += 5.0
+    save_root = tmp_path / "Output"
+    cache_dir = save_root / "edge_background_stack" / "da3_cache"
+    cache_dir.mkdir(parents=True)
+    np.savez_compressed(
+        cache_dir / "predictions.npz",
+        world_points=plane[None, ...],
+        world_points_conf=np.ones((1, 10, 10), dtype=np.float32),
+        image_ids=np.array([0], dtype=np.int32),
+        source_image_sizes=np.array([[100, 100]], dtype=np.int32),
+        source_to_processed_affine=np.array(
+            [[[0.1, 0.0, 0.0], [0.0, 0.1, 0.0]]], dtype=np.float32
+        ),
+    )
+    mapping_path = (
+        save_root
+        / "edge_background_stack"
+        / "dedup_detections"
+        / "global_mapping.json"
+    )
+    mapping_path.parent.mkdir(parents=True)
+    mapping_path.write_text(
+        json.dumps(
+            {"1": [{"image_id": 0, "object_id": 0, "bbox": [0, 0, 100, 100]}]}
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--mode",
+            "ground-stack-area",
+            "--area-mode",
+            "da3_metric",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+        ],
+        cwd=Path(__file__).parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(
+        (
+            save_root
+            / "edge_background_stack"
+            / "ground_stack_area"
+            / "measurement_report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["value_m2"] == pytest.approx(0.9 * 1.8)
+
+
+def test_main_da3_metric_area_uses_cached_source_to_processed_affine(tmp_path):
+    dataset = tmp_path / "mixed_size_stack"
+    images = dataset / "images"
+    images.mkdir(parents=True)
+    assert cv2.imwrite(
+        str(images / "0.jpg"), np.full((100, 200, 3), 255, dtype=np.uint8)
+    )
+
+    u, v = np.meshgrid(np.arange(20, dtype=np.float32), np.arange(10, dtype=np.float32))
+    points = np.stack((u, v, np.ones_like(u)), axis=-1)
+    points[:, 10:, 0] = (u[:, 10:] - 10) * 0.1
+    points[:, 10:, 1] = v[:, 10:] * 0.2
+    save_root = tmp_path / "Output"
+    cache_dir = save_root / "mixed_size_stack" / "da3_cache"
+    cache_dir.mkdir(parents=True)
+    np.savez_compressed(
+        cache_dir / "predictions.npz",
+        world_points=points[None, ...],
+        world_points_conf=np.ones((1, 10, 20), dtype=np.float32),
+        image_ids=np.array([0], dtype=np.int32),
+        source_image_sizes=np.array([[200, 100]], dtype=np.int32),
+        source_to_processed_affine=np.array(
+            [[[0.1, 0.0, 10.0], [0.0, 0.1, 0.0]]], dtype=np.float32
+        ),
+    )
+    mapping_path = (
+        save_root / "mixed_size_stack" / "dedup_detections" / "global_mapping.json"
+    )
+    mapping_path.parent.mkdir(parents=True)
+    mapping_path.write_text(
+        json.dumps(
+            {"1": [{"image_id": 0, "object_id": 0, "bbox": [0, 0, 100, 100]}]}
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--mode",
+            "ground-stack-area",
+            "--area-mode",
+            "da3_metric",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+        ],
+        cwd=Path(__file__).parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(
+        (
+            save_root / "mixed_size_stack" / "ground_stack_area" / "measurement_report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["value_m2"] == pytest.approx(0.9 * 1.8)
+
+
+def test_main_da3_metric_area_rejects_zero_confidence_padding(tmp_path):
+    dataset = tmp_path / "invalid_depth_stack"
+    images = dataset / "images"
+    images.mkdir(parents=True)
+    assert cv2.imwrite(
+        str(images / "0.jpg"), np.full((200, 200, 3), 255, dtype=np.uint8)
+    )
+
+    u, v = np.meshgrid(np.arange(20, dtype=np.float32), np.arange(20, dtype=np.float32))
+    points = np.zeros((20, 20, 3), dtype=np.float32)
+    points[5:15, 5:15] = np.stack(
+        (u[5:15, 5:15] * 0.1, v[5:15, 5:15] * 0.2, np.ones((10, 10))),
+        axis=-1,
+    )
+    confidence = np.zeros((20, 20), dtype=np.float32)
+    confidence[5:15, 5:15] = 1.0
+    save_root = tmp_path / "Output"
+    cache_dir = save_root / "invalid_depth_stack" / "da3_cache"
+    cache_dir.mkdir(parents=True)
+    np.savez_compressed(
+        cache_dir / "predictions.npz",
+        world_points=points[None, ...],
+        world_points_conf=confidence[None, ...],
+        image_ids=np.array([0], dtype=np.int32),
+        source_image_sizes=np.array([[200, 200]], dtype=np.int32),
+        source_to_processed_affine=np.array(
+            [[[0.1, 0.0, 0.0], [0.0, 0.1, 0.0]]], dtype=np.float32
+        ),
+    )
+    mapping_path = (
+        save_root / "invalid_depth_stack" / "dedup_detections" / "global_mapping.json"
+    )
+    mapping_path.parent.mkdir(parents=True)
+    mapping_path.write_text(
+        json.dumps(
+            {"1": [{"image_id": 0, "object_id": 0, "bbox": [0, 0, 200, 200]}]}
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--mode",
+            "ground-stack-area",
+            "--area-mode",
+            "da3_metric",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+        ],
+        cwd=Path(__file__).parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    report = json.loads(
+        (
+            save_root / "invalid_depth_stack" / "ground_stack_area" / "measurement_report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["status"] == "rejected"
+    assert report["accepted_global_ids"] == 0
+
+
+def test_main_da3_metric_area_rejects_stale_source_image_size(tmp_path):
+    dataset = tmp_path / "stale_source_stack"
+    images = dataset / "images"
+    images.mkdir(parents=True)
+    assert cv2.imwrite(
+        str(images / "0.jpg"), np.full((100, 100, 3), 255, dtype=np.uint8)
+    )
+
+    u, v = np.meshgrid(np.arange(10, dtype=np.float32), np.arange(10, dtype=np.float32))
+    plane = np.stack((u * 0.1, v * 0.2, np.ones_like(u)), axis=-1)
+    save_root = tmp_path / "Output"
+    cache_dir = save_root / "stale_source_stack" / "da3_cache"
+    cache_dir.mkdir(parents=True)
+    np.savez_compressed(
+        cache_dir / "predictions.npz",
+        world_points=plane[None, ...],
+        world_points_conf=np.ones((1, 10, 10), dtype=np.float32),
+        image_ids=np.array([0], dtype=np.int32),
+        source_image_sizes=np.array([[200, 100]], dtype=np.int32),
+        source_to_processed_affine=np.array(
+            [[[0.1, 0.0, 0.0], [0.0, 0.1, 0.0]]], dtype=np.float32
+        ),
+    )
+    mapping_path = (
+        save_root / "stale_source_stack" / "dedup_detections" / "global_mapping.json"
+    )
+    mapping_path.parent.mkdir(parents=True)
+    mapping_path.write_text(
+        json.dumps(
+            {"1": [{"image_id": 0, "object_id": 0, "bbox": [0, 0, 100, 100]}]}
+        ),
+        encoding="utf-8",
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--mode",
+            "ground-stack-area",
+            "--area-mode",
+            "da3_metric",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+        ],
+        cwd=Path(__file__).parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    report = json.loads(
+        (
+            save_root / "stale_source_stack" / "ground_stack_area" / "measurement_report.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert report["status"] == "rejected"
+    assert report["warnings"] == [
+        "global_id 1: source image size changed for frame 0; rebuild DA3 cache"
+    ]
+    assert report["rejections"][0]["observation_diagnostics"][0]["status"] == "rejected"

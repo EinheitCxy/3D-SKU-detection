@@ -1028,6 +1028,8 @@ def main() -> None:
                         help="ground-stack-area: 锚点商品正面实测宽度（cm）")
     parser.add_argument('--area-anchor-height-cm', type=float, default=None,
                         help="ground-stack-area: 锚点商品正面实测高度（cm）")
+    parser.add_argument('--area-mode', choices=['da3_metric', 'calibrated_bbox'], default='da3_metric',
+                        help="ground-stack-area: da3_metric（默认，无需标尺）或 calibrated_bbox（显式标尺换算）")
     # 3D重建/匹配专用参数
     parser.add_argument('--recon_conf_thres', type=float, default=float(yaml_recon.get('conf_thres', 50.0)), help="3D导出置信度阈值(0-100)")
     parser.add_argument('--recon_output', type=str, default=yaml_recon.get('output', 'reconstruction.glb'), help="3D重建输出文件名")
@@ -1131,27 +1133,37 @@ def main() -> None:
         dedup_backend = args.match_backend if '3d' in args.algorithm else None
         app.run_dedup_sequence(args.dataset, algorithm=args.algorithm, backend=dedup_backend)
     elif args.mode == 'ground-stack-area':
-        required_anchor_args = {
-            '--area-anchor-frame': args.area_anchor_frame,
-            '--area-anchor-object': args.area_anchor_object,
-            '--area-anchor-width-cm': args.area_anchor_width_cm,
-            '--area-anchor-height-cm': args.area_anchor_height_cm,
-        }
-        missing = [name for name, value in required_anchor_args.items() if value is None]
-        if missing:
-            parser.error(
-                'ground-stack-area requires ' + ', '.join(missing)
-            )
-        from modules.ground_stack_area_stage import run_ground_stack_area
+        if args.area_mode == 'da3_metric':
+            if any(value is not None for value in (
+                args.area_anchor_frame,
+                args.area_anchor_object,
+                args.area_anchor_width_cm,
+                args.area_anchor_height_cm,
+            )):
+                parser.error('anchor arguments require --area-mode calibrated_bbox')
+            from modules.da3_metric_area_stage import run_da3_metric_area
 
-        result = run_ground_stack_area(
-            dataset_path=args.dataset,
-            save_root=app.save_root,
-            anchor_frame=args.area_anchor_frame,
-            anchor_object=args.area_anchor_object,
-            anchor_width_cm=args.area_anchor_width_cm,
-            anchor_height_cm=args.area_anchor_height_cm,
-        )
+            result = run_da3_metric_area(args.dataset, app.save_root)
+        else:
+            required_anchor_args = {
+                '--area-anchor-frame': args.area_anchor_frame,
+                '--area-anchor-object': args.area_anchor_object,
+                '--area-anchor-width-cm': args.area_anchor_width_cm,
+                '--area-anchor-height-cm': args.area_anchor_height_cm,
+            }
+            missing = [name for name, value in required_anchor_args.items() if value is None]
+            if missing:
+                parser.error('calibrated_bbox requires ' + ', '.join(missing))
+            from modules.ground_stack_area_stage import run_ground_stack_area
+
+            result = run_ground_stack_area(
+                dataset_path=args.dataset,
+                save_root=app.save_root,
+                anchor_frame=args.area_anchor_frame,
+                anchor_object=args.area_anchor_object,
+                anchor_width_cm=args.area_anchor_width_cm,
+                anchor_height_cm=args.area_anchor_height_cm,
+            )
         if not result['success']:
             logger.error(
                 "ground-stack-area rejected: %s (report: %s)",

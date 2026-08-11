@@ -17,6 +17,7 @@ code/
 │   ├── pi3_3d_reconstructor.py    # Pi3 后端（缓存式，快速批量）
 │   ├── da3_3d_reconstructor.py    # Depth-Anything-3 后端（高精度多视角）
 │   ├── da3_runner.py              # DA3 推理脚本（subprocess，在 Depth-Anything-3/.venv 中运行）
+│   ├── da3_metric_area_stage.py   # 基于 DA3 metric 点云的去重 bbox 面积阶段
 │   └── vggt_3d_reconstructor.py   # VGGT 后端（实时重建，当前已注释）
 ├── utils/                         # 可复用库模块
 │   ├── config.py, data_utils.py, transforms.py, point_utils.py
@@ -44,6 +45,11 @@ uv run main.py --mode pipeline --dataset imdata/floor_display2 --save_root ./Out
 uv run main.py --mode pipeline --dataset imdata/floor_display2 \
   --recon_backend da3 --match_backend da3 --algorithm 3d --save_root ./Output
 
+# 若在 Git worktree 中运行，复用已有 DA3 环境（不创建新的 .venv）
+DA3_VENV_PYTHON=/home/xingyu/3D_Recognization/Depth-Anything-3/.venv/bin/python \
+uv run main.py --mode pipeline --dataset imdata/floor_display2 \
+  --recon_backend da3 --match_backend da3 --algorithm 3d --save_root ./Output
+
 # 并行处理参考图（pi3/da3 后端推荐，4 线程）
 uv run main.py --mode concise --dataset imdata/floor_display2 \
   --match_backend pi3 --algorithm 3d --parallel_refs 4 --save_root ./Output
@@ -64,8 +70,13 @@ uv run main.py --mode analyzer --dataset imdata/floor_display2 --save_root ./Out
 # 仅顺序去重（默认同名输出为 1.json..X.json）
 uv run main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output
 
-# 地堆 bbox 面积（读取已有检测和去重结果；每个global_id只累计一次）
+# DA3 米制地堆 bbox 面积（默认；不需要 reference）
 uv run python main.py --mode ground-stack-area \
+  --area-mode da3_metric --dataset imdata/my_stack --save_root ./Output
+
+# 标尺换算面积（显式可选模式）
+uv run python main.py --mode ground-stack-area \
+  --area-mode calibrated_bbox \
   --dataset ../imdata/my_stack --save_root ../Output \
   --area-anchor-frame 0 --area-anchor-object 3 \
   --area-anchor-width-cm 32.0 --area-anchor-height-cm 24.0
@@ -146,9 +157,11 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 
 ### 地堆 bbox 面积的定义与限制
 
-`--mode ground-stack-area` 读取既有 `detections_results/` 和 `dedup_detections/global_mapping.json`，使用一个已知正面宽高的检测框作为标定锚点，只将锚点帧内每个物理 `global_id` 的有效且完整位于源图像内的 bbox 换算为 `cm²`，再得到总 `m²`。anchor 的 frame、object_id 和 bbox 必须和 mapping 中的记录一致；其他帧的观测不会参与面积选择。缺少锚点帧观测、越界/截断或索引非整数的 global ID 会被拒绝，以避免相机运动造成的跨帧尺度误差与边界框偏差。多个 `skus` 组使用同一稳定对象索引参与匹配、去重与计量。必须显式提供锚点帧号、对象索引、宽度和高度；没有任何隐式锚点默认值。
+默认的 `--area-mode da3_metric` 读取 `da3_cache/predictions.npz` 的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine 与缓存原图尺寸，从 `dedup_detections/global_mapping.json` 的全部观测中为每个物理 `global_id` 选择最可靠的一帧。它使用 bbox 中心 50% 的局部米制像素面积估计整个 bbox，避免边缘背景撑大结果，所以不需要已知物体尺寸。至少需要 64 个非零、置信度≥1 的有效点和 50% 覆盖率，且中心平面法向 5–95% 厚度不超过 6 cm；当前原图尺寸若与 cache 不一致，测量会拒绝并要求重建。`measurement_report.json` 会保留每个全拒绝 global ID 的观测级诊断。DA3 尺度是模型估计，现场 reference 可用于 QA，而非必需输入。
 
-结果是**bbox 物理等效面积的算术和**，不是 bbox 并集、SAM3 mask 面积、包装表面积或地面占地面积。它假设被测包装正面与锚点近似共面，不估计未检测/被遮挡商品，并且不会改写检测 JSON 或 `global_mapping.json`。`measurement_report.json` 会记录状态、标定和拒绝原因；`selected_instances.json` 与标注帧用于审查每一项贡献。
+`--area-mode calibrated_bbox` 是显式锚点换算模式：它只计锚点帧内每个物理 `global_id` 的有效、完整 bbox，并要求明确提供锚点帧、对象索引、宽度和高度。
+
+结果是**每个 global ID 一次的 bbox 物理等效面积算术和**，不是 bbox 并集、SAM3 mask 面积、包装表面积或地面占地面积。它不估计未检测/被遮挡商品，并且不会改写检测 JSON 或 `global_mapping.json`。`measurement_report.json` 会记录状态、尺度来源、质量门与拒绝原因；`selected_instances.json` 与标注帧用于审查每一项贡献。
 
 ## 🧾 日志输出（统一）
 

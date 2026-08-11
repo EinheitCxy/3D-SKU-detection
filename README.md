@@ -87,8 +87,13 @@ uv run python main.py --mode dedup
 uv run python main.py --mode analyzer
 uv run python main.py --mode viewer
 
-# 只读地堆 bbox 面积测量（要求检测与 global_mapping.json 已存在）
+# DA3 米制地堆 bbox 面积（默认；要求 DA3 cache 与 global_mapping.json 已存在）
+uv run python main.py --mode ground-stack-area --area-mode da3_metric \
+    --dataset ../imdata/my_stack --save_root ../Output
+
+# 显式标尺换算（可选的现场校验模式）
 uv run python main.py --mode ground-stack-area \
+    --area-mode calibrated_bbox \
     --dataset ../imdata/my_stack --save_root ../Output \
     --area-anchor-frame 0 --area-anchor-object 3 \
     --area-anchor-width-cm 32.0 --area-anchor-height-cm 24.0
@@ -101,17 +106,27 @@ bash batch_accuracy_evaluation.sh 2 12
 **`--algorithm`**: `point_tracking` | `3d` | `both`
 **`--recon_backend` / `--match_backend`**: `vggt` | `pi3` | `da3`（默认来自 `config.yaml`）
 
+DA3 在 Git worktree 中运行时，可复用主 checkout 已有的 DA3 环境，无需创建 worktree 专用环境：
+
+```bash
+DA3_VENV_PYTHON=/home/xingyu/3D_Recognization/Depth-Anything-3/.venv/bin/python \
+uv run python main.py --mode pipeline --algorithm 3d \
+  --recon_backend da3 --match_backend da3 --dataset <dataset> --save_root <save_root>
+```
+
 ## 地堆 bbox 面积测量
 
-`ground-stack-area` 是独立的只读计量阶段：它读取 `detections_results/<frame>.json` 与 `<save_root>/<dataset>/dedup_detections/global_mapping.json`，仅在锚点所在帧为每个物理 `global_id` 选择一个有效、完整位于源图像内的 bbox，并将所有物理等效 bbox 面积相加。anchor 的 frame、object_id 和 bbox 必须与 mapping 中的记录完全一致；没有锚点帧观测、越出画面、损坏或索引非整数的记录会被拒绝而不计入总数。这样不会把相机运动造成的跨帧像素尺度差异或截断检测框伪装成物理面积。锚点商品必须提供可确认的正面宽高（cm）；被测商品正面需与锚点近似共面。多个 `skus` 组按稳定展平顺序共同参与匹配、去重和计量。
+`ground-stack-area --area-mode da3_metric` 是默认的只读计量阶段：它读取 DA3 的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine、缓存时的原图尺寸与去重后的 `global_mapping.json`，为每个物理 `global_id` 在全部观测中选择质量最高的一帧。bbox 中心 50% 用于估计局部米制像素面积，再外推到整个 bbox；这样可避免边缘背景直接撑大面积。全框至少需要 64 个非零且置信度≥1 的点、有效覆盖率≥50%，中心平面法向 5–95% 厚度不超过 6 cm；若当前原图尺寸与 DA3 cache 不一致，测量会拒绝并要求重建 cache。报告保留每项质量、所有候选的接受/拒绝原因和最终选帧。DA3 尺度是模型估计，reference 仍可作为现场 QA/校正依据，而不是运行前提。
+
+`--area-mode calibrated_bbox` 保留为显式标尺模式：它仅在锚点所在帧为每个物理 `global_id` 选择一个有效 bbox，以已知正面宽高换算物理等效面积。anchor 的 frame、object_id 和 bbox 必须与 mapping 中的记录完全一致；被测商品正面需与锚点近似共面。
 
 输出位于 `<save_root>/<dataset>/ground_stack_area/`：
 
-- `measurement_report.json`：总 `cm²/m²`、标定信息、接受/拒绝件数和警告；
-- `selected_instances.json`：每个 `global_id` 的选中 bbox 与单件面积；
+- `measurement_report.json`：DA3 模式的总 `m²`（或标尺模式的 `cm²/m²`）、尺度来源、接受/拒绝件数、全局 ID 级拒绝诊断和警告；
+- `selected_instances.json`：每个 `global_id` 的选中 bbox、单件面积与观测级诊断；
 - `annotated_frames/`：带全局 ID 和单件面积的可复核图像。
 
-该指标是**bbox 面积的算术和**：它不计算 bbox 并集、分割 mask 面积、包装表面积或地面占地面积，也不会估计未检测/被遮挡商品。输入文件不会被改写。
+两种模式的指标都是**每个 global ID 一次的 bbox 面积算术和**：它不计算 bbox 并集、分割 mask 面积、包装表面积或地面占地面积，也不会估计未检测/被遮挡商品。输入文件不会被改写。
 
 ## 3D 重建后端
 
