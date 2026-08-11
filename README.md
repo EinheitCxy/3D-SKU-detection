@@ -11,6 +11,7 @@
 - **多 3D 重建后端**：Pi3（缓存式，批量推荐）/ DA3（多视图高精度，subprocess 隔离）/ VGGT（实时，可选）
 - **交互式 3D viewer**：基于 Viser，GPU 加速 KNN 与点云下采样
 - **准确性评估**：对照人工标注计算 Precision/Recall/F1
+- **地堆 bbox 面积**：以一个已知尺寸商品标定后，对每个去重 `global_id` 的一个 bbox 面积求和，输出 `cm²/m²` 报告
 
 ## 项目结构
 
@@ -75,13 +76,31 @@ uv run python main.py --mode dedup
 uv run python main.py --mode analyzer
 uv run python main.py --mode viewer
 
+# 只读地堆 bbox 面积测量（要求检测与 global_mapping.json 已存在）
+uv run python main.py --mode ground-stack-area \
+    --dataset ../imdata/my_stack --save_root ../Output \
+    --area-anchor-frame 0 --area-anchor-object 3 \
+    --area-anchor-width-cm 32.0 --area-anchor-height-cm 24.0
+
 # 批量评估（floor_display2..12）
 bash batch_accuracy_evaluation.sh 2 12
 ```
 
-**`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `reconstruct` | `viewer`
+**`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `ground-stack-area` | `reconstruct` | `viewer`
 **`--algorithm`**: `point_tracking` | `3d` | `both`
 **`--recon_backend` / `--match_backend`**: `vggt` | `pi3` | `da3`（默认来自 `config.yaml`）
+
+## 地堆 bbox 面积测量
+
+`ground-stack-area` 是独立的只读计量阶段：它读取 `detections_results/<frame>.json` 与 `<save_root>/<dataset>/dedup_detections/global_mapping.json`，为每个物理 `global_id` 选择一个最大有效 bbox，并将所有物理等效 bbox 面积相加。锚点商品必须提供可确认的正面宽高（cm）；被测商品正面需与锚点近似共面。
+
+输出位于 `<save_root>/<dataset>/ground_stack_area/`：
+
+- `measurement_report.json`：总 `cm²/m²`、标定信息、接受/拒绝件数和警告；
+- `selected_instances.json`：每个 `global_id` 的选中 bbox 与单件面积；
+- `annotated_frames/`：带全局 ID 和单件面积的可复核图像。
+
+该指标是**bbox 面积的算术和**：它不计算 bbox 并集、分割 mask 面积、包装表面积或地面占地面积，也不会估计未检测/被遮挡商品。输入文件不会被改写。
 
 ## 3D 重建后端
 

@@ -64,6 +64,12 @@ uv run main.py --mode analyzer --dataset imdata/floor_display2 --save_root ./Out
 # 仅顺序去重（默认同名输出为 1.json..X.json）
 uv run main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output
 
+# 地堆 bbox 面积（读取已有检测和去重结果；每个global_id只累计一次）
+uv run python main.py --mode ground-stack-area \
+  --dataset ../imdata/my_stack --save_root ../Output \
+  --area-anchor-frame 0 --area-anchor-object 3 \
+  --area-anchor-width-cm 32.0 --area-anchor-height-cm 24.0
+
 # 批量匹配（参考索引 0..N，等价于 main.py concise）
 bash scripts/batch.sh floor_display2 4
 ```
@@ -136,6 +142,13 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 - 改进分析报告：`output_reports/<dataset_name>/report_*.txt`（或 `--save_root/output_reports/<dataset_name>/`）
 - 顺序去重（同名输出）：`<save_root>/<dataset_name>/1.json..X.json`
 - 全局ID聚合：`<save_root>/<dataset_name>/global_mapping.json`
+- 地堆 bbox 面积：`<save_root>/<dataset_name>/ground_stack_area/{measurement_report.json,selected_instances.json,annotated_frames/}`
+
+### 地堆 bbox 面积的定义与限制
+
+`--mode ground-stack-area` 读取既有 `detections_results/` 和 `dedup_detections/global_mapping.json`，使用一个已知正面宽高的检测框作为标定锚点，将每个物理 `global_id` 的一个最大有效 bbox 换算为 `cm²`，再得到总 `m²`。必须显式提供锚点帧号、对象索引、宽度和高度；没有任何隐式锚点默认值。
+
+结果是**bbox 物理等效面积的算术和**，不是 bbox 并集、SAM3 mask 面积、包装表面积或地面占地面积。它假设被测包装正面与锚点近似共面，不估计未检测/被遮挡商品，并且不会改写检测 JSON 或 `global_mapping.json`。`measurement_report.json` 会记录状态、标定和拒绝原因；`selected_instances.json` 与标注帧用于审查每一项贡献。
 
 ## 🧾 日志输出（统一）
 

@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import cv2
@@ -124,3 +126,37 @@ def test_stage_writes_report_without_mutating_inputs(tmp_path):
     assert detection_path.read_bytes() == detection_before
     assert (report_path.parent / "selected_instances.json").is_file()
     assert (report_path.parent / "annotated_frames" / "0.jpg").is_file()
+
+
+def test_main_ground_stack_area_mode_runs_stage(tmp_path):
+    dataset, save_root, _, _ = make_measurement_fixture(tmp_path)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "main.py",
+            "--mode",
+            "ground-stack-area",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+            "--area-anchor-frame",
+            "0",
+            "--area-anchor-object",
+            "0",
+            "--area-anchor-width-cm",
+            "20",
+            "--area-anchor-height-cm",
+            "10",
+        ],
+        cwd=Path(__file__).parents[1],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert (
+        save_root / "stack" / "ground_stack_area" / "measurement_report.json"
+    ).is_file()

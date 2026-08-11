@@ -1008,8 +1008,8 @@ def main() -> None:
         help="楼层展示数据集编号，例如 15 表示使用 imdata/floor_display15",
     )
     parser.add_argument('--mode', type=str, default=yaml_main.get('mode', "interactive"),
-                       choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'reconstruct', 'viewer'],
-                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), reconstruct(3D重建), viewer(3D可视化)")
+                       choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'ground-stack-area', 'reconstruct', 'viewer'],
+                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), ground-stack-area(bbox面积), reconstruct(3D重建), viewer(3D可视化)")
     parser.add_argument('--algorithm', type=str, default=yaml_main.get('algorithm', "3d"),
                        choices=['point_tracking', '3d', 'both'],
                        help="匹配算法选择")
@@ -1020,6 +1020,14 @@ def main() -> None:
     parser.add_argument('--save_json', action='store_true', default=bool(yaml_main.get('save_json', False)), help="保存匹配结果为 JSON")
     parser.add_argument('--save_root', type=str, default=yaml_main.get('save_root', 'Output'),
                         help="输出保存根目录。例如：/path/to/outputs")
+    parser.add_argument('--area-anchor-frame', type=int, default=None,
+                        help="ground-stack-area: 已知尺寸锚点所在的0-based帧号")
+    parser.add_argument('--area-anchor-object', type=int, default=None,
+                        help="ground-stack-area: 锚点在该帧检测结果中的0-based对象索引")
+    parser.add_argument('--area-anchor-width-cm', type=float, default=None,
+                        help="ground-stack-area: 锚点商品正面实测宽度（cm）")
+    parser.add_argument('--area-anchor-height-cm', type=float, default=None,
+                        help="ground-stack-area: 锚点商品正面实测高度（cm）")
     # 3D重建/匹配专用参数
     parser.add_argument('--recon_conf_thres', type=float, default=float(yaml_recon.get('conf_thres', 50.0)), help="3D导出置信度阈值(0-100)")
     parser.add_argument('--recon_output', type=str, default=yaml_recon.get('output', 'reconstruction.glb'), help="3D重建输出文件名")
@@ -1122,6 +1130,40 @@ def main() -> None:
         # 根据算法类型选择后端
         dedup_backend = args.match_backend if '3d' in args.algorithm else None
         app.run_dedup_sequence(args.dataset, algorithm=args.algorithm, backend=dedup_backend)
+    elif args.mode == 'ground-stack-area':
+        required_anchor_args = {
+            '--area-anchor-frame': args.area_anchor_frame,
+            '--area-anchor-object': args.area_anchor_object,
+            '--area-anchor-width-cm': args.area_anchor_width_cm,
+            '--area-anchor-height-cm': args.area_anchor_height_cm,
+        }
+        missing = [name for name, value in required_anchor_args.items() if value is None]
+        if missing:
+            parser.error(
+                'ground-stack-area requires ' + ', '.join(missing)
+            )
+        from modules.ground_stack_area_stage import run_ground_stack_area
+
+        result = run_ground_stack_area(
+            dataset_path=args.dataset,
+            save_root=app.save_root,
+            anchor_frame=args.area_anchor_frame,
+            anchor_object=args.area_anchor_object,
+            anchor_width_cm=args.area_anchor_width_cm,
+            anchor_height_cm=args.area_anchor_height_cm,
+        )
+        if not result['success']:
+            logger.error(
+                "ground-stack-area rejected: %s (report: %s)",
+                result['status'],
+                result['report_path'],
+            )
+            sys.exit(2)
+        logger.info(
+            "ground-stack-area %s: %s",
+            result['status'],
+            result['report_path'],
+        )
     elif args.mode == 'reconstruct':
         app.run_reconstruction(
             args.dataset,
