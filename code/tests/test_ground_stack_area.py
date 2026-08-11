@@ -161,6 +161,41 @@ def test_stage_uses_only_anchor_frame_observations_for_calibration(tmp_path):
     assert instances["instances"][1]["area_cm2"] == pytest.approx(50.0)
 
 
+def test_stage_rejects_bbox_outside_source_image_bounds(tmp_path):
+    dataset, save_root, _, mapping_path = make_measurement_fixture(tmp_path)
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "1": [{"image_id": 0, "object_id": 0, "bbox": [10, 10, 30, 20]}],
+                "2": [{"image_id": 0, "object_id": 1, "bbox": [-1, 10, 10, 20]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_ground_stack_area(str(dataset), save_root, 0, 0, 20.0, 10.0)
+
+    report = json.loads(Path(result["report_path"]).read_text(encoding="utf-8"))
+    instances = json.loads(Path(result["instances_path"]).read_text(encoding="utf-8"))
+    assert result["success"] is True
+    assert report["status"] == "accepted_with_warnings"
+    assert report["value_cm2"] == pytest.approx(200.0)
+    assert report["rejected_global_ids"] == 1
+    assert "outside source image bounds" in instances["rejected"][0]["reason"]
+
+
+def test_stage_writes_rejected_report_for_nonfinite_anchor_dimension(tmp_path):
+    dataset, save_root, _, _ = make_measurement_fixture(tmp_path)
+
+    result = run_ground_stack_area(str(dataset), save_root, 0, 0, float("nan"), 10.0)
+
+    report = json.loads(Path(result["report_path"]).read_text(encoding="utf-8"))
+    assert result["success"] is False
+    assert report["status"] == "rejected"
+    assert report["calibration"]["anchor_width_cm"] is None
+    assert "width_cm must be a positive finite value" in report["warnings"]
+
+
 def test_second_sku_group_can_be_anchor_and_global_mapping_member(tmp_path):
     dataset = tmp_path / "multi_sku_stack"
     images = dataset / "images"

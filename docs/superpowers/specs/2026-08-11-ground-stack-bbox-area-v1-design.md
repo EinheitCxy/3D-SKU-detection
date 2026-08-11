@@ -65,7 +65,7 @@ The report records whether an instance was accepted or rejected and why. It make
 The measurement is accepted only when all of these conditions hold:
 
 - Anchor width and height are finite and positive.
-- Anchor and candidate bboxes are finite, have `x2 > x1` and `y2 > y1`, and lie within the source image bounds after clipping.
+- Anchor and candidate bboxes are finite, have `x2 > x1` and `y2 > y1`, and lie fully within the source image bounds. V1 rejects rather than clips an out-of-frame bbox.
 - The anchor is a user-confirmed front view of a known-size package.
 - The operator attests that measured boxes are approximately coplanar with that anchor. V1 does not apply depth correction.
 - At least one unique global ID has an accepted observation.

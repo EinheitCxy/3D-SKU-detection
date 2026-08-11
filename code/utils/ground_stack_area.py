@@ -57,6 +57,18 @@ def validate_bbox(bbox: Sequence[float] | Any) -> tuple[float, float, float, flo
     return x1, y1, x2, y2
 
 
+def validate_bbox_within_image_bounds(
+    bbox: Sequence[float] | Any, image_width: int, image_height: int
+) -> tuple[float, float, float, float]:
+    """Return a valid bbox only when it is fully contained by its source image."""
+    x1, y1, x2, y2 = validate_bbox(bbox)
+    if image_width <= 0 or image_height <= 0:
+        raise BBoxAreaError("source image must have positive width and height")
+    if x1 < 0 or y1 < 0 or x2 > image_width or y2 > image_height:
+        raise BBoxAreaError("bbox is outside source image bounds")
+    return x1, y1, x2, y2
+
+
 def _validate_dimension(value: float | Any, name: str) -> float:
     try:
         dimension = float(value)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from math import isfinite
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from utils.ground_stack_area import (
     calibrated_bbox_area_cm2,
     calibrate_from_anchor,
     select_best_instances,
+    validate_bbox_within_image_bounds,
 )
 
 
@@ -41,6 +43,21 @@ def _write_json(path: Path, payload: Any) -> None:
         json.dumps(payload, ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8",
     )
+
+
+def _source_image_bounds(images_dir: Path, image_id: int) -> tuple[int, int]:
+    source_path = _image_path(images_dir, image_id)
+    if source_path is None:
+        raise BBoxAreaError(f"source image is missing for frame {image_id}")
+    image = cv2.imread(str(source_path))
+    if image is None:
+        raise BBoxAreaError(f"source image cannot be read for frame {image_id}")
+    height, width = image.shape[:2]
+    return width, height
+
+
+def _finite_report_value(value: float) -> float | None:
+    return value if isfinite(value) else None
 
 
 def _load_anchor_bbox(dataset_dir: Path, frame_id: int, object_id: int) -> tuple[float, ...]:
@@ -153,8 +170,8 @@ def _base_report(
         "calibration": {
             "anchor_frame": anchor_frame,
             "anchor_object": anchor_object,
-            "anchor_width_cm": anchor_width_cm,
-            "anchor_height_cm": anchor_height_cm,
+            "anchor_width_cm": _finite_report_value(anchor_width_cm),
+            "anchor_height_cm": _finite_report_value(anchor_height_cm),
             "method": "axis_aligned_bbox_scale_same_frame",
         },
         "warnings": [],
@@ -207,7 +224,12 @@ def run_ground_stack_area(
             raise BBoxAreaError("global mapping must be a JSON object")
         report["source"]["global_mapping"] = str(mapping_path)
 
+        images_dir = dataset_dir / "images"
         anchor_bbox = _load_anchor_bbox(dataset_dir, anchor_frame, anchor_object)
+        anchor_width_px, anchor_height_px = _source_image_bounds(images_dir, anchor_frame)
+        validate_bbox_within_image_bounds(
+            anchor_bbox, anchor_width_px, anchor_height_px
+        )
         if not _anchor_is_mapped(global_mapping, anchor_frame, anchor_object):
             raise BBoxAreaError("anchor object is not represented in global mapping")
         calibration = calibrate_from_anchor(
@@ -217,9 +239,16 @@ def run_ground_stack_area(
             global_mapping, required_image_id=anchor_frame
         )
         rejected_payload = [_rejection_payload(instance) for instance in rejected]
+        image_bounds: dict[int, tuple[int, int]] = {}
 
         for instance in selected:
             try:
+                image_bounds.setdefault(
+                    instance.image_id,
+                    _source_image_bounds(images_dir, instance.image_id),
+                )
+                width, height = image_bounds[instance.image_id]
+                validate_bbox_within_image_bounds(instance.bbox, width, height)
                 area_cm2 = calibrated_bbox_area_cm2(instance.bbox, calibration)
                 selected_payload.append(_instance_payload(instance, area_cm2))
             except BBoxAreaError as exc:
