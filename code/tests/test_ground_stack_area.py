@@ -196,6 +196,35 @@ def test_stage_writes_rejected_report_for_nonfinite_anchor_dimension(tmp_path):
     assert "width_cm must be a positive finite value" in report["warnings"]
 
 
+def test_stage_rejects_anchor_when_mapping_bbox_does_not_match_detection(tmp_path):
+    dataset, save_root, _, mapping_path = make_measurement_fixture(tmp_path)
+    mapping_path.write_text(
+        json.dumps(
+            {
+                "1": [{"image_id": 0, "object_id": 0, "bbox": [10, 10, 50, 20]}],
+                "2": [{"image_id": 0, "object_id": 1, "bbox": [40, 10, 60, 20]}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_ground_stack_area(str(dataset), save_root, 0, 0, 20.0, 10.0)
+
+    report = json.loads(Path(result["report_path"]).read_text(encoding="utf-8"))
+    assert result["success"] is False
+    assert report["status"] == "rejected"
+    assert "anchor bbox does not match global mapping" in report["warnings"]
+
+
+def test_select_best_instances_rejects_nonintegral_observation_indexes():
+    selected, rejected = select_best_instances(
+        {"1": [{"image_id": 0.5, "object_id": 0, "bbox": [0, 0, 10, 10]}]}
+    )
+
+    assert selected == []
+    assert rejected[0].reason == "observation must contain integer image_id and object_id"
+
+
 def test_second_sku_group_can_be_anchor_and_global_mapping_member(tmp_path):
     dataset = tmp_path / "multi_sku_stack"
     images = dataset / "images"

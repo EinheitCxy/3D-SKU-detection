@@ -146,7 +146,7 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 
 ### 地堆 bbox 面积的定义与限制
 
-`--mode ground-stack-area` 读取既有 `detections_results/` 和 `dedup_detections/global_mapping.json`，使用一个已知正面宽高的检测框作为标定锚点，只将锚点帧内每个物理 `global_id` 的有效且完整位于源图像内的 bbox 换算为 `cm²`，再得到总 `m²`。其他帧的观测不会参与面积选择；缺少锚点帧观测、越界或截断的 global ID 会被拒绝，以避免相机运动造成的跨帧尺度误差与边界框偏差。多个 `skus` 组使用同一稳定对象索引参与匹配、去重与计量。必须显式提供锚点帧号、对象索引、宽度和高度；没有任何隐式锚点默认值。
+`--mode ground-stack-area` 读取既有 `detections_results/` 和 `dedup_detections/global_mapping.json`，使用一个已知正面宽高的检测框作为标定锚点，只将锚点帧内每个物理 `global_id` 的有效且完整位于源图像内的 bbox 换算为 `cm²`，再得到总 `m²`。anchor 的 frame、object_id 和 bbox 必须和 mapping 中的记录一致；其他帧的观测不会参与面积选择。缺少锚点帧观测、越界/截断或索引非整数的 global ID 会被拒绝，以避免相机运动造成的跨帧尺度误差与边界框偏差。多个 `skus` 组使用同一稳定对象索引参与匹配、去重与计量。必须显式提供锚点帧号、对象索引、宽度和高度；没有任何隐式锚点默认值。
 
 结果是**bbox 物理等效面积的算术和**，不是 bbox 并集、SAM3 mask 面积、包装表面积或地面占地面积。它假设被测包装正面与锚点近似共面，不估计未检测/被遮挡商品，并且不会改写检测 JSON 或 `global_mapping.json`。`measurement_report.json` 会记录状态、标定和拒绝原因；`selected_instances.json` 与标注帧用于审查每一项贡献。
 

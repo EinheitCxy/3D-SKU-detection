@@ -92,7 +92,7 @@ bash batch_accuracy_evaluation.sh 2 12
 
 ## 地堆 bbox 面积测量
 
-`ground-stack-area` 是独立的只读计量阶段：它读取 `detections_results/<frame>.json` 与 `<save_root>/<dataset>/dedup_detections/global_mapping.json`，仅在锚点所在帧为每个物理 `global_id` 选择一个有效、完整位于源图像内的 bbox，并将所有物理等效 bbox 面积相加。没有锚点帧观测、越出画面或损坏的 global ID 会被拒绝而不计入总数；这样不会把相机运动造成的跨帧像素尺度差异或截断检测框伪装成物理面积。锚点商品必须提供可确认的正面宽高（cm）；被测商品正面需与锚点近似共面。多个 `skus` 组按稳定展平顺序共同参与匹配、去重和计量。
+`ground-stack-area` 是独立的只读计量阶段：它读取 `detections_results/<frame>.json` 与 `<save_root>/<dataset>/dedup_detections/global_mapping.json`，仅在锚点所在帧为每个物理 `global_id` 选择一个有效、完整位于源图像内的 bbox，并将所有物理等效 bbox 面积相加。anchor 的 frame、object_id 和 bbox 必须与 mapping 中的记录完全一致；没有锚点帧观测、越出画面、损坏或索引非整数的记录会被拒绝而不计入总数。这样不会把相机运动造成的跨帧像素尺度差异或截断检测框伪装成物理面积。锚点商品必须提供可确认的正面宽高（cm）；被测商品正面需与锚点近似共面。多个 `skus` 组按稳定展平顺序共同参与匹配、去重和计量。
 
 输出位于 `<save_root>/<dataset>/ground_stack_area/`：
 

@@ -115,8 +115,8 @@ def _validated_observation(
     global_id: str, observation: Mapping[str, Any]
 ) -> SelectedInstance:
     try:
-        image_id = int(observation["image_id"])
-        object_id = int(observation["object_id"])
+        image_id = _validate_integer_index(observation["image_id"])
+        object_id = _validate_integer_index(observation["object_id"])
     except (KeyError, TypeError, ValueError) as exc:
         raise BBoxAreaError("observation must contain integer image_id and object_id") from exc
 
@@ -129,6 +129,15 @@ def _validated_observation(
         bbox=bbox,
         source_area_px2=(x2 - x1) * (y2 - y1),
     )
+
+
+def _validate_integer_index(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError("boolean is not an integer index")
+    numeric_value = float(value)
+    if not isfinite(numeric_value) or not numeric_value.is_integer():
+        raise ValueError("index must be finite and integral")
+    return int(numeric_value)
 
 
 def select_best_instances(

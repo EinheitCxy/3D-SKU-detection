@@ -18,6 +18,7 @@ from utils.ground_stack_area import (
     calibrated_bbox_area_cm2,
     calibrate_from_anchor,
     select_best_instances,
+    validate_bbox,
     validate_bbox_within_image_bounds,
 )
 
@@ -76,9 +77,13 @@ def _load_anchor_bbox(dataset_dir: Path, frame_id: int, object_id: int) -> tuple
     return tuple(bbox)
 
 
-def _anchor_is_mapped(
-    global_mapping: dict[str, list[dict[str, Any]]], frame_id: int, object_id: int
-) -> bool:
+def _anchor_mapping_status(
+    global_mapping: dict[str, list[dict[str, Any]]],
+    frame_id: int,
+    object_id: int,
+    anchor_bbox: tuple[float, ...],
+) -> str:
+    matching_identity = False
     for observations in global_mapping.values():
         for observation in observations:
             try:
@@ -86,10 +91,12 @@ def _anchor_is_mapped(
                     int(observation["image_id"]) == frame_id
                     and int(observation["object_id"]) == object_id
                 ):
-                    return True
+                    matching_identity = True
+                    if validate_bbox(observation.get("bbox")) == validate_bbox(anchor_bbox):
+                        return "matched"
             except (KeyError, TypeError, ValueError):
                 continue
-    return False
+    return "bbox_mismatch" if matching_identity else "missing"
 
 
 def _instance_payload(instance: SelectedInstance, area_cm2: float) -> dict[str, Any]:
@@ -230,8 +237,13 @@ def run_ground_stack_area(
         validate_bbox_within_image_bounds(
             anchor_bbox, anchor_width_px, anchor_height_px
         )
-        if not _anchor_is_mapped(global_mapping, anchor_frame, anchor_object):
+        anchor_mapping_status = _anchor_mapping_status(
+            global_mapping, anchor_frame, anchor_object, anchor_bbox
+        )
+        if anchor_mapping_status == "missing":
             raise BBoxAreaError("anchor object is not represented in global mapping")
+        if anchor_mapping_status == "bbox_mismatch":
+            raise BBoxAreaError("anchor bbox does not match global mapping")
         calibration = calibrate_from_anchor(
             anchor_bbox, anchor_width_cm, anchor_height_cm
         )
