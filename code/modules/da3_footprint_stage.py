@@ -41,10 +41,14 @@ _CACHE_FIELDS = {
     "source_model",
     "source_image_sha256",
     "affine_convention",
+    "preprocess_resolution",
+    "preprocess_method",
 }
 _MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
 _SAM3_CHECKPOINT = "sam3/checkpoints/sam3.pt"
 _SAM3_DEVICE = "cuda"
+_PATCH_SIZE = 14
+_PREPROCESS_METHOD = "upper_bound_resize"
 
 
 class FootprintStageError(ValueError):
@@ -189,10 +193,18 @@ def _validate_cache(cache: dict[str, np.ndarray], images: dict[int, Path]) -> di
         raise FootprintStageError("DA3 cache schema version must be exactly 2")
     model = _safe_text(cache["source_model"], "source_model")
     convention = _safe_text(cache["affine_convention"], "affine_convention")
+    preprocess_resolution = _safe_scalar_integer(
+        cache["preprocess_resolution"], "preprocess_resolution"
+    )
+    preprocess_method = _safe_text(cache["preprocess_method"], "preprocess_method")
     if not _MODEL_ID.fullmatch(model):
         raise FootprintStageError("DA3 cache source_model is unsafe")
     if convention != "pixel_center_v1":
         raise FootprintStageError("DA3 cache affine convention must be pixel_center_v1")
+    if preprocess_resolution <= 0:
+        raise FootprintStageError("DA3 cache preprocess_resolution must be positive")
+    if preprocess_method != _PREPROCESS_METHOD:
+        raise FootprintStageError("DA3 cache preprocess_method is unsupported")
     points = cache["world_points"]
     confidence = cache["world_points_conf"]
     image_ids = cache["image_ids"]
@@ -212,6 +224,7 @@ def _validate_cache(cache: dict[str, np.ndarray], images: dict[int, Path]) -> di
         raise FootprintStageError("DA3 cache source_image_sha256 must be safe unicode")
     if not np.isfinite(affine).all() or np.any(sizes <= 0):
         raise FootprintStageError("DA3 cache source sizes or affine values are invalid")
+    _validate_affine_linear_parts(affine)
     for index, image_id in enumerate(image_ids):
         image_id = int(image_id)
         if image_id not in images:
@@ -222,10 +235,19 @@ def _validate_cache(cache: dict[str, np.ndarray], images: dict[int, Path]) -> di
         current_hash = _sha256(images[image_id])
         if str(hashes[index]) != current_hash:
             raise FootprintStageError(f"source image SHA256 mismatch for image {image_id}")
+        expected_affine = _expected_pixel_center_affine(
+            image.width, image.height, preprocess_resolution, height, width
+        )
+        if not np.allclose(affine[index], expected_affine, rtol=0.0, atol=1e-6):
+            raise FootprintStageError(
+                f"DA3 cache affine provenance mismatch for image {image_id}"
+            )
     return {
         "schema_version": 2,
         "source_model": model,
         "affine_convention": convention,
+        "preprocess_resolution": preprocess_resolution,
+        "preprocess_method": preprocess_method,
         "frame_count": int(frame_count),
         "processed_size": [int(width), int(height)],
         "image_ids": [int(value) for value in image_ids],
@@ -435,6 +457,64 @@ def _safe_text(value: np.ndarray, field: str) -> str:
     if value.shape != () or value.dtype.kind != "U":
         raise FootprintStageError(f"DA3 cache {field} must be a scalar safe unicode string")
     return str(value.item())
+
+
+def _safe_scalar_integer(value: np.ndarray, field: str) -> int:
+    if value.shape != () or value.dtype.kind not in "iu":
+        raise FootprintStageError(f"DA3 cache {field} must be a scalar integer")
+    return int(value.item())
+
+
+def _validate_affine_linear_parts(affine: np.ndarray) -> None:
+    linear = affine[:, :, :2]
+    if not np.allclose(linear[:, 0, 1], 0.0, rtol=0.0, atol=1e-8) or not np.allclose(
+        linear[:, 1, 0], 0.0, rtol=0.0, atol=1e-8
+    ):
+        raise FootprintStageError("DA3 cache affine must be axis aligned")
+    scale_x = linear[:, 0, 0]
+    scale_y = linear[:, 1, 1]
+    if np.any(scale_x <= 0.0) or np.any(scale_y <= 0.0):
+        raise FootprintStageError("DA3 cache affine scales must be positive")
+    determinants = np.linalg.det(linear)
+    if np.any(determinants <= 0.0):
+        raise FootprintStageError("DA3 cache affine determinant must be positive")
+    if any(np.linalg.matrix_rank(matrix) != 2 for matrix in linear):
+        raise FootprintStageError("DA3 cache affine linear part must have rank two")
+
+
+def _nearest_patch_multiple(value: int) -> int:
+    down = (value // _PATCH_SIZE) * _PATCH_SIZE
+    up = down + _PATCH_SIZE
+    return max(1, up if abs(up - value) <= abs(value - down) else down)
+
+
+def _expected_pixel_center_affine(
+    original_width: int,
+    original_height: int,
+    preprocess_resolution: int,
+    output_height: int,
+    output_width: int,
+) -> np.ndarray:
+    scale = preprocess_resolution / float(max(original_width, original_height))
+    resized_width = max(1, int(round(original_width * scale)))
+    resized_height = max(1, int(round(original_height * scale)))
+    processed_width = _nearest_patch_multiple(resized_width)
+    processed_height = _nearest_patch_multiple(resized_height)
+    if processed_width < output_width or processed_height < output_height:
+        raise FootprintStageError(
+            "DA3 cache preprocess dimensions are smaller than the final world grid"
+        )
+    crop_left = (processed_width - output_width) // 2
+    crop_top = (processed_height - output_height) // 2
+    scale_x = processed_width / float(original_width)
+    scale_y = processed_height / float(original_height)
+    return np.asarray(
+        [
+            [scale_x, 0.0, (scale_x - 1.0) / 2.0 - crop_left],
+            [0.0, scale_y, (scale_y - 1.0) / 2.0 - crop_top],
+        ],
+        dtype=np.float64,
+    )
 
 
 def _sha256(path: Path) -> str:

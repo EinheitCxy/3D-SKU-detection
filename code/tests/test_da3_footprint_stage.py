@@ -7,7 +7,11 @@ import pytest
 from PIL import Image
 
 from modules import da3_footprint_stage as stage
-from modules.da3_runner import _source_to_processed_affines, _validate_model_id
+from modules.da3_runner import (
+    _preprocess_geometry,
+    _source_to_processed_affines,
+    _validate_model_id,
+)
 
 
 def _sha256(path: Path) -> str:
@@ -15,7 +19,7 @@ def _sha256(path: Path) -> str:
 
 
 def _write_image(path: Path, value: int = 200) -> None:
-    Image.fromarray(np.full((128, 128, 3), value, dtype=np.uint8)).save(path)
+    Image.fromarray(np.full((126, 126, 3), value, dtype=np.uint8)).save(path)
 
 
 def _put_carton(
@@ -48,7 +52,7 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
     boxes = {
         0: [[16, 24, 80, 104]],
         1: [[18, 22, 82, 102]],
-        2: [[64, 24, 128, 104]],
+        2: [[62, 24, 126, 104]],
     }
     input_paths: list[Path] = []
     for frame, frame_boxes in boxes.items():
@@ -58,8 +62,8 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
         detection_path.write_text(json.dumps({"objects": [{"position": box} for box in frame_boxes]}))
         input_paths.extend([image_path, detection_path])
 
-    world_points = np.zeros((3, 128, 128, 3), dtype=np.float32)
-    xs, ys = np.meshgrid(np.linspace(-1.0, 2.0, 128), np.linspace(-1.0, 2.0, 128), indexing="xy")
+    world_points = np.zeros((3, 126, 126, 3), dtype=np.float32)
+    xs, ys = np.meshgrid(np.linspace(-1.0, 2.0, 126), np.linspace(-1.0, 2.0, 126), indexing="xy")
     world_points[..., 0] = xs
     world_points[..., 1] = ys
     _put_carton(world_points, 0, boxes[0][0], (0.0, 1.0), 0.02)
@@ -69,9 +73,9 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
     np.savez_compressed(
         output / "da3_cache" / "predictions.npz",
         world_points=world_points,
-        world_points_conf=np.ones((3, 128, 128), dtype=np.float32),
+        world_points_conf=np.ones((3, 126, 126), dtype=np.float32),
         image_ids=np.asarray([0, 1, 2], dtype=np.int32),
-        source_image_sizes=np.asarray([(128, 128)] * 3, dtype=np.int32),
+        source_image_sizes=np.asarray([(126, 126)] * 3, dtype=np.int32),
         source_to_processed_affine=np.asarray(
             [[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]] * 3, dtype=np.float32
         ),
@@ -79,6 +83,8 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
         source_model=np.asarray("depth-anything/DA3NESTED-GIANT-LARGE", dtype="<U64"),
         source_image_sha256=np.asarray([_sha256(path) for path in source_paths], dtype="<U64"),
         affine_convention=np.asarray("pixel_center_v1", dtype="<U32"),
+        preprocess_resolution=np.asarray(126, dtype=np.int32),
+        preprocess_method=np.asarray("upper_bound_resize", dtype="<U32"),
     )
     mapping = {
         "1": [
@@ -190,6 +196,14 @@ def test_runner_affine_uses_pixel_centres():
     assert affine[1, 2] == pytest.approx((0.84 - 1.0) / 2.0)
 
 
+def test_runner_preprocess_geometry_records_input_processor_dimensions():
+    geometry = _preprocess_geometry(100, 50, process_res=84, output_height=42, output_width=84)
+
+    assert geometry["processed_width"] == 84
+    assert geometry["processed_height"] == 42
+    assert np.allclose(geometry["affine"], [[0.84, 0.0, -0.08], [0.0, 0.84, -0.08]])
+
+
 def test_stage_rejects_current_numeric_image_and_detection_absent_from_cache(monkeypatch, tmp_path):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     _write_image(dataset / "images" / "3.png")
@@ -222,3 +236,37 @@ def test_stage_converts_sam_runtime_error_to_rejected_report(monkeypatch, tmp_pa
 def test_runner_rejects_unsafe_model_id_before_inference():
     with pytest.raises(ValueError, match="safe model id"):
         _validate_model_id("model id with spaces")
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["singular_affine", "reflection_affine", "translated_affine", "missing_provenance", "bad_method"],
+)
+def test_stage_rejects_unverified_affine_or_preprocess_provenance(monkeypatch, tmp_path, mutation):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    cache_path = save_root / dataset.name / "da3_cache" / "predictions.npz"
+    with np.load(cache_path, allow_pickle=False) as cache:
+        fields = {key: cache[key] for key in cache.files}
+    affine = fields["source_to_processed_affine"].copy()
+    if mutation == "singular_affine":
+        affine[0, 0, 0] = 0.0
+    elif mutation == "reflection_affine":
+        affine[0, 0, 0] = -1.0
+    elif mutation == "translated_affine":
+        affine[0, 0, 2] += 10.0
+    elif mutation == "missing_provenance":
+        fields.pop("preprocess_resolution")
+    else:
+        fields["preprocess_method"] = np.asarray("unknown_method", dtype="<U32")
+    if mutation in {"singular_affine", "reflection_affine", "translated_affine"}:
+        fields["source_to_processed_affine"] = affine
+    np.savez_compressed(cache_path, **fields)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert result["success"] is False
+    assert report["status"] == "rejected"
+    assert report["value_m2"] is None
+    assert "preprocess" in report["rejection_reason"] or "affine" in report["rejection_reason"]

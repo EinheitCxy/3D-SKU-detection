@@ -37,6 +37,7 @@ IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 PATCH_SIZE = 14
 CACHE_SCHEMA_VERSION = 2
 AFFINE_CONVENTION = "pixel_center_v1"
+PREPROCESS_METHOD = "upper_bound_resize"
 SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
 
 
@@ -91,29 +92,48 @@ def _source_to_processed_affines(
     """Return original-pixel to final DA3-grid affine transforms for this runner."""
     transforms: list[np.ndarray] = []
     for original_width, original_height in image_sizes:
-        scale = process_res / float(max(original_width, original_height))
-        resized_width = max(1, int(round(original_width * scale)))
-        resized_height = max(1, int(round(original_height * scale)))
-        processed_width = _nearest_patch_multiple(resized_width)
-        processed_height = _nearest_patch_multiple(resized_height)
-        crop_left = (processed_width - output_width) // 2
-        crop_top = (processed_height - output_height) // 2
-        if crop_left < 0 or crop_top < 0:
-            raise ValueError(
-                "DA3 output is larger than the pre-unification processed image"
-            )
-        scale_x = processed_width / float(original_width)
-        scale_y = processed_height / float(original_height)
         transforms.append(
-            np.array(
-                [
-                    [scale_x, 0.0, (scale_x - 1.0) / 2.0 - crop_left],
-                    [0.0, scale_y, (scale_y - 1.0) / 2.0 - crop_top],
-                ],
-                dtype=np.float32,
-            )
+            _preprocess_geometry(
+                original_width, original_height, process_res, output_height, output_width
+            )["affine"]
         )
     return np.stack(transforms)
+
+
+def _preprocess_geometry(
+    original_width: int,
+    original_height: int,
+    process_res: int,
+    output_height: int,
+    output_width: int,
+) -> dict[str, int | np.ndarray]:
+    """Reproduce DA3 InputProcessor resize, patch rounding, and centre crop."""
+    if min(original_width, original_height, process_res, output_height, output_width) <= 0:
+        raise ValueError("preprocess dimensions and resolution must be positive")
+    scale = process_res / float(max(original_width, original_height))
+    resized_width = max(1, int(round(original_width * scale)))
+    resized_height = max(1, int(round(original_height * scale)))
+    processed_width = _nearest_patch_multiple(resized_width)
+    processed_height = _nearest_patch_multiple(resized_height)
+    if processed_width < output_width or processed_height < output_height:
+        raise ValueError("DA3 output is larger than pre-crop InputProcessor dimensions")
+    crop_left = (processed_width - output_width) // 2
+    crop_top = (processed_height - output_height) // 2
+    scale_x = processed_width / float(original_width)
+    scale_y = processed_height / float(original_height)
+    return {
+        "processed_width": processed_width,
+        "processed_height": processed_height,
+        "crop_left": crop_left,
+        "crop_top": crop_top,
+        "affine": np.array(
+            [
+                [scale_x, 0.0, (scale_x - 1.0) / 2.0 - crop_left],
+                [0.0, scale_y, (scale_y - 1.0) / 2.0 - crop_top],
+            ],
+            dtype=np.float32,
+        ),
+    }
 
 
 def _validate_model_id(model_id: str) -> str:
@@ -155,7 +175,9 @@ def main() -> None:
         [_sha256_file(Path(path)) for path in paths], dtype="<U64"
     )
     t1 = time.time()
-    prediction = model.inference(pil_images, process_res=args.process_res, process_res_method="upper_bound_resize")
+    prediction = model.inference(
+        pil_images, process_res=args.process_res, process_res_method=PREPROCESS_METHOD
+    )
     logger.info(f"[da3_runner] inference done ({time.time()-t1:.1f}s)")
 
     depth = np.asarray(prediction.depth, dtype=np.float32)          # (N,H,W)
@@ -199,6 +221,8 @@ def main() -> None:
         source_model=np.asarray(args.model_path, dtype=f"<U{max(1, len(args.model_path))}"),
         source_image_sha256=source_image_sha256,
         affine_convention=np.asarray(AFFINE_CONVENTION, dtype="<U15"),
+        preprocess_resolution=np.asarray(args.process_res, dtype=np.int32),
+        preprocess_method=np.asarray(PREPROCESS_METHOD, dtype="<U18"),
         frame_alignment_sorted_indices=sorted_indices,
         frame_alignment_map_keys=map_keys,
         frame_alignment_map_values=map_values,
