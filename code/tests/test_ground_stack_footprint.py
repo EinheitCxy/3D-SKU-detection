@@ -8,6 +8,7 @@ from utils.ground_stack_footprint import (
     _sample_ransac_triplet,
     carton_footprint_polygon,
     fit_support_plane,
+    select_support_plane,
     union_footprints,
 )
 
@@ -224,3 +225,22 @@ def test_ransac_triplet_sampling_is_distinct_and_seed_deterministic():
     assert tuple(first) == (8, 7, 9)
     assert np.array_equal(first, second)
     assert len(set(first.tolist())) == 3
+
+
+def test_select_support_plane_prefers_table_over_larger_wall():
+    coordinates = np.linspace(-1.0, 1.0, 120)
+    x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
+    table = np.column_stack([x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)])
+    wall_y, wall_z = np.meshgrid(np.linspace(-2.0, 2.0, 160), np.linspace(0.0, 2.0, 160), indexing="xy")
+    wall = np.column_stack([np.full(wall_y.size, 3.0), wall_y.ravel(), wall_z.ravel()])
+    object_points = carton_points((0.0, 0.8), (0.0, 0.8), 0.02)
+    frame_ids = np.concatenate(
+        [np.arange(len(table)) % 3, np.arange(len(wall)) % 3]
+    )
+
+    plane, diagnostics = select_support_plane(
+        np.vstack([table, wall]), frame_ids, object_points
+    )
+
+    assert abs(np.dot(plane.normal, [0.0, 0.0, 1.0])) == pytest.approx(1.0, abs=1e-3)
+    assert diagnostics["selected_index"] is not None

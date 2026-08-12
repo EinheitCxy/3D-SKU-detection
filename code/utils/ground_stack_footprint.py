@@ -37,6 +37,99 @@ def fit_support_plane(background_points: np.ndarray) -> SupportPlane:
     return _refine_support_plane(inliers, total_points=len(points))
 
 
+def select_support_plane(
+    background_points: np.ndarray,
+    frame_ids: np.ndarray,
+    object_points: np.ndarray,
+) -> tuple[SupportPlane, dict[str, object]]:
+    """Select a table-like support plane instead of blindly choosing the largest plane.
+
+    Candidate extraction is deterministic, frame balanced, and deliberately keeps
+    several RANSAC hypotheses so a large wall cannot hide a smaller tabletop.
+    """
+    points = _validate_points(background_points, minimum=10_000, label="background")
+    frames = np.asarray(frame_ids)
+    objects = _validate_points(object_points, minimum=64, label="object")
+    if frames.shape != (len(points),):
+        raise FootprintError("support plane frame ids must align with background points")
+    sampled, sampled_frames = _frame_balanced_subsample(points, frames, maximum=50_000)
+    remaining = np.arange(len(sampled))
+    candidates: list[tuple[SupportPlane, dict[str, object]]] = []
+    for candidate_index in range(5):
+        if len(remaining) < 3:
+            break
+        candidate_point, candidate_normal = _adaptive_ransac_plane(
+            sampled[remaining], threshold_m=0.012, seed=13 + candidate_index
+        )
+        full_distances = np.abs((points - candidate_point) @ candidate_normal)
+        inliers = points[full_distances <= 0.012]
+        try:
+            plane = _refine_support_plane(inliers, total_points=len(points), max_residual_m=0.010)
+        except FootprintError:
+            local_distances = np.abs((sampled[remaining] - candidate_point) @ candidate_normal)
+            remaining = remaining[local_distances > 0.012]
+            continue
+        plane, oriented_heights = _orient_for_objects(plane, objects)
+        coordinates = project_to_plane(inliers, plane)
+        hull = MultiPoint(coordinates).convex_hull
+        spans = np.ptp(coordinates, axis=0)
+        inlier_frames = np.unique(frames[full_distances <= 0.012])
+        frame_fraction = len(inlier_frames) / len(np.unique(frames))
+        centres_inside = _object_centres_inside_hull(objects, plane, hull)
+        gates = {
+            "inlier_count": int(plane.inlier_count >= 10_000),
+            "inlier_fraction": bool(plane.inlier_fraction >= 0.10),
+            "p95_residual": bool(plane.p95_residual_m <= 0.010),
+            "frame_span": bool(len(inlier_frames) >= 3 and frame_fraction >= 0.30),
+            "in_plane_span": bool(np.all(spans >= 0.30)),
+            "hull_area": bool(hull.area >= 0.25),
+            "object_height": bool(
+                np.mean(oriented_heights >= -0.012) >= 0.95
+                and np.quantile(oriented_heights, 0.01) <= 0.080
+            ),
+            "object_hull": bool(centres_inside >= 0.80),
+        }
+        score = float(
+            sum(bool(value) for value in gates.values())
+            + min(1.0, hull.area) * 0.01
+            + min(1.0, frame_fraction) * 0.001
+        )
+        diagnostics = {
+            "index": candidate_index,
+            "normal": plane.normal.tolist(),
+            "point": plane.point.tolist(),
+            "inlier_count": plane.inlier_count,
+            "inlier_fraction": plane.inlier_fraction,
+            "p95_residual_m": plane.p95_residual_m,
+            "frame_count": int(len(inlier_frames)),
+            "frame_fraction": float(frame_fraction),
+            "spans_m": spans.tolist(),
+            "hull_area_m2": float(hull.area),
+            "object_centres_inside_fraction": float(centres_inside),
+            "object_height_p01_m": float(np.quantile(oriented_heights, 0.01)),
+            "gates": gates,
+            "score": score,
+        }
+        candidates.append((plane, diagnostics))
+        local_distances = np.abs((sampled[remaining] - candidate_point) @ candidate_normal)
+        remaining = remaining[local_distances > 0.012]
+    eligible = [(plane, info) for plane, info in candidates if all(info["gates"].values())]
+    if not eligible:
+        raise FootprintError("support plane candidates failed table compatibility gates")
+    eligible.sort(key=lambda item: (-float(item[1]["score"]), int(item[1]["index"])))
+    selected, selected_info = eligible[0]
+    for _, other in eligible[1:]:
+        normal_difference = abs(float(np.dot(selected.normal, np.asarray(other["normal"]))))
+        if normal_difference < 0.95 and float(other["score"]) >= 0.95 * float(selected_info["score"]):
+            raise FootprintError("support plane is ambiguous between differently oriented candidates")
+    return selected, {
+        "sample_count": int(len(sampled)),
+        "sample_frame_count": int(len(np.unique(sampled_frames))),
+        "candidates": [info for _, info in candidates],
+        "selected_index": int(selected_info["index"]),
+    }
+
+
 def carton_footprint_polygon(
     points: np.ndarray, plane: SupportPlane
 ) -> tuple[Polygon, dict[str, float | int]]:
@@ -147,7 +240,9 @@ def _sample_ransac_triplet(
     return generator.choice(population_size, size=3, replace=False)
 
 
-def _refine_support_plane(inliers: np.ndarray, total_points: int) -> SupportPlane:
+def _refine_support_plane(
+    inliers: np.ndarray, total_points: int, max_residual_m: float = 0.012
+) -> SupportPlane:
     inlier_count = len(inliers)
     inlier_fraction = inlier_count / total_points
     if inlier_count < 10_000 or inlier_fraction < 0.10:
@@ -163,8 +258,8 @@ def _refine_support_plane(inliers: np.ndarray, total_points: int) -> SupportPlan
 
     residuals = np.abs((inliers - point) @ normal)
     p95_residual_m = float(np.percentile(residuals, 95))
-    if p95_residual_m > 0.012:
-        raise FootprintError("support plane residual exceeds 0.012 m")
+    if p95_residual_m > max_residual_m:
+        raise FootprintError(f"support plane residual exceeds {max_residual_m:.3f} m")
 
     reference_axis = np.eye(3)[int(np.argmin(np.abs(normal)))]
     u_axis = np.cross(normal, reference_axis)
@@ -180,6 +275,93 @@ def _refine_support_plane(inliers: np.ndarray, total_points: int) -> SupportPlan
         inlier_fraction=inlier_fraction,
         p95_residual_m=p95_residual_m,
     )
+
+
+def voxel_balance_points(points: np.ndarray, voxel_size_m: float = 0.005) -> np.ndarray:
+    """Keep one deterministic point per 5-mm projected-density voxel."""
+    array = _validate_points(points, minimum=1, label="carton")
+    if not np.isfinite(voxel_size_m) or voxel_size_m <= 0:
+        raise FootprintError("voxel size must be positive and finite")
+    voxel_keys = np.floor(array / voxel_size_m).astype(np.int64)
+    _, keep = np.unique(voxel_keys, axis=0, return_index=True)
+    return array[np.sort(keep)]
+
+
+def _frame_balanced_subsample(
+    points: np.ndarray, frame_ids: np.ndarray, maximum: int
+) -> tuple[np.ndarray, np.ndarray]:
+    unique_frames = np.unique(frame_ids)
+    per_frame = max(1, maximum // len(unique_frames))
+    selected: list[np.ndarray] = []
+    generator = np.random.default_rng(13)
+    for frame in unique_frames:
+        indices = np.flatnonzero(frame_ids == frame)
+        if len(indices) > per_frame:
+            indices = np.sort(generator.choice(indices, size=per_frame, replace=False))
+        selected.append(indices)
+    all_indices = np.concatenate(selected)
+    if len(all_indices) > maximum:
+        all_indices = np.sort(generator.choice(all_indices, size=maximum, replace=False))
+    return points[all_indices], frame_ids[all_indices]
+
+
+def _adaptive_ransac_plane(
+    points: np.ndarray, threshold_m: float, seed: int
+) -> tuple[np.ndarray, np.ndarray]:
+    generator = np.random.default_rng(seed)
+    best_count = 0
+    best_candidate: tuple[np.ndarray, np.ndarray] | None = None
+    minimum_trials = 128
+    target_trials = 10_000
+    trial = 0
+    while trial < target_trials:
+        indices = _sample_ransac_triplet(generator, population_size=len(points))
+        first, second, third = points[indices]
+        normal = np.cross(second - first, third - first)
+        norm = np.linalg.norm(normal)
+        if norm == 0:
+            trial += 1
+            continue
+        normal /= norm
+        count = int(np.count_nonzero(np.abs((points - first) @ normal) <= threshold_m))
+        if count > best_count:
+            best_count = count
+            best_candidate = (first, normal)
+            ratio = min(max(count / len(points), 1e-9), 1.0 - 1e-12)
+            target_trials = min(
+                10_000,
+                max(minimum_trials, int(np.ceil(np.log(1.0 - 0.999) / np.log(1.0 - ratio**3)))),
+            )
+        trial += 1
+    if best_candidate is None:
+        raise FootprintError("support plane RANSAC found no non-collinear candidate")
+    return best_candidate
+
+
+def _orient_for_objects(plane: SupportPlane, objects: np.ndarray) -> tuple[SupportPlane, np.ndarray]:
+    heights = (objects - plane.point) @ plane.normal
+    if np.median(heights) < 0:
+        plane = SupportPlane(
+            point=plane.point,
+            normal=-plane.normal,
+            u_axis=-plane.u_axis,
+            v_axis=plane.v_axis,
+            inlier_count=plane.inlier_count,
+            inlier_fraction=plane.inlier_fraction,
+            p95_residual_m=plane.p95_residual_m,
+        )
+        heights = -heights
+    return plane, heights
+
+
+def _object_centres_inside_hull(objects: np.ndarray, plane: SupportPlane, hull: object) -> float:
+    if hull.is_empty:
+        return 0.0
+    # Object observations are not available in this pure boundary; quantized 5-cm
+    # groups retain a conservative per-object-centre approximation.
+    projected = project_to_plane(objects, plane)
+    centre = projected.mean(axis=0)
+    return float(hull.buffer(0.150).covers(MultiPoint([centre])))
 
 
 def _largest_density_component(

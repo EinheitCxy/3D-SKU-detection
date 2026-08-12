@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import logging
 import re
 import sys
@@ -34,6 +35,8 @@ logger = logging.getLogger("da3_runner")
 DEFAULT_HF_REPO = "depth-anything/DA3NESTED-GIANT-LARGE"
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 PATCH_SIZE = 14
+CACHE_SCHEMA_VERSION = 2
+AFFINE_CONVENTION = "pixel_center_v1"
 
 
 def _depth_to_world_points(depth: np.ndarray, intrinsics: np.ndarray, extrinsics: np.ndarray) -> np.ndarray:
@@ -98,11 +101,13 @@ def _source_to_processed_affines(
             raise ValueError(
                 "DA3 output is larger than the pre-unification processed image"
             )
+        scale_x = processed_width / float(original_width)
+        scale_y = processed_height / float(original_height)
         transforms.append(
             np.array(
                 [
-                    [processed_width / original_width, 0.0, -crop_left],
-                    [0.0, processed_height / original_height, -crop_top],
+                    [scale_x, 0.0, (scale_x - 1.0) / 2.0 - crop_left],
+                    [0.0, scale_y, (scale_y - 1.0) / 2.0 - crop_top],
                 ],
                 dtype=np.float32,
             )
@@ -128,7 +133,9 @@ def main() -> None:
         raise SystemExit(f"目录中未找到图片: {input_dir}")
     logger.info(f"[da3_runner] {len(paths)} imgs from {input_dir}")
 
-    device = torch.device(args.device if torch.cuda.is_available() or "cpu" in args.device else "cpu")
+    if "cuda" in args.device and not torch.cuda.is_available():
+        raise SystemExit("CUDA device requested but unavailable; refusing CPU fallback")
+    device = torch.device(args.device)
     t0 = time.time()
     model = DepthAnything3.from_pretrained(args.model_path).to(device)
     model.eval()
@@ -136,6 +143,9 @@ def main() -> None:
 
     pil_images = [Image.open(p).convert("RGB") for p in paths]
     source_image_sizes = [(image.width, image.height) for image in pil_images]
+    source_image_sha256 = np.asarray(
+        [_sha256_file(Path(path)) for path in paths], dtype="<U64"
+    )
     t1 = time.time()
     prediction = model.inference(pil_images, process_res=args.process_res, process_res_method="upper_bound_resize")
     logger.info(f"[da3_runner] inference done ({time.time()-t1:.1f}s)")
@@ -177,12 +187,23 @@ def main() -> None:
         image_ids=image_ids_array,                              # (N,)
         source_image_sizes=np.asarray(source_image_sizes, dtype=np.int32),
         source_to_processed_affine=source_to_processed_affine,
-        source_model=np.array(["depth-anything/DA3NESTED-GIANT-LARGE"], dtype=object),
+        cache_schema_version=np.asarray(CACHE_SCHEMA_VERSION, dtype=np.int32),
+        source_model=np.asarray(args.model_path, dtype=f"<U{max(1, len(args.model_path))}"),
+        source_image_sha256=source_image_sha256,
+        affine_convention=np.asarray(AFFINE_CONVENTION, dtype="<U15"),
         frame_alignment_sorted_indices=sorted_indices,
         frame_alignment_map_keys=map_keys,
         frame_alignment_map_values=map_values,
     )
     logger.info(f"[da3_runner] saved {out} (total {time.time()-t0:.1f}s)")
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 if __name__ == "__main__":
