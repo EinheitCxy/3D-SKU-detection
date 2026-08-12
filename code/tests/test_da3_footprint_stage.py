@@ -1,5 +1,7 @@
 import hashlib
 import json
+import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +14,60 @@ from modules.da3_runner import (
     _source_to_processed_affines,
     _validate_model_id,
 )
+
+
+def test_ground_stack_area_cli_calls_da3_footprint_stage(monkeypatch, tmp_path):
+    import main
+
+    calls: list[tuple[str, Path]] = []
+
+    def run_da3_footprint(dataset: str, save_root: Path) -> dict[str, object]:
+        calls.append((dataset, save_root))
+        return {
+            "success": True,
+            "status": "accepted",
+            "report_path": str(tmp_path / "measurement_report.json"),
+        }
+
+    monkeypatch.setitem(
+        sys.modules,
+        "modules.da3_footprint_stage",
+        types.SimpleNamespace(run_da3_footprint=run_da3_footprint),
+    )
+    dataset = tmp_path / "dataset"
+    save_root = tmp_path / "Output"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "main.py",
+            "--mode",
+            "ground-stack-area",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+        ],
+    )
+
+    main.main()
+
+    assert calls == [(str(dataset), save_root.resolve())]
+
+
+def test_ground_stack_area_cli_rejects_removed_area_mode(monkeypatch):
+    import main
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["main.py", "--mode", "ground-stack-area", "--area-mode", "da3_metric"],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main.main()
+
+    assert exc_info.value.code == 2
 
 
 def _sha256(path: Path) -> str:

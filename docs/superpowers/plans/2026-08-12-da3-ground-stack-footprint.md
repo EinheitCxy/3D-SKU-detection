@@ -8,6 +8,21 @@
 
 **Tech Stack:** Python 3.11; NumPy; SciPy `ConvexHull`; scikit-learn `DBSCAN`; direct `shapely>=2,<3` dependency with `set_precision`/`unary_union`; OpenCV mask warping; Matplotlib review image; existing DA3 cache and local SAM3 checkpoint.
 
+## Progress checkpoint — 2026-08-12
+
+- Task 1 is accepted: deterministic support-plane/OBB/union geometry, with
+  ambiguous-component and RANSAC boundary coverage.
+- Task 2 is accepted: schema-v2 DA3 provenance, strict SAM3/cache/mapping
+  contracts, table-candidate rejection gates, 2-D footprint fusion, and
+  rejected-state artifacts. Its final focused validation was 38 passed.
+- Task 3 is intentionally paused at its RED checkpoint. Two new CLI contract
+  tests state that `ground-stack-area` must call only `run_da3_footprint` and
+  reject the removed `--area-mode` flag. Production CLI replacement, deletion
+  of old bbox-area files, README/config updates, and real-video validation are
+  still pending. The first attempted RED command used a path relative to the
+  wrong working directory and executed zero tests; it is not evidence of a
+  passing or failing result.
+
 ## Global Constraints
 
 - Metric definition is the m² area of the polygon union after every detected carton is projected along the fitted support-plane normal; never sum carton areas.
