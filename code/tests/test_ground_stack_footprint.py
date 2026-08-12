@@ -5,6 +5,7 @@ from utils.ground_stack_footprint import (
     FootprintError,
     SupportPlane,
     _refine_support_plane,
+    _sample_ransac_triplet,
     carton_footprint_polygon,
     fit_support_plane,
     union_footprints,
@@ -92,6 +93,36 @@ def carton_points(
     return np.vstack([first_face, second_face])
 
 
+def boundary_preserving_carton_points() -> np.ndarray:
+    """Return a dense 0.050 m x 1 m footprint surviving percentile trimming."""
+    x_values = np.concatenate(
+        [np.zeros(12), np.linspace(0.005, 0.045, 9), np.full(12, 0.05)]
+    )
+    y_values = np.concatenate(
+        [np.zeros(12), np.linspace(0.025, 0.975, 39), np.ones(12)]
+    )
+    x_grid, y_grid = np.meshgrid(x_values, y_values, indexing="xy")
+    first_face = np.column_stack(
+        [x_grid.ravel(), y_grid.ravel(), np.full(x_grid.size, 0.2)]
+    )
+    second_face = np.column_stack(
+        [x_grid.ravel(), y_grid.ravel(), np.full(x_grid.size, 0.19)]
+    )
+    return np.vstack([first_face, second_face])
+
+
+def connected_component_points(count: int, x_offset: float) -> np.ndarray:
+    """Create one DBSCAN-connected component with dimensions above 0.05 m."""
+    indices = np.arange(count)
+    return np.column_stack(
+        [
+            x_offset + (indices % 7) * 0.02,
+            (indices // 7) * 0.02,
+            np.full(count, 0.2),
+        ]
+    )
+
+
 def test_two_sampled_carton_faces_fuse_to_one_obb_footprint():
     polygon, metrics = carton_footprint_polygon(
         carton_points(x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2),
@@ -140,6 +171,18 @@ def test_narrow_carton_obb_is_rejected():
         carton_footprint_polygon(narrow_points, horizontal_support_plane())
 
 
+def test_exactly_five_centimeter_carton_obb_is_accepted():
+    polygon, _ = carton_footprint_polygon(
+        boundary_preserving_carton_points(), horizontal_support_plane()
+    )
+    side_lengths = np.sort(
+        np.linalg.norm(np.diff(np.asarray(polygon.exterior.coords), axis=0), axis=1)
+    )
+
+    assert side_lengths[0] == pytest.approx(0.05, abs=1e-10)
+    assert side_lengths[-1] == pytest.approx(1.0, abs=1e-10)
+
+
 def test_carton_with_multiple_substantial_components_is_rejected():
     first_component = carton_points(
         x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2
@@ -152,3 +195,22 @@ def test_carton_with_multiple_substantial_components_is_rejected():
         carton_footprint_polygon(
             np.vstack([first_component, second_component]), horizontal_support_plane()
         )
+
+
+def test_low_count_substantial_second_component_is_rejected():
+    first_component = connected_component_points(35, x_offset=0.0)
+    second_component = connected_component_points(29, x_offset=1.0)
+
+    with pytest.raises(FootprintError, match="multiple substantial components"):
+        carton_footprint_polygon(
+            np.vstack([first_component, second_component]), horizontal_support_plane()
+        )
+
+
+def test_ransac_triplet_sampling_is_distinct_and_seed_deterministic():
+    first = _sample_ransac_triplet(np.random.default_rng(13), population_size=10)
+    second = _sample_ransac_triplet(np.random.default_rng(13), population_size=10)
+
+    assert tuple(first) == (8, 7, 9)
+    assert np.array_equal(first, second)
+    assert len(set(first.tolist())) == 3

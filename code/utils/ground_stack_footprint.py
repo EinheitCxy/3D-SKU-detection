@@ -121,7 +121,7 @@ def _best_ransac_plane(
     best_candidate: tuple[np.ndarray, np.ndarray] | None = None
 
     for _ in range(trials):
-        indices = generator.choice(len(points), size=3, replace=False)
+        indices = _sample_ransac_triplet(generator, population_size=len(points))
         first, second, third = points[indices]
         first_edge = second - first
         second_edge = third - first
@@ -139,6 +139,12 @@ def _best_ransac_plane(
     if best_candidate is None:
         raise FootprintError("support plane RANSAC found no non-collinear candidate")
     return best_candidate
+
+
+def _sample_ransac_triplet(
+    generator: np.random.Generator, population_size: int
+) -> np.ndarray:
+    return generator.choice(population_size, size=3, replace=False)
 
 
 def _refine_support_plane(inliers: np.ndarray, total_points: int) -> SupportPlane:
@@ -187,7 +193,7 @@ def _largest_density_component(
     nonzero_populations = populations[populations > 0]
     if len(nonzero_populations) > 1:
         second_largest = int(np.sort(nonzero_populations)[-2])
-        substantial_limit = max(32, int(np.ceil(0.20 * len(valid_labels))))
+        substantial_limit = min(32, int(np.ceil(0.20 * len(valid_labels))))
         if second_largest >= substantial_limit:
             raise FootprintError("carton footprint has multiple substantial components")
     greatest_population = int(populations.max())
