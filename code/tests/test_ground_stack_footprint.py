@@ -4,12 +4,16 @@ import pytest
 from utils.ground_stack_footprint import (
     FootprintError,
     SupportPlane,
+    SupportPlaneSelectionError,
     _refine_support_plane,
     _sample_ransac_triplet,
     carton_footprint_polygon,
     fit_support_plane,
+    project_to_plane,
+    select_footprint_component,
     select_support_plane,
     union_footprints,
+    voxel_balance_projected,
 )
 
 
@@ -82,8 +86,8 @@ def carton_points(
     height: float,
 ) -> np.ndarray:
     """Sample two opposing carton faces, providing two fused views."""
-    x_values = np.linspace(*x_range, 40)
-    y_values = np.linspace(*y_range, 40)
+    x_values = np.linspace(*x_range, 80)
+    y_values = np.linspace(*y_range, 80)
     x_grid, y_grid = np.meshgrid(x_values, y_values, indexing="xy")
     first_face = np.column_stack(
         [x_grid.ravel(), y_grid.ravel(), np.full(x_grid.size, height)]
@@ -100,7 +104,7 @@ def boundary_preserving_carton_points() -> np.ndarray:
         [np.zeros(12), np.linspace(0.005, 0.045, 9), np.full(12, 0.05)]
     )
     y_values = np.concatenate(
-        [np.zeros(12), np.linspace(0.025, 0.975, 39), np.ones(12)]
+        [np.zeros(12), np.linspace(0.01, 0.99, 99), np.ones(12)]
     )
     x_grid, y_grid = np.meshgrid(x_values, y_values, indexing="xy")
     first_face = np.column_stack(
@@ -117,8 +121,8 @@ def connected_component_points(count: int, x_offset: float) -> np.ndarray:
     indices = np.arange(count)
     return np.column_stack(
         [
-            x_offset + (indices % 7) * 0.02,
-            (indices // 7) * 0.02,
+            x_offset + (indices % 7) * 0.01,
+            (indices // 7) * 0.01,
             np.full(count, 0.2),
         ]
     )
@@ -131,7 +135,7 @@ def test_two_sampled_carton_faces_fuse_to_one_obb_footprint():
     )
 
     assert polygon.area == pytest.approx(1.0)
-    assert metrics["input_point_count"] == 3_200
+    assert metrics["input_point_count"] == 12_800
 
 
 def test_upper_carton_points_produce_their_ground_projected_footprint():
@@ -244,3 +248,62 @@ def test_select_support_plane_prefers_table_over_larger_wall():
 
     assert abs(np.dot(plane.normal, [0.0, 0.0, 1.0])) == pytest.approx(1.0, abs=1e-3)
     assert diagnostics["selected_index"] is not None
+
+
+def test_projected_voxel_balance_ignores_height_density():
+    plane = horizontal_support_plane()
+    points = np.asarray(
+        [[0.001, 0.001, 0.02], [0.001, 0.001, 0.80], [0.006, 0.001, 0.30]]
+    )
+
+    balanced = voxel_balance_projected(project_to_plane(points, plane), voxel_size_m=0.005)
+
+    assert balanced.shape == (2, 2)
+
+
+def test_component_uses_exact_twenty_millimetre_dbscan_radius():
+    y_values = np.linspace(0.0, 0.08, 17)
+    first = np.column_stack([np.full(len(y_values), 0.0), y_values])
+    at_twenty_mm = np.column_stack([np.full(len(y_values), 0.020), y_values])
+    at_thirty_mm = np.column_stack([np.full(len(y_values), 0.030), y_values])
+
+    component, diagnostics = select_footprint_component(np.vstack([first, at_twenty_mm]))
+
+    assert len(component) == 34
+    assert diagnostics["eps_m"] == pytest.approx(0.020)
+    assert diagnostics["min_samples"] == 4
+    with pytest.raises(FootprintError, match="multiple substantial components"):
+        select_footprint_component(np.vstack([first, at_thirty_mm]))
+
+
+def test_support_plane_rejects_when_four_of_five_observation_centres_are_outside_table():
+    table = make_plane_grid(np.zeros(3), np.array([0.0, 0.0, 1.0]))
+    frame_ids = np.arange(len(table)) % 3
+    observations = [
+        carton_points((0.0, 0.2), (0.0, 0.2), 0.02),
+        carton_points((3.0, 3.2), (0.0, 0.2), 0.02),
+        carton_points((0.0, 0.2), (3.0, 3.2), 0.02),
+        carton_points((-3.2, -3.0), (0.0, 0.2), 0.02),
+        carton_points((0.0, 0.2), (-3.2, -3.0), 0.02),
+    ]
+
+    with pytest.raises(SupportPlaneSelectionError) as raised:
+        select_support_plane(table, frame_ids, observations)
+
+    assert raised.value.diagnostics["candidates"]
+    assert raised.value.diagnostics["candidates"][0]["gates"]["object_hull"] is False
+
+
+def test_ambiguous_wall_and_table_preserve_candidate_diagnostics():
+    coordinates = np.linspace(-1.0, 1.0, 120)
+    x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
+    table = np.column_stack([x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)])
+    wall_y, wall_z = np.meshgrid(coordinates, coordinates, indexing="xy")
+    wall = np.column_stack([np.zeros(wall_y.size), wall_y.ravel(), wall_z.ravel()])
+    objects = [carton_points((0.02, 0.08), (0.0, 0.2), 0.02)]
+    frame_ids = np.concatenate([np.arange(len(table)) % 3, np.arange(len(wall)) % 3])
+
+    with pytest.raises(SupportPlaneSelectionError, match="ambiguous") as raised:
+        select_support_plane(np.vstack([table, wall]), frame_ids, objects)
+
+    assert len(raised.value.diagnostics["candidates"]) >= 2

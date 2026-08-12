@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from modules import da3_footprint_stage as stage
-from modules.da3_runner import _source_to_processed_affines
+from modules.da3_runner import _source_to_processed_affines, _validate_model_id
 
 
 def _sha256(path: Path) -> str:
@@ -46,9 +46,9 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
     (output / "dedup_detections").mkdir()
 
     boxes = {
-        0: [[16, 24, 64, 88]],
-        1: [[18, 22, 66, 86]],
-        2: [[72, 24, 120, 88]],
+        0: [[16, 24, 80, 104]],
+        1: [[18, 22, 82, 102]],
+        2: [[64, 24, 128, 104]],
     }
     input_paths: list[Path] = []
     for frame, frame_boxes in boxes.items():
@@ -147,6 +147,10 @@ def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_pat
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert "empty" in report["per_global_id"]["2"]["observations"][0]["rejection"]
+    geojson = json.loads((Path(result["report_path"]).parent / "footprints.geojson").read_text())
+    assert geojson["status"] == "rejected"
+    assert geojson["measurement_complete"] is False
+    assert geojson["features"] == []
 
 
 @pytest.mark.parametrize("mutation", ["stale_hash", "legacy_schema", "incomplete_mapping"])
@@ -162,7 +166,7 @@ def test_stage_rejects_cache_or_mapping_contract(monkeypatch, tmp_path, mutation
         np.savez_compressed(cache_path, **fields)
     else:
         (output / "dedup_detections" / "global_mapping.json").write_text(
-            json.dumps({"1": [{"image_id": 0, "object_id": 0, "bbox": [16, 24, 64, 88]}]})
+            json.dumps({"1": [{"image_id": 0, "object_id": 0, "bbox": [16, 24, 80, 104]}]})
         )
     monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
@@ -184,3 +188,37 @@ def test_runner_affine_uses_pixel_centres():
     assert affine[0, 2] == pytest.approx((0.84 - 1.0) / 2.0)
     assert affine[1, 1] == pytest.approx(0.84)
     assert affine[1, 2] == pytest.approx((0.84 - 1.0) / 2.0)
+
+
+def test_stage_rejects_current_numeric_image_and_detection_absent_from_cache(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    _write_image(dataset / "images" / "3.png")
+    (dataset / "detections_results" / "3.json").write_text(json.dumps({"objects": []}))
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert result["success"] is False
+    assert report["value_m2"] is None
+    assert "numeric source image ids" in report["rejection_reason"]
+
+
+def test_stage_converts_sam_runtime_error_to_rejected_report(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+
+    def sam_failure(*_: object) -> list[np.ndarray]:
+        raise RuntimeError("SAM GPU failure")
+
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", sam_failure)
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert result["success"] is False
+    assert report["status"] == "rejected"
+    assert "SAM3 failed" in report["rejection_reason"]
+
+
+def test_runner_rejects_unsafe_model_id_before_inference():
+    with pytest.raises(ValueError, match="safe model id"):
+        _validate_model_id("model id with spaces")

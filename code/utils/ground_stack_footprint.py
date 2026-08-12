@@ -13,6 +13,14 @@ from sklearn.cluster import DBSCAN
 class FootprintError(ValueError):
     """Raised when footprint geometry does not meet its quality gates."""
 
+    def __init__(self, message: str, diagnostics: dict[str, object] | None = None):
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
+
+
+class SupportPlaneSelectionError(FootprintError):
+    """A support-plane rejection that retains every evaluated candidate."""
+
 
 @dataclass(frozen=True)
 class SupportPlane:
@@ -40,7 +48,7 @@ def fit_support_plane(background_points: np.ndarray) -> SupportPlane:
 def select_support_plane(
     background_points: np.ndarray,
     frame_ids: np.ndarray,
-    object_points: np.ndarray,
+    object_observations: np.ndarray | list[np.ndarray],
 ) -> tuple[SupportPlane, dict[str, object]]:
     """Select a table-like support plane instead of blindly choosing the largest plane.
 
@@ -49,7 +57,9 @@ def select_support_plane(
     """
     points = _validate_points(background_points, minimum=10_000, label="background")
     frames = np.asarray(frame_ids)
-    objects = _validate_points(object_points, minimum=64, label="object")
+    observations = _normalise_object_observations(object_observations)
+    objects = np.concatenate(observations)
+    object_centres = np.asarray([observation.mean(axis=0) for observation in observations])
     if frames.shape != (len(points),):
         raise FootprintError("support plane frame ids must align with background points")
     sampled, sampled_frames = _frame_balanced_subsample(points, frames, maximum=50_000)
@@ -75,7 +85,7 @@ def select_support_plane(
         spans = np.ptp(coordinates, axis=0)
         inlier_frames = np.unique(frames[full_distances <= 0.012])
         frame_fraction = len(inlier_frames) / len(np.unique(frames))
-        centres_inside = _object_centres_inside_hull(objects, plane, hull)
+        centres_inside = _object_centres_inside_hull(object_centres, plane, hull)
         gates = {
             "inlier_count": int(plane.inlier_count >= 10_000),
             "inlier_fraction": bool(plane.inlier_fraction >= 0.10),
@@ -114,20 +124,26 @@ def select_support_plane(
         local_distances = np.abs((sampled[remaining] - candidate_point) @ candidate_normal)
         remaining = remaining[local_distances > 0.012]
     eligible = [(plane, info) for plane, info in candidates if all(info["gates"].values())]
+    diagnostics = {
+        "sample_count": int(len(sampled)),
+        "sample_frame_count": int(len(np.unique(sampled_frames))),
+        "candidates": [info for _, info in candidates],
+        "selected_index": None,
+    }
     if not eligible:
-        raise FootprintError("support plane candidates failed table compatibility gates")
+        raise SupportPlaneSelectionError(
+            "support plane candidates failed table compatibility gates", diagnostics
+        )
     eligible.sort(key=lambda item: (-float(item[1]["score"]), int(item[1]["index"])))
     selected, selected_info = eligible[0]
     for _, other in eligible[1:]:
         normal_difference = abs(float(np.dot(selected.normal, np.asarray(other["normal"]))))
         if normal_difference < 0.95 and float(other["score"]) >= 0.95 * float(selected_info["score"]):
-            raise FootprintError("support plane is ambiguous between differently oriented candidates")
-    return selected, {
-        "sample_count": int(len(sampled)),
-        "sample_frame_count": int(len(np.unique(sampled_frames))),
-        "candidates": [info for _, info in candidates],
-        "selected_index": int(selected_info["index"]),
-    }
+            raise SupportPlaneSelectionError(
+                "support plane is ambiguous between differently oriented candidates", diagnostics
+            )
+    diagnostics["selected_index"] = int(selected_info["index"])
+    return selected, diagnostics
 
 
 def carton_footprint_polygon(
@@ -141,16 +157,26 @@ def carton_footprint_polygon(
     if len(elevated_points) < 64:
         raise FootprintError("carton has fewer than 64 points above the support plane")
     projected = project_to_plane(elevated_points, plane)
-    component = _largest_density_component(projected, eps_m=0.03, min_samples=8)
+    polygon, metrics = carton_footprint_polygon_from_projected(projected)
+    metrics["input_point_count"] = int(len(object_points))
+    metrics["elevated_point_count"] = int(len(elevated_points))
+    return polygon, metrics
+
+
+def carton_footprint_polygon_from_projected(
+    projected_points: np.ndarray,
+) -> tuple[Polygon, dict[str, float | int | dict[str, object]]]:
+    """Build a carton OBB from already projected, 2-D balanced support points."""
+    projected = _validate_projected_points(projected_points, minimum=64, label="carton")
+    component, component_diagnostics = select_footprint_component(projected)
     cleaned = _trim_projected_outliers(component, lower=0.01, upper=0.99)
     polygon = MultiPoint(cleaned).convex_hull.minimum_rotated_rectangle
     polygon = _validate_obb_polygon(polygon)
     return polygon, {
-        "input_point_count": int(len(object_points)),
-        "elevated_point_count": int(len(elevated_points)),
         "component_point_count": int(len(component)),
         "cleaned_point_count": int(len(cleaned)),
         "footprint_area_m2": float(polygon.area),
+        "component_diagnostics": component_diagnostics,
     }
 
 
@@ -277,9 +303,11 @@ def _refine_support_plane(
     )
 
 
-def voxel_balance_points(points: np.ndarray, voxel_size_m: float = 0.005) -> np.ndarray:
-    """Keep one deterministic point per 5-mm projected-density voxel."""
-    array = _validate_points(points, minimum=1, label="carton")
+def voxel_balance_projected(
+    projected_points: np.ndarray, voxel_size_m: float = 0.005
+) -> np.ndarray:
+    """Keep one point per deterministic 5-mm support-plane (u, v) voxel."""
+    array = _validate_projected_points(projected_points, minimum=1, label="carton")
     if not np.isfinite(voxel_size_m) or voxel_size_m <= 0:
         raise FootprintError("voxel size must be positive and finite")
     voxel_keys = np.floor(array / voxel_size_m).astype(np.int64)
@@ -354,33 +382,63 @@ def _orient_for_objects(plane: SupportPlane, objects: np.ndarray) -> tuple[Suppo
     return plane, heights
 
 
-def _object_centres_inside_hull(objects: np.ndarray, plane: SupportPlane, hull: object) -> float:
+def _object_centres_inside_hull(centres: np.ndarray, plane: SupportPlane, hull: object) -> float:
     if hull.is_empty:
         return 0.0
-    # Object observations are not available in this pure boundary; quantized 5-cm
-    # groups retain a conservative per-object-centre approximation.
-    projected = project_to_plane(objects, plane)
-    centre = projected.mean(axis=0)
-    return float(hull.buffer(0.150).covers(MultiPoint([centre])))
+    projected_centres = project_to_plane(centres, plane)
+    buffered_hull = hull.buffer(0.150)
+    return float(np.mean([buffered_hull.covers(MultiPoint([centre])) for centre in projected_centres]))
 
 
-def _largest_density_component(
-    projected: np.ndarray, eps_m: float, min_samples: int
-) -> np.ndarray:
+def select_footprint_component(
+    projected_points: np.ndarray,
+) -> tuple[np.ndarray, dict[str, object]]:
+    """Select the one allowed 20-mm density component with audit diagnostics."""
+    projected = _validate_projected_points(projected_points, minimum=4, label="carton")
+    eps_m = 0.020
+    min_samples = 4
     labels = DBSCAN(eps=eps_m, min_samples=min_samples).fit_predict(projected)
     valid_labels = labels[labels >= 0]
-    if len(valid_labels) == 0:
-        raise FootprintError("carton footprint has no density component")
-    populations = np.bincount(valid_labels)
+    populations = np.bincount(valid_labels) if len(valid_labels) else np.asarray([], dtype=int)
     nonzero_populations = populations[populations > 0]
-    if len(nonzero_populations) > 1:
-        second_largest = int(np.sort(nonzero_populations)[-2])
-        substantial_limit = min(32, int(np.ceil(0.20 * len(valid_labels))))
-        if second_largest >= substantial_limit:
-            raise FootprintError("carton footprint has multiple substantial components")
+    diagnostics: dict[str, object] = {
+        "eps_m": eps_m,
+        "min_samples": min_samples,
+        "component_count": int(len(nonzero_populations)),
+        "non_noise_point_count": int(len(valid_labels)),
+        "component_populations": [int(value) for value in nonzero_populations],
+        "substantial_component_threshold": None,
+    }
+    if len(valid_labels) == 0:
+        raise FootprintError("carton footprint has no density component", diagnostics)
+    threshold = min(32, int(np.ceil(0.20 * len(valid_labels))))
+    diagnostics["substantial_component_threshold"] = threshold
+    if len(nonzero_populations) > 1 and int(np.sort(nonzero_populations)[-2]) >= threshold:
+        raise FootprintError("carton footprint has multiple substantial components", diagnostics)
     greatest_population = int(populations.max())
     label = int(np.flatnonzero(populations == greatest_population)[0])
-    return projected[labels == label]
+    return projected[labels == label], diagnostics
+
+
+def _normalise_object_observations(
+    observations: np.ndarray | list[np.ndarray],
+) -> list[np.ndarray]:
+    if isinstance(observations, np.ndarray):
+        return [_validate_points(observations, minimum=64, label="object")]
+    if not observations:
+        raise FootprintError("support plane requires object observations")
+    return [_validate_points(observation, minimum=1, label="object") for observation in observations]
+
+
+def _validate_projected_points(points: np.ndarray, minimum: int, label: str) -> np.ndarray:
+    array = np.asarray(points, dtype=float)
+    if array.ndim != 2 or array.shape[1:] != (2,):
+        raise FootprintError(f"{label} projected points must have shape (N, 2)")
+    if len(array) < minimum:
+        raise FootprintError(f"{label} projected points require at least {minimum} points")
+    if not np.isfinite(array).all():
+        raise FootprintError(f"{label} projected points must be finite")
+    return array
 
 
 def _trim_projected_outliers(

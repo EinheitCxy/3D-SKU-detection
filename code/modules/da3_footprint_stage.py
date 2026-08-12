@@ -22,10 +22,12 @@ from shapely.ops import unary_union
 from utils.detection_objects import flatten_detection_objects
 from utils.ground_stack_footprint import (
     FootprintError,
-    carton_footprint_polygon,
+    SupportPlaneSelectionError,
+    carton_footprint_polygon_from_projected,
+    project_to_plane,
     select_support_plane,
     union_footprints,
-    voxel_balance_points,
+    voxel_balance_projected,
 )
 from utils.sam3_utils import sam3_masks_from_bboxes_predict_inst
 
@@ -72,18 +74,26 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         mapping_path = Path(save_root) / dataset.name / "dedup_detections" / "global_mapping.json"
         cache = _load_cache(cache_path)
         image_paths = _image_paths(dataset / "images")
+        detection_paths = _detection_paths(dataset / "detections_results")
+        _validate_complete_source_ids(cache["image_ids"], image_paths, detection_paths)
         report["cache"] = _validate_cache(cache, image_paths)
-        detections = _load_detections(dataset / "detections_results", set(cache["image_ids"].tolist()))
+        detections = _load_detections(detection_paths)
         global_mapping = _load_mapping(mapping_path, detections)
         masked_observations, background_points, background_frames = _masked_observations(
             cache, image_paths, detections, global_mapping, report["per_global_id"]
         )
-        all_object_points = [points for observations in masked_observations.values() for points in observations]
+        all_object_points = [
+            points for observations in masked_observations.values() for points in observations if len(points)
+        ]
         if not all_object_points:
             raise FootprintStageError("no mapped observations produced valid object points")
-        plane, plane_diagnostics = select_support_plane(
-            background_points, background_frames, np.concatenate(all_object_points)
-        )
+        try:
+            plane, plane_diagnostics = select_support_plane(
+                background_points, background_frames, all_object_points
+            )
+        except SupportPlaneSelectionError as error:
+            report["plane"] = {"selected": None, **error.diagnostics}
+            raise
         report["plane"] = {
             "selected": {
                 "point": plane.point.tolist(),
@@ -102,17 +112,24 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             if len(accepted) != len(observation_points):
                 per_id["rejection"] = "observation has fewer than 32 valid masked points"
                 continue
-            fused = voxel_balance_points(np.concatenate(accepted), voxel_size_m=0.005)
-            per_id["fused_voxel_point_count"] = int(len(fused))
-            if len(fused) < 64:
+            fused = np.concatenate(accepted)
+            heights = (fused - plane.point) @ plane.normal
+            elevated = fused[heights > 0.015]
+            if len(elevated) < 64:
                 per_id["rejection"] = "fused global id has fewer than 64 valid points"
                 continue
+            projected = project_to_plane(elevated, plane)
+            balanced_projected = voxel_balance_projected(projected, voxel_size_m=0.005)
+            per_id["projected_voxel_point_count"] = int(len(balanced_projected))
+            if len(balanced_projected) < 64:
+                per_id["rejection"] = "fused global id has fewer than 64 projected voxel points"
+                continue
             try:
-                polygon, metrics = carton_footprint_polygon(fused, plane)
+                polygon, metrics = carton_footprint_polygon_from_projected(balanced_projected)
             except FootprintError as error:
                 per_id["rejection"] = str(error)
+                per_id["component_diagnostics"] = error.diagnostics
                 continue
-            heights = (fused - plane.point) @ plane.normal
             per_id.update(metrics)
             per_id["height_median_m"] = float(np.median(heights))
             per_id["observations_used"] = len(accepted)
@@ -143,6 +160,8 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         report["value_m2"] = accepted_area
     except (FootprintStageError, FootprintError, OSError, ValueError, KeyError) as error:
         report["rejection_reason"] = str(error)
+        polygons = {}
+        union = None
     artifact_paths = _write_artifacts(output_dir, report, polygons, union)
     report["artifacts"] = artifact_paths
     report_path = output_dir / "measurement_report.json"
@@ -227,14 +246,40 @@ def _image_paths(images_dir: Path) -> dict[int, Path]:
     return paths
 
 
-def _load_detections(detections_dir: Path, expected_ids: set[int]) -> dict[int, list[dict[str, Any]]]:
+def _detection_paths(detections_dir: Path) -> dict[int, Path]:
     if not detections_dir.is_dir():
         raise FootprintStageError(f"detections directory is missing: {detections_dir}")
+    paths: dict[int, Path] = {}
+    for path in detections_dir.iterdir():
+        if path.is_file() and path.suffix.lower() == ".json" and path.stem.isdigit():
+            image_id = int(path.stem)
+            if image_id in paths:
+                raise FootprintStageError(f"multiple detection JSON files have id {image_id}")
+            paths[image_id] = path
+    return paths
+
+
+def _validate_complete_source_ids(
+    cache_ids: np.ndarray, image_paths: dict[int, Path], detection_paths: dict[int, Path]
+) -> None:
+    numeric_cache_ids = {int(value) for value in cache_ids}
+    numeric_image_ids = set(image_paths)
+    numeric_detection_ids = set(detection_paths)
+    if numeric_cache_ids != numeric_image_ids:
+        raise FootprintStageError(
+            "numeric source image ids must exactly equal cache image ids "
+            f"(cache={sorted(numeric_cache_ids)}, images={sorted(numeric_image_ids)})"
+        )
+    if numeric_cache_ids != numeric_detection_ids:
+        raise FootprintStageError(
+            "numeric detection JSON ids must exactly equal cache image ids "
+            f"(cache={sorted(numeric_cache_ids)}, detections={sorted(numeric_detection_ids)})"
+        )
+
+
+def _load_detections(detection_paths: dict[int, Path]) -> dict[int, list[dict[str, Any]]]:
     detections: dict[int, list[dict[str, Any]]] = {}
-    for image_id in sorted(expected_ids):
-        path = detections_dir / f"{image_id}.json"
-        if not path.is_file():
-            raise FootprintStageError(f"detection JSON is missing for image {image_id}")
+    for image_id, path in sorted(detection_paths.items()):
         try:
             objects = flatten_detection_objects(json.loads(path.read_text()))
         except (json.JSONDecodeError, ValueError) as error:
@@ -298,9 +343,12 @@ def _masked_observations(
     for image_id, frame_detections in detections.items():
         frame_index = frame_for_id[image_id]
         height, width = point_clouds.shape[1:3]
-        masks = sam3_masks_from_bboxes_predict_inst(
-            str(image_paths[image_id]), [item["bbox"] for item in frame_detections], _SAM3_CHECKPOINT, _SAM3_DEVICE
-        )
+        try:
+            masks = sam3_masks_from_bboxes_predict_inst(
+                str(image_paths[image_id]), [item["bbox"] for item in frame_detections], _SAM3_CHECKPOINT, _SAM3_DEVICE
+            )
+        except RuntimeError as error:
+            raise FootprintStageError(f"SAM3 failed for image {image_id}: {error}") from error
         if len(masks) != len(frame_detections):
             raise FootprintStageError(f"SAM3 did not return one mask per detection for image {image_id}")
         all_masks = np.zeros((height, width), dtype=bool)
@@ -343,25 +391,30 @@ def _valid_points(points: np.ndarray, confidence: np.ndarray) -> np.ndarray:
 def _write_artifacts(output_dir: Path, report: dict[str, Any], polygons: dict[str, Any], union: Any) -> dict[str, str]:
     geojson_path = output_dir / "footprints.geojson"
     figure_path = output_dir / "top_down_footprint.png"
+    accepted = report["status"] == "accepted"
     features: list[dict[str, Any]] = []
-    for global_id, polygon in polygons.items():
-        features.append({"type": "Feature", "geometry": mapping(polygon), "properties": {"coordinate_space": "local_support_plane_meters", "global_id": global_id, "area_m2": float(polygon.area), "observations_used": report["per_global_id"][global_id].get("observations_used", 0)}})
-    if union is not None:
-        features.append({"type": "Feature", "geometry": mapping(union), "properties": {"coordinate_space": "local_support_plane_meters", "global_id": "union", "area_m2": float(union.area)}})
-    geojson_path.write_text(json.dumps({"type": "FeatureCollection", "coordinate_space": "local_support_plane_meters", "features": features}, indent=2) + "\n")
+    if accepted:
+        for global_id, polygon in polygons.items():
+            features.append({"type": "Feature", "geometry": mapping(polygon), "properties": {"coordinate_space": "local_support_plane_meters", "global_id": global_id, "area_m2": float(polygon.area), "observations_used": report["per_global_id"][global_id].get("observations_used", 0)}})
+        if union is not None:
+            features.append({"type": "Feature", "geometry": mapping(union), "properties": {"coordinate_space": "local_support_plane_meters", "global_id": "union", "area_m2": float(union.area)}})
+    geojson_path.write_text(json.dumps({"type": "FeatureCollection", "coordinate_space": "local_support_plane_meters", "status": report["status"], "measurement_complete": accepted, "features": features}, indent=2) + "\n")
     figure, axis = plt.subplots(figsize=(6, 6))
-    for global_id, polygon in polygons.items():
-        x_values, y_values = polygon.exterior.xy
-        axis.plot(x_values, y_values, label=f"global id {global_id}")
-    if union is not None:
-        geometries = getattr(union, "geoms", [union])
-        for geometry in geometries:
-            x_values, y_values = geometry.exterior.xy
-            axis.fill(x_values, y_values, alpha=0.2, color="black", label="union")
+    if accepted:
+        for global_id, polygon in polygons.items():
+            x_values, y_values = polygon.exterior.xy
+            axis.plot(x_values, y_values, label=f"global id {global_id}")
+        if union is not None:
+            geometries = getattr(union, "geoms", [union])
+            for geometry in geometries:
+                x_values, y_values = geometry.exterior.xy
+                axis.fill(x_values, y_values, alpha=0.2, color="black", label="union")
+    else:
+        axis.text(0.5, 0.5, "REJECTED\nmeasurement incomplete", ha="center", va="center", color="firebrick", transform=axis.transAxes, fontsize=16)
     axis.set_xlabel("support-plane u (m)")
     axis.set_ylabel("support-plane v (m)")
     axis.set_aspect("equal", adjustable="box")
-    if polygons:
+    if accepted and polygons:
         axis.legend()
     figure.tight_layout()
     figure.savefig(figure_path, dpi=150)

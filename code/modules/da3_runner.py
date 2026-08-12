@@ -37,6 +37,7 @@ IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 PATCH_SIZE = 14
 CACHE_SCHEMA_VERSION = 2
 AFFINE_CONVENTION = "pixel_center_v1"
+SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
 
 
 def _depth_to_world_points(depth: np.ndarray, intrinsics: np.ndarray, extrinsics: np.ndarray) -> np.ndarray:
@@ -115,6 +116,12 @@ def _source_to_processed_affines(
     return np.stack(transforms)
 
 
+def _validate_model_id(model_id: str) -> str:
+    if not isinstance(model_id, str) or not SAFE_MODEL_ID.fullmatch(model_id):
+        raise ValueError("model path must be a nonempty safe model id")
+    return model_id
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="DA3 推理 -> predictions.npz")
     ap.add_argument("--input_dir", required=True, help="图片目录")
@@ -123,6 +130,7 @@ def main() -> None:
     ap.add_argument("--device", default="cuda", help="推理设备（默认 cuda）")
     ap.add_argument("--process_res", type=int, default=504, help="推理分辨率（默认 504）")
     args = ap.parse_args()
+    args.model_path = _validate_model_id(args.model_path)
 
     from PIL import Image
     from depth_anything_3.api import DepthAnything3
