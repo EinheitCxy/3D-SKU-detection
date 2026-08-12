@@ -6,7 +6,7 @@
 
 **Architecture:** `utils/ground_stack_footprint.py` holds deterministic, model-free geometry: support-plane RANSAC, stable plane coordinates, robust carton OBB recovery, and polygon union. `modules/da3_footprint_stage.py` validates DA3 cache/image alignment, obtains mandatory SAM3 masks, forms background/object point clouds, and writes reports and visual artifacts. `main.py` exposes only this footprint calculation through `ground-stack-area`.
 
-**Tech Stack:** Python 3.11; NumPy; SciPy `ConvexHull`; scikit-learn `DBSCAN`; Shapely `Polygon`/`unary_union`; OpenCV mask warping; Matplotlib review image; existing DA3 cache and local SAM3 checkpoint.
+**Tech Stack:** Python 3.11; NumPy; SciPy `ConvexHull`; scikit-learn `DBSCAN`; direct `shapely>=2,<3` dependency with `set_precision`/`unary_union`; OpenCV mask warping; Matplotlib review image; existing DA3 cache and local SAM3 checkpoint.
 
 ## Global Constraints
 
@@ -14,10 +14,11 @@
 - A carton is identified by one `global_id`; fuse every valid masked observation for that ID and emit exactly one OBB polygon.
 - SAM3 masks are mandatory; raw bbox point extraction and any fallback to the old visible/front-facing/calibrated-bbox area are prohibited.
 - Reuse only `/home/xingyu/3D_Recognization/code/.venv`, `/home/xingyu/3D_Recognization/Depth-Anything-3/.venv`, and `/home/xingyu/3D_Recognization/.venv`; do not create a worktree-specific environment.
-- DA3 cache must validate `world_points`, `world_points_conf`, `image_ids`, `source_image_sizes`, `source_to_processed_affine`; current image sizes must match cached source sizes.
-- RANSAC uses seed `13`, at most `50_000` deterministic candidate points, `2_048` triples, `0.012 m` threshold; refined support requires `>=10_000` inliers, `>=0.10` inlier fraction, and 95th-percentile inlier residual `<=0.012 m`.
+- DA3 cache must validate `world_points`, `world_points_conf`, `image_ids`, `source_image_sizes`, `source_to_processed_affine`, schema version, model ID, pixel-centre affine convention, and ordered source-image SHA-256 values; current images must match the cached sizes and hashes. Do not interpret legacy cache variants.
+- Mapping observations must equal the complete flattened detection-object set. SAM3 masks every detection; mapping masks define object points and all masks dilated two DA3 pixels define background exclusion.
+- RANSAC uses seed `13`, at most `50_000` frame-balanced candidate points, `0.012 m` threshold, adaptive 0.999-success trials capped at 10,000, and extracts up to five candidate planes. A selected support must meet inlier/residual/frame-span/table-hull/object-height/ambiguity gates specified in the design.
 - Valid 3D object points are finite, nonzero, and `world_points_conf >= 1.0`; points within `0.015 m` of the fitted support plane are table leakage and excluded from carton fitting.
-- A carton OBB needs `>=64` object points, two finite side lengths each `>=0.05 m`, and positive finite area. Any missing/rejected global ID makes the total `rejected` and `value_m2: null`.
+- A carton needs `>=32` valid points in every accepted observation, `>=64` after fusion, 5-mm voxel balancing, and no second DBSCAN component containing `>=20%` or `>=32` non-noise points. Its OBB needs two finite side lengths each `>=0.05 m` and positive finite area. Any missing/rejected global ID makes the total `rejected` and `value_m2: null`.
 - Input images, detections, DA3 NPZ cache, and `global_mapping.json` remain byte-for-byte unchanged. Runtime artifacts must not be staged.
 - Output only `<save_root>/<dataset>/ground_stack_footprint/{measurement_report.json,footprints.geojson,top_down_footprint.png}`. Report metric is `da3_ground_footprint_union`, unit `m2`, and status is only `accepted` or `rejected`.
 - Remove the obsolete `da3_metric`/`calibrated_bbox` CLI modes, anchor CLI options, old bbox-area stage/utilities/tests, and their README/config claims.
@@ -31,8 +32,9 @@
 |---|---|
 | `code/utils/ground_stack_footprint.py` | Pure metric geometry and explicit `FootprintError` failures. |
 | `code/tests/test_ground_stack_footprint.py` | Deterministic synthetic geometry acceptance/rejection tests. |
-| `code/modules/da3_footprint_stage.py` | DA3/SAM3 IO boundary, cache/image contracts, output artifacts. |
+| `code/modules/da3_footprint_stage.py` | DA3/SAM3 IO boundary, cache/image contracts, support-plane selection, output artifacts. |
 | `code/tests/test_da3_footprint_stage.py` | Stage test fixtures with a monkeypatched SAM3 boundary. |
+| `code/modules/da3_runner.py` | Writes cache schema/provenance and pixel-centre affine. |
 | `code/main.py` | Single `ground-stack-area` dispatch, no area-mode/anchor API. |
 | `README.md`, `code/README.md`, `code/config.yaml` | Correct footprint definition and command. |
 
@@ -144,6 +146,11 @@ Expected: PASS. Commit only the two task files with `feat: add ground footprint 
 **Files:**
 - Create: `code/modules/da3_footprint_stage.py`
 - Create: `code/tests/test_da3_footprint_stage.py`
+- Modify: `code/utils/ground_stack_footprint.py`
+- Modify: `code/tests/test_ground_stack_footprint.py`
+- Modify: `code/modules/da3_runner.py`
+- Modify: `code/pyproject.toml`
+- Modify: `code/uv.lock`
 
 **Interfaces:**
 - Consumes Task 1 `SupportPlane`, `fit_support_plane`, `carton_footprint_polygon`, `union_footprints`, and `FootprintError`.
@@ -171,7 +178,11 @@ def test_stage_rejects_complete_total_when_one_global_id_has_no_mask(monkeypatch
     assert report["value_m2"] is None
 ```
 
-The metric fixture must write a `world_points` cache with at least 10,000 unmasked table points, two overlapping carton point sets (one at greater height), exact affine/source-size metadata, and a two-frame repeated `global_id`.
+The metric fixture must write a schema-v2 `world_points` cache with at least
+10,000 unmasked table points, two overlapping carton point sets (one at greater
+height), exact pixel-centre affine/source-size/hash metadata, and a two-frame
+repeated `global_id`. Add failure tests for stale source hash, legacy cache
+schema, incomplete mapping-versus-detection coverage, and an empty SAM3 mask.
 
 - [ ] **Step 2: Run tests and verify the stage import fails**
 
@@ -190,31 +201,57 @@ def _valid_points(points: np.ndarray, confidence: np.ndarray) -> np.ndarray:
     return np.isfinite(points).all(axis=-1) & (np.linalg.norm(points, axis=-1) > 0) & np.isfinite(confidence) & (confidence >= 1.0)
 ```
 
-Load every required cache field with `allow_pickle=False`. Validate image IDs are unique, affine shape is `(N,2,3)`, source sizes are `(N,2)`, and current image dimensions exactly match each cached size. Group mapping observations by frame; make one SAM3 call per frame with mapping bboxes, map each result using the corresponding affine, and append clear observation diagnostics for empty/invalid masks.
+Add `shapely>=2,<3` as a direct project dependency and regenerate `uv.lock`
+offline. Update the DA3 runner to write schema-v2 cache provenance: a safe
+string model ID, per-frame source SHA-256, `pixel_center_v1` affine convention,
+and the exact `x' = sx*x + (sx-1)/2-crop_left` affine. Test its affine without
+running DA3 inference. Load every stage cache field with `allow_pickle=False`.
+Validate image IDs are unique, affine shape is `(N,2,3)`, source sizes are
+`(N,2)`, all provenance fields agree, and current image dimensions and hashes
+exactly match the cache. Group all detection bboxes by frame; make one SAM3
+call per frame, map each result using the corresponding affine, and append
+clear observation diagnostics for empty/invalid masks.
 
 - [ ] **Step 4: Implement background plane, per-ID fusion, and strict all-ID outcome**
 
 ```python
-background_points = world_points[valid_points & ~np.logical_or.reduce(all_frame_masks)]
-plane = fit_support_plane(background_points)
+background_points = world_points[valid_points & ~dilated_all_detection_masks]
+plane = select_support_plane(background_points, per_frame_points, all_object_points)
 for global_id, observations in mapping.items():
     fused = np.concatenate(masked_points_for_observation(observation) for observation in observations)
     polygon, metrics = carton_footprint_polygon(fused, plane)
     polygons.append(polygon)
 ```
 
-If any mapped global ID has no accepted polygon, write all diagnostics but set `status: "rejected"`, `value_m2: null`, and `success: False`. Otherwise call `union_footprints` exactly once and set its area as the only total. Never add individual areas.
+Implement and test deterministic multi-candidate plane extraction/selection:
+frame-balanced background sampling, up to five RANSAC planes, residual/span/frame
+coverage gates, object height/table hull compatibility, and ambiguity rejection
+for a wall-versus-table synthetic fixture. Use every mapped observation that
+passes the point gate, fuse by global ID with 5-mm voxel balancing, and reject
+an ID with any substantial second DBSCAN component. If any mapped global ID has
+no accepted polygon, write all diagnostics but set `status: "rejected"`,
+`value_m2: null`, and `success: False`. Otherwise snap polygons to 0.1-mm and
+1-mm precision grids, require union precision sensitivity within the design
+tolerance, call `union_footprints` exactly once for the accepted precision, and
+set its area as the only total. Never add individual areas.
 
 - [ ] **Step 5: Implement auditable GeoJSON and top-down image**
 
-`footprints.geojson` must contain one feature per global-ID OBB and one `union` feature, in plane `(u,v)` metres, with `global_id`, `area_m2`, and `observations_used` properties. `top_down_footprint.png` must draw each OBB outline plus a filled union boundary with axes labelled metres. The report contains support-plane point/normal/gates, per-ID metrics/diagnostics, and artifact paths.
+`footprints.geojson` must contain one feature per global-ID OBB and one `union`
+feature, in plane `(u,v)` metres, with `coordinate_space` explicitly set to
+`local_support_plane_meters`, plus `global_id`, `area_m2`, and
+`observations_used` properties. `top_down_footprint.png` must draw each OBB
+outline plus a filled union boundary with axes labelled metres. The report
+contains cache provenance, all plane candidates/final gates, per-ID
+observation/voxel/component diagnostics, union algebra and precision
+sensitivity, library versions, and artifact paths.
 
 - [ ] **Step 6: Run stage tests, compile, and commit**
 
 Run:
 
 ```bash
-VIRTUAL_ENV=/home/xingyu/3D_Recognization/code/.venv UV_CACHE_DIR=/tmp/fd-area-code-uv-cache UV_OFFLINE=1 uv run --active --no-project pytest -q tests/test_da3_footprint_stage.py tests/test_ground_stack_footprint.py
+VIRTUAL_ENV=/home/xingyu/3D_Recognization/code/.venv UV_CACHE_DIR=/tmp/fd-area-code-uv-cache UV_OFFLINE=1 uv run --active --no-project python -m pytest -q tests/test_da3_footprint_stage.py tests/test_ground_stack_footprint.py
 VIRTUAL_ENV=/home/xingyu/3D_Recognization/code/.venv UV_CACHE_DIR=/tmp/fd-area-code-uv-cache UV_OFFLINE=1 uv run --active --no-project python -m py_compile modules/da3_footprint_stage.py utils/ground_stack_footprint.py
 ```
 

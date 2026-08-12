@@ -40,9 +40,12 @@ dataset/
 
 The DA3 cache must contain aligned `(N, H, W)` / `(N, H, W, 3)` arrays:
 `world_points_conf`, `world_points`, `image_ids`, `source_image_sizes`, and
-`source_to_processed_affine`. `source_image_sizes[frame]` must equal the
-current source-image size. `world_points` are a shared DA3 world coordinate
-system, so points belonging to one global ID can be fused across frames.
+`source_to_processed_affine`, plus cache schema, model ID, ordered source-image
+SHA-256 values, and the pixel-centre affine convention. `source_image_sizes`
+and source-image hashes must equal the current inputs. `world_points` are a
+shared DA3 world coordinate system, so points belonging to one `global_id` can
+be fused across frames. A cache predating this contract is rejected and must be
+rebuilt; no legacy affine interpretation is guessed.
 
 `global_mapping.json` is the physical-identity source. Every observation in a
 global-ID list is a view of one carton, not an extra carton.
@@ -51,31 +54,42 @@ global-ID list is a view of one carton, not an extra carton.
 
 ### 1. Object masks and cache alignment
 
-For every mapped `(image_id, object_id, bbox)`, load the original image and
+Flatten every detection JSON using the same stable enumeration as deduplication.
+The `(image_id, object_id)` set in `global_mapping.json` must equal this full
+detection set exactly. For every detection, load the original image and
 generate a SAM3 box-prompt mask clipped to that bbox. SAM3 is mandatory: a
 raw-bbox fallback is prohibited because it includes tabletop and neighbouring
-cartons.
+cartons. Mapping observations use their corresponding masks as object points;
+all detections' masks, dilated by two DA3-grid pixels, are excluded from
+background plane fitting.
 
 Warp each original-image boolean mask to DA3's `(H, W)` grid with the cached
-original-pixel-to-processed affine and nearest-neighbour sampling. Reject an
-observation when its warped mask is empty, has a wrong shape, or its source
-image/cache metadata is inconsistent. Keep only finite, nonzero
+original-pixel-to-processed affine and nearest-neighbour sampling. The affine
+uses pixel centres: `x' = sx * x + (sx - 1) / 2 - crop_left` (and the same for
+`y`). Reject an observation when its warped mask is empty, has a wrong shape,
+or its source image/cache metadata is inconsistent. Keep only finite, nonzero
 `world_points` with `world_points_conf >= 1.0`.
 
 ### 2. Supporting-plane RANSAC
 
-Build the candidate background set from all valid DA3 points outside all warped
-SAM3 masks. Deterministically subsample at most 50,000 candidates, then fit
-planes by deterministic RANSAC (seed `13`, 2,048 triples, 12-mm inlier
-threshold), choose the largest valid support, score that support against all
-background points, and refine it with SVD over its full inliers. Orient its
-unit normal `n` so that the fused carton points have positive median signed
-height.
+Build the candidate background set from all valid DA3 points outside the
+dilated masks, sampling each valid frame equally before the deterministic
+50,000-point cap. Extract up to five planes by deterministic RANSAC (seed 13,
+12-mm threshold, non-collinear triples); compute the RANSAC trial count from
+the observed inlier rate for 0.999 success probability and cap it at 10,000.
+Refine each candidate with SVD over full inliers. This avoids treating the
+largest background plane as the table: a wall or floor can be larger.
 
-Reject the run unless the refined plane has at least 10,000 background inliers,
-at least 10% background inlier fraction, and a 95th-percentile inlier residual
-at most 12 mm. These gates prevent a wall, a small background patch, or noisy
-depth from being misreported as the tabletop.
+Choose a support candidate only if it has at least 10,000 background inliers,
+at least 10% background inlier fraction, P95 residual at most 10 mm, support
+in at least three frames and 30% of valid frames, two in-plane spans of at
+least 0.30 m, and a 2D inlier hull of at least 0.25 m². Orient its normal so
+that fused carton points have positive median signed height; require at least
+95% of object points to be no lower than -12 mm, a lowest-object P01 height no
+greater than 80 mm, and at least 80% of object centres inside the table hull
+buffered by 150 mm. If a differently oriented candidate is within 5% of the
+best score, reject the run as support-plane ambiguous. These gates prevent a
+wall, a small patch, or noisy depth from being misreported as the tabletop.
 
 Construct deterministic orthonormal in-plane axes `(u, v)`. A world point `p`
 maps to plane coordinates `(dot(p - p0, u), dot(p - p0, v))`; discarding the
@@ -85,9 +99,12 @@ normal component is precisely the required vertical projection.
 
 For one global ID, merge all valid masked points from all of its observations.
 Remove points within 15 mm of the support plane so table leakage inside a mask
-cannot enlarge a carton. Project remaining points to `(u, v)`, retain the
-largest 2D density-connected component, and use its 1st--99th percentile hull
-to suppress residual mask/depth outliers.
+cannot enlarge a carton. Require at least 32 valid points for each observation
+and 64 after fusion. Project remaining points to `(u, v)`, voxelise to a 5-mm
+grid so a high-density view cannot dominate, and require one density-connected
+component (`eps=20 mm`, `min_samples=4`). A second component with at least 20%
+of non-noise points **or** 32 points is an identity/pose inconsistency and
+rejects the global ID; it is never silently discarded.
 
 Cartons are the defined object class, so reconstruct their base as a robust
 oriented bounding box (OBB): find the minimum-area rectangle of the cleaned
@@ -102,9 +119,11 @@ single best frame or add visible surface areas.
 
 ### 4. Footprint union and outcome
 
-Use Shapely's exact planar `unary_union` on every accepted carton OBB. The
-union's area is the only `value_m2`; individual OBB areas are diagnostics and
-must never be arithmetically summed as the total. Overlap is counted once;
+Snap validated OBBs to a 0.1-mm precision grid and use Shapely's planar
+`unary_union` on every accepted carton OBB. The union's area is the only
+`value_m2`; individual OBB areas are diagnostics and must never be
+arithmetically summed as the total. Repeat at a 1-mm grid and reject if the
+areas differ by more than `max(0.5%, 1e-4 m²)`. Overlap is counted once;
 vertical stacking is irrelevant after projection; overhang is included because
 every carton is projected independently.
 
