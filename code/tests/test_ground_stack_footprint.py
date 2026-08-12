@@ -4,6 +4,7 @@ import pytest
 from utils.ground_stack_footprint import (
     FootprintError,
     SupportPlane,
+    _refine_support_plane,
     carton_footprint_polygon,
     fit_support_plane,
     union_footprints,
@@ -41,6 +42,24 @@ def test_fit_support_plane_recovers_metric_table_with_outliers():
 def test_fit_support_plane_rejects_insufficient_background():
     with pytest.raises(FootprintError, match="support plane"):
         fit_support_plane(np.zeros((9_999, 3)))
+
+
+def test_support_plane_rejects_inlier_fraction_below_ten_percent():
+    with pytest.raises(FootprintError, match="insufficient inliers"):
+        _refine_support_plane(np.zeros((10_000, 3)), total_points=100_001)
+
+
+def test_support_plane_rejects_p95_residual_above_threshold():
+    coordinates = np.linspace(-1.0, 1.0, 100)
+    x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
+    inliers = np.column_stack(
+        [x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)]
+    )
+    inliers[:9_400, 2] = 0.012
+    inliers[9_400:, 2] = -0.012
+
+    with pytest.raises(FootprintError, match="residual"):
+        _refine_support_plane(inliers, total_points=len(inliers))
 
 
 def horizontal_support_plane() -> SupportPlane:
@@ -110,3 +129,26 @@ def test_line_like_carton_points_are_rejected():
 
     with pytest.raises(FootprintError, match="OBB"):
         carton_footprint_polygon(line_points, horizontal_support_plane())
+
+
+def test_narrow_carton_obb_is_rejected():
+    narrow_points = carton_points(
+        x_range=(0.0, 0.049), y_range=(0.0, 1.0), height=0.2
+    )
+
+    with pytest.raises(FootprintError, match="OBB"):
+        carton_footprint_polygon(narrow_points, horizontal_support_plane())
+
+
+def test_carton_with_multiple_substantial_components_is_rejected():
+    first_component = carton_points(
+        x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2
+    )
+    second_component = carton_points(
+        x_range=(3.0, 4.0), y_range=(0.0, 1.0), height=0.2
+    )
+
+    with pytest.raises(FootprintError, match="multiple substantial components"):
+        carton_footprint_polygon(
+            np.vstack([first_component, second_component]), horizontal_support_plane()
+        )

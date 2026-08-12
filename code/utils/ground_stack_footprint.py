@@ -120,11 +120,15 @@ def _best_ransac_plane(
     best_count = 0
     best_candidate: tuple[np.ndarray, np.ndarray] | None = None
 
-    for indices in generator.integers(0, len(points), size=(trials, 3)):
+    for _ in range(trials):
+        indices = generator.choice(len(points), size=3, replace=False)
         first, second, third = points[indices]
-        normal = np.cross(second - first, third - first)
+        first_edge = second - first
+        second_edge = third - first
+        normal = np.cross(first_edge, second_edge)
         norm = np.linalg.norm(normal)
-        if norm <= np.finfo(float).eps:
+        edge_product = np.linalg.norm(first_edge) * np.linalg.norm(second_edge)
+        if edge_product == 0 or norm / edge_product <= 1e-8:
             continue
         normal /= norm
         count = int(np.count_nonzero(np.abs((points - first) @ normal) <= threshold_m))
@@ -180,6 +184,12 @@ def _largest_density_component(
     if len(valid_labels) == 0:
         raise FootprintError("carton footprint has no density component")
     populations = np.bincount(valid_labels)
+    nonzero_populations = populations[populations > 0]
+    if len(nonzero_populations) > 1:
+        second_largest = int(np.sort(nonzero_populations)[-2])
+        substantial_limit = max(32, int(np.ceil(0.20 * len(valid_labels))))
+        if second_largest >= substantial_limit:
+            raise FootprintError("carton footprint has multiple substantial components")
     greatest_population = int(populations.max())
     label = int(np.flatnonzero(populations == greatest_population)[0])
     return projected[labels == label]
@@ -205,4 +215,11 @@ def _validate_obb_polygon(candidate: object) -> Polygon:
         raise FootprintError("carton OBB is invalid")
     if not np.isfinite(candidate.area) or candidate.area <= 0:
         raise FootprintError("carton OBB area is not positive and finite")
+    coordinates = np.asarray(candidate.exterior.coords, dtype=float)
+    edge_lengths = np.linalg.norm(np.diff(coordinates, axis=0), axis=1)
+    if len(edge_lengths) != 4 or not np.isfinite(edge_lengths).all():
+        raise FootprintError("carton OBB edges must be finite")
+    first_side_m, second_side_m = edge_lengths[:2]
+    if first_side_m < 0.05 or second_side_m < 0.05:
+        raise FootprintError("carton OBB side length must be at least 0.05 m")
     return candidate
