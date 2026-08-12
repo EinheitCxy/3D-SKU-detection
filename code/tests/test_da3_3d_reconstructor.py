@@ -21,8 +21,8 @@ def test_da3_runner_persists_resize_and_batch_crop_affines():
     )
 
     assert np.allclose(
-        affines[0], [[0.525, 0.0, 0.0], [0.0, 280 / 540, 0.0]]
+        affines[0], [[0.525, 0.0, -0.2375], [0.0, 280 / 540, (280 / 540 - 1.0) / 2.0]]
     )
     assert np.allclose(
-        affines[1], [[0.504, 0.0, 0.0], [0.0, 308 / 600, -14.0]]
+        affines[1], [[0.504, 0.0, -0.248], [0.0, 308 / 600, (308 / 600 - 1.0) / 2.0 - 14.0]]
     )

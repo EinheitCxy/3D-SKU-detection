@@ -270,3 +270,25 @@ def test_stage_rejects_unverified_affine_or_preprocess_provenance(monkeypatch, t
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert "preprocess" in report["rejection_reason"] or "affine" in report["rejection_reason"]
+
+
+@pytest.mark.parametrize("mutation", ["affine_unicode", "sizes_unicode"])
+def test_stage_rejects_non_numeric_affine_or_non_integer_source_sizes(monkeypatch, tmp_path, mutation):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    cache_path = save_root / dataset.name / "da3_cache" / "predictions.npz"
+    with np.load(cache_path, allow_pickle=False) as cache:
+        fields = {key: cache[key] for key in cache.files}
+    if mutation == "affine_unicode":
+        fields["source_to_processed_affine"] = np.full((3, 2, 3), "1", dtype="<U2")
+    else:
+        fields["source_image_sizes"] = np.full((3, 2), "126", dtype="<U4")
+    np.savez_compressed(cache_path, **fields)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert result["success"] is False
+    assert report["status"] == "rejected"
+    assert report["value_m2"] is None
+    assert "dtype" in report["rejection_reason"]

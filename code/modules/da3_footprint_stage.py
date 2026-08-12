@@ -220,6 +220,10 @@ def _validate_cache(cache: dict[str, np.ndarray], images: dict[int, Path]) -> di
         raise FootprintStageError("DA3 cache image_ids must be unique")
     if sizes.shape != (frame_count, 2) or affine.shape != (frame_count, 2, 3):
         raise FootprintStageError("DA3 cache source size or affine shape is invalid")
+    if affine.dtype.kind not in "fiu":
+        raise FootprintStageError("DA3 cache source_to_processed_affine dtype must be numeric")
+    if sizes.dtype.kind not in "iu":
+        raise FootprintStageError("DA3 cache source_image_sizes dtype must be integer")
     if hashes.shape != (frame_count,) or hashes.dtype.kind != "U":
         raise FootprintStageError("DA3 cache source_image_sha256 must be safe unicode")
     if not np.isfinite(affine).all() or np.any(sizes <= 0):
