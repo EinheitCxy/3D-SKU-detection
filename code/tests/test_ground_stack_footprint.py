@@ -207,6 +207,16 @@ def test_low_count_substantial_second_component_is_rejected():
         )
 
 
+def test_absolute_32_point_second_component_is_rejected():
+    first_component = connected_component_points(168, x_offset=0.0)
+    second_component = connected_component_points(32, x_offset=1.0)
+
+    with pytest.raises(FootprintError, match="multiple substantial components"):
+        carton_footprint_polygon(
+            np.vstack([first_component, second_component]), horizontal_support_plane()
+        )
+
+
 def test_ransac_triplet_sampling_is_distinct_and_seed_deterministic():
     first = _sample_ransac_triplet(np.random.default_rng(13), population_size=10)
     second = _sample_ransac_triplet(np.random.default_rng(13), population_size=10)
