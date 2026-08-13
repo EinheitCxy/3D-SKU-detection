@@ -438,7 +438,7 @@ def _publish_generation(output_root: Path, report: dict[str, Any], polygons: dic
     return _artifact_paths_from_current(output_root)
 ```
 
-Write report, GeoJSON, PNG, and manifest into an fsynced immutable `runs/<run_id>` directory. The report stores only the three generation-relative artifact names before its first and only write; the manifest stores SHA-256 for those three files plus the report. Atomically replace `CURRENT` only after the generation exists. All return paths must resolve through CURRENT. Tests monkeypatch replace/write failure at every publication boundary and assert CURRENT still names a complete old generation or no generation.
+Write report, GeoJSON, PNG, and manifest into an fsynced immutable `runs/<run_id>` directory. The report stores only the three generation-relative artifact names before its first and only write; the manifest stores SHA-256 for those three files plus the report. Atomically replace `CURRENT` only after the generation exists. All return paths must resolve through CURRENT. Tests monkeypatch each write/fsync/rename boundary: before `CURRENT` replacement, CURRENT must still name a complete old generation or no generation; after a successful `CURRENT` replacement, a parent-directory fsync error is a durability warning and CURRENT must resolve the complete new generation.
 
 - [ ] **Step 5: Update user documentation**
 
