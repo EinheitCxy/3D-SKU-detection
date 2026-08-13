@@ -11,7 +11,7 @@
 - **多 3D 重建后端**：Pi3（缓存式，批量推荐）/ DA3（多视图高精度，subprocess 隔离）/ VGGT（实时，可选）
 - **交互式 3D viewer**：基于 Viser，GPU 加速 KNN 与点云下采样
 - **准确性评估**：对照人工标注计算 Precision/Recall/F1
-- **地堆 bbox 面积**：以一个已知尺寸商品标定后，对每个去重 `global_id` 的一个 bbox 面积求和，输出 `cm²/m²` 报告
+- **DA3 地堆 footprint 面积**：对去重 `global_id` 融合多视图 metric 点云，将各 carton 的支撑平面 OBB 做二维 polygon union，输出 `m²`；无需尺寸锚点
 
 ## 项目结构
 
@@ -107,7 +107,7 @@ uv run python main.py --mode pipeline --algorithm 3d \
   --recon_backend da3 --match_backend da3 --dataset <dataset> --save_root <save_root>
 ```
 
-## 地堆 bbox 面积测量
+## DA3 地堆 footprint 并集面积
 
 `ground-stack-area` 是锚点无关的只读计量阶段：它读取 schema-v2 DA3 cache 中的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine、缓存时的原图尺寸与去重后的 `global_mapping.json`，用本地 SAM3 checkpoint 对每个检测框生成 mask。对每一物理 `global_id`，把它全部有效观测的 3D 点沿拟合支撑平面法向投影到该平面并恢复其 OBB；最终取所有 carton OBB 投影的**多边形并集面积**（`m²`），指标 `da3_ground_footprint_union`。若任一 global ID 几何不完整（缺 mask、有效点不足、OBB 退化等），整体拒绝并输出 `status: rejected` 与 `value_m2: null`，不会以部分结果冒充总面积。旧 runner 生成的 cache 不满足该 schema/provenance 合约，必须先用 DA3 reconstruction 重新生成 cache。DA3 尺度是模型估计，现场 reference 仍可作为 QA，而非运行前提。
 

@@ -50,13 +50,25 @@ def test_ground_stack_area_cli_calls_da3_footprint_stage(monkeypatch, tmp_path):
     assert calls == [(str(dataset), save_root.resolve())]
 
 
-def test_ground_stack_area_cli_rejects_removed_area_mode(monkeypatch):
+@pytest.mark.parametrize(
+    "removed_option,value",
+    [
+        ("--area-mode", "calibrated_bbox"),
+        ("--area-anchor-frame", "0"),
+        ("--area-anchor-object", "0"),
+        ("--area-anchor-width-cm", "40"),
+        ("--area-anchor-height-cm", "30"),
+    ],
+)
+def test_ground_stack_area_cli_rejects_removed_bbox_anchor_options(
+    monkeypatch, removed_option, value
+):
     import main
 
     monkeypatch.setattr(
         sys,
         "argv",
-        ["main.py", "--mode", "ground-stack-area", "--area-mode", "da3_metric"],
+        ["main.py", "--mode", "ground-stack-area", removed_option, value],
     )
 
     with pytest.raises(SystemExit) as exc_info:

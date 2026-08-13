@@ -335,6 +335,13 @@ Run `git diff --check`, inspect `git status --short -uall`, and use an explicit 
 
 ## Plan Self-Review
 
+## Execution Progress
+
+- 2026-08-13: Task 3 public CLI migration completed in `43d1400 refactor: measure ground-stack footprint union`; `ground-stack-area` now dispatches only to `run_da3_footprint`, and obsolete bbox/anchor stages, utility, configuration, and tests were removed.
+- 2026-08-13: Post-review correction completed: parser help and top-level README now use the footprint-union definition; regression tests reject all five retired bbox/anchor flags and assert schema-v2 provenance survives `save_predictions_cache()`.
+- 2026-08-13 validation: existing `code/.venv` ran `46 passed` across geometry, footprint-stage, and DA3-reconstructor tests; `py_compile` and `git diff --check` passed.
+- 2026-08-13 real-video evidence: `fd_area_test` cache passed the schema-v2/provenance check. The public command wrote a reviewable rejected report with `value_m2: null` because this process could not see a CUDA GPU for local SAM3 (`No CUDA GPUs are available`); no partial total was released.
+
 - Spec coverage: Task 1 implements deterministic plane/OBB/union gates; Task 2 implements mandatory masks, cache alignment, all-ID rejection, and audit artifacts; Task 3 removes the wrong public API, documents the new definition, and runs real-video evidence.
 - Placeholder scan: no TBD/TODO or undefined interfaces remain. Each test invokes an API defined in Task 1 or Task 2.
 - Type consistency: the stage consumes Task 1’s `SupportPlane`/geometry APIs; `main.py` consumes Task 2’s `run_da3_footprint` report contract.

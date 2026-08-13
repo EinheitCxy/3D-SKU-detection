@@ -1009,7 +1009,7 @@ def main() -> None:
     )
     parser.add_argument('--mode', type=str, default=yaml_main.get('mode', "interactive"),
                        choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'ground-stack-area', 'reconstruct', 'viewer'],
-                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), ground-stack-area(bbox面积), reconstruct(3D重建), viewer(3D可视化)")
+                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), ground-stack-area(DA3地堆footprint并集面积), reconstruct(3D重建), viewer(3D可视化)")
     parser.add_argument('--algorithm', type=str, default=yaml_main.get('algorithm', "3d"),
                        choices=['point_tracking', '3d', 'both'],
                        help="匹配算法选择")
