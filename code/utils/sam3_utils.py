@@ -92,9 +92,11 @@ def _infer_transform_output_size(
 
 
 def normalize_device(device: str) -> str:
-    d = str(device)
-    if d.startswith("cuda"):
-        return "cuda"
+    d = str(device).strip()
+    if d == "cuda":
+        return f"cuda:{torch.cuda.current_device()}"
+    if d.startswith("cuda:"):
+        return d
     if d.startswith("cpu"):
         return "cpu"
     return d
@@ -187,17 +189,19 @@ def _get_sam3_model_and_processor(
     if before != expected_checkpoint_sha256:
         raise RuntimeError("SAM3 checkpoint digest changed before loading")
 
-    cache_key = (before, normalize_device(device), _PREDICT_INST_CONTRACT_FINGERPRINT)
+    canonical_device = normalize_device(device)
+    cache_key = (before, canonical_device, _PREDICT_INST_CONTRACT_FINGERPRINT)
     cached = _SAM3_PREDICT_INST_CACHE.get(cache_key)
     if cached is None:
-        candidate = _build_sam3_model_and_processor(checkpoint_path, device)
+        candidate = _build_sam3_model_and_processor(checkpoint_path, canonical_device)
+        if checkpoint_sha256(checkpoint) != before:
+            raise RuntimeError("SAM3 checkpoint changed while loading")
+        # Check again immediately before cache publication so a checkpoint
+        # mutation after the post-build check cannot leave a stale entry.
         if checkpoint_sha256(checkpoint) != before:
             raise RuntimeError("SAM3 checkpoint changed while loading")
         _SAM3_PREDICT_INST_CACHE[cache_key] = candidate
-        cached = candidate
-
-    if checkpoint_sha256(checkpoint) != before:
-        raise RuntimeError("SAM3 checkpoint changed while loading")
+        return candidate
     return cached
 
 

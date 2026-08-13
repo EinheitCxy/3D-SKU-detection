@@ -382,7 +382,105 @@ def test_checkpoint_mutation_during_model_load_is_rejected_without_cache_publish
 
     with pytest.raises(RuntimeError, match="changed while loading"):
         sam3_utils._get_sam3_model_and_processor(
-            str(checkpoint), "cuda", expected_checkpoint_sha256=expected_digest
+            str(checkpoint), "cuda:0", expected_checkpoint_sha256=expected_digest
+        )
+
+    assert sam3_utils._SAM3_PREDICT_INST_CACHE == {}
+
+
+def test_model_cache_keeps_explicit_cuda_ordinals_in_independent_entries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Catches collapsing explicit CUDA devices into one process-cache entry."""
+    checkpoint = _checkpoint(tmp_path, b"checkpoint contents")
+    expected_digest = hashlib.sha256(b"checkpoint contents").hexdigest()
+    builder_devices: list[str] = []
+
+    def build(_checkpoint_path: str, device: str) -> tuple[object, object]:
+        builder_devices.append(device)
+        return object(), object()
+
+    monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
+    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", build)
+
+    sam3_utils._get_sam3_model_and_processor(
+        str(checkpoint), "cuda:0", expected_checkpoint_sha256=expected_digest
+    )
+    sam3_utils._get_sam3_model_and_processor(
+        str(checkpoint), "cuda:1", expected_checkpoint_sha256=expected_digest
+    )
+
+    assert builder_devices == ["cuda:0", "cuda:1"]
+    assert {key[1] for key in sam3_utils._SAM3_PREDICT_INST_CACHE} == {"cuda:0", "cuda:1"}
+
+
+def test_model_cache_resolves_bare_cuda_to_current_ordinal(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Catches passing an ambiguous bare CUDA device to the model builder."""
+    checkpoint = _checkpoint(tmp_path, b"checkpoint contents")
+    expected_digest = hashlib.sha256(b"checkpoint contents").hexdigest()
+    builder_devices: list[str] = []
+
+    def build(_checkpoint_path: str, device: str) -> tuple[object, object]:
+        builder_devices.append(device)
+        return object(), object()
+
+    monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
+    monkeypatch.setattr(sam3_utils.torch.cuda, "current_device", lambda: 2)
+    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", build)
+
+    sam3_utils._get_sam3_model_and_processor(
+        str(checkpoint), "cuda", expected_checkpoint_sha256=expected_digest
+    )
+
+    assert builder_devices == ["cuda:2"]
+    assert {key[1] for key in sam3_utils._SAM3_PREDICT_INST_CACHE} == {"cuda:2"}
+
+
+def test_model_cache_reloads_when_inference_contract_fingerprint_changes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Catches reusing a model after the fixed predict_inst contract changes."""
+    checkpoint = _checkpoint(tmp_path, b"checkpoint contents")
+    expected_digest = hashlib.sha256(b"checkpoint contents").hexdigest()
+    builder_calls: list[int] = []
+
+    def build(*_args: object) -> tuple[object, object]:
+        builder_calls.append(1)
+        return object(), object()
+
+    monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
+    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", build)
+    monkeypatch.setattr(sam3_utils, "_PREDICT_INST_CONTRACT_FINGERPRINT", "contract-a")
+    sam3_utils._get_sam3_model_and_processor(
+        str(checkpoint), "cuda:0", expected_checkpoint_sha256=expected_digest
+    )
+    monkeypatch.setattr(sam3_utils, "_PREDICT_INST_CONTRACT_FINGERPRINT", "contract-b")
+    sam3_utils._get_sam3_model_and_processor(
+        str(checkpoint), "cuda:0", expected_checkpoint_sha256=expected_digest
+    )
+
+    assert builder_calls == [1, 1]
+    assert {key[2] for key in sam3_utils._SAM3_PREDICT_INST_CACHE} == {"contract-a", "contract-b"}
+
+
+def test_final_digest_change_before_cache_publish_rejects_without_entry(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Catches publishing between post-build and final checkpoint verification."""
+    checkpoint = _checkpoint(tmp_path, b"checkpoint contents")
+    digest_before = "d" * 64
+    digest_after = "e" * 64
+    digests = iter((digest_before, digest_before, digest_after))
+
+    monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
+    monkeypatch.setattr(sam3_utils, "checkpoint_sha256", lambda _path: next(digests))
+    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", lambda *_args: (object(), object()))
+
+    with pytest.raises(RuntimeError, match="changed while loading"):
+        sam3_utils._get_sam3_model_and_processor(
+            str(checkpoint), "cuda:0", expected_checkpoint_sha256=digest_before
         )
 
     assert sam3_utils._SAM3_PREDICT_INST_CACHE == {}
