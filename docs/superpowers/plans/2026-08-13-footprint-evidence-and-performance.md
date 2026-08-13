@@ -159,6 +159,8 @@ git commit -m "perf: reuse footprint RANSAC workspaces"
 **Files:**
 - Create: `code/utils/sam3_mask_cache.py`
 - Create: `code/tests/test_sam3_mask_cache.py`
+- Modify: `README.md:112-120`
+- Modify: `code/README.md:153-155`
 
 **Interfaces:**
 - Consumes: one image path, ordered `(object_id, bbox_xyxy)` prompts, checkpoint path/digest, code/runtime fingerprint, output `(N,H,W)` source-mask contract, and a `compute_masks()` callback.
@@ -265,10 +267,14 @@ Run: `cd code && uv run --active --no-project python -m pytest -q tests/test_sam
 
 Expected: PASS; the producer is not called on valid hit and malformed bundles never return masks.
 
-- [ ] **Step 7: Commit the cache primitive**
+- [ ] **Step 7: Document the internal cache primitive accurately**
+
+State in both READMEs that the per-frame SAM3 cache utility has immutable verified bundles, but the public `ground-stack-area` command starts using it only when Task 4 lands. Explain that it cannot provide a bbox fallback or a partial total and that users must not depend on the cache directory before stage integration.
+
+- [ ] **Step 8: Commit the cache primitive**
 
 ```bash
-git add code/utils/sam3_mask_cache.py code/tests/test_sam3_mask_cache.py
+git add code/utils/sam3_mask_cache.py code/tests/test_sam3_mask_cache.py README.md code/README.md
 git commit -m "feat: add audited SAM3 frame mask cache"
 ```
 
