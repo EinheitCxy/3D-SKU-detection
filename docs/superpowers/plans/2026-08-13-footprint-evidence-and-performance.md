@@ -42,6 +42,8 @@
 **Files:**
 - Modify: `code/utils/ground_stack_footprint.py:48-183,403-433`
 - Modify: `code/tests/test_ground_stack_footprint.py`
+- Modify: `README.md:112-120`
+- Modify: `code/README.md:153-155`
 
 **Interfaces:**
 - Consumes: `_adaptive_ransac_plane(points, threshold_m, seed)` and its current candidate loop.
@@ -135,16 +137,20 @@ def test_adaptive_ransac_tie_preserves_first_strictly_better_triplet():
     assert outcome.trial_count == expected_trials
 ```
 
-- [ ] **Step 5: Run geometry and stage contracts**
+- [ ] **Step 5: Document the additive RANSAC diagnostics**
+
+State in both READMEs that `measurement_report.json` records per support-plane candidate `ransac.trial_count` and `ransac.early_exit` for performance audit; they do not relax any support-plane gate or change the m² definition.
+
+- [ ] **Step 6: Run geometry and stage contracts**
 
 Run: `cd code && uv run --active --no-project python -m pytest -q tests/test_ground_stack_footprint.py tests/test_da3_footprint_stage.py`
 
 Expected: PASS; no existing candidate diagnostic changes except the new `ransac` object.
 
-- [ ] **Step 6: Commit the isolated optimization**
+- [ ] **Step 7: Commit the isolated optimization**
 
 ```bash
-git add code/utils/ground_stack_footprint.py code/tests/test_ground_stack_footprint.py
+git add code/utils/ground_stack_footprint.py code/tests/test_ground_stack_footprint.py README.md code/README.md
 git commit -m "perf: reuse footprint RANSAC workspaces"
 ```
 
