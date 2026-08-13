@@ -283,6 +283,8 @@ git commit -m "feat: add audited SAM3 frame mask cache"
 **Files:**
 - Modify: `code/utils/sam3_utils.py:129-152,550-745`
 - Modify: `code/tests/test_sam3_mask_cache.py`
+- Modify: `README.md:112-120`
+- Modify: `code/README.md:153-155`
 
 **Interfaces:**
 - Consumes: checkpoint bytes and normalized CUDA device plus the fixed `predict_inst` inference contract.
@@ -347,10 +349,14 @@ Run: `cd code && uv run --active --no-project python -m pytest -q tests/test_sam
 
 Expected: PASS; no cache entry can claim a different checkpoint from the loaded model.
 
-- [ ] **Step 5: Commit checkpoint provenance hardening**
+- [ ] **Step 5: Document checkpoint load integrity**
+
+Update both READMEs to state that the SAM3 helper verifies caller-supplied checkpoint bytes immediately before and after a model load, and its in-process model cache is keyed by digest, normalized device, and fixed inference-contract fingerprint. State that this does not by itself make the public CLI persistent mask cache available; Task 4 remains the integration point.
+
+- [ ] **Step 6: Commit checkpoint provenance hardening**
 
 ```bash
-git add code/utils/sam3_utils.py code/tests/test_sam3_mask_cache.py
+git add code/utils/sam3_utils.py code/tests/test_sam3_mask_cache.py README.md code/README.md
 git commit -m "fix: bind SAM3 cache to checkpoint digest"
 ```
 
