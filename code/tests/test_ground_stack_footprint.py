@@ -4,8 +4,10 @@ import utils.ground_stack_footprint as footprint_geometry
 
 from utils.ground_stack_footprint import (
     FootprintError,
+    RansacOutcome,
     SupportPlane,
     SupportPlaneSelectionError,
+    _adaptive_ransac_plane,
     _refine_support_plane,
     _sample_ransac_triplet,
     carton_footprint_polygon,
@@ -30,6 +32,100 @@ def make_plane_grid(point: np.ndarray, normal: np.ndarray) -> np.ndarray:
             np.full(x_values.size, point[2]),
         ]
     )
+
+
+def _reference_adaptive_ransac(
+    points: np.ndarray, threshold_m: float, seed: int
+) -> tuple[tuple[np.ndarray, np.ndarray], int]:
+    """Preserve the pre-optimization RANSAC contract for parity checks."""
+    generator = np.random.default_rng(seed)
+    best_count, best_candidate, trial, target_trials = 0, None, 0, 10_000
+    while trial < target_trials:
+        indices = _sample_ransac_triplet(generator, population_size=len(points))
+        first, second, third = points[indices]
+        normal = np.cross(second - first, third - first)
+        norm = np.linalg.norm(normal)
+        if norm == 0:
+            trial += 1
+            continue
+        normal /= norm
+        count = int(np.count_nonzero(np.abs((points - first) @ normal) <= threshold_m))
+        if count > best_count:
+            best_count, best_candidate = count, (first, normal)
+            ratio = min(max(count / len(points), 1e-9), 1.0 - 1e-12)
+            target_trials = min(
+                10_000,
+                max(128, int(np.ceil(np.log(0.001) / np.log(1.0 - ratio**3)))),
+            )
+        trial += 1
+    assert best_candidate is not None
+    return best_candidate, trial
+
+
+def test_adaptive_ransac_workspace_matches_reference_candidate_exactly():
+    table = make_plane_grid(np.zeros(3), np.array([0.0, 0.0, 1.0]))
+    points = np.vstack([table, np.random.default_rng(4).uniform(-2.0, 2.0, (900, 3))])
+
+    expected, expected_trials = _reference_adaptive_ransac(points, 0.012, 13)
+    actual = _adaptive_ransac_plane(points, 0.012, 13)
+
+    np.testing.assert_array_equal(actual.point, expected[0])
+    np.testing.assert_array_equal(actual.normal, expected[1])
+    assert actual.trial_count == expected_trials
+    assert actual.early_exit is False
+
+
+def test_perfect_candidate_returns_on_first_non_degenerate_trial():
+    points = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+
+    outcome = _adaptive_ransac_plane(points, 0.012, 13)
+
+    assert outcome.early_exit is True
+    assert outcome.trial_count == 1
+
+
+def test_adaptive_ransac_keeps_threshold_plus_minus_one_ulp_behavior():
+    threshold = np.float64(0.012)
+    points = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.2, 0.2, threshold],
+        ]
+    )
+
+    for candidate_threshold in (
+        np.nextafter(threshold, 0.0),
+        np.nextafter(threshold, np.inf),
+    ):
+        expected, expected_trials = _reference_adaptive_ransac(
+            points, candidate_threshold, 13
+        )
+        actual = _adaptive_ransac_plane(points, candidate_threshold, 13)
+        np.testing.assert_array_equal(actual.point, expected[0])
+        np.testing.assert_array_equal(actual.normal, expected[1])
+        assert actual.trial_count <= expected_trials
+
+
+def test_adaptive_ransac_tie_preserves_first_strictly_better_triplet():
+    points = np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0],
+        ]
+    )
+
+    expected, expected_trials = _reference_adaptive_ransac(points, 0.012, 13)
+    outcome = _adaptive_ransac_plane(points, 0.012, 13)
+
+    np.testing.assert_array_equal(outcome.point, expected[0])
+    np.testing.assert_array_equal(outcome.normal, expected[1])
+    assert outcome.trial_count == expected_trials
 
 
 def test_fit_support_plane_recovers_metric_table_with_outliers():
@@ -128,7 +224,9 @@ def test_support_plane_gates_use_final_ten_mm_support_points(monkeypatch):
     monkeypatch.setattr(
         footprint_geometry,
         "_adaptive_ransac_plane",
-        lambda *_args, **_kwargs: (np.zeros(3), np.array([0.0, 0.0, 1.0])),
+        lambda *_args, **_kwargs: RansacOutcome(
+            np.zeros(3), np.array([0.0, 0.0, 1.0]), 0, False
+        ),
     )
 
     _, diagnostics = select_support_plane(background, frames, observations)
@@ -136,6 +234,7 @@ def test_support_plane_gates_use_final_ten_mm_support_points(monkeypatch):
 
     assert candidate["spans_m"] == pytest.approx([2.0, 2.0])
     assert candidate["hull_area_m2"] == pytest.approx(4.0)
+    assert candidate["ransac"] == {"trial_count": 0, "early_exit": False}
 
 
 def test_support_plane_refinement_rejects_empty_residual_trim():

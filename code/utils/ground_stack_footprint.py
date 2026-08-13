@@ -33,6 +33,16 @@ class SupportPlane:
     p95_residual_m: float
 
 
+@dataclass(frozen=True)
+class RansacOutcome:
+    """One deterministic RANSAC candidate with audit-only trial diagnostics."""
+
+    point: np.ndarray
+    normal: np.ndarray
+    trial_count: int
+    early_exit: bool
+
+
 def fit_support_plane(background_points: np.ndarray) -> SupportPlane:
     """Fit a deterministic support plane from metric background points."""
     points = _validate_points(background_points, minimum=10_000, label="background")
@@ -68,9 +78,10 @@ def select_support_plane(
     for candidate_index in range(5):
         if len(remaining) < 3:
             break
-        candidate_point, candidate_normal = _adaptive_ransac_plane(
+        ransac = _adaptive_ransac_plane(
             sampled[remaining], threshold_m=0.012, seed=13 + candidate_index
         )
+        candidate_point, candidate_normal = ransac.point, ransac.normal
         full_distances = np.abs((points - candidate_point) @ candidate_normal)
         inliers = points[full_distances <= 0.012]
         raw_candidate = {
@@ -79,6 +90,10 @@ def select_support_plane(
             "raw_normal": candidate_normal.tolist(),
             "raw_inlier_count": int(len(inliers)),
             "raw_inlier_fraction": float(len(inliers) / len(points)),
+            "ransac": {
+                "trial_count": ransac.trial_count,
+                "early_exit": ransac.early_exit,
+            },
         }
         try:
             plane, retained_indices = _refine_support_plane(
@@ -402,13 +417,15 @@ def _frame_balanced_subsample(
 
 def _adaptive_ransac_plane(
     points: np.ndarray, threshold_m: float, seed: int
-) -> tuple[np.ndarray, np.ndarray]:
+) -> RansacOutcome:
     generator = np.random.default_rng(seed)
     best_count = 0
     best_candidate: tuple[np.ndarray, np.ndarray] | None = None
     minimum_trials = 128
     target_trials = 10_000
     trial = 0
+    offsets = np.empty_like(points)
+    distances = np.empty(len(points), dtype=points.dtype)
     while trial < target_trials:
         indices = _sample_ransac_triplet(generator, population_size=len(points))
         first, second, third = points[indices]
@@ -418,7 +435,10 @@ def _adaptive_ransac_plane(
             trial += 1
             continue
         normal /= norm
-        count = int(np.count_nonzero(np.abs((points - first) @ normal) <= threshold_m))
+        np.subtract(points, first, out=offsets)
+        np.matmul(offsets, normal, out=distances)
+        np.abs(distances, out=distances)
+        count = int(np.count_nonzero(distances <= threshold_m))
         if count > best_count:
             best_count = count
             best_candidate = (first, normal)
@@ -428,9 +448,11 @@ def _adaptive_ransac_plane(
                 max(minimum_trials, int(np.ceil(np.log(1.0 - 0.999) / np.log(1.0 - ratio**3)))),
             )
         trial += 1
+        if count == len(points):
+            return RansacOutcome(first, normal, trial, True)
     if best_candidate is None:
         raise FootprintError("support plane RANSAC found no non-collinear candidate")
-    return best_candidate
+    return RansacOutcome(*best_candidate, trial, False)
 
 
 def _orient_for_objects(plane: SupportPlane, objects: np.ndarray) -> tuple[SupportPlane, np.ndarray]:

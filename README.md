@@ -113,7 +113,7 @@ uv run python main.py --mode pipeline --algorithm 3d \
 
 输出位于 `<save_root>/<dataset>/ground_stack_footprint/`：
 
-- `measurement_report.json`：指标 `da3_ground_footprint_union`、单位 `m²`、状态（`accepted`/`rejected`）、缓存 provenance、支撑平面候选与各门、逐 global ID 观测/voxel/分量诊断、并集代数与精度敏感性、库版本与产物路径；
+- `measurement_report.json`：指标 `da3_ground_footprint_union`、单位 `m²`、状态（`accepted`/`rejected`）、缓存 provenance、支撑平面候选与各门、逐 global ID 观测/voxel/分量诊断、并集代数与精度敏感性、库版本与产物路径；每个支撑平面候选还记录 `ransac.trial_count` 与 `ransac.early_exit`，它们仅用于性能审计，不放宽任何门，也不改变 m² 定义；
 - `footprints.geojson`：每个 global ID OBB 一个 feature + 一个 `union` feature，坐标系为支撑平面局部米制 `(u,v)`，含 `global_id`/`area_m2`/`observations_used`；
 - `top_down_footprint.png`：俯视复核图，各 OBB 轮廓 + 并集填充边界，标注米制轴。
 
