@@ -266,6 +266,44 @@ def _assert_complete_current(output_root: Path) -> tuple[bytes, dict[str, str]]:
     return current_bytes, resolved
 
 
+def _install_publication_boundary_probe(
+    monkeypatch: pytest.MonkeyPatch, output_root: Path, failure_point: str
+) -> None:
+    error = OSError(f"injected {failure_point}")
+    if failure_point in {
+        "output_root_fsync_after_runs_mkdir",
+        "runs_root_fsync_after_generation_rename",
+    }:
+        target = (
+            output_root
+            if failure_point == "output_root_fsync_after_runs_mkdir"
+            else output_root / "runs"
+        )
+        original_fsync_directory = stage._fsync_directory
+
+        def fail_target_directory_fsync(path: Path) -> None:
+            if path == target:
+                raise error
+            original_fsync_directory(path)
+
+        monkeypatch.setattr(stage, "_fsync_directory", fail_target_directory_fsync)
+        return
+
+    target_name = (
+        "measurement_report.json"
+        if failure_point == "measurement_report_write"
+        else "manifest.json"
+    )
+    original_write_text = Path.write_text
+
+    def fail_target_write(path: Path, *args: object, **kwargs: object) -> int:
+        if path.name == target_name:
+            raise error
+        return original_write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_target_write)
+
+
 def _raise_if_sam3_called(*_args: object, **_kwargs: object) -> list[np.ndarray]:
     raise AssertionError("a valid persistent mask-cache hit must not invoke SAM3")
 
@@ -577,6 +615,43 @@ def test_pre_current_replace_failure_preserves_previous_complete_generation(
 
     assert (output_root / "CURRENT").read_bytes() == old_current
     assert stage._artifact_paths_from_current(output_root) == old_paths
+
+
+@pytest.mark.parametrize("has_previous_current", [False, True], ids=["first", "replacement"])
+@pytest.mark.parametrize(
+    "failure_point",
+    [
+        "output_root_fsync_after_runs_mkdir",
+        "measurement_report_write",
+        "manifest_write",
+        "runs_root_fsync_after_generation_rename",
+    ],
+)
+def test_pre_replace_boundary_failure_preserves_old_or_no_current(
+    monkeypatch, tmp_path, failure_point, has_previous_current
+):
+    output_root = tmp_path / "ground_stack_footprint"
+    output_root.mkdir()
+    old_current: bytes | None = None
+    old_paths: dict[str, str] | None = None
+    if has_previous_current:
+        old_paths = stage._publish_generation(
+            output_root, _rejected_publication_report(), {}, None
+        )
+        old_current, resolved = _assert_complete_current(output_root)
+        assert resolved == old_paths
+
+    _install_publication_boundary_probe(monkeypatch, output_root, failure_point)
+    with pytest.raises(OSError, match=failure_point):
+        stage._publish_generation(output_root, _rejected_publication_report(), {}, None)
+
+    if has_previous_current:
+        assert old_current is not None
+        assert old_paths is not None
+        assert (output_root / "CURRENT").read_bytes() == old_current
+        assert stage._artifact_paths_from_current(output_root) == old_paths
+    else:
+        assert not (output_root / "CURRENT").exists()
 
 
 def test_post_current_replace_directory_fsync_warns_and_returns_new_generation(
