@@ -87,16 +87,9 @@ uv run python main.py --mode dedup
 uv run python main.py --mode analyzer
 uv run python main.py --mode viewer
 
-# DA3 米制地堆 bbox 面积（默认；要求 DA3 cache 与 global_mapping.json 已存在）
-uv run python main.py --mode ground-stack-area --area-mode da3_metric \
-    --dataset ../imdata/my_stack --save_root ../Output
-
-# 显式标尺换算（可选的现场校验模式）
+# DA3 地堆 footprint 面积（要求 DA3 cache、global_mapping.json 与本地 SAM3 checkpoint）
 uv run python main.py --mode ground-stack-area \
-    --area-mode calibrated_bbox \
-    --dataset ../imdata/my_stack --save_root ../Output \
-    --area-anchor-frame 0 --area-anchor-object 3 \
-    --area-anchor-width-cm 32.0 --area-anchor-height-cm 24.0
+    --dataset ../imdata/my_stack --save_root ../Output
 
 # 批量评估（floor_display2..12）
 bash batch_accuracy_evaluation.sh 2 12
@@ -116,17 +109,15 @@ uv run python main.py --mode pipeline --algorithm 3d \
 
 ## 地堆 bbox 面积测量
 
-`ground-stack-area --area-mode da3_metric` 是默认的只读计量阶段：它读取 DA3 的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine、缓存时的原图尺寸与去重后的 `global_mapping.json`，为每个物理 `global_id` 在全部观测中选择质量最高的一帧。bbox 中心 50% 用于估计局部米制像素面积，再外推到整个 bbox；这样可避免边缘背景直接撑大面积。全框至少需要 64 个非零且置信度≥1 的点、有效覆盖率≥50%，中心平面法向 5–95% 厚度不超过 6 cm；若当前原图尺寸与 DA3 cache 不一致，测量会拒绝并要求重建 cache。报告保留每项质量、所有候选的接受/拒绝原因和最终选帧。DA3 尺度是模型估计，reference 仍可作为现场 QA/校正依据，而不是运行前提。
+`ground-stack-area` 是锚点无关的只读计量阶段：它读取 schema-v2 DA3 cache 中的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine、缓存时的原图尺寸与去重后的 `global_mapping.json`，用本地 SAM3 checkpoint 对每个检测框生成 mask。对每一物理 `global_id`，把它全部有效观测的 3D 点沿拟合支撑平面法向投影到该平面并恢复其 OBB；最终取所有 carton OBB 投影的**多边形并集面积**（`m²`），指标 `da3_ground_footprint_union`。若任一 global ID 几何不完整（缺 mask、有效点不足、OBB 退化等），整体拒绝并输出 `status: rejected` 与 `value_m2: null`，不会以部分结果冒充总面积。旧 runner 生成的 cache 不满足该 schema/provenance 合约，必须先用 DA3 reconstruction 重新生成 cache。DA3 尺度是模型估计，现场 reference 仍可作为 QA，而非运行前提。
 
-`--area-mode calibrated_bbox` 保留为显式标尺模式：它仅在锚点所在帧为每个物理 `global_id` 选择一个有效 bbox，以已知正面宽高换算物理等效面积。anchor 的 frame、object_id 和 bbox 必须与 mapping 中的记录完全一致；被测商品正面需与锚点近似共面。
+输出位于 `<save_root>/<dataset>/ground_stack_footprint/`：
 
-输出位于 `<save_root>/<dataset>/ground_stack_area/`：
+- `measurement_report.json`：指标 `da3_ground_footprint_union`、单位 `m²`、状态（`accepted`/`rejected`）、缓存 provenance、支撑平面候选与各门、逐 global ID 观测/voxel/分量诊断、并集代数与精度敏感性、库版本与产物路径；
+- `footprints.geojson`：每个 global ID OBB 一个 feature + 一个 `union` feature，坐标系为支撑平面局部米制 `(u,v)`，含 `global_id`/`area_m2`/`observations_used`；
+- `top_down_footprint.png`：俯视复核图，各 OBB 轮廓 + 并集填充边界，标注米制轴。
 
-- `measurement_report.json`：DA3 模式的总 `m²`（或标尺模式的 `cm²/m²`）、尺度来源、接受/拒绝件数、全局 ID 级拒绝诊断和警告；
-- `selected_instances.json`：每个 `global_id` 的选中 bbox、单件面积与观测级诊断；
-- `annotated_frames/`：带全局 ID 和单件面积的可复核图像。
-
-两种模式的指标都是**每个 global ID 一次的 bbox 面积算术和**：它不计算 bbox 并集、分割 mask 面积、包装表面积或地面占地面积，也不会估计未检测/被遮挡商品。输入文件不会被改写。
+结果是**每个 carton OBB 投影到支撑平面的多边形并集**：它包含悬垂（overhang），不是包装表面积、正面/接触面积或地面接触面积，也不会估计未检测/被遮挡商品。要求现有 DA3 cache、global mapping 与本地 SAM3 checkpoint，缺少任一即拒绝。输入文件不会被改写。
 
 ## 3D 重建后端
 

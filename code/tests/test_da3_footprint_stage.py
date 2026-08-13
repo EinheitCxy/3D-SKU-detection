@@ -1,7 +1,6 @@
 import hashlib
 import json
 import sys
-import types
 from pathlib import Path
 
 import numpy as np
@@ -29,11 +28,7 @@ def test_ground_stack_area_cli_calls_da3_footprint_stage(monkeypatch, tmp_path):
             "report_path": str(tmp_path / "measurement_report.json"),
         }
 
-    monkeypatch.setitem(
-        sys.modules,
-        "modules.da3_footprint_stage",
-        types.SimpleNamespace(run_da3_footprint=run_da3_footprint),
-    )
+    monkeypatch.setattr(stage, "run_da3_footprint", run_da3_footprint)
     dataset = tmp_path / "dataset"
     save_root = tmp_path / "Output"
     monkeypatch.setattr(
@@ -68,6 +63,34 @@ def test_ground_stack_area_cli_rejects_removed_area_mode(monkeypatch):
         main.main()
 
     assert exc_info.value.code == 2
+
+
+def test_ground_stack_area_cli_preserves_rejected_exit_and_report_log(
+    monkeypatch, tmp_path, capsys
+):
+    import main
+
+    report_path = tmp_path / "measurement_report.json"
+    monkeypatch.setattr(
+        stage,
+        "run_da3_footprint",
+        lambda *_: {
+            "success": False,
+            "status": "rejected",
+            "report_path": str(report_path),
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["main.py", "--mode", "ground-stack-area", "--save_root", str(tmp_path / "Output")],
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main.main()
+
+    assert exc_info.value.code == 2
+    assert str(report_path) in capsys.readouterr().out
 
 
 def _sha256(path: Path) -> str:

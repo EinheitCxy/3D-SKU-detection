@@ -17,7 +17,7 @@ code/
 │   ├── pi3_3d_reconstructor.py    # Pi3 后端（缓存式，快速批量）
 │   ├── da3_3d_reconstructor.py    # Depth-Anything-3 后端（高精度多视角）
 │   ├── da3_runner.py              # DA3 推理脚本（subprocess，在 Depth-Anything-3/.venv 中运行）
-│   ├── da3_metric_area_stage.py   # 基于 DA3 metric 点云的去重 bbox 面积阶段
+│   ├── da3_footprint_stage.py     # DA3 地堆 footprint 面积阶段（支撑平面 OBB 并集）
 │   └── vggt_3d_reconstructor.py   # VGGT 后端（实时重建，当前已注释）
 ├── utils/                         # 可复用库模块
 │   ├── config.py, data_utils.py, transforms.py, point_utils.py
@@ -70,16 +70,9 @@ uv run main.py --mode analyzer --dataset imdata/floor_display2 --save_root ./Out
 # 仅顺序去重（默认同名输出为 1.json..X.json）
 uv run main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output
 
-# DA3 米制地堆 bbox 面积（默认；不需要 reference）
+# DA3 地堆 footprint 面积（要求 DA3 cache、global_mapping.json 与本地 SAM3 checkpoint）
 uv run python main.py --mode ground-stack-area \
-  --area-mode da3_metric --dataset imdata/my_stack --save_root ./Output
-
-# 标尺换算面积（显式可选模式）
-uv run python main.py --mode ground-stack-area \
-  --area-mode calibrated_bbox \
-  --dataset ../imdata/my_stack --save_root ../Output \
-  --area-anchor-frame 0 --area-anchor-object 3 \
-  --area-anchor-width-cm 32.0 --area-anchor-height-cm 24.0
+  --dataset imdata/my_stack --save_root ./Output
 
 # 批量匹配（参考索引 0..N，等价于 main.py concise）
 bash scripts/batch.sh floor_display2 4
@@ -153,15 +146,13 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 - 改进分析报告：`output_reports/<dataset_name>/report_*.txt`（或 `--save_root/output_reports/<dataset_name>/`）
 - 顺序去重（同名输出）：`<save_root>/<dataset_name>/1.json..X.json`
 - 全局ID聚合：`<save_root>/<dataset_name>/global_mapping.json`
-- 地堆 bbox 面积：`<save_root>/<dataset_name>/ground_stack_area/{measurement_report.json,selected_instances.json,annotated_frames/}`
+- 地堆 footprint 面积：`<save_root>/<dataset_name>/ground_stack_footprint/{measurement_report.json,footprints.geojson,top_down_footprint.png}`
 
-### 地堆 bbox 面积的定义与限制
+### 地堆 footprint 面积的定义与限制
 
-默认的 `--area-mode da3_metric` 读取 `da3_cache/predictions.npz` 的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine 与缓存原图尺寸，从 `dedup_detections/global_mapping.json` 的全部观测中为每个物理 `global_id` 选择最可靠的一帧。它使用 bbox 中心 50% 的局部米制像素面积估计整个 bbox，避免边缘背景撑大结果，所以不需要已知物体尺寸。至少需要 64 个非零、置信度≥1 的有效点和 50% 覆盖率，且中心平面法向 5–95% 厚度不超过 6 cm；当前原图尺寸若与 cache 不一致，测量会拒绝并要求重建。`measurement_report.json` 会保留每个全拒绝 global ID 的观测级诊断。DA3 尺度是模型估计，现场 reference 可用于 QA，而非必需输入。
+`--mode ground-stack-area` 是锚点无关的只读计量阶段：它读取 schema-v2 `da3_cache/predictions.npz` 的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine 与缓存原图尺寸，从 `dedup_detections/global_mapping.json` 的全部观测中为每个物理 `global_id` 聚合其有效 3D 点，并用本地 SAM3 checkpoint 生成每个检测框的 mask（mask 决定对象点与背景排除）。对每一 global ID，沿拟合支撑平面法向投影全部有效观测的 3D 点并恢复 OBB；最终取所有 carton OBB 投影的**多边形并集面积**（`m²`），指标 `da3_ground_footprint_union`。若任一 global ID 几何不完整（缺 mask、有效点不足、OBB 退化等），整体拒绝并输出 `status: rejected` 与 `value_m2: null`，不会以部分结果冒充总面积。旧 runner cache 不满足该 schema/provenance 合约，必须先用 DA3 reconstruction 重新生成 cache。DA3 尺度是模型估计，现场 reference 可用于 QA，而非必需输入。
 
-`--area-mode calibrated_bbox` 是显式锚点换算模式：它只计锚点帧内每个物理 `global_id` 的有效、完整 bbox，并要求明确提供锚点帧、对象索引、宽度和高度。
-
-结果是**每个 global ID 一次的 bbox 物理等效面积算术和**，不是 bbox 并集、SAM3 mask 面积、包装表面积或地面占地面积。它不估计未检测/被遮挡商品，并且不会改写检测 JSON 或 `global_mapping.json`。`measurement_report.json` 会记录状态、尺度来源、质量门与拒绝原因；`selected_instances.json` 与标注帧用于审查每一项贡献。
+结果是**每个 carton OBB 投影到支撑平面的多边形并集**，不是 bbox 面积算术和、SAM3 mask 面积、包装表面积、正面/接触面积或地面接触面积，并且不估计未检测/被遮挡商品。要求现有 DA3 cache、global mapping 与本地 SAM3 checkpoint，缺少任一即拒绝；不会改写检测 JSON 或 `global_mapping.json`。`measurement_report.json` 记录状态、尺度来源、支撑平面门与拒绝原因；`footprints.geojson` 与 `top_down_footprint.png` 用于审查每项贡献。
 
 ## 🧾 日志输出（统一）
 
