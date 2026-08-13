@@ -119,7 +119,7 @@ uv run python main.py --mode pipeline --algorithm 3d \
 
 结果是**每个 carton OBB 投影到支撑平面的多边形并集**：它包含悬垂（overhang），不是包装表面积、正面/接触面积或地面接触面积，也不会估计未检测/被遮挡商品。要求现有 DA3 cache、global mapping 与本地 SAM3 checkpoint，缺少任一即拒绝。输入文件不会被改写。
 
-内部的逐源帧 SAM3 mask cache utility 已提供不可变、完整校验的 bundle（source image、完整有序 prompts、已验证的 checkpoint digest 与 runtime/code/predict contract 均进入 provenance）。它尚未接入公开 `ground-stack-area` CLI；该集成留待 Task 4。因此用户不得依赖 cache 目录或其路径作为当前命令的接口。该 utility 绝不以 bbox 伪造 mask，也绝不产生 partial total；空或无效 mask 仍须由后续正式阶段按 rejected/null 语义处理。
+内部的逐源帧 SAM3 mask cache utility 已提供不可变、完整校验的 bundle（source image、完整有序 prompts、caller-supplied opaque `checkpoint_sha256` 与 runtime/code/predict contract 均进入 provenance）。它不验证 checkpoint 文件，也不验证加载时的一致性；该 TOCTOU contract 由 Task 3 负责。它尚未接入公开 `ground-stack-area` CLI；该集成留待 Task 4。因此用户不得依赖 cache 目录或其路径作为当前命令的接口。该 utility 绝不以 bbox 伪造 mask，也绝不产生 partial total；空或无效 mask 仍须由后续正式阶段按 rejected/null 语义处理。
 
 ## 3D 重建后端
 

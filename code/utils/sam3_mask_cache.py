@@ -1,4 +1,4 @@
-"""Immutable, verified per-source-frame SAM3 mask cache primitives.
+"""Immutable, audited per-source-frame SAM3 mask cache primitives.
 
 This module intentionally knows nothing about global IDs, DA3, or measurement
 totals.  It stores only the complete ordered source-frame mask bundle supplied
@@ -44,6 +44,19 @@ def _canonical_json_bytes(value: object) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
 
 
+def _canonical_binary64_hex(encoded: str) -> tuple[str, float]:
+    try:
+        raw = bytes.fromhex(encoded)
+        value = struct.unpack(">d", raw)[0]
+    except (TypeError, ValueError, struct.error) as exc:
+        raise ValueError("invalid binary64 bbox encoding") from exc
+    if len(raw) != 8 or not math.isfinite(value):
+        raise ValueError("bbox coordinates must be finite binary64 values")
+    if value == 0.0:
+        value = 0.0
+    return struct.pack(">d", value).hex(), value
+
+
 @dataclass(frozen=True)
 class DetectionPrompt:
     """One ordered source-frame prompt with canonical binary64 bbox values."""
@@ -51,13 +64,27 @@ class DetectionPrompt:
     object_id: int
     bbox_xyxy_f64be_hex: tuple[str, str, str, str]
 
+    def __post_init__(self) -> None:
+        if len(self.bbox_xyxy_f64be_hex) != 4:
+            raise ValueError("bbox_xyxy_f64be_hex must contain exactly four values")
+        normalized: list[str] = []
+        values: list[float] = []
+        for encoded in self.bbox_xyxy_f64be_hex:
+            canonical, value = _canonical_binary64_hex(encoded)
+            normalized.append(canonical)
+            values.append(value)
+        if values[2] < values[0] or values[3] < values[1]:
+            raise ValueError("bbox_xyxy must not be reversed")
+        object.__setattr__(self, "object_id", int(self.object_id))
+        object.__setattr__(self, "bbox_xyxy_f64be_hex", tuple(normalized))
+
     @classmethod
     def from_bbox(
         cls, object_id: int, bbox_xyxy: Sequence[float]
     ) -> "DetectionPrompt":
         if len(bbox_xyxy) != 4:
             raise ValueError("bbox_xyxy must contain exactly four coordinates")
-        encoded = []
+        encoded: list[str] = []
         for coordinate in bbox_xyxy:
             value = float(coordinate)
             if not math.isfinite(value):
@@ -68,17 +95,9 @@ class DetectionPrompt:
         return cls(int(object_id), tuple(encoded))  # type: ignore[arg-type]
 
     def bbox_xyxy(self) -> tuple[float, float, float, float]:
-        if len(self.bbox_xyxy_f64be_hex) != 4:
-            raise ValueError("bbox_xyxy_f64be_hex must contain exactly four values")
-        values = []
+        values: list[float] = []
         for encoded in self.bbox_xyxy_f64be_hex:
-            try:
-                raw = bytes.fromhex(encoded)
-                value = struct.unpack(">d", raw)[0]
-            except (TypeError, ValueError, struct.error) as exc:
-                raise ValueError("invalid binary64 bbox encoding") from exc
-            if len(raw) != 8 or not math.isfinite(value):
-                raise ValueError("bbox coordinates must be finite binary64 values")
+            _, value = _canonical_binary64_hex(encoded)
             values.append(value)
         return tuple(values)  # type: ignore[return-value]
 
@@ -96,6 +115,13 @@ class FrameMaskCacheRequest:
     inference_contract: Mapping[str, object]
     output_shape_hw: tuple[int, int]
 
+    def __post_init__(self) -> None:
+        digest = str(self.checkpoint_sha256).lower()
+        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+            raise ValueError("checkpoint_sha256 must be a 64-character hexadecimal digest")
+        object.__setattr__(self, "checkpoint_sha256", digest)
+        object.__setattr__(self, "detections", tuple(self.detections))
+
 
 @dataclass(frozen=True)
 class FrameMaskCacheResult:
@@ -108,12 +134,18 @@ class FrameMaskCacheResult:
     invalid_reason: str | None
 
 
-def _request_key_payload(request: FrameMaskCacheRequest) -> dict[str, object]:
+def _source_image_identity(image_path: Path) -> dict[str, object]:
     try:
-        image_size = request.image_path.stat().st_size
-        image_sha256 = _sha256_file(request.image_path)
+        image_bytes = image_path.read_bytes()
     except OSError as exc:
-        raise ValueError(f"cannot read source image for cache key: {request.image_path}") from exc
+        raise ValueError(f"cannot read source image for cache key: {image_path}") from exc
+    return {"sha256": _sha256_bytes(image_bytes), "size_bytes": len(image_bytes)}
+
+
+def _request_key_payload(
+    request: FrameMaskCacheRequest, source_image_identity: Mapping[str, object] | None = None
+) -> dict[str, object]:
+    image_identity = dict(source_image_identity or _source_image_identity(request.image_path))
     height, width = request.output_shape_hw
     if not isinstance(height, int) or not isinstance(width, int) or height <= 0 or width <= 0:
         raise ValueError("output_shape_hw must contain positive integer height and width")
@@ -124,11 +156,9 @@ def _request_key_payload(request: FrameMaskCacheRequest) -> dict[str, object]:
         detections.append(
             {"object_id": int(prompt.object_id), "bbox_xyxy_f64be_hex": list(prompt.bbox_xyxy_f64be_hex)}
         )
-    if len(request.checkpoint_sha256) != 64:
-        raise ValueError("checkpoint_sha256 must be a SHA-256 hex digest")
     return {
         "schema": _SCHEMA_VERSION,
-        "image": {"image_id": int(request.image_id), "sha256": image_sha256, "size_bytes": image_size},
+        "image": {"image_id": int(request.image_id), **image_identity},
         "detections": detections,
         "checkpoint_sha256": request.checkpoint_sha256,
         "code_fingerprint": dict(request.code_fingerprint),
@@ -178,10 +208,10 @@ def _clipped_mask(mask: np.ndarray, bbox_xyxy: tuple[float, float, float, float]
     """Apply the source-pixel bbox clipping contract without inventing pixels."""
     height, width = mask.shape
     x1, y1, x2, y2 = bbox_xyxy
-    xi1 = int(max(0, min(width - 1, round(x1))))
-    yi1 = int(max(0, min(height - 1, round(y1))))
-    xi2 = int(max(xi1 + 1, min(width, round(x2))))
-    yi2 = int(max(yi1 + 1, min(height, round(y2))))
+    xi1 = int(max(0, min(width, round(x1))))
+    yi1 = int(max(0, min(height, round(y1))))
+    xi2 = int(max(0, min(width, round(x2))))
+    yi2 = int(max(0, min(height, round(y2))))
     clipped = np.asarray(mask, dtype=bool).copy()
     if xi2 <= xi1 or yi2 <= yi1:
         clipped.fill(False)
@@ -213,18 +243,23 @@ def _mask_metadata(mask: np.ndarray) -> dict[str, object]:
     return {"sha256": _sha256_bytes(mask.tobytes(order="C")), "true_pixel_count": int(mask.sum())}
 
 
-def _manifest(request: FrameMaskCacheRequest, key: str, masks: tuple[np.ndarray, ...], payload_sha256: str) -> dict[str, object]:
+def _manifest(
+    key: str,
+    key_payload: Mapping[str, object],
+    masks: tuple[np.ndarray, ...],
+    payload_sha256: str,
+) -> dict[str, object]:
     return {
         "complete": True,
         "key": key,
-        "key_payload": _request_key_payload(request),
+        "key_payload": dict(key_payload),
         "payload_sha256": payload_sha256,
         "masks": [_mask_metadata(mask) for mask in masks],
     }
 
 
 def _load_valid_bundle(
-    request: FrameMaskCacheRequest, key: str
+    request: FrameMaskCacheRequest, key: str, key_payload: Mapping[str, object]
 ) -> tuple[FrameMaskCacheResult | None, str | None]:
     _, _, _, entry = _paths(request, key)
     if not entry.exists():
@@ -235,7 +270,7 @@ def _load_valid_bundle(
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         if not isinstance(manifest, dict) or manifest.get("complete") is not True:
             raise ValueError("manifest is incomplete")
-        if manifest.get("key") != key or manifest.get("key_payload") != _request_key_payload(request):
+        if manifest.get("key") != key or manifest.get("key_payload") != key_payload:
             raise ValueError("manifest request provenance does not match")
         payload_sha256 = manifest.get("payload_sha256")
         if not isinstance(payload_sha256, str) or _sha256_file(payload_path) != payload_sha256:
@@ -287,6 +322,7 @@ def _quarantine_invalid_entry(request: FrameMaskCacheRequest, key: str) -> None:
 def _publish_new_bundle(
     request: FrameMaskCacheRequest,
     key: str,
+    key_payload: Mapping[str, object],
     masks: tuple[np.ndarray, ...],
     *,
     invalid_reason: str | None,
@@ -296,11 +332,16 @@ def _publish_new_bundle(
     temporary = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=entries))
     try:
         payload_path = temporary / "masks.npz"
-        np.savez_compressed(payload_path, masks=np.stack(masks, axis=0).astype(bool, copy=False))
+        array = (
+            np.stack(masks, axis=0).astype(bool, copy=False)
+            if masks
+            else np.zeros((0, *request.output_shape_hw), dtype=bool)
+        )
+        np.savez_compressed(payload_path, masks=array)
         _fsync_file(payload_path)
         payload_sha256 = _sha256_file(payload_path)
         manifest_path = temporary / "manifest.json"
-        manifest_path.write_bytes(_canonical_json_bytes(_manifest(request, key, masks, payload_sha256)))
+        manifest_path.write_bytes(_canonical_json_bytes(_manifest(key, key_payload, masks, payload_sha256)))
         _fsync_file(manifest_path)
         _fsync_directory(temporary)
         if final_entry.exists():
@@ -322,7 +363,7 @@ def _publish_new_bundle(
         return FrameMaskCacheResult(
             masks=masks,
             key=key,
-            events=("miss", "cache_write_failed"),
+            events=("invalid", "cache_write_failed") if invalid_reason else ("miss", "cache_write_failed"),
             payload_sha256=None,
             checkpoint_sha256=request.checkpoint_sha256,
             code_fingerprint=dict(request.code_fingerprint),
@@ -334,22 +375,28 @@ def load_or_compute_frame_masks(
     request: FrameMaskCacheRequest,
     compute_masks: Callable[[], Sequence[np.ndarray]],
 ) -> FrameMaskCacheResult:
-    """Load one verified immutable bundle or compute and atomically publish it.
+    """Load one immutable bundle or compute and atomically publish it.
 
-    ``checkpoint_sha256`` is intentionally treated as an opaque, already
-    verified request field.  Model-loading TOCTOU verification belongs to the
-    SAM3 loader integration stage, not this cache primitive.
+    ``checkpoint_sha256`` is caller-supplied opaque input.  This utility does
+    not verify the checkpoint file or load-time equality; Task 3 owns that
+    TOCTOU contract.
     """
-    key = canonical_frame_mask_key(request)
+    source_identity = _source_image_identity(request.image_path)
+    key_payload = _request_key_payload(request, source_identity)
+    key = _sha256_bytes(_canonical_json_bytes(key_payload))
     with _key_lock(request.cache_root, key, exclusive=False):
-        cached, _ = _load_valid_bundle(request, key)
+        cached, _ = _load_valid_bundle(request, key, key_payload)
         if cached is not None:
             return cached
     with _key_lock(request.cache_root, key, exclusive=True):
-        cached, invalid_reason = _load_valid_bundle(request, key)
+        cached, invalid_reason = _load_valid_bundle(request, key, key_payload)
         if cached is not None:
             return cached
         if invalid_reason is not None:
             _quarantine_invalid_entry(request, key)
+        if _source_image_identity(request.image_path) != source_identity:
+            raise ValueError("source image changed before mask production")
         masks = _validate_produced_masks(request, tuple(compute_masks()))
-        return _publish_new_bundle(request, key, masks, invalid_reason=invalid_reason)
+        if _source_image_identity(request.image_path) != source_identity:
+            raise ValueError("source image changed during mask production")
+        return _publish_new_bundle(request, key, key_payload, masks, invalid_reason=invalid_reason)

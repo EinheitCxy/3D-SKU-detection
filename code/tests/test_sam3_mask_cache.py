@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+import utils.sam3_mask_cache as sam3_mask_cache
 from utils.sam3_mask_cache import (
     DetectionPrompt,
     FrameMaskCacheRequest,
@@ -62,6 +63,15 @@ def _mutate_request(request: FrameMaskCacheRequest, mutation: str) -> FrameMaskC
         return replace(request, checkpoint_sha256="c" * 64)
     if mutation == "contract":
         return replace(request, inference_contract={"api": "predict_inst", "threshold": 0.0})
+    if mutation == "image_id":
+        return replace(request, image_id=43)
+    if mutation == "image_size":
+        request.image_path.write_bytes(request.image_path.read_bytes() + b"trailing-cache-key-bytes")
+        return request
+    if mutation == "code_fingerprint":
+        return replace(request, code_fingerprint={"files": {"utils/sam3_utils.py": "d" * 64}})
+    if mutation == "runtime_fingerprint":
+        return replace(request, runtime_fingerprint={"python": "3.12", "device": "cuda"})
     raise AssertionError(f"unknown mutation {mutation}")
 
 
@@ -131,7 +141,20 @@ def test_frame_cache_hit_does_not_call_mask_producer(tmp_path: Path) -> None:
     assert second.events == ("hit",)
 
 
-@pytest.mark.parametrize("mutation", ["image", "bbox", "order", "checkpoint", "contract"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "image",
+        "image_id",
+        "image_size",
+        "bbox",
+        "order",
+        "checkpoint",
+        "contract",
+        "code_fingerprint",
+        "runtime_fingerprint",
+    ],
+)
 def test_key_input_mutation_is_a_miss(tmp_path: Path, mutation: str) -> None:
     first_request = _request(tmp_path)
     load_or_compute_frame_masks(first_request, lambda: [np.ones((8, 8), dtype=bool)])
@@ -175,6 +198,31 @@ def test_producer_mask_is_clipped_to_bbox_without_bbox_fallback(tmp_path: Path) 
     assert result.masks[0].sum() == 0
 
 
+@pytest.mark.parametrize(
+    ("bbox_xyxy", "expected_pixels"),
+    [
+        ((-4.0, 2.0, -1.0, 4.0), 0),
+        ((9.0, 2.0, 12.0, 4.0), 0),
+        ((2.0, -4.0, 4.0, -1.0), 0),
+        ((2.0, 9.0, 4.0, 12.0), 0),
+        ((2.0, 2.0, 2.0, 5.0), 0),
+        ((1.49, 1.49, 3.51, 3.51), 9),
+    ],
+)
+def test_bbox_clipping_uses_independent_endpoints_and_allows_empty_intersection(
+    tmp_path: Path, bbox_xyxy: tuple[float, float, float, float], expected_pixels: int
+) -> None:
+    request = _request(tmp_path, detections=((7, bbox_xyxy),))
+    result = load_or_compute_frame_masks(request, lambda: [np.ones((8, 8), dtype=bool)])
+    assert result.masks[0].sum() == expected_pixels
+
+
+def test_reversed_bbox_is_rejected_before_cache_operation(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="reversed"):
+        _request(tmp_path, detections=((7, (5.0, 2.0, 2.0, 4.0)),))
+    assert not (tmp_path / "sam3_mask_cache").exists()
+
+
 def test_non_finite_bbox_rejects_before_cache_operation(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="finite"):
         _prompt(7, (1.0, 2.0, float("nan"), 8.0))
@@ -184,6 +232,30 @@ def test_negative_zero_has_same_canonical_key_as_positive_zero(tmp_path: Path) -
     negative = _request(tmp_path, detections=((7, (-0.0, 0.0, 8.0, 8.0)),))
     positive = _request(tmp_path, detections=((7, (0.0, 0.0, 8.0, 8.0)),))
     assert canonical_frame_mask_key(negative) == canonical_frame_mask_key(positive)
+
+
+def test_direct_prompt_constructor_normalizes_hex_and_negative_zero(tmp_path: Path) -> None:
+    direct = DetectionPrompt(
+        object_id=7,
+        bbox_xyxy_f64be_hex=(
+            " 8000000000000000 ",
+            " 3FF8000000000000 ",
+            "4010000000000000",
+            "4010000000000000",
+        ),
+    )
+    canonical = _prompt(7, (0.0, 1.5, 4.0, 4.0))
+    direct_request = replace(_request(tmp_path), detections=(direct,))
+    canonical_request = replace(_request(tmp_path), detections=(canonical,))
+    assert direct.bbox_xyxy_f64be_hex == canonical.bbox_xyxy_f64be_hex
+    assert canonical_frame_mask_key(direct_request) == canonical_frame_mask_key(canonical_request)
+
+
+def test_checkpoint_digest_is_lowercase_syntax_normalized(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    upper = replace(request, checkpoint_sha256=("A" * 64))
+    assert upper.checkpoint_sha256 == "a" * 64
+    assert canonical_frame_mask_key(upper) == canonical_frame_mask_key(request)
 
 
 def test_two_processes_publish_one_complete_bundle(tmp_path: Path) -> None:
@@ -197,3 +269,64 @@ def test_complete_empty_mask_is_cached_without_bbox_fallback(tmp_path: Path) -> 
     result = load_or_compute_frame_masks(_request(tmp_path), lambda: [np.zeros((8, 8), dtype=bool)])
     assert result.masks[0].sum() == 0
     assert result.events == ("miss", "written")
+
+
+def test_image_mutation_during_producer_rejects_and_does_not_publish(tmp_path: Path) -> None:
+    request = _request(tmp_path)
+    original_key = canonical_frame_mask_key(request)
+
+    def mutate_image_then_return_masks() -> list[np.ndarray]:
+        Image.fromarray(np.ones((8, 8, 3), dtype=np.uint8)).save(request.image_path)
+        return [np.ones((8, 8), dtype=bool)]
+
+    with pytest.raises(ValueError, match="source image changed"):
+        load_or_compute_frame_masks(request, mutate_image_then_return_masks)
+    assert not (request.cache_root / "entries" / original_key).exists()
+
+
+def test_first_write_failure_reports_miss_then_cache_write_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = _request(tmp_path)
+
+    def fail_write(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(sam3_mask_cache.np, "savez_compressed", fail_write)
+    result = load_or_compute_frame_masks(request, lambda: [np.ones((8, 8), dtype=bool)])
+    assert result.events == ("miss", "cache_write_failed")
+
+
+def test_invalid_rebuild_write_failure_reports_invalid_then_cache_write_failed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = _request(tmp_path)
+    first = load_or_compute_frame_masks(request, lambda: [np.ones((8, 8), dtype=bool)])
+    (request.cache_root / "entries" / first.key / "masks.npz").write_bytes(b"truncated")
+
+    def fail_write(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(sam3_mask_cache.np, "savez_compressed", fail_write)
+    result = load_or_compute_frame_masks(request, lambda: [np.ones((8, 8), dtype=bool)])
+    assert result.events == ("invalid", "cache_write_failed")
+    assert any((request.cache_root / "corrupt").iterdir())
+
+
+def test_zero_detection_bundle_writes_bool_payload_and_hits_without_producer(tmp_path: Path) -> None:
+    request = _request(tmp_path, detections=())
+    calls: list[int] = []
+
+    def producer() -> list[np.ndarray]:
+        calls.append(1)
+        return []
+
+    first = load_or_compute_frame_masks(request, producer)
+    second = load_or_compute_frame_masks(request, _producer_that_fails_if_called)
+    with np.load(request.cache_root / "entries" / first.key / "masks.npz", allow_pickle=False) as payload:
+        assert payload["masks"].dtype == np.bool_
+        assert payload["masks"].shape == (0, 8, 8)
+    assert calls == [1]
+    assert first.masks == ()
+    assert second.masks == ()
+    assert second.events == ("hit",)
