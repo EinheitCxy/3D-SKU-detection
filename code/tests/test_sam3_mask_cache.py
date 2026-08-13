@@ -13,6 +13,7 @@ import pytest
 from PIL import Image
 
 import utils.sam3_mask_cache as sam3_mask_cache
+import utils.sam3_utils as sam3_utils
 from utils.sam3_mask_cache import (
     DetectionPrompt,
     FrameMaskCacheRequest,
@@ -330,3 +331,58 @@ def test_zero_detection_bundle_writes_bool_payload_and_hits_without_producer(tmp
     assert first.masks == ()
     assert second.masks == ()
     assert second.events == ("hit",)
+
+
+def _checkpoint(tmp_path: Path, contents: bytes) -> Path:
+    checkpoint = tmp_path / "sam3.pt"
+    checkpoint.write_bytes(contents)
+    return checkpoint
+
+
+def test_model_cache_reloads_when_checkpoint_bytes_are_replaced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Catches a path-only model-cache key after a checkpoint replacement."""
+    checkpoint = _checkpoint(tmp_path, b"first checkpoint contents")
+    loads: list[tuple[str, str]] = []
+
+    def build(checkpoint_path: str, device: str) -> tuple[object, object]:
+        loads.append((checkpoint_path, device))
+        return object(), object()
+
+    monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
+    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", build, raising=False)
+    first_digest = hashlib.sha256(b"first checkpoint contents").hexdigest()
+    sam3_utils._get_sam3_model_and_processor(
+        str(checkpoint), "cuda:0", expected_checkpoint_sha256=first_digest
+    )
+    checkpoint.write_bytes(b"replacement checkpoint contents")
+    second_digest = hashlib.sha256(b"replacement checkpoint contents").hexdigest()
+    sam3_utils._get_sam3_model_and_processor(
+        str(checkpoint), "cuda:0", expected_checkpoint_sha256=second_digest
+    )
+
+    assert loads == [(str(checkpoint), "cuda:0"), (str(checkpoint), "cuda:0")]
+    assert len(sam3_utils._SAM3_PREDICT_INST_CACHE) == 2
+
+
+def test_checkpoint_mutation_during_model_load_is_rejected_without_cache_publish(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Catches publishing a model whose checkpoint changed during its load."""
+    checkpoint = _checkpoint(tmp_path, b"first checkpoint contents")
+    expected_digest = hashlib.sha256(b"first checkpoint contents").hexdigest()
+
+    def mutate_checkpoint_while_building(*_args: object) -> tuple[object, object]:
+        checkpoint.write_bytes(b"mutated during model load")
+        return object(), object()
+
+    monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
+    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", mutate_checkpoint_while_building, raising=False)
+
+    with pytest.raises(RuntimeError, match="changed while loading"):
+        sam3_utils._get_sam3_model_and_processor(
+            str(checkpoint), "cuda", expected_checkpoint_sha256=expected_digest
+        )
+
+    assert sam3_utils._SAM3_PREDICT_INST_CACHE == {}

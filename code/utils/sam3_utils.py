@@ -17,6 +17,8 @@ API Modes:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import sys
 import threading
@@ -32,8 +34,27 @@ from .transforms import ImageTransformBase
 
 logger = logging.getLogger(__name__)
 
-# Cache for predict_inst API (model + processor)
-_SAM3_PREDICT_INST_CACHE: Dict[Tuple[str, str], Tuple[object, object]] = {}
+# The predict_inst contract is fixed for this process-cache boundary.  Keep its
+# fingerprint separate from the mutable checkpoint path so loaded weights cannot
+# be reused for different checkpoint bytes or inference behavior.
+_PREDICT_INST_CONTRACT_FINGERPRINT = hashlib.sha256(
+    json.dumps(
+        {
+            "api": "predict_inst",
+            "builder": {"enable_inst_interactivity": True, "load_from_HF": False},
+            "empty_mask_retry": "bbox_center_positive_point",
+            "mask_postprocess": "best_iou_then_clip_to_bbox",
+            "predict": {"multimask_output": True, "normalize_coords": True, "return_logits": False},
+            "processor": {"confidence_threshold": 0.0},
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+).hexdigest()
+
+# Cache for predict_inst API (model + processor), keyed by immutable checkpoint
+# bytes, normalized device, and the fixed predict_inst inference contract.
+_SAM3_PREDICT_INST_CACHE: Dict[Tuple[str, str, str], Tuple[object, object]] = {}
 
 # Cache for batch inference API (model + transform + postprocessor)
 _SAM3_BATCH_API_CACHE: Dict[Tuple[Any, ...], Tuple[object, object, object]] = {}
@@ -126,16 +147,17 @@ def _ensure_sam3_in_path() -> Path:
     return sam3_repo
 
 
-def _get_sam3_model_and_processor(checkpoint_path: str, device: str) -> Tuple[object, object]:
-    """Load SAM3 model+processor from local `sam3/` directory (no HF download).
+def checkpoint_sha256(path: Path) -> str:
+    """Return the SHA-256 digest of checkpoint bytes without loading them."""
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
-    This is for the predict_inst API (fast single-image inference).
-    Does NOT support visual exemplars.
-    """
-    cache_key = (str(checkpoint_path), str(device))
-    if cache_key in _SAM3_PREDICT_INST_CACHE:
-        return _SAM3_PREDICT_INST_CACHE[cache_key]
 
+def _build_sam3_model_and_processor(checkpoint_path: str, device: str) -> Tuple[object, object]:
+    """Build one predict_inst model/processor pair from local SAM3 source."""
     _ensure_sam3_in_path()
 
     from sam3.model_builder import build_sam3_image_model  # type: ignore
@@ -149,8 +171,34 @@ def _get_sam3_model_and_processor(checkpoint_path: str, device: str) -> Tuple[ob
         enable_inst_interactivity=True,
     )
     processor = Sam3Processor(model, device=device, confidence_threshold=0.0)
-    _SAM3_PREDICT_INST_CACHE[cache_key] = (model, processor)
     return model, processor
+
+
+def _get_sam3_model_and_processor(
+    checkpoint_path: str, device: str, *, expected_checkpoint_sha256: str
+) -> Tuple[object, object]:
+    """Load SAM3 model+processor from local `sam3/` directory (no HF download).
+
+    This is for the predict_inst API (fast single-image inference).
+    Does NOT support visual exemplars.
+    """
+    checkpoint = Path(checkpoint_path)
+    before = checkpoint_sha256(checkpoint)
+    if before != expected_checkpoint_sha256:
+        raise RuntimeError("SAM3 checkpoint digest changed before loading")
+
+    cache_key = (before, normalize_device(device), _PREDICT_INST_CONTRACT_FINGERPRINT)
+    cached = _SAM3_PREDICT_INST_CACHE.get(cache_key)
+    if cached is None:
+        candidate = _build_sam3_model_and_processor(checkpoint_path, device)
+        if checkpoint_sha256(checkpoint) != before:
+            raise RuntimeError("SAM3 checkpoint changed while loading")
+        _SAM3_PREDICT_INST_CACHE[cache_key] = candidate
+        cached = candidate
+
+    if checkpoint_sha256(checkpoint) != before:
+        raise RuntimeError("SAM3 checkpoint changed while loading")
+    return cached
 
 
 def _build_sam3_batch_transform(
@@ -600,7 +648,12 @@ def sam3_masks_from_bboxes_predict_inst(
     if len(bboxes_xyxy) == 0:
         return []
 
-    model, processor = _get_sam3_model_and_processor(checkpoint_path=checkpoint_path, device=device)
+    expected_checkpoint_sha256 = checkpoint_sha256(Path(checkpoint_path))
+    model, processor = _get_sam3_model_and_processor(
+        checkpoint_path=checkpoint_path,
+        device=device,
+        expected_checkpoint_sha256=expected_checkpoint_sha256,
+    )
     image = Image.open(image_path).convert("RGB")
     state = processor.set_image(image)
     w, h = image.size
