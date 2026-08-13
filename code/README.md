@@ -154,6 +154,8 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 
 结果是**每个 carton OBB 投影到支撑平面的多边形并集**，不是 bbox 面积算术和、SAM3 mask 面积、包装表面积、正面/接触面积或地面接触面积，并且不估计未检测/被遮挡商品。要求现有 DA3 cache、global mapping 与本地 SAM3 checkpoint，缺少任一即拒绝；不会改写检测 JSON 或 `global_mapping.json`。`measurement_report.json` 记录状态、尺度来源、支撑平面门与拒绝原因；每个候选的 `ransac.trial_count` 与 `ransac.early_exit` 是性能审计字段，不放宽任何门，也不改变 m² 定义；`footprints.geojson` 与 `top_down_footprint.png` 用于审查每项贡献。
 
+逐源帧 SAM3 mask cache 是内部 utility：它以不可变、完整验证的 bundle 持久化 source masks，包含 source image、完整有序 prompts、已验证 checkpoint digest 及 code/runtime/predict contract 的 provenance。公开 `ground-stack-area` 命令在 Task 4 前不会读取它；cache 目录不构成稳定用户接口。该 utility 绝不提供 bbox fallback 或 partial total，空/无效 mask 必须在集成后的正式阶段保持 rejected/null 语义。
+
 ## 🧾 日志输出（统一）
 
 - 每次运行生成一个日志文件：`<save_root>/run_YYYYMMDD_HHMMSS.log`
