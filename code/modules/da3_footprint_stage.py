@@ -27,6 +27,11 @@ from shapely.geometry import mapping
 from shapely.ops import unary_union
 
 from utils.detection_objects import flatten_detection_objects
+from utils.footprint_evidence import (
+    EvidenceObservation,
+    FormalSnapshot,
+    build_shadow_evidence,
+)
 from utils.ground_stack_footprint import (
     FootprintError,
     SupportPlaneSelectionError,
@@ -114,10 +119,14 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
     }
     polygons: dict[str, Any] = {}
     union = None
+    plane = None
+    cache_path = Path(save_root) / dataset.name / "da3_cache" / "predictions.npz"
+    cache_frame_ids = np.empty(0, dtype=np.int64)
+    evidence_observations: tuple[EvidenceObservation, ...] = ()
     try:
-        cache_path = Path(save_root) / dataset.name / "da3_cache" / "predictions.npz"
         mapping_path = Path(save_root) / dataset.name / "dedup_detections" / "global_mapping.json"
         cache = _load_cache(cache_path)
+        cache_frame_ids = cache["image_ids"]
         image_paths = _image_paths(dataset / "images")
         detection_paths = _detection_paths(dataset / "detections_results")
         _validate_complete_source_ids(cache["image_ids"], image_paths, detection_paths)
@@ -128,7 +137,12 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         sam3_checkpoint_sha256 = checkpoint_sha256(sam3_checkpoint)
         sam3_code_fingerprint = _sam3_code_fingerprint()
         sam3_runtime_fingerprint = _sam3_runtime_fingerprint(_SAM3_DEVICE)
-        masked_observations, background_points, background_frames = _masked_observations(
+        (
+            masked_observations,
+            background_points,
+            background_frames,
+            evidence_observations,
+        ) = _masked_observations(
             cache,
             image_paths,
             detections,
@@ -223,6 +237,20 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         report["rejection_reason"] = str(error)
         polygons = {}
         union = None
+    formal_snapshot = FormalSnapshot(
+        status=report["status"],
+        value_m2=report["value_m2"],
+        plane=plane,
+        polygons=dict(polygons),
+        union=union,
+        rejection_reason=report.get("rejection_reason"),
+    )
+    report["evidence"] = _attach_shadow_evidence(
+        cache_path,
+        cache_frame_ids,
+        evidence_observations,
+        formal_snapshot,
+    )
     artifact_paths = _publish_generation(output_dir, report, polygons, union)
     report_path = Path(artifact_paths["measurement_report"])
     return {
@@ -419,11 +447,17 @@ def _masked_observations(
     sam3_code_fingerprint: dict[str, object],
     sam3_runtime_fingerprint: dict[str, object],
     mask_cache_frames: list[dict[str, object]],
-) -> tuple[dict[str, list[np.ndarray]], np.ndarray, np.ndarray]:
+) -> tuple[
+    dict[str, list[np.ndarray]],
+    np.ndarray,
+    np.ndarray,
+    tuple[EvidenceObservation, ...],
+]:
     point_clouds = cache["world_points"]
     confidence = cache["world_points_conf"]
     frame_for_id = {int(image_id): index for index, image_id in enumerate(cache["image_ids"])}
     observations = {global_id: [] for global_id in mapping_by_id}
+    evidence_observations: list[EvidenceObservation] = []
     background_points: list[np.ndarray] = []
     background_frames: list[np.ndarray] = []
     lookup = {(item["image_id"], item["object_id"]): item["global_id"] for entries in mapping_by_id.values() for item in entries}
@@ -473,11 +507,23 @@ def _masked_observations(
             global_id = lookup[(image_id, item["object_id"])]
             diagnostic = {"image_id": image_id, "object_id": item["object_id"], "valid_point_count": 0}
             per_global_id.setdefault(global_id, {"observations": []})["observations"].append(diagnostic)
+            valid_grid = _valid_points(
+                point_clouds[frame_index], confidence[frame_index]
+            )
+            evidence_observations.append(
+                EvidenceObservation(
+                    global_id=global_id,
+                    image_id=image_id,
+                    object_id=item["object_id"],
+                    processed_mask=warped.copy(),
+                    valid_mask=valid_grid.copy(),
+                )
+            )
             if not warped.any():
                 diagnostic["rejection"] = "warped SAM3 mask is empty"
                 observations[global_id].append(np.empty((0, 3), dtype=float))
             else:
-                valid = _valid_points(point_clouds[frame_index], confidence[frame_index]) & warped
+                valid = valid_grid & warped
                 points = point_clouds[frame_index][valid]
                 diagnostic["valid_point_count"] = int(len(points))
                 if len(points) < 32:
@@ -488,7 +534,31 @@ def _masked_observations(
         frame_background = point_clouds[frame_index][valid_background]
         background_points.append(frame_background)
         background_frames.append(np.full(len(frame_background), image_id, dtype=np.int32))
-    return observations, np.concatenate(background_points), np.concatenate(background_frames)
+    return (
+        observations,
+        np.concatenate(background_points),
+        np.concatenate(background_frames),
+        tuple(evidence_observations),
+    )
+
+
+def _attach_shadow_evidence(
+    cache_path: Path,
+    cache_frame_ids: np.ndarray,
+    observations: tuple[EvidenceObservation, ...],
+    formal_snapshot: FormalSnapshot,
+) -> dict[str, object]:
+    if formal_snapshot.status != "accepted" or formal_snapshot.plane is None:
+        return {"mode": "shadow", "status": "unavailable_no_formal_geometry"}
+    try:
+        return build_shadow_evidence(
+            cache_path=cache_path,
+            cache_frame_ids=cache_frame_ids,
+            observations=observations,
+            formal_snapshot=formal_snapshot,
+        )
+    except Exception as error:
+        return {"mode": "shadow", "status": "failed_evidence", "reason": str(error)}
 
 
 def _warp_mask_to_da3_grid(affine: np.ndarray, mask: np.ndarray, height: int, width: int) -> np.ndarray:

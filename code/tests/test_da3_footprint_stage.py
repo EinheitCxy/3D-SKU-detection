@@ -225,17 +225,14 @@ def _run_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
 
 def _formal_projection(report: dict[str, object]) -> dict[str, object]:
     return {
-        key: report[key]
-        for key in (
-            "metric",
-            "unit",
-            "status",
-            "value_m2",
-            "cache",
-            "plane",
-            "per_global_id",
-            "union",
-        )
+        "metric": report["metric"],
+        "unit": report["unit"],
+        "status": report["status"],
+        "value_m2": report["value_m2"],
+        "plane": report["plane"],
+        "per_global_id": report["per_global_id"],
+        "union": report["union"],
+        "rejection_reason": report.get("rejection_reason"),
     }
 
 
@@ -247,6 +244,47 @@ def _published_projection(result: dict[str, object]) -> tuple[dict[str, object],
     with Image.open(generation / "top_down_footprint.png") as image:
         pixels = np.asarray(image.convert("RGBA")).copy()
     return _formal_projection(report), canonical_geojson, pixels
+
+
+def _add_camera_fields(cache_path: Path, *, bad_contract: bool = False) -> None:
+    with np.load(cache_path, allow_pickle=False) as loaded:
+        fields = {key: loaded[key] for key in loaded.files}
+    world_points = fields["world_points"]
+    frame_count, height, width, _ = world_points.shape
+    depth = np.maximum(world_points[..., 2:3], 0.01).astype(np.float64)
+    intrinsic = np.repeat(np.eye(3, dtype=np.float64)[None], frame_count, axis=0)
+    extrinsic = np.repeat(
+        np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)[None],
+        frame_count,
+        axis=0,
+    )
+    if bad_contract:
+        intrinsic[0, 0, 0] = 0.0
+    fields.update(
+        {
+            "depth": depth.reshape(frame_count, height, width, 1),
+            "intrinsic": intrinsic,
+            "extrinsic": extrinsic,
+        }
+    )
+    np.savez_compressed(cache_path, **fields)
+
+
+def _run_evidence_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    masks=exact_bbox_masks,
+    camera: str | None = None,
+) -> tuple[dict[str, object], dict[str, object]]:
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    cache_path = save_root / dataset.name / "da3_cache" / "predictions.npz"
+    if camera is not None:
+        _add_camera_fields(cache_path, bad_contract=camera == "bad")
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", masks)
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+    return result, report
 
 
 def _rejected_publication_report() -> dict[str, object]:
@@ -355,6 +393,193 @@ def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_pat
     assert geojson["status"] == "rejected"
     assert geojson["measurement_complete"] is False
     assert geojson["features"] == []
+
+
+@pytest.mark.parametrize("formal_status", ["accepted", "rejected"])
+def test_evidence_failures_do_not_change_frozen_formal_result(
+    monkeypatch, tmp_path, formal_status
+):
+    baseline_root = tmp_path / f"baseline-{formal_status}"
+    observed_root = tmp_path / f"observed-{formal_status}"
+    masks = exact_bbox_masks if formal_status == "accepted" else masks_with_one_empty
+    builder_calls: list[str] = []
+
+    def baseline_builder(**_kwargs: object) -> dict[str, object]:
+        builder_calls.append("baseline")
+        return {"mode": "shadow", "status": "baseline_evidence"}
+
+    monkeypatch.setattr(stage, "build_shadow_evidence", baseline_builder, raising=False)
+    baseline_result, _ = _run_evidence_fixture(
+        baseline_root, monkeypatch, masks=masks
+    )
+    baseline_projection = _published_projection(baseline_result)
+
+    def failed_builder(**_kwargs: object) -> dict[str, object]:
+        builder_calls.append("failed")
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(stage, "build_shadow_evidence", failed_builder, raising=False)
+    observed_result, observed = _run_evidence_fixture(
+        observed_root, monkeypatch, masks=masks
+    )
+    observed_projection = _published_projection(observed_result)
+
+    assert observed_projection[:2] == baseline_projection[:2]
+    assert np.array_equal(observed_projection[2], baseline_projection[2])
+    expected_status = (
+        "failed_evidence"
+        if formal_status == "accepted"
+        else "unavailable_no_formal_geometry"
+    )
+    assert observed["evidence"]["status"] == expected_status
+    if formal_status == "accepted":
+        assert observed["evidence"]["reason"] == "boom"
+        assert builder_calls == ["baseline", "failed"]
+    else:
+        assert observed["evidence"] == {
+            "mode": "shadow",
+            "status": "unavailable_no_formal_geometry",
+        }
+        assert builder_calls == []
+
+
+def test_stage_reports_valid_shadow_evidence_without_changing_formal_area(
+    monkeypatch, tmp_path
+):
+    without_camera_result, without_camera = _run_evidence_fixture(
+        tmp_path / "without-camera", monkeypatch
+    )
+    with_camera_result, with_camera = _run_evidence_fixture(
+        tmp_path / "with-camera", monkeypatch, camera="valid"
+    )
+
+    assert _formal_projection(with_camera) == _formal_projection(without_camera)
+    assert with_camera["evidence"]["status"] == "available"
+    assert without_camera["evidence"]["status"] == (
+        "unavailable_missing_camera_fields"
+    )
+    with_projection = _published_projection(with_camera_result)
+    without_projection = _published_projection(without_camera_result)
+    assert with_projection[:2] == without_projection[:2]
+    assert np.array_equal(with_projection[2], without_projection[2])
+
+
+def test_stage_reports_failed_camera_contract_without_changing_formal_area(
+    monkeypatch, tmp_path
+):
+    baseline_result, baseline = _run_evidence_fixture(
+        tmp_path / "camera-baseline", monkeypatch
+    )
+    observed_result, observed = _run_evidence_fixture(
+        tmp_path / "bad-camera", monkeypatch, camera="bad"
+    )
+
+    assert observed["evidence"]["status"] == "failed_camera_contract"
+    assert _formal_projection(observed) == _formal_projection(baseline)
+    observed_projection = _published_projection(observed_result)
+    baseline_projection = _published_projection(baseline_result)
+    assert observed_projection[:2] == baseline_projection[:2]
+    assert np.array_equal(observed_projection[2], baseline_projection[2])
+
+
+def test_duplicate_observation_does_not_increase_distinct_image_count(
+    monkeypatch, tmp_path
+):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    detection_path = dataset / "detections_results" / "0.json"
+    detections = json.loads(detection_path.read_text())
+    duplicate_bbox = list(detections["objects"][0]["position"])
+    detections["objects"].append({"position": duplicate_bbox})
+    detection_path.write_text(json.dumps(detections))
+    mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
+    mapping = json.loads(mapping_path.read_text())
+    mapping["1"].append(
+        {"image_id": 0, "object_id": 1, "bbox": duplicate_bbox}
+    )
+    mapping_path.write_text(json.dumps(mapping))
+    _add_camera_fields(save_root / dataset.name / "da3_cache" / "predictions.npz")
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    per_id = report["evidence"]["per_global_id"]["1"]
+    assert report["status"] == "accepted"
+    assert len(per_id["observations"]) == 3
+    assert per_id["distinct_image_id_count"] == 2
+    assert all(
+        pair["source_image_id"] != pair["target_image_id"]
+        for pair in per_id["pairs"]
+    )
+
+
+def test_wrong_mask_is_the_highest_leave_one_out_influence(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
+    mapping = json.loads(mapping_path.read_text())
+    mapping["1"].extend(mapping.pop("2"))
+    mapping_path.write_text(json.dumps(mapping))
+    _add_camera_fields(save_root / dataset.name / "da3_cache" / "predictions.npz")
+
+    def masks_with_wrong_third_view(
+        image_path: str, bboxes: list[list[float]], *args: object
+    ) -> list[np.ndarray]:
+        masks = exact_bbox_masks(image_path, bboxes, *args)
+        if Path(image_path).stem == "2":
+            x1, y1, x2, y2 = (int(value) for value in bboxes[0])
+            masks[0][:] = False
+            masks[0][y1:y2, (x1 + x2) // 2:x2] = True
+        return masks
+
+    monkeypatch.setattr(
+        stage, "sam3_masks_from_bboxes_predict_inst", masks_with_wrong_third_view
+    )
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    leave_one_out = report["evidence"]["per_global_id"]["1"][
+        "leave_one_observation_out"
+    ]
+    available = [item for item in leave_one_out if item["status"] == "available"]
+    highest_influence = min(available, key=lambda item: item["polygon_iou"])
+    assert report["status"] == "accepted"
+    assert highest_influence["image_id"] == 2
+    assert highest_influence["polygon_iou"] < 0.8
+
+
+def test_evidence_input_mutation_cannot_change_published_formal_artifacts(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(
+        stage,
+        "build_shadow_evidence",
+        lambda **_kwargs: {"mode": "shadow", "status": "baseline_evidence"},
+        raising=False,
+    )
+    baseline_result, _ = _run_evidence_fixture(
+        tmp_path / "mutation-baseline", monkeypatch
+    )
+    baseline_projection = _published_projection(baseline_result)
+
+    def mutating_builder(**kwargs: object) -> dict[str, object]:
+        snapshot = kwargs["formal_snapshot"]
+        snapshot.polygons.clear()
+        assert snapshot.plane is not None
+        snapshot.plane.point[:] = 10_000.0
+        for observation in kwargs["observations"]:
+            observation.processed_mask[:] = False
+            observation.valid_mask[:] = False
+        return {"mode": "shadow", "status": "mutated_inputs"}
+
+    monkeypatch.setattr(stage, "build_shadow_evidence", mutating_builder, raising=False)
+    observed_result, observed = _run_evidence_fixture(
+        tmp_path / "mutation-observed", monkeypatch
+    )
+    observed_projection = _published_projection(observed_result)
+
+    assert observed["evidence"]["status"] == "mutated_inputs"
+    assert observed_projection[:2] == baseline_projection[:2]
+    assert np.array_equal(observed_projection[2], baseline_projection[2])
 
 
 def test_stage_second_run_uses_cached_masks_and_keeps_area(monkeypatch, tmp_path):
