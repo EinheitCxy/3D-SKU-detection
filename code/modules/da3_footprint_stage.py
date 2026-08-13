@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -87,6 +88,7 @@ _GENERATION_ARTIFACTS = {
     "top_down_footprint_png": "top_down_footprint.png",
 }
 _GENERATION_FILES = frozenset({*_GENERATION_ARTIFACTS.values(), "manifest.json"})
+_LOGGER = logging.getLogger(__name__)
 
 
 class FootprintStageError(ValueError):
@@ -139,6 +141,8 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             sam3_runtime_fingerprint,
             report["sam3_mask_cache"]["frames"],
         )
+        if checkpoint_sha256(sam3_checkpoint) != sam3_checkpoint_sha256:
+            raise FootprintStageError("SAM3 checkpoint changed during mask cache access")
         all_object_points = [
             points for observations in masked_observations.values() for points in observations if len(points)
         ]
@@ -455,8 +459,6 @@ def _masked_observations(
             )
         except RuntimeError as error:
             raise FootprintStageError(f"SAM3 failed for image {image_id}: {error}") from error
-        if checkpoint_sha256(sam3_checkpoint) != sam3_checkpoint_sha256:
-            raise FootprintStageError("SAM3 checkpoint changed during mask cache access")
         mask_cache_frames.append(_mask_cache_report_entry(image_id, cache_result))
         masks = cache_result.masks
         if len(masks) != len(frame_detections):
@@ -680,10 +682,17 @@ def _atomic_replace_current(current_path: Path, pointer: dict[str, object]) -> N
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, current_path)
-        _fsync_directory(current_path.parent)
     except BaseException:
         temporary.unlink(missing_ok=True)
         raise
+    try:
+        _fsync_directory(current_path.parent)
+    except OSError as error:
+        _LOGGER.warning(
+            "CURRENT was replaced with a complete generation, but directory durability "
+            "could not be confirmed: %s",
+            error,
+        )
 
 
 def _artifact_paths_from_current(output_root: Path) -> dict[str, str]:
