@@ -45,7 +45,9 @@ _CACHE_FIELDS = {
     "preprocess_method",
 }
 _MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
-_SAM3_CHECKPOINT = "sam3/checkpoints/sam3.pt"
+_SAM3_CHECKPOINT = str(
+    Path(__file__).resolve().parents[2] / "sam3" / "checkpoints" / "sam3.pt"
+)  # 相对仓库根解析，不依赖 CWD（与 sam3_utils._ensure_sam3_in_path 一致）
 _SAM3_DEVICE = "cuda"
 _PATCH_SIZE = 14
 _PREPROCESS_METHOD = "upper_bound_resize"

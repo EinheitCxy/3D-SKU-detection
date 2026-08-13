@@ -231,6 +231,18 @@ class DA33DReconstructor(ReconstructorBase):
             if fa_val is not None and isinstance(fa_val, np.ndarray):
                 save_kwargs[fa_key] = fa_val
 
+        # schema-v2 provenance 透传（da3_runner 写入；footprint 阶段要求，不能丢弃）
+        for prov_key in (
+            "cache_schema_version",
+            "source_image_sha256",
+            "affine_convention",
+            "preprocess_resolution",
+            "preprocess_method",
+        ):
+            prov_val = predictions.get(prov_key)
+            if prov_val is not None and isinstance(prov_val, np.ndarray):
+                save_kwargs[prov_key] = prov_val
+
         np.savez_compressed(cache_path, **save_kwargs)
         logger.info(f"保存 DA3 预测缓存: {cache_path}")
 
