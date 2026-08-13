@@ -462,6 +462,8 @@ git commit -m "feat: cache SAM3 masks for footprint measurement"
 **Files:**
 - Create: `code/utils/footprint_evidence.py`
 - Create: `code/tests/test_footprint_evidence.py`
+- Modify: `README.md:112-122`
+- Modify: `code/README.md:153-157`
 
 **Interfaces:**
 - Consumes: NPZ path, cache frame IDs, `EvidenceObservation(global_id, image_id, object_id, processed_mask, valid_mask)`, and frozen `SupportPlane` plus per-ID full-data polygons.
@@ -534,10 +536,14 @@ Run: `cd code && uv run --active --no-project python -m pytest -q tests/test_foo
 
 Expected: PASS; all outputs are JSON-safe and malformed optional camera data raises no exception.
 
-- [ ] **Step 6: Commit the pure evidence utility**
+- [ ] **Step 6: Document the internal shadow-evidence boundary**
+
+State in both READMEs that `footprint_evidence.py` validates optional DA3 camera tensors and computes reprojection/LOO diagnostics in shadow mode only. It must explicitly say that Task 5 does not yet attach the utility to `ground-stack-area`; Task 6 adds the report section after the formal measurement freezes. Missing/malformed camera data is represented as `unavailable_*` or `failed_*` evidence, never an area rejection or accuracy calibration claim.
+
+- [ ] **Step 7: Commit the pure evidence utility**
 
 ```bash
-git add code/utils/footprint_evidence.py code/tests/test_footprint_evidence.py
+git add code/utils/footprint_evidence.py code/tests/test_footprint_evidence.py README.md code/README.md
 git commit -m "feat: add shadow multiview footprint evidence"
 ```
 
