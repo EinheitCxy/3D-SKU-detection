@@ -111,15 +111,15 @@ uv run python main.py --mode pipeline --algorithm 3d \
 
 `ground-stack-area` 是锚点无关的只读计量阶段：它读取 schema-v2 DA3 cache 中的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine、缓存时的原图尺寸与去重后的 `global_mapping.json`，用本地 SAM3 checkpoint 对每个检测框生成 mask。对每一物理 `global_id`，把它全部有效观测的 3D 点沿拟合支撑平面法向投影到该平面并恢复其 OBB；最终取所有 carton OBB 投影的**多边形并集面积**（`m²`），指标 `da3_ground_footprint_union`。若任一 global ID 几何不完整（缺 mask、有效点不足、OBB 退化等），整体拒绝并输出 `status: rejected` 与 `value_m2: null`，不会以部分结果冒充总面积。旧 runner 生成的 cache 不满足该 schema/provenance 合约，必须先用 DA3 reconstruction 重新生成 cache。DA3 尺度是模型估计，现场 reference 仍可作为 QA，而非运行前提。
 
-输出位于 `<save_root>/<dataset>/ground_stack_footprint/`：
+公开输出根为 `<save_root>/<dataset>/ground_stack_footprint/`。每次运行先把完整结果写入并 fsync 到不可变的 `runs/<run_id>/`，其中严格只有下列三个产物和 `manifest.json`；全部完成后才原子替换 `CURRENT`。读取方须先解析 `CURRENT`，再读取它指向的单一 generation，因而发布中断时只能看到上一完整 generation 或根本没有 generation，不会读到跨运行混合的 JSON/GeoJSON/PNG；历史 generation 保持不变。
 
-- `measurement_report.json`：指标 `da3_ground_footprint_union`、单位 `m²`、状态（`accepted`/`rejected`）、缓存 provenance、支撑平面候选与各门、逐 global ID 观测/voxel/分量诊断、并集代数与精度敏感性、库版本与产物路径；每个支撑平面候选还记录 `ransac.trial_count` 与 `ransac.early_exit`，它们仅用于性能审计，不放宽任何门，也不改变 m² 定义；
+- `runs/<run_id>/measurement_report.json`：指标 `da3_ground_footprint_union`、单位 `m²`、状态（`accepted`/`rejected`）、缓存 provenance、支撑平面候选与各门、逐 global ID 观测/voxel/分量诊断、并集代数与精度敏感性、库版本与 generation-relative 产物名；每个支撑平面候选还记录 `ransac.trial_count` 与 `ransac.early_exit`，它们仅用于性能审计，不放宽任何门，也不改变 m² 定义；
 - `footprints.geojson`：每个 global ID OBB 一个 feature + 一个 `union` feature，坐标系为支撑平面局部米制 `(u,v)`，含 `global_id`/`area_m2`/`observations_used`；
 - `top_down_footprint.png`：俯视复核图，各 OBB 轮廓 + 并集填充边界，标注米制轴。
 
 结果是**每个 carton OBB 投影到支撑平面的多边形并集**：它包含悬垂（overhang），不是包装表面积、正面/接触面积或地面接触面积，也不会估计未检测/被遮挡商品。要求现有 DA3 cache、global mapping 与本地 SAM3 checkpoint，缺少任一即拒绝。输入文件不会被改写。
 
-内部的逐源帧 SAM3 mask cache utility 已提供不可变、完整校验的 bundle（source image、完整有序 prompts、caller-supplied opaque `checkpoint_sha256` 与 runtime/code/predict contract 均进入 provenance）。它不验证 checkpoint 文件，也不验证加载时的一致性；该 TOCTOU contract 由 Task 3 的 SAM3 helper 在模型加载边界执行：helper 会在加载前后对 checkpoint bytes 做 SHA-256 验证，in-process model cache 只以 checkpoint digest、canonical concrete device 与固定 `predict_inst` inference-contract fingerprint 为键；bare `cuda` 解析为当前 CUDA ordinal，显式 `cuda:N` 保持该 ordinal。它尚未接入公开 `ground-stack-area` CLI；该 persistent mask cache 集成仍留待 Task 4。因此用户不得依赖 cache 目录或其路径作为当前命令的接口。该 utility 绝不以 bbox 伪造 mask，也绝不产生 partial total；空或无效 mask 仍须由后续正式阶段按 rejected/null 语义处理。
+`ground-stack-area` 在全部 DA3/image/detection/mapping 合约验证通过后，使用公开缓存根 `<save_root>/<dataset>/sam3_mask_cache/v1/` 读写逐源帧不可变 mask bundle。key 覆盖 image ID 与原图 bytes/size、完整有序 object ID + 精确 binary64 bbox prompts、真实 checkpoint SHA-256、stage/cache/SAM3 code fingerprint、Python/NumPy/PyTorch/SAM3/CUDA/cuDNN/device/precision runtime fingerprint、完整 `predict_inst` contract 及 source-mask shape/dtype；任一项变化都会 miss 并重新计算。`measurement_report.json` 的 `sam3_mask_cache.frames[]` 按帧记录 key、payload/checkpoint digest、code provenance 与有序 `events`：正常冷启动为 `miss,written`，复用为 `hit`，损坏 bundle 会移入 `corrupt/` 后以 `invalid,written` 重算，非致命写失败为 `miss,cache_write_failed` 并仅使用当次完整 fresh masks。SAM3 helper 在模型加载前后核验 checkpoint bytes，in-process model cache 以 digest、canonical concrete device 和固定 inference-contract fingerprint 为键。缓存命中永远不会提供 bbox fallback；空/无效 mask 仍触发整次 `rejected`/`value_m2: null`，也绝不发布 partial total。
 
 ## 3D 重建后端
 

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import shutil
+import sys
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +18,7 @@ import matplotlib
 matplotlib.use("Agg")
 import numpy as np
 import shapely
+import torch
 from matplotlib import pyplot as plt
 from PIL import Image
 from shapely import set_precision
@@ -29,7 +35,17 @@ from utils.ground_stack_footprint import (
     union_footprints,
     voxel_balance_projected,
 )
-from utils.sam3_utils import sam3_masks_from_bboxes_predict_inst
+from utils.sam3_mask_cache import (
+    DetectionPrompt,
+    FrameMaskCacheRequest,
+    FrameMaskCacheResult,
+    load_or_compute_frame_masks,
+)
+from utils.sam3_utils import (
+    checkpoint_sha256,
+    normalize_device,
+    sam3_masks_from_bboxes_predict_inst,
+)
 
 _CACHE_FIELDS = {
     "world_points",
@@ -51,6 +67,26 @@ _SAM3_CHECKPOINT = str(
 _SAM3_DEVICE = "cuda"
 _PATCH_SIZE = 14
 _PREPROCESS_METHOD = "upper_bound_resize"
+_PREDICT_INST_CONTRACT = {
+    "api": "predict_inst",
+    "builder": {"enable_inst_interactivity": True, "load_from_HF": False},
+    "empty_mask_retry": "bbox_center_positive_point",
+    "mask_postprocess": "best_iou_then_clip_to_bbox",
+    "predict": {
+        "multimask_output": True,
+        "normalize_coords": True,
+        "return_logits": False,
+    },
+    "processor": {"confidence_threshold": 0.0},
+    "prompts": {"positive_exemplar": None, "text_prompt": None},
+    "source_mask": {"coordinate_space": "source_pixels", "dtype": "bool"},
+}
+_GENERATION_ARTIFACTS = {
+    "measurement_report": "measurement_report.json",
+    "footprints_geojson": "footprints.geojson",
+    "top_down_footprint_png": "top_down_footprint.png",
+}
+_GENERATION_FILES = frozenset({*_GENERATION_ARTIFACTS.values(), "manifest.json"})
 
 
 class FootprintStageError(ValueError):
@@ -68,6 +104,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         "status": "rejected",
         "value_m2": None,
         "cache": {},
+        "sam3_mask_cache": {"cache_root": "sam3_mask_cache/v1", "frames": []},
         "plane": {"candidates": [], "selected": None},
         "per_global_id": {},
         "union": {},
@@ -85,8 +122,22 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         report["cache"] = _validate_cache(cache, image_paths)
         detections = _load_detections(detection_paths)
         global_mapping = _load_mapping(mapping_path, detections)
+        sam3_checkpoint = Path(_SAM3_CHECKPOINT)
+        sam3_checkpoint_sha256 = checkpoint_sha256(sam3_checkpoint)
+        sam3_code_fingerprint = _sam3_code_fingerprint()
+        sam3_runtime_fingerprint = _sam3_runtime_fingerprint(_SAM3_DEVICE)
         masked_observations, background_points, background_frames = _masked_observations(
-            cache, image_paths, detections, global_mapping, report["per_global_id"]
+            cache,
+            image_paths,
+            detections,
+            global_mapping,
+            report["per_global_id"],
+            Path(save_root) / dataset.name / "sam3_mask_cache" / "v1",
+            sam3_checkpoint,
+            sam3_checkpoint_sha256,
+            sam3_code_fingerprint,
+            sam3_runtime_fingerprint,
+            report["sam3_mask_cache"]["frames"],
         )
         all_object_points = [
             points for observations in masked_observations.values() for points in observations if len(points)
@@ -168,10 +219,8 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         report["rejection_reason"] = str(error)
         polygons = {}
         union = None
-    artifact_paths = _write_artifacts(output_dir, report, polygons, union)
-    report["artifacts"] = artifact_paths
-    report_path = output_dir / "measurement_report.json"
-    report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    artifact_paths = _publish_generation(output_dir, report, polygons, union)
+    report_path = Path(artifact_paths["measurement_report"])
     return {
         "success": report["status"] == "accepted",
         "status": report["status"],
@@ -360,6 +409,12 @@ def _masked_observations(
     detections: dict[int, list[dict[str, Any]]],
     mapping_by_id: dict[str, list[dict[str, Any]]],
     per_global_id: dict[str, Any],
+    mask_cache_root: Path,
+    sam3_checkpoint: Path,
+    sam3_checkpoint_sha256: str,
+    sam3_code_fingerprint: dict[str, object],
+    sam3_runtime_fingerprint: dict[str, object],
+    mask_cache_frames: list[dict[str, object]],
 ) -> tuple[dict[str, list[np.ndarray]], np.ndarray, np.ndarray]:
     point_clouds = cache["world_points"]
     confidence = cache["world_points_conf"]
@@ -371,12 +426,39 @@ def _masked_observations(
     for image_id, frame_detections in detections.items():
         frame_index = frame_for_id[image_id]
         height, width = point_clouds.shape[1:3]
+        with Image.open(image_paths[image_id]) as image:
+            source_image_hw = (image.height, image.width)
+        request = FrameMaskCacheRequest(
+            cache_root=mask_cache_root,
+            image_id=image_id,
+            image_path=image_paths[image_id],
+            detections=tuple(
+                DetectionPrompt.from_bbox(item["object_id"], item["bbox"])
+                for item in frame_detections
+            ),
+            checkpoint_path=sam3_checkpoint,
+            checkpoint_sha256=sam3_checkpoint_sha256,
+            code_fingerprint=sam3_code_fingerprint,
+            runtime_fingerprint=sam3_runtime_fingerprint,
+            inference_contract=_PREDICT_INST_CONTRACT,
+            output_shape_hw=source_image_hw,
+        )
         try:
-            masks = sam3_masks_from_bboxes_predict_inst(
-                str(image_paths[image_id]), [item["bbox"] for item in frame_detections], _SAM3_CHECKPOINT, _SAM3_DEVICE
+            cache_result = load_or_compute_frame_masks(
+                request,
+                compute_masks=lambda: _compute_verified_sam3_masks(
+                    image_paths[image_id],
+                    frame_detections,
+                    sam3_checkpoint,
+                    sam3_checkpoint_sha256,
+                ),
             )
         except RuntimeError as error:
             raise FootprintStageError(f"SAM3 failed for image {image_id}: {error}") from error
+        if checkpoint_sha256(sam3_checkpoint) != sam3_checkpoint_sha256:
+            raise FootprintStageError("SAM3 checkpoint changed during mask cache access")
+        mask_cache_frames.append(_mask_cache_report_entry(image_id, cache_result))
+        masks = cache_result.masks
         if len(masks) != len(frame_detections):
             raise FootprintStageError(f"SAM3 did not return one mask per detection for image {image_id}")
         all_masks = np.zeros((height, width), dtype=bool)
@@ -416,7 +498,91 @@ def _valid_points(points: np.ndarray, confidence: np.ndarray) -> np.ndarray:
     return np.isfinite(points).all(axis=-1) & (np.linalg.norm(points, axis=-1) > 0) & np.isfinite(confidence) & (confidence >= 1.0)
 
 
-def _write_artifacts(output_dir: Path, report: dict[str, Any], polygons: dict[str, Any], union: Any) -> dict[str, str]:
+def _compute_verified_sam3_masks(
+    image_path: Path,
+    frame_detections: list[dict[str, Any]],
+    checkpoint: Path,
+    expected_checkpoint_sha256: str,
+) -> list[np.ndarray]:
+    if checkpoint_sha256(checkpoint) != expected_checkpoint_sha256:
+        raise RuntimeError("SAM3 checkpoint digest changed before mask production")
+    masks = sam3_masks_from_bboxes_predict_inst(
+        str(image_path),
+        [item["bbox"] for item in frame_detections],
+        str(checkpoint),
+        _SAM3_DEVICE,
+    )
+    if checkpoint_sha256(checkpoint) != expected_checkpoint_sha256:
+        raise RuntimeError("SAM3 checkpoint changed during mask production")
+    return masks
+
+
+def _mask_cache_report_entry(
+    image_id: int, result: FrameMaskCacheResult
+) -> dict[str, object]:
+    return {
+        "image_id": image_id,
+        "key": result.key,
+        "events": list(result.events),
+        "payload_sha256": result.payload_sha256,
+        "checkpoint_sha256": result.checkpoint_sha256,
+        "code_fingerprint": dict(result.code_fingerprint),
+        "invalid_reason": result.invalid_reason,
+    }
+
+
+def _sam3_code_fingerprint() -> dict[str, object]:
+    code_root = Path(__file__).resolve().parents[1]
+    paths = (
+        code_root / "modules" / "da3_footprint_stage.py",
+        code_root / "utils" / "sam3_mask_cache.py",
+        code_root / "utils" / "sam3_utils.py",
+    )
+    return {
+        "algorithm": "sha256",
+        "files": {
+            path.relative_to(code_root).as_posix(): _sha256(path)
+            for path in sorted(paths, key=lambda candidate: candidate.as_posix())
+        },
+    }
+
+
+def _sam3_runtime_fingerprint(device: str) -> dict[str, object]:
+    try:
+        normalized_device = normalize_device(device)
+    except RuntimeError as error:
+        raise FootprintStageError(f"SAM3 runtime device is unavailable: {error}") from error
+    sam3_init = Path(__file__).resolve().parents[2] / "sam3" / "sam3" / "__init__.py"
+    version_match = re.search(
+        r'^__version__\s*=\s*["\']([^"\']+)["\']',
+        sam3_init.read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    if version_match is None:
+        raise FootprintStageError("SAM3 package version is missing")
+    return {
+        "python": sys.version,
+        "numpy": np.__version__,
+        "torch": str(torch.__version__),
+        "sam3": {
+            "source": "local",
+            "version": version_match.group(1),
+            "init_sha256": _sha256(sam3_init),
+        },
+        "cuda": torch.version.cuda,
+        "cudnn": torch.backends.cudnn.version(),
+        "device": normalized_device,
+        "float32_matmul_precision": torch.get_float32_matmul_precision(),
+        "tf32": {
+            "cuda_matmul": bool(torch.backends.cuda.matmul.allow_tf32),
+            "cudnn": bool(torch.backends.cudnn.allow_tf32),
+        },
+        "autocast": {"enabled": False, "dtype": None},
+        "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
+    }
+
+
+def _write_artifacts(output_dir: Path, report: dict[str, Any], polygons: dict[str, Any], union: Any) -> None:
     geojson_path = output_dir / "footprints.geojson"
     figure_path = output_dir / "top_down_footprint.png"
     accepted = report["status"] == "accepted"
@@ -447,7 +613,126 @@ def _write_artifacts(output_dir: Path, report: dict[str, Any], polygons: dict[st
     figure.tight_layout()
     figure.savefig(figure_path, dpi=150)
     plt.close(figure)
-    return {"measurement_report": str(output_dir / "measurement_report.json"), "footprints_geojson": str(geojson_path), "top_down_footprint_png": str(figure_path)}
+
+
+def _fsync_file(path: Path) -> None:
+    with path.open("rb") as handle:
+        os.fsync(handle.fileno())
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _write_fsynced_generation(
+    runs_root: Path,
+    run_id: str,
+    report: dict[str, Any],
+    polygons: dict[str, Any],
+    union: Any,
+) -> Path:
+    runs_root.mkdir(parents=True, exist_ok=True)
+    _fsync_directory(runs_root.parent)
+    generation = runs_root / run_id
+    if generation.exists():
+        raise FileExistsError(f"artifact generation already exists: {generation}")
+    temporary = Path(tempfile.mkdtemp(prefix=f".{run_id}.", dir=runs_root))
+    try:
+        _write_artifacts(temporary, report, polygons, union)
+        report_path = temporary / "measurement_report.json"
+        report_path.write_text(
+            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        artifact_names = tuple(_GENERATION_ARTIFACTS.values())
+        for name in artifact_names:
+            _fsync_file(temporary / name)
+        manifest = {
+            "complete": True,
+            "run_id": run_id,
+            "sha256": {name: _sha256(temporary / name) for name in artifact_names},
+        }
+        manifest_path = temporary / "manifest.json"
+        manifest_path.write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        _fsync_file(manifest_path)
+        _fsync_directory(temporary)
+        os.rename(temporary, generation)
+        _fsync_directory(runs_root)
+        return generation
+    except BaseException:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        raise
+
+
+def _atomic_replace_current(current_path: Path, pointer: dict[str, object]) -> None:
+    payload = (json.dumps(pointer, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".CURRENT.", dir=current_path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, current_path)
+        _fsync_directory(current_path.parent)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _artifact_paths_from_current(output_root: Path) -> dict[str, str]:
+    try:
+        pointer = json.loads((output_root / "CURRENT").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise OSError(f"cannot resolve ground-stack artifact CURRENT: {error}") from error
+    run_id = pointer.get("run_id") if isinstance(pointer, dict) else None
+    if (
+        not isinstance(pointer, dict)
+        or pointer.get("complete") is not True
+        or not isinstance(run_id, str)
+        or re.fullmatch(r"[0-9a-f]{32}", run_id) is None
+    ):
+        raise OSError("ground-stack artifact CURRENT is invalid")
+    generation = output_root / "runs" / run_id
+    if not generation.is_dir() or {path.name for path in generation.iterdir()} != _GENERATION_FILES:
+        raise OSError("ground-stack artifact generation is incomplete")
+    try:
+        manifest = json.loads((generation / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise OSError(f"cannot read ground-stack artifact manifest: {error}") from error
+    expected_sha256 = {
+        name: _sha256(generation / name) for name in _GENERATION_ARTIFACTS.values()
+    }
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("complete") is not True
+        or manifest.get("run_id") != run_id
+        or manifest.get("sha256") != expected_sha256
+    ):
+        raise OSError("ground-stack artifact manifest validation failed")
+    return {
+        key: str(generation / relative_path)
+        for key, relative_path in _GENERATION_ARTIFACTS.items()
+    }
+
+
+def _publish_generation(
+    output_root: Path,
+    report: dict[str, Any],
+    polygons: dict[str, Any],
+    union: Any,
+) -> dict[str, str]:
+    run_id = uuid.uuid4().hex
+    report["artifacts"] = dict(_GENERATION_ARTIFACTS)
+    _write_fsynced_generation(output_root / "runs", run_id, report, polygons, union)
+    _atomic_replace_current(output_root / "CURRENT", {"run_id": run_id, "complete": True})
+    return _artifact_paths_from_current(output_root)
 
 
 def _bbox(value: Any, image_id: int, object_id: int) -> list[float]:

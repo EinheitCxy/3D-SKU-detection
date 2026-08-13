@@ -15,6 +15,14 @@ from modules.da3_runner import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _verified_sam3_checkpoint(monkeypatch, tmp_path):
+    checkpoint = tmp_path / "sam3.pt"
+    checkpoint.write_bytes(b"task-4-verified-sam3-checkpoint")
+    monkeypatch.setattr(stage, "_SAM3_CHECKPOINT", str(checkpoint))
+    monkeypatch.setattr(stage, "_SAM3_DEVICE", "cpu")
+
+
 def test_ground_stack_area_cli_calls_da3_footprint_stage(monkeypatch, tmp_path):
     import main
 
@@ -215,6 +223,26 @@ def _run_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
     return json.loads(Path(result["report_path"]).read_text())
 
 
+def _formal_projection(report: dict[str, object]) -> dict[str, object]:
+    return {
+        key: report[key]
+        for key in (
+            "metric",
+            "unit",
+            "status",
+            "value_m2",
+            "cache",
+            "plane",
+            "per_global_id",
+            "union",
+        )
+    }
+
+
+def _raise_if_sam3_called(*_args: object, **_kwargs: object) -> list[np.ndarray]:
+    raise AssertionError("a valid persistent mask-cache hit must not invoke SAM3")
+
+
 def test_stage_fuses_global_id_views_and_uses_polygon_union(monkeypatch, tmp_path):
     dataset, save_root, input_paths = make_metric_fixture(tmp_path)
     monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
@@ -229,8 +257,22 @@ def test_stage_fuses_global_id_views_and_uses_polygon_union(monkeypatch, tmp_pat
     assert report["per_global_id"]["1"]["observations_used"] == 2
     assert report["per_global_id"]["2"]["height_median_m"] > 0.7
     assert all(path.read_bytes() == content for path, content in before.items())
-    output_names = {path.name for path in Path(result["report_path"]).parent.iterdir()}
-    assert output_names == {"measurement_report.json", "footprints.geojson", "top_down_footprint.png"}
+    generation = Path(result["report_path"]).parent
+    output_root = generation.parent.parent
+    output_names = {path.name for path in generation.iterdir()}
+    assert output_names == {
+        "measurement_report.json",
+        "footprints.geojson",
+        "top_down_footprint.png",
+        "manifest.json",
+    }
+    assert (output_root / "CURRENT").is_file()
+    assert (output_root / "runs").is_dir()
+    assert report["artifacts"] == {
+        "measurement_report": "measurement_report.json",
+        "footprints_geojson": "footprints.geojson",
+        "top_down_footprint_png": "top_down_footprint.png",
+    }
 
 
 def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_path):
@@ -248,6 +290,137 @@ def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_pat
     assert geojson["status"] == "rejected"
     assert geojson["measurement_complete"] is False
     assert geojson["features"] == []
+
+
+def test_stage_second_run_uses_cached_masks_and_keeps_area(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    first_result = stage.run_da3_footprint(str(dataset), save_root)
+    first = json.loads(Path(first_result["report_path"]).read_text())
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called)
+    second_result = stage.run_da3_footprint(str(dataset), save_root)
+    second = json.loads(Path(second_result["report_path"]).read_text())
+
+    assert _formal_projection(first) == _formal_projection(second)
+    assert [frame["events"] for frame in first["sam3_mask_cache"]["frames"]] == [
+        ["miss", "written"],
+        ["miss", "written"],
+        ["miss", "written"],
+    ]
+    assert [frame["events"] for frame in second["sam3_mask_cache"]["frames"]] == [
+        ["hit"],
+        ["hit"],
+        ["hit"],
+    ]
+    assert {
+        frame["checkpoint_sha256"] for frame in second["sam3_mask_cache"]["frames"]
+    } == {_sha256(Path(stage._SAM3_CHECKPOINT))}
+
+
+def test_cached_empty_mask_rejects_full_total(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", masks_with_one_empty)
+    stage.run_da3_footprint(str(dataset), save_root)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called)
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert result["success"] is False
+    assert report["status"] == "rejected"
+    assert report["value_m2"] is None
+    assert "empty" in report["per_global_id"]["2"]["observations"][0]["rejection"]
+    assert all(frame["events"] == ["hit"] for frame in report["sam3_mask_cache"]["frames"])
+
+
+def test_cached_masks_are_not_requested_until_complete_inputs_are_validated(
+    monkeypatch, tmp_path
+):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
+    mapping_path.write_text(
+        json.dumps({"1": [{"image_id": 0, "object_id": 0, "bbox": [16, 24, 80, 104]}]})
+    )
+
+    def fail_cache_request(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("mask cache must not run before complete mapping validation")
+
+    monkeypatch.setattr(stage, "load_or_compute_frame_masks", fail_cache_request)
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert result["success"] is False
+    assert "mapping" in report["rejection_reason"]
+
+
+def test_current_points_to_complete_single_artifact_generation(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    generation = Path(result["report_path"]).parent
+    output_root = generation.parent.parent
+    current = json.loads((output_root / "CURRENT").read_text())
+    manifest = json.loads((generation / "manifest.json").read_text())
+
+    assert current == {"complete": True, "run_id": generation.name}
+    assert generation == output_root / "runs" / current["run_id"]
+    assert {path.name for path in generation.iterdir()} == {
+        "measurement_report.json",
+        "footprints.geojson",
+        "top_down_footprint.png",
+        "manifest.json",
+    }
+    assert manifest["complete"] is True
+    assert manifest["run_id"] == current["run_id"]
+    assert manifest["sha256"] == {
+        name: _sha256(generation / name)
+        for name in (
+            "measurement_report.json",
+            "footprints.geojson",
+            "top_down_footprint.png",
+        )
+    }
+
+
+def test_failed_first_generation_write_never_creates_current(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    def fail_generation_write(*_args: object, **_kwargs: object) -> Path:
+        raise OSError("injected generation write failure")
+
+    monkeypatch.setattr(stage, "_write_fsynced_generation", fail_generation_write)
+    with pytest.raises(OSError, match="injected generation write failure"):
+        stage.run_da3_footprint(str(dataset), save_root)
+
+    output_root = save_root / dataset.name / "ground_stack_footprint"
+    assert not (output_root / "CURRENT").exists()
+
+
+def test_failed_current_replace_preserves_previous_complete_generation(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+    first = stage.run_da3_footprint(str(dataset), save_root)
+    output_root = Path(first["report_path"]).parent.parent.parent
+    previous_current = (output_root / "CURRENT").read_bytes()
+    previous_generation = Path(first["report_path"]).parent
+
+    def fail_current_replace(*_args: object, **_kwargs: object) -> None:
+        raise OSError("injected CURRENT replace failure")
+
+    monkeypatch.setattr(stage, "_atomic_replace_current", fail_current_replace)
+    with pytest.raises(OSError, match="injected CURRENT replace failure"):
+        stage.run_da3_footprint(str(dataset), save_root)
+
+    assert (output_root / "CURRENT").read_bytes() == previous_current
+    assert {path.name for path in previous_generation.iterdir()} == {
+        "measurement_report.json",
+        "footprints.geojson",
+        "top_down_footprint.png",
+        "manifest.json",
+    }
 
 
 @pytest.mark.parametrize("mutation", ["stale_hash", "legacy_schema", "incomplete_mapping"])
