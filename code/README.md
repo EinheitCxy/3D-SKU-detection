@@ -156,6 +156,8 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 
 公开命令在完成全部 DA3/image/detection/mapping 验证后使用 `<save_root>/<dataset_name>/sam3_mask_cache/v1/` 的逐源帧不可变 bundle。key 覆盖 image ID、原图 bytes/size、完整有序 object ID + 精确 binary64 bbox prompts、真实 checkpoint SHA-256、stage/cache/SAM3 code fingerprint、Python/NumPy/PyTorch/SAM3/CUDA/cuDNN/device/precision runtime fingerprint、完整 `predict_inst` contract 与 source-mask shape/dtype；任一项变化都会失效并重算。stage 在一次运行入口和全部 frame cache access 后各做一次 checkpoint checksum；真实 SAM3 miss 仍保留 producer 与 Task 3 model-load 的 before/after checks。report 的 `sam3_mask_cache.frames[]` 记录逐帧 key、payload/checkpoint digest、code provenance 和有序 events：`miss,written`、`hit`、损坏隔离到 `corrupt/` 后的 `invalid,written`，以及非致命写失败的 `miss,cache_write_failed`。缓存损坏只会隔离并重算，cache reuse 绝不允许 bbox fallback；空/无效 mask 仍使正式总量 `rejected`/`null`，不会发布 partial total。
 
+内部 `utils/footprint_evidence.py` 会在单独一次 NPZ 读取中验证 optional DA3 camera tensors，并计算 source-world reconstruction residual、最多 512 个确定性采样点的双向 20 mm occlusion-aware reprojection，以及固定正式支撑平面的 per-ID leave-one-observation-out OBB diagnostics。它目前严格为 **shadow-only** internal consistency/sensitivity utility：Task 5 不会将其接入 `ground-stack-area`，Task 6 只会在正式 status/value/polygons/union/rejection reason 冻结后附加 evidence。camera fields 缺失或 malformed 只返回 `unavailable_*`/`failed_*` evidence，不会导致面积拒绝，也不构成硬门、置信区间或经校准的 m² accuracy claim。
+
 ## 🧾 日志输出（统一）
 
 - 每次运行生成一个日志文件：`<save_root>/run_YYYYMMDD_HHMMSS.log`
