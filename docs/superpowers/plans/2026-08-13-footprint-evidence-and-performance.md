@@ -662,6 +662,86 @@ git add README.md code/README.md
 git commit -m "docs: record footprint cache performance evidence"
 ```
 
+### Task 8: Repair cross-task cache, publication, and additive-evidence contracts
+
+**Files:**
+- Modify: `code/utils/sam3_mask_cache.py`
+- Modify: `code/utils/footprint_evidence.py`
+- Modify: `code/modules/da3_footprint_stage.py`
+- Modify: `code/tests/test_sam3_mask_cache.py`
+- Modify: `code/tests/test_footprint_evidence.py`
+- Modify: `code/tests/test_da3_footprint_stage.py`
+- Modify: `README.md:112-124`
+- Modify: `code/README.md:149-159`
+
+**Interfaces:**
+- Consumes: the existing SAM3 `clip_mask_to_bbox`, immutable mask bundles, frozen `FormalSnapshot`, source masks plus source-to-processed affine, and one output-root publication lock.
+- Produces: legacy-equivalent mask clipping, a publisher that returns its own generation, `cache_events`, source-space mask robustness, and additive stage timings.
+
+- [ ] **Step 1: Write failing clipping, publication, robustness, timing, and schema tests**
+
+```python
+@pytest.mark.parametrize("bbox", [(9., 2., 12., 4.), (-4., 2., -1., 4.), (2.2, 1.7, 7.6, 6.4)])
+def test_cache_masks_match_sam3_canonical_bbox_clip(tmp_path, bbox):
+    request = _request(tmp_path, detections=((7, bbox),))
+    result = load_or_compute_frame_masks(request, lambda: [np.ones((8, 8), bool)])
+    np.testing.assert_array_equal(result.masks[0], clip_mask_to_bbox(np.ones((8, 8), bool), bbox))
+
+def test_two_publishers_return_their_own_generation_and_reader_sees_complete_current(tmp_path):
+    first, second, final = _publish_two_processes_with_forced_replace_resolve_interleaving(tmp_path)
+    assert _report_marker(first) == "first"
+    assert _report_marker(second) == "second"
+    assert final in {"first", "second"}
+
+def test_source_space_one_pixel_robustness_is_not_processed_grid_morphology(tmp_path):
+    evidence = build_shadow_evidence(_affine_fixture_npz(tmp_path), observations=_scaled_observations(), formal_snapshot=_snapshot())
+    assert evidence["mask_robustness"]["status"] == "available"
+    assert evidence["mask_robustness"]["variants"]["eroded"]["value_m2"] != pytest.approx(_processed_grid_erosion_area())
+
+def test_stage_timing_and_cache_events_are_additive_and_json_safe(monkeypatch, tmp_path):
+    report = _run_fixture(tmp_path, monkeypatch)
+    assert report["sam3_mask_cache"]["frames"][0]["cache_events"] == ["miss", "written"]
+    assert report["performance"]["stages_seconds"]["sam3_source_masks"] >= 0.0
+    json.dumps(report, allow_nan=False)
+```
+
+- [ ] **Step 2: Run focused tests and confirm the current cache clip, concurrent return, source morphology, timing, and event schema fail**
+
+Run: `cd code && uv run --active --no-project python -m pytest -q tests/test_sam3_mask_cache.py tests/test_footprint_evidence.py tests/test_da3_footprint_stage.py -k 'canonical_bbox_clip or two_publishers or source_space_one_pixel or timing_and_cache_events'`
+
+Expected: FAIL because cache owns a different clipping function, publisher resolves a shared CURRENT after release, evidence lacks source-space variants, and reports use `events` without stage timing.
+
+- [ ] **Step 3: Use one clipping primitive and invalidate the old cache schema**
+
+Import and use `utils.sam3_utils.clip_mask_to_bbox` for both newly produced and loaded cache masks; remove the cache-private clipping implementation and increment the canonical cache schema string so pre-fix entries cannot silently hit. Do not change `clip_mask_to_bbox` itself or create bbox-mask fallback behavior. Add cold/hit bitwise equality for interior, fractional, all four fully out-of-image, and edge prompts.
+
+- [ ] **Step 4: Serialize publication identity without serializing generation construction**
+
+```python
+with _publication_lock(output_root, exclusive=True):
+    _atomic_replace_current(output_root / "CURRENT", {"run_id": run_id, "complete": True})
+    return _artifact_paths_from_current_unlocked(output_root, expected_run_id=run_id)
+```
+
+Use a fixed `locks/publication.lock` inode under the output root. Keep generation construction/fsync outside the lock; only protect `CURRENT` replace plus expected-run resolution. Public readers use the corresponding shared lock. An expected-run mismatch raises `OSError`, never returns another run. Preserve the existing pre-replace and post-replace durability semantics.
+
+- [ ] **Step 5: Add independent source-space robustness and diagnostic timing**
+
+Extend `EvidenceObservation` with copied `source_mask` and `source_to_processed_affine`; expose one shared nearest-neighbour source-to-processed warp used by formal stage and robustness. Run 3x3 one-iteration source erosion/dilation through fixed-plane per-ID 32/64-point, 5-mm voxel, component/OBB, 0.1-mm union, and all-ID semantics. A failed perturbation has `value_m2: null`, reason, and a rejection transition; never expose partial polygons. Camera evidence and robustness have independent additive statuses. Add `performance.stages_seconds` and `total_seconds_pre_publication`, using monotonic time, with null for unentered stages. Rename report frame `events` to `cache_events` without a compatibility alias.
+
+- [ ] **Step 6: Document exact contracts and run full tests**
+
+Document canonical clipping, publication locking, cache-events name, source/processed mask-count distinction, 1px source-space robustness, timing scope, and that none changes formal gates or calibrates m². Run:
+
+`cd code && uv run --active --no-project python -m pytest -q tests/test_ground_stack_footprint.py tests/test_sam3_mask_cache.py tests/test_footprint_evidence.py tests/test_da3_footprint_stage.py && uv run --active --no-project python -m py_compile modules/da3_footprint_stage.py utils/footprint_evidence.py utils/sam3_mask_cache.py && git diff --check`
+
+- [ ] **Step 7: Commit the final remediation**
+
+```bash
+git add code/utils/sam3_mask_cache.py code/utils/footprint_evidence.py code/modules/da3_footprint_stage.py code/tests/test_sam3_mask_cache.py code/tests/test_footprint_evidence.py code/tests/test_da3_footprint_stage.py README.md code/README.md
+git commit -m "fix: harden footprint measurement contracts"
+```
+
 ## Plan Self-Review
 
 - Spec coverage: Task 1 implements strict-equivalent RANSAC and diagnostics; Tasks 2-4 implement cache provenance, checkpoint TOCTOU protection, corruption handling, and immutable artifacts; Tasks 5-6 implement optional shadow camera evidence and isolation; Task 7 implements the required measured validation and documentation.
