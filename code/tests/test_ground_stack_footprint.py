@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import utils.ground_stack_footprint as footprint_geometry
 
 from utils.ground_stack_footprint import (
     FootprintError,
@@ -66,6 +67,30 @@ def test_support_plane_rejects_p95_residual_above_threshold():
 
     with pytest.raises(FootprintError, match="residual"):
         _refine_support_plane(inliers, total_points=len(inliers))
+
+
+def test_support_plane_preserves_refinement_rejection_diagnostics(monkeypatch):
+    table = make_plane_grid(np.zeros(3), np.array([0.0, 0.0, 1.0]))
+    frame_ids = np.arange(len(table)) % 3
+    observations = [carton_points((0.0, 0.2), (0.0, 0.2), 0.02)]
+
+    def reject_refinement(*_args, **_kwargs):
+        raise FootprintError("support plane residual exceeds 0.010 m")
+
+    monkeypatch.setattr(footprint_geometry, "_refine_support_plane", reject_refinement)
+
+    with pytest.raises(
+        SupportPlaneSelectionError,
+        match="no support-plane candidate passed refinement gates",
+    ) as raised:
+        select_support_plane(table, frame_ids, observations)
+
+    candidates = raised.value.diagnostics["candidates"]
+    assert candidates
+    assert all(candidate["refinement"]["passed"] is False for candidate in candidates)
+    assert all(candidate["refinement"]["reason"].startswith("support plane residual") for candidate in candidates)
+    assert all(candidate["raw_inlier_count"] >= 10_000 for candidate in candidates)
+    assert all(candidate["raw_inlier_fraction"] >= 0.10 for candidate in candidates)
 
 
 def horizontal_support_plane() -> SupportPlane:

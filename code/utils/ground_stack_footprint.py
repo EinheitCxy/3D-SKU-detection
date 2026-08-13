@@ -64,7 +64,7 @@ def select_support_plane(
         raise FootprintError("support plane frame ids must align with background points")
     sampled, sampled_frames = _frame_balanced_subsample(points, frames, maximum=50_000)
     remaining = np.arange(len(sampled))
-    candidates: list[tuple[SupportPlane, dict[str, object]]] = []
+    candidates: list[tuple[SupportPlane | None, dict[str, object]]] = []
     for candidate_index in range(5):
         if len(remaining) < 3:
             break
@@ -73,9 +73,25 @@ def select_support_plane(
         )
         full_distances = np.abs((points - candidate_point) @ candidate_normal)
         inliers = points[full_distances <= 0.012]
+        raw_candidate = {
+            "index": candidate_index,
+            "raw_point": candidate_point.tolist(),
+            "raw_normal": candidate_normal.tolist(),
+            "raw_inlier_count": int(len(inliers)),
+            "raw_inlier_fraction": float(len(inliers) / len(points)),
+        }
         try:
             plane = _refine_support_plane(inliers, total_points=len(points), max_residual_m=0.010)
-        except FootprintError:
+        except FootprintError as error:
+            candidates.append(
+                (
+                    None,
+                    {
+                        **raw_candidate,
+                        "refinement": {"passed": False, "reason": str(error)},
+                    },
+                )
+            )
             local_distances = np.abs((sampled[remaining] - candidate_point) @ candidate_normal)
             remaining = remaining[local_distances > 0.012]
             continue
@@ -105,12 +121,13 @@ def select_support_plane(
             + min(1.0, frame_fraction) * 0.001
         )
         diagnostics = {
-            "index": candidate_index,
+            **raw_candidate,
             "normal": plane.normal.tolist(),
             "point": plane.point.tolist(),
             "inlier_count": plane.inlier_count,
             "inlier_fraction": plane.inlier_fraction,
             "p95_residual_m": plane.p95_residual_m,
+            "refinement": {"passed": True},
             "frame_count": int(len(inlier_frames)),
             "frame_fraction": float(frame_fraction),
             "spans_m": spans.tolist(),
@@ -123,7 +140,11 @@ def select_support_plane(
         candidates.append((plane, diagnostics))
         local_distances = np.abs((sampled[remaining] - candidate_point) @ candidate_normal)
         remaining = remaining[local_distances > 0.012]
-    eligible = [(plane, info) for plane, info in candidates if all(info["gates"].values())]
+    eligible = [
+        (plane, info)
+        for plane, info in candidates
+        if plane is not None and all(info["gates"].values())
+    ]
     diagnostics = {
         "sample_count": int(len(sampled)),
         "sample_frame_count": int(len(np.unique(sampled_frames))),
@@ -131,6 +152,10 @@ def select_support_plane(
         "selected_index": None,
     }
     if not eligible:
+        if not any(info["refinement"]["passed"] for _, info in candidates):
+            raise SupportPlaneSelectionError(
+                "no support-plane candidate passed refinement gates", diagnostics
+            )
         raise SupportPlaneSelectionError(
             "support plane candidates failed table compatibility gates", diagnostics
         )
