@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 from shapely.geometry import box
@@ -98,14 +99,37 @@ def _observation(
     *,
     object_id: int = 0,
     valid_mask: np.ndarray | None = None,
+    source_mask: np.ndarray | None = None,
+    source_to_processed_affine: np.ndarray | None = None,
 ) -> EvidenceObservation:
     return EvidenceObservation(
         global_id="1",
         image_id=image_id,
         object_id=object_id,
+        source_mask=(mask.copy() if source_mask is None else source_mask),
+        source_to_processed_affine=(
+            np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
+            if source_to_processed_affine is None
+            else source_to_processed_affine
+        ),
         processed_mask=mask,
         valid_mask=np.ones_like(mask, dtype=bool) if valid_mask is None else valid_mask,
     )
+
+
+def _formal_only_geometry_fields(height: int, width: int) -> dict[str, np.ndarray]:
+    x_pixels, y_pixels = np.meshgrid(
+        np.arange(width, dtype=np.float64),
+        np.arange(height, dtype=np.float64),
+        indexing="xy",
+    )
+    return {
+        "world_points": np.stack(
+            [x_pixels * 0.01, y_pixels * 0.01, np.full_like(x_pixels, 0.50)],
+            axis=-1,
+        )[None],
+        "world_points_conf": np.ones((1, height, width), dtype=np.float64),
+    }
 
 
 def test_missing_camera_fields_returns_unavailable_without_raise(tmp_path):
@@ -126,6 +150,155 @@ def test_missing_camera_fields_returns_unavailable_without_raise(tmp_path):
 
     assert evidence["mode"] == "shadow"
     assert evidence["status"] == "unavailable_missing_camera_fields"
+    assert evidence["mask_robustness"]["status"] == "available"
+
+
+def test_source_space_one_pixel_robustness_precedes_nonunit_affine_warp(tmp_path):
+    """Catches eroding the enlarged processed mask instead of the source mask."""
+    source_mask = np.zeros((12, 20), dtype=np.uint8)
+    source_mask[2:10, 3:17] = 1
+    affine = np.array([[3.0, 0.0, 1.0], [0.0, 3.0, 1.0]], dtype=np.float64)
+    processed_shape = (36, 60)
+    processed_mask = cv2.warpAffine(
+        source_mask,
+        affine.astype(np.float32),
+        (processed_shape[1], processed_shape[0]),
+        flags=cv2.INTER_NEAREST,
+    ).astype(bool)
+    cache_path = _write_npz(
+        tmp_path / "formal_geometry_only.npz",
+        _formal_only_geometry_fields(*processed_shape),
+    )
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([5], dtype=np.int32),
+        observations=(
+            _observation(
+                5,
+                processed_mask,
+                source_mask=source_mask.astype(bool),
+                source_to_processed_affine=affine,
+            ),
+        ),
+        formal_snapshot=_snapshot(box(0.0, 0.0, 0.59, 0.35)),
+    )
+
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    source_eroded = cv2.erode(source_mask, kernel, iterations=1)
+    expected_processed = cv2.warpAffine(
+        source_eroded,
+        affine.astype(np.float32),
+        (processed_shape[1], processed_shape[0]),
+        flags=cv2.INTER_NEAREST,
+    ).astype(bool)
+    wrong_processed = cv2.erode(
+        processed_mask.astype(np.uint8), kernel, iterations=1
+    ).astype(bool)
+    eroded = evidence["mask_robustness"]["variants"]["eroded"]
+
+    assert evidence["status"] == "unavailable_missing_camera_fields"
+    assert evidence["mask_robustness"]["status"] == "available"
+    assert eroded["mask_counts"][0] == {
+        "image_id": 5,
+        "object_id": 0,
+        "source_mask_pixel_count": int(source_eroded.sum()),
+        "processed_mask_pixel_count": int(expected_processed.sum()),
+    }
+    assert expected_processed.sum() != wrong_processed.sum()
+    assert eroded["status"] == "accepted"
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_thin_source_mask_erosion_reports_rejection_transition_without_partial_geometry(
+    tmp_path,
+):
+    """Catches substituting partial polygons when a perturbation loses one ID."""
+    source_mask = np.zeros((5, 30), dtype=np.uint8)
+    source_mask[2:3, 1:29] = 1
+    affine = np.array([[4.0, 0.0, 1.5], [0.0, 4.0, 1.5]], dtype=np.float64)
+    processed_shape = (20, 120)
+    processed_mask = cv2.warpAffine(
+        source_mask,
+        affine.astype(np.float32),
+        (processed_shape[1], processed_shape[0]),
+        flags=cv2.INTER_NEAREST,
+    ).astype(bool)
+    cache_path = _write_npz(
+        tmp_path / "thin_source_mask.npz",
+        _formal_only_geometry_fields(*processed_shape),
+    )
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([11], dtype=np.int32),
+        observations=(
+            _observation(
+                11,
+                processed_mask,
+                source_mask=source_mask.astype(bool),
+                source_to_processed_affine=affine,
+            ),
+        ),
+        formal_snapshot=_snapshot(box(0.0, 0.0, 1.19, 0.19)),
+    )
+
+    eroded = evidence["mask_robustness"]["variants"]["eroded"]
+    robustness = evidence["mask_robustness"]
+    assert eroded["status"] == "rejected"
+    assert eroded["value_m2"] is None
+    assert eroded["rejection_transition"] == "accepted_to_rejected"
+    assert isinstance(eroded["reason"], str) and eroded["reason"]
+    assert "polygons" not in eroded
+    assert robustness["area_interval_m2"] is None
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_camera_absence_does_not_disable_available_mask_robustness(tmp_path):
+    source_mask = np.ones((20, 20), dtype=bool)
+    cache_path = _write_npz(
+        tmp_path / "no_camera_but_geometry.npz",
+        _formal_only_geometry_fields(20, 20),
+    )
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([4], dtype=np.int32),
+        observations=(_observation(4, source_mask),),
+        formal_snapshot=_snapshot(box(0.0, 0.0, 0.19, 0.19)),
+    )
+
+    assert evidence["status"] == "unavailable_missing_camera_fields"
+    assert evidence["mask_robustness"]["status"] == "available"
+    assert evidence["mask_robustness"]["variants"]["original"]["status"] == "accepted"
+    assert evidence["mask_robustness"]["area_interval_m2"] is not None
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_absent_formal_plane_keeps_all_shadow_geometry_unavailable(tmp_path):
+    source_mask = np.ones((20, 20), dtype=bool)
+    cache_path = _write_npz(
+        tmp_path / "no_formal_plane.npz", _formal_only_geometry_fields(20, 20)
+    )
+    snapshot = FormalSnapshot(
+        status="rejected",
+        value_m2=None,
+        plane=None,
+        polygons={},
+        union=None,
+        rejection_reason="formal plane selection failed",
+    )
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([4], dtype=np.int32),
+        observations=(_observation(4, source_mask),),
+        formal_snapshot=snapshot,
+    )
+
+    assert evidence["status"] == "unavailable_no_formal_geometry"
+    assert evidence["mask_robustness"]["status"] == "unavailable_no_formal_geometry"
+    json.dumps(evidence, allow_nan=False)
 
 
 def test_bidirectional_reprojection_classifies_occluded_and_foreground_conflict(

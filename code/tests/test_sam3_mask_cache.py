@@ -20,6 +20,7 @@ from utils.sam3_mask_cache import (
     canonical_frame_mask_key,
     load_or_compute_frame_masks,
 )
+from utils.sam3_utils import clip_mask_to_bbox
 
 
 def _prompt(object_id: int, bbox_xyxy: tuple[float, float, float, float]) -> DetectionPrompt:
@@ -200,22 +201,34 @@ def test_producer_mask_is_clipped_to_bbox_without_bbox_fallback(tmp_path: Path) 
 
 
 @pytest.mark.parametrize(
-    ("bbox_xyxy", "expected_pixels"),
+    "bbox_xyxy",
     [
-        ((-4.0, 2.0, -1.0, 4.0), 0),
-        ((9.0, 2.0, 12.0, 4.0), 0),
-        ((2.0, -4.0, 4.0, -1.0), 0),
-        ((2.0, 9.0, 4.0, 12.0), 0),
-        ((2.0, 2.0, 2.0, 5.0), 0),
-        ((1.49, 1.49, 3.51, 3.51), 9),
+        (2.0, 2.0, 6.0, 6.0),
+        (2.2, 1.7, 7.6, 6.4),
+        (-4.0, 2.0, -1.0, 4.0),
+        (9.0, 2.0, 12.0, 4.0),
+        (2.0, -4.0, 4.0, -1.0),
+        (2.0, 9.0, 4.0, 12.0),
+        (0.0, 0.0, 8.0, 8.0),
     ],
 )
-def test_bbox_clipping_uses_independent_endpoints_and_allows_empty_intersection(
-    tmp_path: Path, bbox_xyxy: tuple[float, float, float, float], expected_pixels: int
+def test_cache_masks_match_sam3_canonical_bbox_clip_on_cold_and_hit(
+    tmp_path: Path, bbox_xyxy: tuple[float, float, float, float]
 ) -> None:
+    """Catches producer or hit validation drifting from SAM3 boundary pixels."""
     request = _request(tmp_path, detections=((7, bbox_xyxy),))
-    result = load_or_compute_frame_masks(request, lambda: [np.ones((8, 8), dtype=bool)])
-    assert result.masks[0].sum() == expected_pixels
+    source = (np.arange(64).reshape(8, 8) % 3) != 0
+    expected = clip_mask_to_bbox(source, bbox_xyxy)
+
+    cold = load_or_compute_frame_masks(request, lambda: [source.copy()])
+    hit = load_or_compute_frame_masks(request, _producer_that_fails_if_called)
+
+    np.testing.assert_array_equal(cold.masks[0], expected)
+    np.testing.assert_array_equal(hit.masks[0], expected)
+    assert cold.masks[0].tobytes() == expected.tobytes()
+    assert hit.masks[0].tobytes() == expected.tobytes()
+    assert cold.events == ("miss", "written")
+    assert hit.events == ("hit",)
 
 
 def test_reversed_bbox_is_rejected_before_cache_operation(tmp_path: Path) -> None:

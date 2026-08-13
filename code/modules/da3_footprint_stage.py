@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import hashlib
 import json
 import logging
@@ -10,6 +12,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Any
@@ -31,6 +34,7 @@ from utils.footprint_evidence import (
     EvidenceObservation,
     FormalSnapshot,
     build_shadow_evidence,
+    warp_source_mask_nearest,
 )
 from utils.ground_stack_footprint import (
     FootprintError,
@@ -102,6 +106,7 @@ class FootprintStageError(ValueError):
 
 def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
     """Measure the union of every mapped carton's support-plane OBB footprint."""
+    measurement_started_at = time.monotonic()
     dataset = Path(dataset_path)
     output_dir = Path(save_root) / dataset.name / "ground_stack_footprint"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -115,6 +120,18 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         "plane": {"candidates": [], "selected": None},
         "per_global_id": {},
         "union": {},
+        "performance": {
+            "clock": "time.monotonic",
+            "stages_seconds": {
+                "validation_and_io": None,
+                "sam3_source_masks": None,
+                "select_support_plane": None,
+                "per_id_obb_union": None,
+                "shadow_evidence": None,
+                "artifact_creation": None,
+            },
+            "total_seconds_pre_publication": None,
+        },
         "library_versions": {"numpy": np.__version__, "shapely": shapely.__version__},
     }
     polygons: dict[str, Any] = {}
@@ -123,6 +140,9 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
     cache_path = Path(save_root) / dataset.name / "da3_cache" / "predictions.npz"
     cache_frame_ids = np.empty(0, dtype=np.int64)
     evidence_observations: tuple[EvidenceObservation, ...] = ()
+    stages_seconds = report["performance"]["stages_seconds"]
+    active_stage = "validation_and_io"
+    active_stage_started_at = measurement_started_at
     try:
         mapping_path = Path(save_root) / dataset.name / "dedup_detections" / "global_mapping.json"
         cache = _load_cache(cache_path)
@@ -137,6 +157,9 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         sam3_checkpoint_sha256 = checkpoint_sha256(sam3_checkpoint)
         sam3_code_fingerprint = _sam3_code_fingerprint()
         sam3_runtime_fingerprint = _sam3_runtime_fingerprint(_SAM3_DEVICE)
+        stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
+        active_stage = "sam3_source_masks"
+        active_stage_started_at = time.monotonic()
         (
             masked_observations,
             background_points,
@@ -162,6 +185,9 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         ]
         if not all_object_points:
             raise FootprintStageError("no mapped observations produced valid object points")
+        stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
+        active_stage = "select_support_plane"
+        active_stage_started_at = time.monotonic()
         try:
             plane, plane_diagnostics = select_support_plane(
                 background_points, background_frames, all_object_points
@@ -181,6 +207,9 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             },
             **plane_diagnostics,
         }
+        stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
+        active_stage = "per_id_obb_union"
+        active_stage_started_at = time.monotonic()
         for global_id, observation_points in masked_observations.items():
             per_id = report["per_global_id"][global_id]
             accepted = [points for points in observation_points if len(points) >= 32]
@@ -234,9 +263,14 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         report["status"] = "accepted"
         report["value_m2"] = accepted_area
     except (FootprintStageError, FootprintError, OSError, ValueError, KeyError) as error:
+        if active_stage is not None and stages_seconds[active_stage] is None:
+            stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
         report["rejection_reason"] = str(error)
         polygons = {}
         union = None
+    else:
+        if active_stage is not None and stages_seconds[active_stage] is None:
+            stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
     formal_snapshot = FormalSnapshot(
         status=report["status"],
         value_m2=report["value_m2"],
@@ -245,13 +279,23 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         union=union,
         rejection_reason=report.get("rejection_reason"),
     )
-    report["evidence"] = _attach_shadow_evidence(
-        cache_path,
-        cache_frame_ids,
-        evidence_observations,
-        formal_snapshot,
+    shadow_started_at = time.monotonic()
+    try:
+        report["evidence"] = _attach_shadow_evidence(
+            cache_path,
+            cache_frame_ids,
+            evidence_observations,
+            formal_snapshot,
+        )
+    finally:
+        stages_seconds["shadow_evidence"] = time.monotonic() - shadow_started_at
+    artifact_paths = _publish_generation(
+        output_dir,
+        report,
+        polygons,
+        union,
+        measurement_started_at=measurement_started_at,
     )
-    artifact_paths = _publish_generation(output_dir, report, polygons, union)
     report_path = Path(artifact_paths["measurement_report"])
     return {
         "success": report["status"] == "accepted",
@@ -503,7 +547,14 @@ def _masked_observations(
             with Image.open(image_paths[image_id]) as image:
                 if source_mask.shape != (image.height, image.width):
                     raise FootprintStageError(f"SAM3 mask source dimensions mismatch for image {image_id}")
-            warped = _warp_mask_to_da3_grid(cache["source_to_processed_affine"][frame_index], source_mask, height, width)
+            source_to_processed_affine = cache["source_to_processed_affine"][
+                frame_index
+            ]
+            warped = warp_source_mask_nearest(
+                source_mask,
+                source_to_processed_affine,
+                (height, width),
+            )
             global_id = lookup[(image_id, item["object_id"])]
             diagnostic = {"image_id": image_id, "object_id": item["object_id"], "valid_point_count": 0}
             per_global_id.setdefault(global_id, {"observations": []})["observations"].append(diagnostic)
@@ -515,6 +566,8 @@ def _masked_observations(
                     global_id=global_id,
                     image_id=image_id,
                     object_id=item["object_id"],
+                    source_mask=source_mask.copy(),
+                    source_to_processed_affine=source_to_processed_affine.copy(),
                     processed_mask=warped.copy(),
                     valid_mask=valid_grid.copy(),
                 )
@@ -548,7 +601,7 @@ def _attach_shadow_evidence(
     observations: tuple[EvidenceObservation, ...],
     formal_snapshot: FormalSnapshot,
 ) -> dict[str, object]:
-    if formal_snapshot.status != "accepted" or formal_snapshot.plane is None:
+    if formal_snapshot.plane is None:
         return {"mode": "shadow", "status": "unavailable_no_formal_geometry"}
     try:
         return build_shadow_evidence(
@@ -559,11 +612,6 @@ def _attach_shadow_evidence(
         )
     except Exception as error:
         return {"mode": "shadow", "status": "failed_evidence", "reason": str(error)}
-
-
-def _warp_mask_to_da3_grid(affine: np.ndarray, mask: np.ndarray, height: int, width: int) -> np.ndarray:
-    warped = cv2.warpAffine(mask.astype(np.uint8), affine.astype(np.float32), (width, height), flags=cv2.INTER_NEAREST)
-    return warped.astype(bool)
 
 
 def _valid_points(points: np.ndarray, confidence: np.ndarray) -> np.ndarray:
@@ -595,7 +643,7 @@ def _mask_cache_report_entry(
     return {
         "image_id": image_id,
         "key": result.key,
-        "events": list(result.events),
+        "cache_events": list(result.events),
         "payload_sha256": result.payload_sha256,
         "checkpoint_sha256": result.checkpoint_sha256,
         "code_fingerprint": dict(result.code_fingerprint),
@@ -664,7 +712,14 @@ def _write_artifacts(output_dir: Path, report: dict[str, Any], polygons: dict[st
             features.append({"type": "Feature", "geometry": mapping(polygon), "properties": {"coordinate_space": "local_support_plane_meters", "global_id": global_id, "area_m2": float(polygon.area), "observations_used": report["per_global_id"][global_id].get("observations_used", 0)}})
         if union is not None:
             features.append({"type": "Feature", "geometry": mapping(union), "properties": {"coordinate_space": "local_support_plane_meters", "global_id": "union", "area_m2": float(union.area)}})
-    geojson_path.write_text(json.dumps({"type": "FeatureCollection", "coordinate_space": "local_support_plane_meters", "status": report["status"], "measurement_complete": accepted, "features": features}, indent=2) + "\n")
+    geojson_path.write_text(
+        json.dumps(
+            {"type": "FeatureCollection", "coordinate_space": "local_support_plane_meters", "status": report["status"], "measurement_complete": accepted, "features": features},
+            indent=2,
+            allow_nan=False,
+        )
+        + "\n"
+    )
     figure, axis = plt.subplots(figsize=(6, 6))
     if accepted:
         for global_id, polygon in polygons.items():
@@ -706,6 +761,9 @@ def _write_fsynced_generation(
     report: dict[str, Any],
     polygons: dict[str, Any],
     union: Any,
+    *,
+    measurement_started_at: float | None = None,
+    artifact_started_at: float | None = None,
 ) -> Path:
     runs_root.mkdir(parents=True, exist_ok=True)
     _fsync_directory(runs_root.parent)
@@ -715,9 +773,19 @@ def _write_fsynced_generation(
     temporary = Path(tempfile.mkdtemp(prefix=f".{run_id}.", dir=runs_root))
     try:
         _write_artifacts(temporary, report, polygons, union)
+        performance = report.get("performance")
+        if isinstance(performance, dict):
+            stages = performance.get("stages_seconds")
+            if isinstance(stages, dict) and artifact_started_at is not None:
+                stages["artifact_creation"] = time.monotonic() - artifact_started_at
+            if measurement_started_at is not None:
+                performance["total_seconds_pre_publication"] = (
+                    time.monotonic() - measurement_started_at
+                )
         report_path = temporary / "measurement_report.json"
         report_path.write_text(
-            json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(report, indent=2, sort_keys=True, allow_nan=False) + "\n",
+            encoding="utf-8",
         )
         artifact_names = tuple(_GENERATION_ARTIFACTS.values())
         for name in artifact_names:
@@ -729,7 +797,8 @@ def _write_fsynced_generation(
         }
         manifest_path = temporary / "manifest.json"
         manifest_path.write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            json.dumps(manifest, indent=2, sort_keys=True, allow_nan=False) + "\n",
+            encoding="utf-8",
         )
         _fsync_file(manifest_path)
         _fsync_directory(temporary)
@@ -743,7 +812,9 @@ def _write_fsynced_generation(
 
 
 def _atomic_replace_current(current_path: Path, pointer: dict[str, object]) -> None:
-    payload = (json.dumps(pointer, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    payload = (
+        json.dumps(pointer, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    ).encode("utf-8")
     descriptor, temporary_name = tempfile.mkstemp(prefix=".CURRENT.", dir=current_path.parent)
     temporary = Path(temporary_name)
     try:
@@ -765,7 +836,22 @@ def _atomic_replace_current(current_path: Path, pointer: dict[str, object]) -> N
         )
 
 
-def _artifact_paths_from_current(output_root: Path) -> dict[str, str]:
+@contextlib.contextmanager
+def _publication_lock(output_root: Path, *, exclusive: bool):
+    locks_root = output_root / "locks"
+    locks_root.mkdir(parents=True, exist_ok=True)
+    lock_path = locks_root / "publication.lock"
+    with lock_path.open("a+b") as handle:
+        fcntl.flock(
+            handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+        )
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _current_run_id_unlocked(output_root: Path) -> str:
     try:
         pointer = json.loads((output_root / "CURRENT").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -778,6 +864,18 @@ def _artifact_paths_from_current(output_root: Path) -> dict[str, str]:
         or re.fullmatch(r"[0-9a-f]{32}", run_id) is None
     ):
         raise OSError("ground-stack artifact CURRENT is invalid")
+    return run_id
+
+
+def _artifact_paths_from_current_unlocked(
+    output_root: Path, *, expected_run_id: str
+) -> dict[str, str]:
+    run_id = _current_run_id_unlocked(output_root)
+    if run_id != expected_run_id:
+        raise OSError(
+            "ground-stack artifact CURRENT does not match expected run "
+            f"{expected_run_id}"
+        )
     generation = output_root / "runs" / run_id
     if not generation.is_dir() or {path.name for path in generation.iterdir()} != _GENERATION_FILES:
         raise OSError("ground-stack artifact generation is incomplete")
@@ -801,17 +899,41 @@ def _artifact_paths_from_current(output_root: Path) -> dict[str, str]:
     }
 
 
+def _artifact_paths_from_current(output_root: Path) -> dict[str, str]:
+    with _publication_lock(output_root, exclusive=False):
+        run_id = _current_run_id_unlocked(output_root)
+        return _artifact_paths_from_current_unlocked(
+            output_root, expected_run_id=run_id
+        )
+
+
 def _publish_generation(
     output_root: Path,
     report: dict[str, Any],
     polygons: dict[str, Any],
     union: Any,
+    *,
+    measurement_started_at: float | None = None,
 ) -> dict[str, str]:
     run_id = uuid.uuid4().hex
     report["artifacts"] = dict(_GENERATION_ARTIFACTS)
-    _write_fsynced_generation(output_root / "runs", run_id, report, polygons, union)
-    _atomic_replace_current(output_root / "CURRENT", {"run_id": run_id, "complete": True})
-    return _artifact_paths_from_current(output_root)
+    artifact_started_at = time.monotonic()
+    _write_fsynced_generation(
+        output_root / "runs",
+        run_id,
+        report,
+        polygons,
+        union,
+        measurement_started_at=measurement_started_at,
+        artifact_started_at=artifact_started_at,
+    )
+    with _publication_lock(output_root, exclusive=True):
+        _atomic_replace_current(
+            output_root / "CURRENT", {"run_id": run_id, "complete": True}
+        )
+        return _artifact_paths_from_current_unlocked(
+            output_root, expected_run_id=run_id
+        )
 
 
 def _bbox(value: Any, image_id: int, object_id: int) -> list[float]:

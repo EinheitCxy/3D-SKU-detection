@@ -1,5 +1,6 @@
 import hashlib
 import json
+import multiprocessing
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from modules.da3_runner import (
     _source_to_processed_affines,
     _validate_model_id,
 )
+from utils import footprint_evidence as evidence_module
 
 
 @pytest.fixture(autouse=True)
@@ -304,6 +306,106 @@ def _assert_complete_current(output_root: Path) -> tuple[bytes, dict[str, str]]:
     return current_bytes, resolved
 
 
+def _publish_marker_process(
+    output_root: str,
+    marker: str,
+    queue: object,
+    *,
+    block_after_replace: bool,
+    replaced: object,
+    release: object,
+    generation_ready: object,
+    finished: object,
+) -> None:
+    """Run the real publisher while process A is paused after CURRENT replace."""
+    original_write_generation = stage._write_fsynced_generation
+
+    def observed_write_generation(*args: object, **kwargs: object) -> Path:
+        generation = original_write_generation(*args, **kwargs)
+        generation_ready.set()
+        return generation
+
+    stage._write_fsynced_generation = observed_write_generation
+    if block_after_replace:
+        original_replace = stage._atomic_replace_current
+
+        def blocked_replace(*args: object, **kwargs: object) -> None:
+            original_replace(*args, **kwargs)
+            replaced.set()
+            if not release.wait(timeout=20):
+                raise RuntimeError("publication interleave release timed out")
+
+        stage._atomic_replace_current = blocked_replace
+    try:
+        paths = stage._publish_generation(
+            Path(output_root),
+            {"status": "rejected", "per_global_id": {}, "marker": marker},
+            {},
+            None,
+        )
+        report = json.loads(Path(paths["measurement_report"]).read_text())
+        queue.put(("ok", marker, report["marker"], paths))
+    except BaseException as error:
+        queue.put(("error", marker, repr(error), {}))
+    finally:
+        finished.set()
+
+
+def _publish_two_processes_with_forced_replace_resolve_interleaving(
+    output_root: Path,
+) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
+    context = multiprocessing.get_context("fork")
+    queue = context.Queue()
+    first_replaced = context.Event()
+    release_first = context.Event()
+    first_generation_ready = context.Event()
+    second_generation_ready = context.Event()
+    first_finished = context.Event()
+    second_finished = context.Event()
+    first = context.Process(
+        target=_publish_marker_process,
+        kwargs={
+            "output_root": str(output_root),
+            "marker": "first",
+            "queue": queue,
+            "block_after_replace": True,
+            "replaced": first_replaced,
+            "release": release_first,
+            "generation_ready": first_generation_ready,
+            "finished": first_finished,
+        },
+    )
+    second = context.Process(
+        target=_publish_marker_process,
+        kwargs={
+            "output_root": str(output_root),
+            "marker": "second",
+            "queue": queue,
+            "block_after_replace": False,
+            "replaced": context.Event(),
+            "release": context.Event(),
+            "generation_ready": second_generation_ready,
+            "finished": second_finished,
+        },
+    )
+    first.start()
+    assert first_generation_ready.wait(timeout=20)
+    assert first_replaced.wait(timeout=20)
+    second.start()
+    assert second_generation_ready.wait(timeout=20)
+    second_finished.wait(timeout=1)
+    release_first.set()
+    for process in (first, second):
+        process.join(timeout=20)
+        assert process.exitcode == 0
+    results = [queue.get(timeout=2), queue.get(timeout=2)]
+    assert all(item[0] == "ok" for item in results), results
+    by_marker = {item[1]: {"returned_marker": item[2], "paths": item[3]} for item in results}
+    current_paths = stage._artifact_paths_from_current(output_root)
+    current_report = json.loads(Path(current_paths["measurement_report"]).read_text())
+    return by_marker["first"], by_marker["second"], current_report
+
+
 def _install_publication_boundary_probe(
     monkeypatch: pytest.MonkeyPatch, output_root: Path, failure_point: str
 ) -> None:
@@ -426,21 +528,9 @@ def test_evidence_failures_do_not_change_frozen_formal_result(
 
     assert observed_projection[:2] == baseline_projection[:2]
     assert np.array_equal(observed_projection[2], baseline_projection[2])
-    expected_status = (
-        "failed_evidence"
-        if formal_status == "accepted"
-        else "unavailable_no_formal_geometry"
-    )
-    assert observed["evidence"]["status"] == expected_status
-    if formal_status == "accepted":
-        assert observed["evidence"]["reason"] == "boom"
-        assert builder_calls == ["baseline", "failed"]
-    else:
-        assert observed["evidence"] == {
-            "mode": "shadow",
-            "status": "unavailable_no_formal_geometry",
-        }
-        assert builder_calls == []
+    assert observed["evidence"]["status"] == "failed_evidence"
+    assert observed["evidence"]["reason"] == "boom"
+    assert builder_calls == ["baseline", "failed"]
 
 
 def test_stage_reports_valid_shadow_evidence_without_changing_formal_area(
@@ -458,6 +548,9 @@ def test_stage_reports_valid_shadow_evidence_without_changing_formal_area(
     assert without_camera["evidence"]["status"] == (
         "unavailable_missing_camera_fields"
     )
+    observation = with_camera["evidence"]["per_global_id"]["1"]["observations"][0]
+    assert observation["source_mask_pixel_count"] == 64 * 80
+    assert observation["processed_mask_pixel_count"] == 64 * 80
     with_projection = _published_projection(with_camera_result)
     without_projection = _published_projection(without_camera_result)
     assert with_projection[:2] == without_projection[:2]
@@ -478,6 +571,35 @@ def test_stage_reports_failed_camera_contract_without_changing_formal_area(
     assert _formal_projection(observed) == _formal_projection(baseline)
     observed_projection = _published_projection(observed_result)
     baseline_projection = _published_projection(baseline_result)
+    assert observed_projection[:2] == baseline_projection[:2]
+    assert np.array_equal(observed_projection[2], baseline_projection[2])
+
+
+def test_mask_robustness_failure_does_not_change_formal_projection_or_artifacts(
+    monkeypatch, tmp_path
+):
+    baseline_result, baseline = _run_evidence_fixture(
+        tmp_path / "robustness-baseline", monkeypatch, camera="valid"
+    )
+    baseline_projection = _published_projection(baseline_result)
+
+    def fail_source_erosion(*_args: object, **_kwargs: object) -> np.ndarray:
+        raise RuntimeError("injected source morphology failure")
+
+    monkeypatch.setattr(evidence_module.cv2, "erode", fail_source_erosion)
+    observed_result, observed = _run_evidence_fixture(
+        tmp_path / "robustness-failure", monkeypatch, camera="valid"
+    )
+    observed_projection = _published_projection(observed_result)
+
+    assert observed["status"] == baseline["status"] == "accepted"
+    assert observed["evidence"]["status"] == "available"
+    robustness = observed["evidence"]["mask_robustness"]
+    assert robustness["status"] == "available"
+    assert robustness["variants"]["eroded"]["status"] == "rejected"
+    assert robustness["variants"]["eroded"]["value_m2"] is None
+    assert "injected source morphology failure" in robustness["variants"]["eroded"]["reason"]
+    assert "polygons" not in robustness["variants"]["eroded"]
     assert observed_projection[:2] == baseline_projection[:2]
     assert np.array_equal(observed_projection[2], baseline_projection[2])
 
@@ -596,12 +718,12 @@ def test_stage_second_run_uses_cached_masks_and_keeps_area(monkeypatch, tmp_path
 
     assert first_projection[:2] == second_projection[:2]
     assert np.array_equal(first_projection[2], second_projection[2])
-    assert [frame["events"] for frame in first["sam3_mask_cache"]["frames"]] == [
+    assert [frame["cache_events"] for frame in first["sam3_mask_cache"]["frames"]] == [
         ["miss", "written"],
         ["miss", "written"],
         ["miss", "written"],
     ]
-    assert [frame["events"] for frame in second["sam3_mask_cache"]["frames"]] == [
+    assert [frame["cache_events"] for frame in second["sam3_mask_cache"]["frames"]] == [
         ["hit"],
         ["hit"],
         ["hit"],
@@ -629,7 +751,7 @@ def test_hit_only_stage_hashes_checkpoint_only_at_entry_and_exit(monkeypatch, tm
 
     assert checksum_calls == [Path(stage._SAM3_CHECKPOINT), Path(stage._SAM3_CHECKPOINT)]
     assert result["success"] is True
-    assert [frame["events"] for frame in report["sam3_mask_cache"]["frames"]] == [
+    assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
         ["hit"],
         ["hit"],
         ["hit"],
@@ -651,7 +773,7 @@ def test_exit_checkpoint_mismatch_rejects_after_recording_all_hit_events(monkeyp
     assert result["success"] is False
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
-    assert [frame["events"] for frame in report["sam3_mask_cache"]["frames"]] == [
+    assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
         ["hit"],
         ["hit"],
         ["hit"],
@@ -672,7 +794,7 @@ def test_cached_empty_mask_rejects_full_total(monkeypatch, tmp_path):
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert "empty" in report["per_global_id"]["2"]["observations"][0]["rejection"]
-    assert all(frame["events"] == ["hit"] for frame in report["sam3_mask_cache"]["frames"])
+    assert all(frame["cache_events"] == ["hit"] for frame in report["sam3_mask_cache"]["frames"])
 
 
 def test_cache_write_failure_uses_complete_fresh_masks_and_records_event(monkeypatch, tmp_path):
@@ -701,11 +823,76 @@ def test_cache_write_failure_uses_complete_fresh_masks_and_records_event(monkeyp
     assert result["success"] is True
     assert report["status"] == "accepted"
     assert report["value_m2"] == pytest.approx(1.5, abs=0.03)
-    assert [frame["events"] for frame in report["sam3_mask_cache"]["frames"]] == [
+    assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
         ["miss", "cache_write_failed"],
         ["miss", "cache_write_failed"],
         ["miss", "cache_write_failed"],
     ]
+
+
+@pytest.mark.parametrize(
+    ("masks", "expected_status"),
+    [(exact_bbox_masks, "accepted"), (masks_with_one_empty, "rejected")],
+    ids=["accepted", "rejected"],
+)
+def test_stage_timing_and_cache_events_are_additive_and_json_safe(
+    monkeypatch, tmp_path, masks, expected_status
+):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", masks)
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    expected_stages = {
+        "validation_and_io",
+        "sam3_source_masks",
+        "select_support_plane",
+        "per_id_obb_union",
+        "shadow_evidence",
+        "artifact_creation",
+    }
+    stages = report["performance"]["stages_seconds"]
+    assert report["status"] == expected_status
+    assert set(stages) == expected_stages
+    assert all(value is None or value >= 0.0 for value in stages.values())
+    assert all(stages[name] is not None for name in expected_stages)
+    assert report["performance"]["total_seconds_pre_publication"] >= sum(
+        value for value in stages.values() if value is not None
+    )
+    assert all(
+        frame["cache_events"] == ["miss", "written"]
+        for frame in report["sam3_mask_cache"]["frames"]
+    )
+    assert all("events" not in frame for frame in report["sam3_mask_cache"]["frames"])
+    json.dumps(report, allow_nan=False)
+
+
+def test_rejection_before_sam3_leaves_unentered_performance_stages_null(
+    monkeypatch, tmp_path
+):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    (save_root / dataset.name / "dedup_detections" / "global_mapping.json").write_text(
+        json.dumps({"1": []})
+    )
+    monkeypatch.setattr(
+        stage,
+        "sam3_masks_from_bboxes_predict_inst",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("SAM3 must not run")),
+    )
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+    stages = report["performance"]["stages_seconds"]
+
+    assert report["status"] == "rejected"
+    assert stages["validation_and_io"] >= 0.0
+    assert stages["sam3_source_masks"] is None
+    assert stages["select_support_plane"] is None
+    assert stages["per_id_obb_union"] is None
+    assert stages["shadow_evidence"] >= 0.0
+    assert stages["artifact_creation"] >= 0.0
+    json.dumps(report, allow_nan=False)
 
 
 def test_cached_masks_are_not_requested_until_complete_inputs_are_validated(
@@ -756,6 +943,42 @@ def test_current_points_to_complete_single_artifact_generation(monkeypatch, tmp_
             "top_down_footprint.png",
         )
     }
+
+
+def test_two_publishers_return_own_generation_and_reader_sees_complete_current(
+    tmp_path,
+):
+    """Catches resolving a competing publisher's CURRENT after releasing identity."""
+    output_root = tmp_path / "ground_stack_footprint"
+    output_root.mkdir()
+
+    first, second, current = _publish_two_processes_with_forced_replace_resolve_interleaving(
+        output_root
+    )
+
+    assert first["returned_marker"] == "first"
+    assert second["returned_marker"] == "second"
+    assert current["marker"] in {"first", "second"}
+    for result in (first, second):
+        paths = result["paths"]
+        generation = Path(paths["measurement_report"]).parent
+        assert {path.name for path in generation.iterdir()} == {
+            "measurement_report.json",
+            "footprints.geojson",
+            "top_down_footprint.png",
+            "manifest.json",
+        }
+
+
+def test_unlocked_current_resolver_rejects_another_expected_run(tmp_path):
+    output_root = tmp_path / "ground_stack_footprint"
+    output_root.mkdir()
+    stage._publish_generation(output_root, _rejected_publication_report(), {}, None)
+
+    with pytest.raises(OSError, match="expected run"):
+        stage._artifact_paths_from_current_unlocked(
+            output_root, expected_run_id="0" * 32
+        )
 
 
 def test_failed_first_generation_write_never_creates_current(monkeypatch, tmp_path):

@@ -13,7 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping, Sequence
 
+import cv2
 import numpy as np
+from shapely import set_precision
 from shapely.geometry import MultiPolygon, Polygon
 
 from utils.ground_stack_footprint import (
@@ -21,6 +23,7 @@ from utils.ground_stack_footprint import (
     SupportPlane,
     carton_footprint_polygon_from_projected,
     project_to_plane,
+    union_footprints,
     voxel_balance_projected,
 )
 
@@ -39,11 +42,13 @@ _CAMERA_FIELDS = (
 
 @dataclass(frozen=True)
 class EvidenceObservation:
-    """One processed-grid mask observation used only for shadow evidence."""
+    """One source/processed mask pair used only for shadow evidence."""
 
     global_id: str
     image_id: int
     object_id: int
+    source_mask: np.ndarray
+    source_to_processed_affine: np.ndarray
     processed_mask: np.ndarray
     valid_mask: np.ndarray
 
@@ -68,6 +73,13 @@ class _CameraCache:
     depth: np.ndarray
     intrinsic: np.ndarray
     extrinsic: np.ndarray
+
+
+@dataclass(frozen=True)
+class _GeometryCache:
+    frame_ids: np.ndarray
+    world_points: np.ndarray
+    confidence: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -109,24 +121,313 @@ def build_shadow_evidence(
     every other ordinary evidence exception is isolated as ``failed_evidence``.
     """
 
+    if formal_snapshot.plane is None:
+        reason = "fixed-plane evidence requires a frozen formal support plane"
+        return {
+            "mode": "shadow",
+            "status": "unavailable_no_formal_geometry",
+            "reason": reason,
+            "mask_robustness": {
+                "status": "unavailable_no_formal_geometry",
+                "reason": reason,
+            },
+        }
+
+    try:
+        geometry = _load_formal_geometry_cache(Path(cache_path), cache_frame_ids)
+        mask_robustness = _build_mask_robustness(
+            geometry, observations, formal_snapshot
+        )
+    except Exception as error:
+        mask_robustness = {
+            "status": "failed_evidence",
+            "reason": str(error),
+        }
+
     try:
         camera = _load_optional_camera_cache(Path(cache_path), cache_frame_ids)
-        if formal_snapshot.plane is None:
-            raise EvidenceUnavailable(
-                "unavailable_no_formal_geometry",
-                "fixed-plane evidence requires a frozen formal support plane",
-            )
-        return _build_valid_camera_evidence(camera, observations, formal_snapshot)
+        result = _build_valid_camera_evidence(camera, observations, formal_snapshot)
     except EvidenceUnavailable as error:
-        return {"mode": "shadow", "status": error.status, "reason": str(error)}
+        result = {"mode": "shadow", "status": error.status, "reason": str(error)}
     except CameraContractError as error:
-        return {
+        result = {
             "mode": "shadow",
             "status": "failed_camera_contract",
             "reason": str(error),
         }
     except Exception as error:
-        return {"mode": "shadow", "status": "failed_evidence", "reason": str(error)}
+        result = {"mode": "shadow", "status": "failed_evidence", "reason": str(error)}
+    result["mask_robustness"] = mask_robustness
+    return result
+
+
+def warp_source_mask_nearest(
+    source_mask: np.ndarray,
+    source_to_processed_affine: np.ndarray,
+    output_shape_hw: tuple[int, int],
+) -> np.ndarray:
+    """Warp one source-pixel boolean mask with the formal nearest-CV2 contract."""
+    mask = np.asarray(source_mask)
+    affine = np.asarray(source_to_processed_affine, dtype=np.float64)
+    height, width = output_shape_hw
+    if mask.ndim != 2:
+        raise ValueError("source mask must be two-dimensional")
+    if affine.shape != (2, 3) or not np.isfinite(affine).all():
+        raise ValueError("source-to-processed affine must be finite shape (2, 3)")
+    if height <= 0 or width <= 0:
+        raise ValueError("processed output shape must be positive")
+    warped = cv2.warpAffine(
+        mask.astype(np.uint8),
+        affine.astype(np.float32),
+        (int(width), int(height)),
+        flags=cv2.INTER_NEAREST,
+    )
+    return warped.astype(bool)
+
+
+def _load_formal_geometry_cache(
+    cache_path: Path, cache_frame_ids: np.ndarray
+) -> _GeometryCache:
+    try:
+        with np.load(cache_path, allow_pickle=False) as loaded:
+            missing = [
+                field
+                for field in ("world_points", "world_points_conf")
+                if field not in loaded.files
+            ]
+            if missing:
+                raise EvidenceComputationError(
+                    "DA3 cache missing formal geometry fields: " + ", ".join(missing)
+                )
+            world_points = np.asarray(loaded["world_points"], dtype=np.float64).copy()
+            confidence = np.asarray(
+                loaded["world_points_conf"], dtype=np.float64
+            ).copy()
+    except EvidenceComputationError:
+        raise
+    except (OSError, ValueError, KeyError) as error:
+        raise EvidenceComputationError(
+            f"cannot read DA3 formal geometry fields: {error}"
+        ) from error
+    if world_points.ndim != 4 or world_points.shape[-1] != 3:
+        raise EvidenceComputationError("world_points must have shape (N, H, W, 3)")
+    if confidence.shape != world_points.shape[:3]:
+        raise EvidenceComputationError(
+            "world_points_conf must match the processed world grid"
+        )
+    frame_ids = np.asarray(cache_frame_ids)
+    if (
+        frame_ids.shape != (len(world_points),)
+        or frame_ids.dtype.kind not in "iu"
+        or len(np.unique(frame_ids)) != len(frame_ids)
+    ):
+        raise EvidenceComputationError(
+            "cache_frame_ids must be a unique integer vector aligned to geometry"
+        )
+    return _GeometryCache(
+        frame_ids=frame_ids.astype(np.int64, copy=True),
+        world_points=world_points,
+        confidence=confidence,
+    )
+
+
+def _build_mask_robustness(
+    geometry: _GeometryCache,
+    observations: Sequence[EvidenceObservation],
+    formal_snapshot: FormalSnapshot,
+) -> dict[str, object]:
+    plane = formal_snapshot.plane
+    if plane is None:
+        raise EvidenceUnavailable(
+            "unavailable_no_formal_geometry",
+            "fixed-plane robustness requires a frozen formal support plane",
+        )
+    variants: dict[str, object] = {}
+    accepted_values: list[float] = []
+    for variant in ("original", "eroded", "dilated"):
+        try:
+            value_m2, mask_counts = _fixed_plane_variant_area(
+                geometry, observations, plane, formal_snapshot, variant
+            )
+            accepted_values.append(value_m2)
+            variants[variant] = {
+                "status": "accepted",
+                "value_m2": value_m2,
+                "rejection_transition": _rejection_transition(
+                    formal_snapshot.status, "accepted"
+                ),
+                "mask_counts": mask_counts,
+            }
+        except Exception as error:
+            variants[variant] = {
+                "status": "rejected",
+                "value_m2": None,
+                "reason": str(error),
+                "rejection_transition": _rejection_transition(
+                    formal_snapshot.status, "rejected"
+                ),
+                "mask_counts": [],
+            }
+    interval = (
+        [float(min(accepted_values)), float(max(accepted_values))]
+        if len(accepted_values) == 3
+        else None
+    )
+    return {
+        "status": "available",
+        "operation": {
+            "coordinate_space": "source_pixels",
+            "kernel": [3, 3],
+            "iterations": 1,
+            "warp": "cv2.INTER_NEAREST",
+        },
+        "variants": variants,
+        "area_interval_m2": interval,
+    }
+
+
+def _rejection_transition(formal_status: str, variant_status: str) -> str:
+    if formal_status == "accepted" and variant_status == "rejected":
+        return "accepted_to_rejected"
+    if formal_status == "rejected" and variant_status == "accepted":
+        return "rejected_to_accepted"
+    return f"unchanged_{variant_status}"
+
+
+def _variant_source_mask(source_mask: np.ndarray, variant: str) -> np.ndarray:
+    mask = np.asarray(source_mask)
+    if mask.ndim != 2:
+        raise EvidenceComputationError("evidence source mask must be two-dimensional")
+    mask_u8 = mask.astype(np.uint8)
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    if variant == "original":
+        result = mask_u8.copy()
+    elif variant == "eroded":
+        result = cv2.erode(mask_u8, kernel, iterations=1)
+    elif variant == "dilated":
+        result = cv2.dilate(mask_u8, kernel, iterations=1)
+    else:
+        raise EvidenceComputationError(f"unknown mask robustness variant: {variant}")
+    return result.astype(bool)
+
+
+def _fixed_plane_variant_area(
+    geometry: _GeometryCache,
+    observations: Sequence[EvidenceObservation],
+    plane: SupportPlane,
+    formal_snapshot: FormalSnapshot,
+    variant: str,
+) -> tuple[float, list[dict[str, int]]]:
+    frame_for_id = {
+        int(image_id): index for index, image_id in enumerate(geometry.frame_ids)
+    }
+    processed_shape = geometry.world_points.shape[1:3]
+    grouped: dict[str, list[np.ndarray]] = {}
+    mask_counts: list[dict[str, int]] = []
+    for observation in observations:
+        image_id = int(observation.image_id)
+        if image_id not in frame_for_id:
+            raise EvidenceComputationError(
+                f"evidence observation image {image_id} is absent from cache"
+            )
+        source_mask = _variant_source_mask(observation.source_mask, variant)
+        processed_mask = warp_source_mask_nearest(
+            source_mask,
+            observation.source_to_processed_affine,
+            processed_shape,
+        )
+        recorded_processed = np.asarray(observation.processed_mask, dtype=bool)
+        valid_mask = np.asarray(observation.valid_mask, dtype=bool)
+        if recorded_processed.shape != processed_shape or valid_mask.shape != processed_shape:
+            raise EvidenceComputationError(
+                "evidence processed and valid masks must match the geometry grid"
+            )
+        if variant == "original" and not np.array_equal(
+            processed_mask, recorded_processed
+        ):
+            raise EvidenceComputationError(
+                "source mask affine warp does not match the frozen processed mask"
+            )
+        frame_index = frame_for_id[image_id]
+        qualified = (
+            processed_mask
+            & valid_mask
+            & _qualified_geometry_grid(geometry, frame_index)
+        )
+        points = geometry.world_points[frame_index][qualified]
+        if len(points) < 32:
+            raise FootprintError(
+                f"{variant} observation has fewer than 32 valid masked points"
+            )
+        global_id = str(observation.global_id)
+        grouped.setdefault(global_id, []).append(points)
+        mask_counts.append(
+            {
+                "image_id": image_id,
+                "object_id": int(observation.object_id),
+                "source_mask_pixel_count": int(np.count_nonzero(source_mask)),
+                "processed_mask_pixel_count": int(np.count_nonzero(processed_mask)),
+            }
+        )
+
+    expected_ids = {
+        str(observation.global_id) for observation in observations
+    } | {str(global_id) for global_id in formal_snapshot.polygons}
+    if not expected_ids:
+        raise FootprintError(f"{variant} robustness has no global ids")
+    if set(grouped) != expected_ids:
+        raise FootprintError(
+            f"{variant} robustness is missing one or more global ids"
+        )
+    polygons: list[Polygon] = []
+    for global_id in sorted(expected_ids, key=_global_id_key):
+        fused = np.concatenate(grouped[global_id])
+        try:
+            with np.errstate(over="raise", invalid="raise"):
+                heights = (fused - plane.point) @ plane.normal
+        except FloatingPointError as error:
+            raise EvidenceComputationError(
+                f"{variant} support-plane height arithmetic failed"
+            ) from error
+        _require_finite(
+            heights,
+            error_type=EvidenceComputationError,
+            label=f"{variant} support-plane heights",
+        )
+        elevated = fused[heights > 0.015]
+        if len(elevated) < 64:
+            raise FootprintError(
+                f"{variant} global id {global_id} has fewer than 64 elevated points"
+            )
+        projected = project_to_plane(elevated, plane)
+        balanced = voxel_balance_projected(projected, voxel_size_m=0.005)
+        if len(balanced) < 64:
+            raise FootprintError(
+                f"{variant} global id {global_id} has fewer than 64 projected voxel points"
+            )
+        polygon, _ = carton_footprint_polygon_from_projected(balanced)
+        polygons.append(set_precision(polygon, 0.0001))
+    union = union_footprints(polygons)
+    value_m2 = float(union.area)
+    _require_finite(
+        np.asarray([value_m2]),
+        error_type=EvidenceComputationError,
+        label=f"{variant} mask robustness union area",
+    )
+    return value_m2, mask_counts
+
+
+def _qualified_geometry_grid(
+    geometry: _GeometryCache, frame_index: int
+) -> np.ndarray:
+    world_points = geometry.world_points[frame_index]
+    confidence = geometry.confidence[frame_index]
+    return (
+        np.isfinite(world_points).all(axis=-1)
+        & np.any(world_points != 0.0, axis=-1)
+        & np.isfinite(confidence)
+        & (confidence >= POINT_CONFIDENCE_THRESHOLD)
+    )
 
 
 def _load_optional_camera_cache(
@@ -323,9 +624,22 @@ def _prepare_observations(
             raise ValueError(f"evidence observation image {image_id} is absent from cache")
         processed_mask = np.asarray(observation.processed_mask, dtype=bool)
         valid_mask = np.asarray(observation.valid_mask, dtype=bool)
+        source_mask = np.asarray(observation.source_mask, dtype=bool)
+        affine = np.asarray(observation.source_to_processed_affine, dtype=np.float64)
         if processed_mask.shape != expected_shape or valid_mask.shape != expected_shape:
             raise ValueError(
                 "evidence observation masks must match the processed camera grid"
+            )
+        if source_mask.ndim != 2 or affine.shape != (2, 3) or not np.isfinite(affine).all():
+            raise ValueError(
+                "evidence source mask and source-to-processed affine are invalid"
+            )
+        if not np.array_equal(
+            warp_source_mask_nearest(source_mask, affine, expected_shape),
+            processed_mask,
+        ):
+            raise ValueError(
+                "evidence source mask affine warp does not match processed mask"
             )
         frame_index = frame_for_id[image_id]
         qualified = (
@@ -482,7 +796,10 @@ def _observation_report(
     return {
         "image_id": int(item.observation.image_id),
         "object_id": int(item.observation.object_id),
-        "source_mask_pixel_count": int(np.count_nonzero(item.processed_mask)),
+        "source_mask_pixel_count": int(
+            np.count_nonzero(item.observation.source_mask)
+        ),
+        "processed_mask_pixel_count": int(np.count_nonzero(item.processed_mask)),
         "valid_point_count": int(len(points)),
         "confidence": _value_summary(masked_confidence),
         "elevated_point_fraction": (

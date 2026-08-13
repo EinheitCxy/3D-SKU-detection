@@ -24,8 +24,10 @@ from typing import Callable, Iterator, Mapping, Sequence
 
 import numpy as np
 
+from utils.sam3_utils import clip_mask_to_bbox
 
-_SCHEMA_VERSION = "sam3_frame_mask_cache_v1"
+
+_SCHEMA_VERSION = "sam3_frame_mask_cache_v2_canonical_bbox_clip"
 
 
 def _sha256_bytes(value: bytes) -> str:
@@ -204,25 +206,6 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _clipped_mask(mask: np.ndarray, bbox_xyxy: tuple[float, float, float, float]) -> np.ndarray:
-    """Apply the source-pixel bbox clipping contract without inventing pixels."""
-    height, width = mask.shape
-    x1, y1, x2, y2 = bbox_xyxy
-    xi1 = int(max(0, min(width, round(x1))))
-    yi1 = int(max(0, min(height, round(y1))))
-    xi2 = int(max(0, min(width, round(x2))))
-    yi2 = int(max(0, min(height, round(y2))))
-    clipped = np.asarray(mask, dtype=bool).copy()
-    if xi2 <= xi1 or yi2 <= yi1:
-        clipped.fill(False)
-        return clipped
-    clipped[:yi1, :] = False
-    clipped[yi2:, :] = False
-    clipped[:, :xi1] = False
-    clipped[:, xi2:] = False
-    return clipped
-
-
 def _validate_produced_masks(
     request: FrameMaskCacheRequest, masks: Sequence[np.ndarray]
 ) -> tuple[np.ndarray, ...]:
@@ -235,7 +218,7 @@ def _validate_produced_masks(
             raise ValueError("mask producer must return boolean source masks")
         if array.shape != request.output_shape_hw:
             raise ValueError("mask producer returned a mask with the wrong source shape")
-        validated.append(_clipped_mask(array, prompt.bbox_xyxy()))
+        validated.append(clip_mask_to_bbox(array, prompt.bbox_xyxy()))
     return tuple(validated)
 
 
@@ -289,7 +272,7 @@ def _load_valid_bundle(
         for prompt, mask, expected in zip(request.detections, array, metadata):
             if not isinstance(expected, dict) or expected != _mask_metadata(mask):
                 raise ValueError("per-mask digest or pixel count does not match")
-            if not np.array_equal(mask, _clipped_mask(mask, prompt.bbox_xyxy())):
+            if not np.array_equal(mask, clip_mask_to_bbox(mask, prompt.bbox_xyxy())):
                 raise ValueError("cached mask contains true pixels outside its clipped bbox")
             masks.append(mask.copy())
         return (
