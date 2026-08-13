@@ -289,3 +289,252 @@ def test_single_observation_is_clearly_marked_insufficient(tmp_path):
     )
     assert per_id["pairs"] == []
     assert per_id["leave_one_observation_out"] == []
+
+
+def test_duplicate_observations_from_one_image_are_not_cross_view_evidence(tmp_path):
+    fields = _identity_camera_arrays(1, 12, 12, focal_length=100.0)
+    cache_path = _write_npz(tmp_path / "duplicate_same_image.npz", fields)
+    mask = np.ones((12, 12), dtype=bool)
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([3], dtype=np.int32),
+        observations=(
+            _observation(3, mask, object_id=0),
+            _observation(3, mask, object_id=1),
+        ),
+        formal_snapshot=_snapshot(box(0.0, 0.0, 0.11, 0.11)),
+    )
+
+    per_id = evidence["per_global_id"]["1"]
+    assert per_id["distinct_image_id_count"] == 1
+    assert per_id["cross_view_status"] == (
+        "single_observation_insufficient_cross_view_evidence"
+    )
+    assert per_id["pairs"] == []
+
+
+def test_multiview_pairs_never_compare_observations_from_the_same_image(tmp_path):
+    fields = _identity_camera_arrays(2, 12, 12, focal_length=100.0)
+    cache_path = _write_npz(tmp_path / "multiview_with_duplicate.npz", fields)
+    mask = np.ones((12, 12), dtype=bool)
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([3, 4], dtype=np.int32),
+        observations=(
+            _observation(3, mask, object_id=0),
+            _observation(3, mask, object_id=1),
+            _observation(4, mask, object_id=0),
+        ),
+        formal_snapshot=_snapshot(box(0.0, 0.0, 0.11, 0.11)),
+    )
+
+    pairs = evidence["per_global_id"]["1"]["pairs"]
+    assert len(pairs) == 4
+    assert all(pair["source_image_id"] != pair["target_image_id"] for pair in pairs)
+
+
+def test_pairwise_reprojection_excludes_invalid_target_pixels_from_all_depth_counts(
+    tmp_path,
+):
+    fields = _identity_camera_arrays(2, 1, 5)
+    fields["world_points_conf"][1, 0, 1] = 0.5
+    fields["world_points"][1, 0, 2] = 0.0
+    fields["depth"][1, 0, 3, 0] = 0.0
+    fields["world_points"][1, 0, 3] = 0.0
+    cache_path = _write_npz(tmp_path / "invalid_target_pixels.npz", fields)
+    mask = np.ones((1, 5), dtype=bool)
+    target_valid_mask = mask.copy()
+    target_valid_mask[0, 0] = False
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([0, 1], dtype=np.int32),
+        observations=(
+            _observation(0, mask),
+            _observation(1, mask, valid_mask=target_valid_mask),
+        ),
+        formal_snapshot=_snapshot(),
+    )
+
+    forward, reverse = evidence["per_global_id"]["1"]["pairs"]
+    assert forward["source_sample_count"] == 5
+    assert forward["invalid_target_count"] == 4
+    assert forward["eligible_count"] == 1
+    assert forward["occluded_count"] == 0
+    assert forward["foreground_conflict_count"] == 0
+    assert forward["visible_consistent_count"] == 1
+    assert forward["visible_mask_supported_count"] == 1
+    assert forward["visible_mask_unsupported_count"] == 0
+    assert reverse["source_sample_count"] == 1
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_nonidentity_world_to_camera_rotation_and_translation_reconstruct_world(
+    tmp_path,
+):
+    fields = _identity_camera_arrays(1, 2, 2, focal_length=2.0)
+    fields["depth"][:] = 5.0
+    rotation = np.array(
+        [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+    )
+    translation = np.array([1.0, 2.0, 3.0])
+    fields["extrinsic"][0, :, :3] = rotation
+    fields["extrinsic"][0, :, 3] = translation
+    x_pixels, y_pixels = np.meshgrid(
+        np.arange(2, dtype=np.float64),
+        np.arange(2, dtype=np.float64),
+        indexing="xy",
+    )
+    camera_points = np.stack(
+        [2.5 * x_pixels, 2.5 * y_pixels, np.full((2, 2), 5.0)], axis=-1
+    )
+    fields["world_points"][0] = (camera_points - translation) @ rotation
+    cache_path = _write_npz(tmp_path / "nonidentity_camera.npz", fields)
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([8], dtype=np.int32),
+        observations=(),
+        formal_snapshot=_snapshot(),
+    )
+
+    residual = evidence["camera_contract"]["source_world_reconstruction_residual_m"]
+    assert evidence["status"] == "available"
+    assert residual["p50"] == pytest.approx(0.0, abs=1e-12)
+    assert residual["p95"] == pytest.approx(0.0, abs=1e-12)
+
+
+@pytest.mark.parametrize("mutation", ["unknown_image_id", "malformed_mask_shape"])
+def test_malformed_observation_returns_failed_evidence_without_raise(
+    tmp_path, mutation
+):
+    fields = _identity_camera_arrays(1, 2, 2)
+    cache_path = _write_npz(tmp_path / f"{mutation}.npz", fields)
+    mask = np.ones((2, 2), dtype=bool)
+    observation = (
+        _observation(99, mask)
+        if mutation == "unknown_image_id"
+        else _observation(0, np.ones((1, 2), dtype=bool))
+    )
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([0], dtype=np.int32),
+        observations=(observation,),
+        formal_snapshot=_snapshot(),
+    )
+
+    assert evidence["mode"] == "shadow"
+    assert evidence["status"] == "failed_evidence"
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_large_finite_world_residual_remains_json_safe(tmp_path):
+    fields = _identity_camera_arrays(1, 1, 1)
+    fields["world_points"][0, 0, 0] = 1e308
+    cache_path = _write_npz(tmp_path / "large_finite_residual.npz", fields)
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([0], dtype=np.int32),
+        observations=(),
+        formal_snapshot=_snapshot(),
+    )
+
+    residual = evidence["camera_contract"]["source_world_reconstruction_residual_m"]
+    assert evidence["status"] == "available"
+    assert np.isfinite(residual["max"])
+    assert residual["max"] > 1e308
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_large_opposite_finite_confidences_have_json_safe_summary(tmp_path):
+    fields = _identity_camera_arrays(1, 1, 2)
+    fields["world_points_conf"][0, 0] = np.array([-1e308, 1e308])
+    cache_path = _write_npz(tmp_path / "large_finite_confidence.npz", fields)
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([0], dtype=np.int32),
+        observations=(_observation(0, np.ones((1, 2), dtype=bool)),),
+        formal_snapshot=_snapshot(),
+    )
+
+    summary = evidence["per_global_id"]["1"]["observations"][0]["confidence"]
+    assert evidence["status"] == "available"
+    assert summary["p50"] == pytest.approx(0.0)
+    assert summary["p95"] == pytest.approx(9e307)
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_nonfinite_camera_reconstruction_math_returns_failed_camera_contract(tmp_path):
+    fields = _identity_camera_arrays(1, 1, 2)
+    fields["depth"][0, 0, 1, 0] = 1e200
+    fields["intrinsic"][0, 0, 0] = 1e-200
+    cache_path = _write_npz(tmp_path / "camera_math_overflow.npz", fields)
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([0], dtype=np.int32),
+        observations=(),
+        formal_snapshot=_snapshot(),
+    )
+
+    assert evidence["status"] == "failed_camera_contract"
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_nonfinite_reprojection_math_returns_failed_evidence(tmp_path):
+    fields = _identity_camera_arrays(2, 1, 1)
+    fields["world_points"][0, 0, 0] = np.array([1e308, 0.0, 1.0])
+    fields["intrinsic"][1, 0, 0] = 1e308
+    cache_path = _write_npz(tmp_path / "reprojection_overflow.npz", fields)
+    mask = np.ones((1, 1), dtype=bool)
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([0, 1], dtype=np.int32),
+        observations=(_observation(0, mask), _observation(1, mask)),
+        formal_snapshot=_snapshot(),
+    )
+
+    assert evidence["status"] == "failed_evidence"
+    json.dumps(evidence, allow_nan=False)
+
+
+def test_nonfinite_observation_geometry_math_returns_failed_evidence(tmp_path):
+    fields = _identity_camera_arrays(1, 1, 1)
+    cache_path = _write_npz(tmp_path / "geometry_overflow.npz", fields)
+    normal = np.full(3, 1.0 / np.sqrt(3.0))
+    u_axis = np.array([1.0, -1.0, 0.0]) / np.sqrt(2.0)
+    v_axis = np.cross(normal, u_axis)
+    extreme_plane = SupportPlane(
+        point=np.full(3, -1.7e308),
+        normal=normal,
+        u_axis=u_axis,
+        v_axis=v_axis,
+        inlier_count=10_000,
+        inlier_fraction=1.0,
+        p95_residual_m=0.0,
+    )
+    polygon = box(0.0, 0.0, 1.0, 1.0)
+    snapshot = FormalSnapshot(
+        status="accepted",
+        value_m2=1.0,
+        plane=extreme_plane,
+        polygons={"1": polygon},
+        union=polygon,
+        rejection_reason=None,
+    )
+
+    evidence = build_shadow_evidence(
+        cache_path,
+        cache_frame_ids=np.array([0], dtype=np.int32),
+        observations=(_observation(0, np.ones((1, 1), dtype=bool)),),
+        formal_snapshot=snapshot,
+    )
+
+    assert evidence["status"] == "failed_evidence"
+    json.dumps(evidence, allow_nan=False)

@@ -91,6 +91,10 @@ class CameraContractError(ValueError):
     """Malformed or numerically invalid optional camera data."""
 
 
+class EvidenceComputationError(ValueError):
+    """Non-camera shadow computation produced invalid derived numerics."""
+
+
 def build_shadow_evidence(
     cache_path: Path,
     *,
@@ -246,6 +250,7 @@ def _build_valid_camera_evidence(
             "unavailable_no_formal_geometry",
             "fixed-plane evidence requires a frozen formal support plane",
         )
+    camera_contract = _camera_contract_report(camera)
     prepared = _prepare_observations(camera, observations)
     grouped: dict[str, list[_PreparedObservation]] = {}
     for item in prepared:
@@ -254,21 +259,26 @@ def _build_valid_camera_evidence(
     per_global_id: dict[str, object] = {}
     for global_id in sorted(grouped, key=_global_id_key):
         group = grouped[global_id]
+        distinct_image_id_count = len(
+            {int(item.observation.image_id) for item in group}
+        )
         observation_reports = [
             _observation_report(camera, item, plane) for item in group
         ]
-        if len(group) == 1:
+        if distinct_image_id_count < 2:
             cross_view_status = "single_observation_insufficient_cross_view_evidence"
             pairs: list[dict[str, object]] = []
-            leave_one_out: list[dict[str, object]] = []
         else:
             cross_view_status = "available"
             pairs = [
                 _pairwise_reprojection(camera, source, target)
-                for source_index, source in enumerate(group)
-                for target_index, target in enumerate(group)
-                if source_index != target_index
+                for source in group
+                for target in group
+                if source.observation.image_id != target.observation.image_id
             ]
+        if len(group) == 1:
+            leave_one_out: list[dict[str, object]] = []
+        else:
             leave_one_out = _leave_one_observation_out(
                 camera,
                 group,
@@ -276,9 +286,7 @@ def _build_valid_camera_evidence(
                 formal_snapshot.polygons.get(global_id),
             )
         per_global_id[global_id] = {
-            "distinct_image_id_count": len(
-                {int(item.observation.image_id) for item in group}
-            ),
+            "distinct_image_id_count": distinct_image_id_count,
             "cross_view_status": cross_view_status,
             "observations": observation_reports,
             "pairs": pairs,
@@ -288,7 +296,7 @@ def _build_valid_camera_evidence(
     return {
         "mode": "shadow",
         "status": "available",
-        "camera_contract": _camera_contract_report(camera),
+        "camera_contract": camera_contract,
         "per_global_id": per_global_id,
     }
 
@@ -323,7 +331,7 @@ def _prepare_observations(
         qualified = (
             processed_mask
             & valid_mask
-            & (camera.confidence[frame_index] >= POINT_CONFIDENCE_THRESHOLD)
+            & _qualified_camera_grid(camera, frame_index)
         )
         prepared.append(
             _PreparedObservation(
@@ -346,14 +354,27 @@ def _camera_contract_report(camera: _CameraCache) -> dict[str, object]:
             camera.intrinsic[frame_index],
             camera.extrinsic[frame_index],
         )
-        residuals = np.linalg.norm(
-            reconstructed - camera.world_points[frame_index], axis=-1
+        try:
+            with np.errstate(over="raise", invalid="raise"):
+                residual_vectors = reconstructed - camera.world_points[frame_index]
+        except FloatingPointError as error:
+            raise CameraContractError(
+                f"source-world residual arithmetic failed for image {int(image_id)}"
+            ) from error
+        residuals = _stable_vector_norm(
+            residual_vectors,
+            error_type=CameraContractError,
+            label=f"source-world residual for image {int(image_id)}",
         ).reshape(-1)
         residual_parts.append(residuals)
         frame_reports.append(
             {
                 "image_id": int(image_id),
-                **_residual_summary(residuals),
+                **_residual_summary(
+                    residuals,
+                    error_type=CameraContractError,
+                    label=f"source-world residual for image {int(image_id)}",
+                ),
             }
         )
     all_residuals = np.concatenate(residual_parts)
@@ -367,7 +388,11 @@ def _camera_contract_report(camera: _CameraCache) -> dict[str, object]:
         "rotation_orthonormal_atol": 1e-4,
         "depth_tolerance_m": DEPTH_TOLERANCE_M,
         "source_world_reconstruction_residual_m": {
-            **_residual_summary(all_residuals),
+            **_residual_summary(
+                all_residuals,
+                error_type=CameraContractError,
+                label="source-world residual",
+            ),
             "frames": frame_reports,
         },
     }
@@ -385,13 +410,26 @@ def _reconstruct_world_points(
     pixels = np.stack(
         [x_pixels, y_pixels, np.ones((height, width), dtype=np.float64)], axis=-1
     )
-    rays = pixels @ np.linalg.inv(intrinsic).T
-    camera_points = rays * depth
-    homogeneous_camera = np.concatenate(
-        [camera_points, np.ones((height, width, 1), dtype=np.float64)], axis=-1
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            rays = pixels @ np.linalg.inv(intrinsic).T
+            camera_points = rays * depth
+            homogeneous_camera = np.concatenate(
+                [camera_points, np.ones((height, width, 1), dtype=np.float64)],
+                axis=-1,
+            )
+            camera_to_world = np.linalg.inv(_homogeneous_world_to_camera(extrinsic))
+            reconstructed = (homogeneous_camera @ camera_to_world.T)[..., :3]
+    except (FloatingPointError, np.linalg.LinAlgError) as error:
+        raise CameraContractError(
+            "depth/intrinsic/extrinsic world reconstruction arithmetic failed"
+        ) from error
+    _require_finite(
+        reconstructed,
+        error_type=CameraContractError,
+        label="reconstructed source-world points",
     )
-    camera_to_world = np.linalg.inv(_homogeneous_world_to_camera(extrinsic))
-    return (homogeneous_camera @ camera_to_world.T)[..., :3]
+    return reconstructed
 
 
 def _homogeneous_world_to_camera(extrinsic: np.ndarray) -> np.ndarray:
@@ -408,12 +446,39 @@ def _observation_report(
         item.processed_mask & item.valid_mask
     ]
     points = camera.world_points[frame_index][item.qualified_mask]
-    heights = (points - plane.point) @ plane.normal if len(points) else np.asarray([])
+    if len(points):
+        try:
+            with np.errstate(over="raise", invalid="raise"):
+                heights = (points - plane.point) @ plane.normal
+        except FloatingPointError as error:
+            raise EvidenceComputationError(
+                "observation support-plane height arithmetic failed"
+            ) from error
+        _require_finite(
+            heights,
+            error_type=EvidenceComputationError,
+            label="observation support-plane heights",
+        )
+    else:
+        heights = np.asarray([])
     camera_to_world = np.linalg.inv(
         _homogeneous_world_to_camera(camera.extrinsic[frame_index])
     )
     viewing_direction = camera_to_world[:3, :3] @ np.array([0.0, 0.0, 1.0])
-    viewing_direction /= np.linalg.norm(viewing_direction)
+    viewing_norm = _stable_vector_norm(
+        viewing_direction,
+        error_type=EvidenceComputationError,
+        label="camera viewing direction",
+    )
+    if float(viewing_norm) <= 0.0:
+        raise EvidenceComputationError("camera viewing direction has zero norm")
+    viewing_direction /= float(viewing_norm)
+    _require_finite(
+        camera_to_world[:3, 3],
+        viewing_direction,
+        error_type=EvidenceComputationError,
+        label="observation camera pose diagnostics",
+    )
     return {
         "image_id": int(item.observation.image_id),
         "object_id": int(item.observation.object_id),
@@ -440,18 +505,47 @@ def _pairwise_reprojection(
         source_indices
     ]
     target_extrinsic = camera.extrinsic[target.frame_index]
-    camera_points = (
-        source_points @ target_extrinsic[:, :3].T + target_extrinsic[:, 3]
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            camera_points = (
+                source_points @ target_extrinsic[:, :3].T
+                + target_extrinsic[:, 3]
+            )
+            projected = camera_points @ camera.intrinsic[target.frame_index].T
+    except FloatingPointError as error:
+        raise EvidenceComputationError(
+            "pairwise world-to-target projection arithmetic failed"
+        ) from error
+    _require_finite(
+        camera_points,
+        projected,
+        error_type=EvidenceComputationError,
+        label="pairwise world-to-target projection",
     )
     projected_depth = camera_points[:, 2]
     behind = projected_depth <= 0.0
-    projected = camera_points @ camera.intrinsic[target.frame_index].T
     denominators = projected[:, 2]
     projectable = (~behind) & (denominators != 0.0)
     x_coordinates = np.zeros(len(source_points), dtype=np.float64)
     y_coordinates = np.zeros(len(source_points), dtype=np.float64)
-    x_coordinates[projectable] = projected[projectable, 0] / denominators[projectable]
-    y_coordinates[projectable] = projected[projectable, 1] / denominators[projectable]
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            x_coordinates[projectable] = (
+                projected[projectable, 0] / denominators[projectable]
+            )
+            y_coordinates[projectable] = (
+                projected[projectable, 1] / denominators[projectable]
+            )
+    except FloatingPointError as error:
+        raise EvidenceComputationError(
+            "pairwise target-grid coordinate arithmetic failed"
+        ) from error
+    _require_finite(
+        x_coordinates[projectable],
+        y_coordinates[projectable],
+        error_type=EvidenceComputationError,
+        label="pairwise target-grid coordinates",
+    )
     height, width = target.processed_mask.shape
     inside = (
         projectable
@@ -465,15 +559,42 @@ def _pairwise_reprojection(
     x_pixels = np.rint(x_coordinates[inside_indices]).astype(np.int64)
     y_pixels = np.rint(y_coordinates[inside_indices]).astype(np.int64)
     target_depth = camera.depth[target.frame_index, y_pixels, x_pixels, 0]
-    signed_residual = projected_depth[inside_indices] - target_depth
+    target_is_valid = (
+        target.valid_mask[y_pixels, x_pixels]
+        & _qualified_camera_grid(camera, target.frame_index)[y_pixels, x_pixels]
+        & np.isfinite(target_depth)
+        & (target_depth > 0.0)
+    )
+    valid_inside_indices = inside_indices[target_is_valid]
+    valid_target_depth = target_depth[target_is_valid]
+    try:
+        with np.errstate(over="raise", invalid="raise"):
+            signed_residual = (
+                projected_depth[valid_inside_indices] - valid_target_depth
+            )
+    except FloatingPointError as error:
+        raise EvidenceComputationError(
+            "pairwise target-depth residual arithmetic failed"
+        ) from error
+    _require_finite(
+        signed_residual,
+        error_type=EvidenceComputationError,
+        label="pairwise target-depth residual",
+    )
     occluded = signed_residual > DEPTH_TOLERANCE_M
     foreground_conflict = signed_residual < -DEPTH_TOLERANCE_M
     visible = ~(occluded | foreground_conflict)
-    target_support = target.processed_mask[y_pixels, x_pixels]
+    target_support = target.processed_mask[
+        y_pixels[target_is_valid], x_pixels[target_is_valid]
+    ]
     visible_supported = visible & target_support
     visible_unsupported = visible & ~target_support
     absolute_residual = np.abs(signed_residual)
-    residual_summary = _residual_summary(absolute_residual)
+    residual_summary = _residual_summary(
+        absolute_residual,
+        error_type=EvidenceComputationError,
+        label="pairwise target-depth residual",
+    )
     return {
         "source_image_id": int(source.observation.image_id),
         "source_object_id": int(source.observation.object_id),
@@ -482,7 +603,8 @@ def _pairwise_reprojection(
         "source_sample_count": int(len(source_indices)),
         "behind_camera_count": int(np.count_nonzero(behind)),
         "outside_grid_count": int(np.count_nonzero(outside)),
-        "eligible_count": int(len(inside_indices)),
+        "invalid_target_count": int(np.count_nonzero(~target_is_valid)),
+        "eligible_count": int(len(valid_inside_indices)),
         "occluded_count": int(np.count_nonzero(occluded)),
         "foreground_conflict_count": int(np.count_nonzero(foreground_conflict)),
         "visible_consistent_count": int(np.count_nonzero(visible)),
@@ -491,6 +613,17 @@ def _pairwise_reprojection(
         "depth_residual_p50_m": residual_summary["p50"],
         "depth_residual_p95_m": residual_summary["p95"],
     }
+
+
+def _qualified_camera_grid(camera: _CameraCache, frame_index: int) -> np.ndarray:
+    world_points = camera.world_points[frame_index]
+    confidence = camera.confidence[frame_index]
+    return (
+        np.isfinite(world_points).all(axis=-1)
+        & np.any(world_points != 0.0, axis=-1)
+        & np.isfinite(confidence)
+        & (confidence >= POINT_CONFIDENCE_THRESHOLD)
+    )
 
 
 def _leave_one_observation_out(
@@ -553,40 +686,92 @@ def _fixed_plane_polygon(
             )
         point_parts.append(points)
     fused = np.concatenate(point_parts)
-    heights = (fused - plane.point) @ plane.normal
+    try:
+        with np.errstate(over="raise", invalid="raise"):
+            heights = (fused - plane.point) @ plane.normal
+    except FloatingPointError as error:
+        raise EvidenceComputationError(
+            "leave-one-out support-plane height arithmetic failed"
+        ) from error
+    _require_finite(
+        heights,
+        error_type=EvidenceComputationError,
+        label="leave-one-out support-plane heights",
+    )
     elevated = fused[heights > 0.015]
     if len(elevated) < 64:
         raise FootprintError(
             "leave-one-out global id has fewer than 64 elevated points"
         )
-    projected = project_to_plane(elevated, plane)
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            projected = project_to_plane(elevated, plane)
+            voxel_coordinates = projected / 0.005
+    except FloatingPointError as error:
+        raise EvidenceComputationError(
+            "leave-one-out support-plane projection arithmetic failed"
+        ) from error
+    _require_finite(
+        projected,
+        voxel_coordinates,
+        error_type=EvidenceComputationError,
+        label="leave-one-out projected points",
+    )
+    integer_limit = float(np.iinfo(np.int64).max)
+    if np.any(np.abs(voxel_coordinates) > integer_limit):
+        raise EvidenceComputationError(
+            "leave-one-out voxel coordinates exceed integer representation"
+        )
     balanced = voxel_balance_projected(projected, voxel_size_m=0.005)
     if len(balanced) < 64:
         raise FootprintError(
             "leave-one-out global id has fewer than 64 projected voxel points"
         )
     polygon, _ = carton_footprint_polygon_from_projected(balanced)
+    _require_finite(
+        np.asarray(polygon.exterior.coords, dtype=np.float64),
+        np.asarray([polygon.area], dtype=np.float64),
+        error_type=EvidenceComputationError,
+        label="leave-one-out polygon",
+    )
     return polygon
 
 
 def _polygon_change_metrics(full_polygon: Polygon, loo_polygon: Polygon) -> dict[str, object]:
-    if not isinstance(full_polygon, Polygon) or full_polygon.is_empty or not full_polygon.is_valid:
+    if not isinstance(full_polygon, Polygon):
+        raise FootprintError("frozen full-data footprint polygon is invalid")
+    _require_finite(
+        np.asarray(full_polygon.exterior.coords, dtype=np.float64),
+        error_type=EvidenceComputationError,
+        label="frozen full-data footprint polygon",
+    )
+    if full_polygon.is_empty or not full_polygon.is_valid:
         raise FootprintError("frozen full-data footprint polygon is invalid")
     intersection_area = float(full_polygon.intersection(loo_polygon).area)
     union_area = float(full_polygon.union(loo_polygon).area)
+    _require_finite(
+        np.asarray([intersection_area, union_area], dtype=np.float64),
+        error_type=EvidenceComputationError,
+        label="leave-one-out overlap metrics",
+    )
+    if union_area <= 0.0:
+        raise EvidenceComputationError(
+            "leave-one-out polygon union area must be positive"
+        )
     full_descriptor = _polygon_descriptor(full_polygon)
     loo_descriptor = _polygon_descriptor(loo_polygon)
     angle_difference = abs(loo_descriptor["angle_deg"] - full_descriptor["angle_deg"])
     angle_delta = min(angle_difference, 180.0 - angle_difference)
-    return {
+    centre_delta = _stable_vector_norm(
+        np.asarray(loo_descriptor["centre"])
+        - np.asarray(full_descriptor["centre"]),
+        error_type=EvidenceComputationError,
+        label="leave-one-out centre delta",
+    )
+    metrics = {
         "polygon_iou": intersection_area / union_area,
         "hausdorff_distance_m": float(full_polygon.hausdorff_distance(loo_polygon)),
-        "centre_delta_m": float(
-            np.linalg.norm(
-                np.asarray(loo_descriptor["centre"])
-                - np.asarray(full_descriptor["centre"])
-            )
-        ),
+        "centre_delta_m": float(centre_delta),
         "angle_delta_deg": float(angle_delta),
         "side_length_deltas_m": (
             np.asarray(loo_descriptor["side_lengths_m"])
@@ -602,6 +787,24 @@ def _polygon_change_metrics(full_polygon: Polygon, loo_polygon: Polygon) -> dict
         "full_area_m2": float(full_polygon.area),
         "loo_area_m2": float(loo_polygon.area),
     }
+    _require_finite(
+        np.asarray(
+            [
+                metrics["polygon_iou"],
+                metrics["hausdorff_distance_m"],
+                metrics["centre_delta_m"],
+                metrics["angle_delta_deg"],
+                metrics["area_delta_m2"],
+                metrics["full_area_m2"],
+                metrics["loo_area_m2"],
+                *metrics["side_length_deltas_m"],
+            ],
+            dtype=np.float64,
+        ),
+        error_type=EvidenceComputationError,
+        label="leave-one-out polygon change metrics",
+    )
+    return metrics
 
 
 def _polygon_descriptor(polygon: Polygon) -> dict[str, object]:
@@ -609,7 +812,11 @@ def _polygon_descriptor(polygon: Polygon) -> dict[str, object]:
     if coordinates.shape != (4, 2):
         raise FootprintError("frozen or leave-one-out footprint is not a four-edge OBB")
     edges = np.roll(coordinates, -1, axis=0) - coordinates
-    lengths = np.linalg.norm(edges, axis=1)
+    lengths = _stable_vector_norm(
+        edges,
+        error_type=EvidenceComputationError,
+        label="footprint polygon edge lengths",
+    )
     if not np.isfinite(lengths).all() or np.any(lengths <= 0.0):
         raise FootprintError("frozen or leave-one-out footprint has invalid sides")
     ordered_lengths = np.sort(lengths)
@@ -630,29 +837,126 @@ def _polygon_descriptor(polygon: Polygon) -> dict[str, object]:
     }
 
 
-def _residual_summary(values: np.ndarray) -> dict[str, object]:
+def _require_finite(
+    *arrays: np.ndarray,
+    error_type: type[Exception],
+    label: str,
+) -> None:
+    if not all(np.isfinite(np.asarray(array)).all() for array in arrays):
+        raise error_type(f"{label} produced non-finite derived values")
+
+
+def _stable_vector_norm(
+    vectors: np.ndarray,
+    *,
+    error_type: type[Exception],
+    label: str,
+) -> np.ndarray:
+    array = np.asarray(vectors, dtype=np.float64)
+    _require_finite(array, error_type=error_type, label=label)
+    absolute = np.abs(array)
+    scale = np.max(absolute, axis=-1, keepdims=True)
+    normalized = np.zeros_like(absolute)
+    try:
+        with np.errstate(over="raise", invalid="raise", divide="raise"):
+            np.divide(absolute, scale, out=normalized, where=scale != 0.0)
+            norm = scale[..., 0] * np.sqrt(np.sum(normalized * normalized, axis=-1))
+    except FloatingPointError as error:
+        raise error_type(f"{label} norm arithmetic failed") from error
+    _require_finite(norm, error_type=error_type, label=label)
+    return norm
+
+
+def _residual_summary(
+    values: np.ndarray,
+    *,
+    error_type: type[Exception],
+    label: str,
+) -> dict[str, object]:
     array = np.asarray(values, dtype=np.float64).reshape(-1)
     if len(array) == 0:
         return {"count": 0, "p50": None, "p95": None, "max": None}
-    return {
+    _require_finite(array, error_type=error_type, label=label)
+    summary = {
         "count": int(len(array)),
-        "p50": float(np.percentile(array, 50)),
-        "p95": float(np.percentile(array, 95)),
+        "p50": _finite_percentile(
+            array, 50.0, error_type=error_type, label=label
+        ),
+        "p95": _finite_percentile(
+            array, 95.0, error_type=error_type, label=label
+        ),
         "max": float(np.max(array)),
     }
+    _require_finite(
+        np.asarray([summary["p50"], summary["p95"], summary["max"]]),
+        error_type=error_type,
+        label=f"{label} summary",
+    )
+    return summary
+
+
+def _finite_percentile(
+    values: np.ndarray,
+    percentile: float,
+    *,
+    error_type: type[Exception],
+    label: str,
+) -> float:
+    ordered = np.sort(np.asarray(values, dtype=np.float64).reshape(-1))
+    position = (len(ordered) - 1) * percentile / 100.0
+    lower_index = int(np.floor(position))
+    upper_index = int(np.ceil(position))
+    fraction = position - lower_index
+    try:
+        with np.errstate(over="raise", invalid="raise"):
+            value = (
+                (1.0 - fraction) * ordered[lower_index]
+                + fraction * ordered[upper_index]
+            )
+    except FloatingPointError as error:
+        raise error_type(f"{label} percentile arithmetic failed") from error
+    _require_finite(
+        np.asarray([value]),
+        error_type=error_type,
+        label=f"{label} percentile",
+    )
+    return float(value)
 
 
 def _value_summary(values: np.ndarray) -> dict[str, object]:
     array = np.asarray(values, dtype=np.float64).reshape(-1)
     if len(array) == 0:
         return {"count": 0, "min": None, "p50": None, "p95": None, "max": None}
-    return {
+    _require_finite(
+        array,
+        error_type=EvidenceComputationError,
+        label="observation confidence",
+    )
+    summary = {
         "count": int(len(array)),
         "min": float(np.min(array)),
-        "p50": float(np.percentile(array, 50)),
-        "p95": float(np.percentile(array, 95)),
+        "p50": _finite_percentile(
+            array,
+            50.0,
+            error_type=EvidenceComputationError,
+            label="observation confidence",
+        ),
+        "p95": _finite_percentile(
+            array,
+            95.0,
+            error_type=EvidenceComputationError,
+            label="observation confidence",
+        ),
         "max": float(np.max(array)),
     }
+    _require_finite(
+        np.asarray(
+            [summary["min"], summary["p50"], summary["p95"], summary["max"]]
+        ),
+        error_type=EvidenceComputationError,
+        label="observation confidence summary",
+    )
+    return summary
 
 
 def _global_id_key(value: str) -> tuple[int, str]:
