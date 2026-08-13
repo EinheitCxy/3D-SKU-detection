@@ -150,7 +150,7 @@ print(deps)  # {'vggt_modules': False, 'visualization': True}
 
 ### 地堆 footprint 面积的定义与限制
 
-`--mode ground-stack-area` 是锚点无关的只读计量阶段：它读取 schema-v2 `da3_cache/predictions.npz` 的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine 与缓存原图尺寸，从 `dedup_detections/global_mapping.json` 的全部观测中为每个物理 `global_id` 聚合其有效 3D 点，并用本地 SAM3 checkpoint 生成每个检测框的 mask（mask 决定对象点与背景排除）。对每一 global ID，沿拟合支撑平面法向投影全部有效观测的 3D 点并恢复 OBB；最终取所有 carton OBB 投影的**多边形并集面积**（`m²`），指标 `da3_ground_footprint_union`。若任一 global ID 几何不完整（缺 mask、有效点不足、OBB 退化等），整体拒绝并输出 `status: rejected` 与 `value_m2: null`，不会以部分结果冒充总面积。旧 runner cache 不满足该 schema/provenance 合约，必须先用 DA3 reconstruction 重新生成 cache。DA3 尺度是模型估计，现场 reference 可用于 QA，而非必需输入。
+`--mode ground-stack-area` 是锚点无关的只读计量阶段：它读取 schema-v2 `da3_cache/predictions.npz` 的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine 与缓存原图尺寸，从 `dedup_detections/global_mapping.json` 的全部观测中为每个物理 `global_id` 聚合其有效 3D 点，并用本地 SAM3 checkpoint 生成每个检测框的 mask（mask 决定对象点与背景排除）。背景以 12 mm RANSAC 产生候选平面，再最多三次 SVD 精修、每轮剔除残差超过 10 mm 的点；精修后仍须保留至少 10,000 点及原始背景的 10%，且 P95 残差不超过 10 mm。对每一 global ID，沿拟合支撑平面法向投影全部有效观测的 3D 点并恢复 OBB；最终取所有 carton OBB 投影的**多边形并集面积**（`m²`），指标 `da3_ground_footprint_union`。若任一 global ID 几何不完整（缺 mask、有效点不足、OBB 退化等），整体拒绝并输出 `status: rejected` 与 `value_m2: null`，不会以部分结果冒充总面积。旧 runner cache 不满足该 schema/provenance 合约，必须先用 DA3 reconstruction 重新生成 cache。DA3 尺度是模型估计，现场 reference 可用于 QA，而非必需输入。
 
 结果是**每个 carton OBB 投影到支撑平面的多边形并集**，不是 bbox 面积算术和、SAM3 mask 面积、包装表面积、正面/接触面积或地面接触面积，并且不估计未检测/被遮挡商品。要求现有 DA3 cache、global mapping 与本地 SAM3 checkpoint，缺少任一即拒绝；不会改写检测 JSON 或 `global_mapping.json`。`measurement_report.json` 记录状态、尺度来源、支撑平面门与拒绝原因；`footprints.geojson` 与 `top_down_footprint.png` 用于审查每项贡献。
 

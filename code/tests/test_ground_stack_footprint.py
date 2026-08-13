@@ -69,6 +69,94 @@ def test_support_plane_rejects_p95_residual_above_threshold():
         _refine_support_plane(inliers, total_points=len(inliers))
 
 
+def test_support_plane_refinement_trims_ransac_tail_without_relaxing_ten_mm_gate():
+    coordinates = np.linspace(-1.0, 1.0, 120)
+    x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
+    table = np.column_stack(
+        [x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)]
+    )
+    tail = table[::12].copy()
+    tail[:, 2] = 0.011
+
+    plane = _refine_support_plane(
+        np.vstack([table, tail]),
+        total_points=len(table) + len(tail),
+        max_residual_m=0.010,
+    )
+
+    assert plane.inlier_count == len(table)
+    assert plane.inlier_fraction > 0.90
+    assert plane.p95_residual_m <= 0.010
+
+
+def test_support_plane_refinement_rejects_when_trim_drops_below_ten_percent():
+    coordinates = np.linspace(-1.0, 1.0, 100)
+    x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
+    table = np.column_stack(
+        [x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)]
+    )
+    tail = table[::10].copy()
+    tail[:, 2] = 0.011
+
+    with pytest.raises(FootprintError, match="after residual refinement"):
+        _refine_support_plane(
+            np.vstack([table, tail]),
+            total_points=110_000,
+            max_residual_m=0.010,
+        )
+
+
+def test_support_plane_gates_use_final_ten_mm_support_points(monkeypatch):
+    coordinates = np.linspace(-1.0, 1.0, 120)
+    x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
+    table = np.column_stack(
+        [x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)]
+    )
+    tail_coordinates = np.linspace(5.0, 9.0, 40)
+    tail_x, tail_y = np.meshgrid(tail_coordinates, tail_coordinates, indexing="xy")
+    tail = np.column_stack(
+        [
+            tail_x.ravel(),
+            tail_y.ravel(),
+            np.where((np.indices(tail_x.shape).sum(axis=0) % 2) == 0, 0.0119, -0.0119).ravel(),
+        ]
+    )
+    background = np.vstack([table, tail])
+    frames = np.arange(len(background)) % 3
+    observations = [carton_points((0.0, 0.2), (0.0, 0.2), 0.02)]
+
+    monkeypatch.setattr(
+        footprint_geometry,
+        "_adaptive_ransac_plane",
+        lambda *_args, **_kwargs: (np.zeros(3), np.array([0.0, 0.0, 1.0])),
+    )
+
+    _, diagnostics = select_support_plane(background, frames, observations)
+    candidate = diagnostics["candidates"][0]
+
+    assert candidate["spans_m"] == pytest.approx([2.0, 2.0])
+    assert candidate["hull_area_m2"] == pytest.approx(4.0)
+
+
+def test_support_plane_refinement_rejects_empty_residual_trim():
+    coordinates = np.linspace(-1.0, 1.0, 100)
+    x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
+    base = np.column_stack(
+        [x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)]
+    )
+    upper = base.copy()
+    lower = base.copy()
+    upper[:, 2] = 0.011
+    lower[:, 2] = -0.011
+
+    with pytest.raises(FootprintError, match="after residual refinement"):
+        _refine_support_plane(
+            np.vstack([upper, lower]),
+            total_points=len(upper) + len(lower),
+            max_residual_m=0.010,
+        )
+
+
 def test_support_plane_preserves_refinement_rejection_diagnostics(monkeypatch):
     table = make_plane_grid(np.zeros(3), np.array([0.0, 0.0, 1.0]))
     frame_ids = np.arange(len(table)) % 3

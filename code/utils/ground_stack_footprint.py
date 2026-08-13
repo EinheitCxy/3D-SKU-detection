@@ -81,7 +81,12 @@ def select_support_plane(
             "raw_inlier_fraction": float(len(inliers) / len(points)),
         }
         try:
-            plane = _refine_support_plane(inliers, total_points=len(points), max_residual_m=0.010)
+            plane, retained_indices = _refine_support_plane(
+                inliers,
+                total_points=len(points),
+                max_residual_m=0.010,
+                return_retained_indices=True,
+            )
         except FootprintError as error:
             candidates.append(
                 (
@@ -96,10 +101,13 @@ def select_support_plane(
             remaining = remaining[local_distances > 0.012]
             continue
         plane, oriented_heights = _orient_for_objects(plane, objects)
-        coordinates = project_to_plane(inliers, plane)
+        final_support_points = inliers[retained_indices]
+        raw_inlier_frames = frames[full_distances <= 0.012]
+        final_support_frames = raw_inlier_frames[retained_indices]
+        coordinates = project_to_plane(final_support_points, plane)
         hull = MultiPoint(coordinates).convex_hull
         spans = np.ptp(coordinates, axis=0)
-        inlier_frames = np.unique(frames[full_distances <= 0.012])
+        inlier_frames = np.unique(final_support_frames)
         frame_fraction = len(inlier_frames) / len(np.unique(frames))
         centres_inside = _object_centres_inside_hull(object_centres, plane, hull)
         gates = {
@@ -127,7 +135,11 @@ def select_support_plane(
             "inlier_count": plane.inlier_count,
             "inlier_fraction": plane.inlier_fraction,
             "p95_residual_m": plane.p95_residual_m,
-            "refinement": {"passed": True},
+            "refinement": {
+                "passed": True,
+                "retained_inlier_count": int(len(final_support_points)),
+                "retained_inlier_fraction": float(len(final_support_points) / len(points)),
+            },
             "frame_count": int(len(inlier_frames)),
             "frame_fraction": float(frame_fraction),
             "spans_m": spans.tolist(),
@@ -292,22 +304,38 @@ def _sample_ransac_triplet(
 
 
 def _refine_support_plane(
-    inliers: np.ndarray, total_points: int, max_residual_m: float = 0.012
-) -> SupportPlane:
-    inlier_count = len(inliers)
+    inliers: np.ndarray,
+    total_points: int,
+    max_residual_m: float = 0.010,
+    return_retained_indices: bool = False,
+) -> SupportPlane | tuple[SupportPlane, np.ndarray]:
+    refined = inliers
+    retained_indices = np.arange(len(inliers))
+    inlier_count = len(refined)
     inlier_fraction = inlier_count / total_points
     if inlier_count < 10_000 or inlier_fraction < 0.10:
         raise FootprintError("support plane has insufficient inliers")
 
-    point = inliers.mean(axis=0)
-    _, _, right_vectors = np.linalg.svd(inliers - point, full_matrices=False)
-    normal = right_vectors[-1]
-    normal /= np.linalg.norm(normal)
-    dominant_index = int(np.argmax(np.abs(normal)))
-    if normal[dominant_index] < 0:
-        normal = -normal
+    for _ in range(3):
+        point, normal = _fit_plane_svd(refined)
+        residuals = np.abs((refined - point) @ normal)
+        retained = residuals <= max_residual_m
+        if retained.all():
+            break
+        refined = refined[retained]
+        retained_indices = retained_indices[retained]
+        inlier_count = len(refined)
+        inlier_fraction = inlier_count / total_points
+        if inlier_count < 10_000 or inlier_fraction < 0.10:
+            raise FootprintError("support plane has insufficient inliers after residual refinement")
 
-    residuals = np.abs((inliers - point) @ normal)
+    inlier_count = len(refined)
+    inlier_fraction = inlier_count / total_points
+    if inlier_count < 10_000 or inlier_fraction < 0.10:
+        raise FootprintError("support plane has insufficient inliers after residual refinement")
+
+    point, normal = _fit_plane_svd(refined)
+    residuals = np.abs((refined - point) @ normal)
     p95_residual_m = float(np.percentile(residuals, 95))
     if p95_residual_m > max_residual_m:
         raise FootprintError(f"support plane residual exceeds {max_residual_m:.3f} m")
@@ -317,7 +345,7 @@ def _refine_support_plane(
     u_axis /= np.linalg.norm(u_axis)
     v_axis = np.cross(normal, u_axis)
     v_axis /= np.linalg.norm(v_axis)
-    return SupportPlane(
+    plane = SupportPlane(
         point=point,
         normal=normal,
         u_axis=u_axis,
@@ -326,6 +354,20 @@ def _refine_support_plane(
         inlier_fraction=inlier_fraction,
         p95_residual_m=p95_residual_m,
     )
+    if return_retained_indices:
+        return plane, retained_indices
+    return plane
+
+
+def _fit_plane_svd(points: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    point = points.mean(axis=0)
+    _, _, right_vectors = np.linalg.svd(points - point, full_matrices=False)
+    normal = right_vectors[-1]
+    normal /= np.linalg.norm(normal)
+    dominant_index = int(np.argmax(np.abs(normal)))
+    if normal[dominant_index] < 0:
+        normal = -normal
+    return point, normal
 
 
 def voxel_balance_projected(
