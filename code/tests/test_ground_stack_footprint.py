@@ -280,6 +280,38 @@ def test_support_plane_preserves_refinement_rejection_diagnostics(monkeypatch):
     assert all(candidate["raw_inlier_fraction"] >= 0.10 for candidate in candidates)
 
 
+def test_support_plane_refinement_rejection_keeps_exact_ransac_diagnostics(
+    monkeypatch,
+):
+    table = make_plane_grid(np.zeros(3), np.array([0.0, 0.0, 1.0]))
+    frame_ids = np.arange(len(table)) % 3
+    observations = [carton_points((0.0, 0.2), (0.0, 0.2), 0.02)]
+
+    monkeypatch.setattr(
+        footprint_geometry,
+        "_adaptive_ransac_plane",
+        lambda *_args, **_kwargs: RansacOutcome(
+            np.zeros(3), np.array([0.0, 0.0, 1.0]), 37, True
+        ),
+    )
+
+    def reject_refinement(*_args, **_kwargs):
+        raise FootprintError("support plane residual exceeds 0.010 m")
+
+    monkeypatch.setattr(
+        footprint_geometry,
+        "_refine_support_plane",
+        reject_refinement,
+    )
+
+    with pytest.raises(SupportPlaneSelectionError) as raised:
+        select_support_plane(table, frame_ids, observations)
+
+    candidate = raised.value.diagnostics["candidates"][0]
+    assert candidate["refinement"]["passed"] is False
+    assert candidate["ransac"] == {"trial_count": 37, "early_exit": True}
+
+
 def horizontal_support_plane() -> SupportPlane:
     return SupportPlane(
         point=np.zeros(3),
