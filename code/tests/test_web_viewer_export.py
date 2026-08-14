@@ -101,6 +101,7 @@ def _write_footprint_generation(
     *,
     status: str,
     cache_provenance: dict | None = None,
+    global_mapping_path: Path,
 ) -> None:
     run_id = "a" * 32
     generation = root / "runs" / run_id
@@ -112,6 +113,7 @@ def _write_footprint_generation(
         "status": status,
         "value_m2": 1.0 if accepted else None,
         "rejection_reason": None if accepted else "formal input rejected",
+        "global_mapping_sha256": _sha256(global_mapping_path),
         "cache": _cache_provenance() if cache_provenance is None else cache_provenance,
         "plane": {
             "selected": (
@@ -133,12 +135,21 @@ def _write_footprint_generation(
             {
                 "type": "Feature",
                 "geometry": {"type": "Polygon", "coordinates": [square]},
-                "properties": {"global_id": "11", "area_m2": 0.5},
+                "properties": {
+                    "coordinate_space": "local_support_plane_meters",
+                    "global_id": "11",
+                    "area_m2": 0.5,
+                    "observations_used": 1,
+                },
             },
             {
                 "type": "Feature",
                 "geometry": {"type": "Polygon", "coordinates": [square]},
-                "properties": {"global_id": "union", "area_m2": 1.0},
+                "properties": {
+                    "coordinate_space": "local_support_plane_meters",
+                    "global_id": "union",
+                    "area_m2": 1.0,
+                },
             },
         ]
     (generation / "measurement_report.json").write_text(
@@ -179,6 +190,25 @@ def _write_footprint_generation(
     )
 
 
+def _refresh_formal_manifest(generation: Path) -> None:
+    artifact_names = (
+        "measurement_report.json",
+        "footprints.geojson",
+        "top_down_footprint.png",
+    )
+    (generation / "manifest.json").write_text(
+        json.dumps(
+            {
+                "complete": True,
+                "run_id": generation.name,
+                "sha256": {name: _sha256(generation / name) for name in artifact_names},
+            },
+            allow_nan=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def exporter_inputs(tmp_path: Path) -> dict[str, Path]:
     cache_path = tmp_path / "predictions.npz"
@@ -198,7 +228,9 @@ def exporter_inputs(tmp_path: Path) -> dict[str, Path]:
     mapping_path = tmp_path / "global_mapping.json"
     _write_mapping(mapping_path)
     footprint_root = tmp_path / "ground_stack_footprint"
-    _write_footprint_generation(footprint_root, status="accepted")
+    _write_footprint_generation(
+        footprint_root, status="accepted", global_mapping_path=mapping_path
+    )
     return {
         "da3_cache_path": cache_path,
         "global_mapping_path": mapping_path,
@@ -240,7 +272,11 @@ def test_accepted_generation_exports_fixed_bundle_and_exact_binary_lengths(expor
 
 
 def test_rejected_generation_preserves_null_value_and_exports_no_footprint_geometry(exporter_inputs):
-    _write_footprint_generation(exporter_inputs["footprint_root"], status="rejected")
+    _write_footprint_generation(
+        exporter_inputs["footprint_root"],
+        status="rejected",
+        global_mapping_path=exporter_inputs["global_mapping_path"],
+    )
 
     result = export_web_viewer_bundle(**exporter_inputs)
 
@@ -251,6 +287,82 @@ def test_rejected_generation_preserves_null_value_and_exports_no_footprint_geome
     assert footprints["per_global_id"] == {}
     assert footprints["union"] is None
     assert footprints["support_plane"] is None
+
+
+@pytest.mark.parametrize("status", ["accepted", "rejected"])
+def test_mapping_digest_mismatch_rejects_before_any_bundle_publication(exporter_inputs, status):
+    _write_footprint_generation(
+        exporter_inputs["footprint_root"],
+        status=status,
+        global_mapping_path=exporter_inputs["global_mapping_path"],
+    )
+    generation = exporter_inputs["footprint_root"] / "runs" / ("a" * 32)
+    report_path = generation / "measurement_report.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["global_mapping_sha256"] = "0" * 64
+    report_path.write_text(json.dumps(report, allow_nan=False), encoding="utf-8")
+    _refresh_formal_manifest(generation)
+
+    with pytest.raises(ValueError, match="mapping"):
+        export_web_viewer_bundle(**exporter_inputs)
+
+    assert not exporter_inputs["output_dir"].exists()
+
+
+def test_accepted_object_index_and_footprint_ids_must_match_before_publication(exporter_inputs):
+    generation = exporter_inputs["footprint_root"] / "runs" / ("a" * 32)
+    geojson_path = generation / "footprints.geojson"
+    geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
+    geojson["features"][0]["properties"]["global_id"] = "12"
+    geojson_path.write_text(json.dumps(geojson, allow_nan=False), encoding="utf-8")
+    _refresh_formal_manifest(generation)
+
+    with pytest.raises(ValueError, match="ID set"):
+        export_web_viewer_bundle(**exporter_inputs)
+
+    assert not exporter_inputs["output_dir"].exists()
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ["accepted_value", "per_id_properties", "union_area", "rejected_reason"],
+)
+def test_footprint_bundle_contract_rejects_malformed_properties_and_value_relations(
+    exporter_inputs, corruption
+):
+    status = "rejected" if corruption == "rejected_reason" else "accepted"
+    _write_footprint_generation(
+        exporter_inputs["footprint_root"],
+        status=status,
+        global_mapping_path=exporter_inputs["global_mapping_path"],
+    )
+    generation = exporter_inputs["footprint_root"] / "runs" / ("a" * 32)
+    report_path = generation / "measurement_report.json"
+    geojson_path = generation / "footprints.geojson"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
+    if corruption == "accepted_value":
+        report["value_m2"] = -1.0
+    elif corruption == "per_id_properties":
+        geojson["features"][0]["properties"] = {
+            "coordinate_space": "local_support_plane_meters",
+            "global_id": "11",
+            "area_m2": 0.5,
+            "observations_used": True,
+            "unexpected": "not in browser contract",
+        }
+    elif corruption == "union_area":
+        geojson["features"][1]["properties"]["area_m2"] = 0.5
+    else:
+        report["rejection_reason"] = " "
+    report_path.write_text(json.dumps(report, allow_nan=False), encoding="utf-8")
+    geojson_path.write_text(json.dumps(geojson, allow_nan=False), encoding="utf-8")
+    _refresh_formal_manifest(generation)
+
+    with pytest.raises(ValueError):
+        export_web_viewer_bundle(**exporter_inputs)
+
+    assert not exporter_inputs["output_dir"].exists()
 
 
 @pytest.mark.parametrize("corruption", ["manifest", "current"])
@@ -290,6 +402,7 @@ def test_complete_cache_metadata_must_match_formal_report_provenance(exporter_in
         exporter_inputs["footprint_root"],
         status="accepted",
         cache_provenance=_cache_provenance(source_model="different-formal-cache"),
+        global_mapping_path=exporter_inputs["global_mapping_path"],
     )
 
     with pytest.raises(ValueError, match="provenance"):

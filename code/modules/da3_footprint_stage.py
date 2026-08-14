@@ -115,6 +115,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         "unit": "m2",
         "status": "rejected",
         "value_m2": None,
+        "global_mapping_sha256": None,
         "cache": {},
         "sam3_mask_cache": {"cache_root": "sam3_mask_cache/v1", "frames": []},
         "plane": {"candidates": [], "selected": None},
@@ -152,7 +153,8 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         _validate_complete_source_ids(cache["image_ids"], image_paths, detection_paths)
         report["cache"] = _validate_cache(cache, image_paths)
         detections = _load_detections(detection_paths)
-        global_mapping = _load_mapping(mapping_path, detections)
+        global_mapping, global_mapping_sha256 = _load_mapping(mapping_path, detections)
+        report["global_mapping_sha256"] = global_mapping_sha256
         sam3_checkpoint = Path(_SAM3_CHECKPOINT)
         sam3_checkpoint_sha256 = checkpoint_sha256(sam3_checkpoint)
         sam3_code_fingerprint = _sam3_code_fingerprint()
@@ -445,11 +447,14 @@ def _load_detections(detection_paths: dict[int, Path]) -> dict[int, list[dict[st
     return detections
 
 
-def _load_mapping(path: Path, detections: dict[int, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+def _load_mapping(
+    path: Path, detections: dict[int, list[dict[str, Any]]]
+) -> tuple[dict[str, list[dict[str, Any]]], str]:
     if not path.is_file():
         raise FootprintStageError(f"global_mapping.json is missing: {path}")
     try:
-        raw = json.loads(path.read_text())
+        raw_bytes = path.read_bytes()
+        raw = json.loads(raw_bytes)
     except json.JSONDecodeError as error:
         raise FootprintStageError(f"invalid global_mapping.json: {error}") from error
     if not isinstance(raw, dict) or not raw:
@@ -476,7 +481,7 @@ def _load_mapping(path: Path, detections: dict[int, list[dict[str, Any]]]) -> di
         mapping_by_id[string_id] = checked
     if seen != set(expected):
         raise FootprintStageError("mapping observations do not exactly equal the full detection collection")
-    return mapping_by_id
+    return mapping_by_id, hashlib.sha256(raw_bytes).hexdigest()
 
 
 def _masked_observations(

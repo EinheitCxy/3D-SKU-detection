@@ -481,6 +481,19 @@ def test_stage_fuses_global_id_views_and_uses_polygon_union(monkeypatch, tmp_pat
     }
 
 
+def test_stage_records_digest_of_exact_raw_mapping_bytes(monkeypatch, tmp_path):
+    """Catches hashing a reserialized mapping rather than the parsed byte snapshot."""
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
+    mapping_path.write_bytes(b'{\n  "1": [\n    {"image_id": 0, "object_id": 0, "bbox": [16,24,80,104]},\n    {"image_id": 1, "object_id": 0, "bbox": [18,22,82,102]}\n  ],\n  "2": [ {"image_id": 2, "object_id": 0, "bbox": [62,24,126,104]} ]\n}\n')
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert report["global_mapping_sha256"] == _sha256(mapping_path)
+
+
 def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_path):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", masks_with_one_empty)

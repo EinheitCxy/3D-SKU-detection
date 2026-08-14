@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -66,12 +67,26 @@ def export_web_viewer_bundle(
     cache = _load_da3_cache(Path(da3_cache_path))
     sampled = _sample_points(cache, voxel_size=voxel_size, max_points=max_points)
     artifacts = resolve_current_footprint_artifacts(Path(footprint_root))
-    footprint, report_cache = _load_footprint(artifacts)
+    footprint, report_cache, expected_mapping_sha256 = _load_footprint(artifacts)
     if report_cache != cache["provenance"]:
         raise WebViewerExportError(
             "DA3 cache provenance does not match formal footprint report"
         )
-    objects = build_global_object_index(GlobalIDMapper(str(global_mapping_path)))
+    mapping_path = Path(global_mapping_path)
+    mapping_sha256_before = _mapping_sha256(mapping_path)
+    objects = build_global_object_index(GlobalIDMapper(str(mapping_path)))
+    mapping_sha256_after = _mapping_sha256(mapping_path)
+    if (
+        mapping_sha256_before != expected_mapping_sha256
+        or mapping_sha256_after != expected_mapping_sha256
+    ):
+        raise WebViewerExportError(
+            "global mapping changed or does not match formal footprint report"
+        )
+    if footprint["status"] == "accepted" and set(objects) != set(footprint["per_global_id"]):
+        raise WebViewerExportError(
+            "accepted formal footprint object-index and geometry ID sets must match"
+        )
     output_path = Path(output_dir)
 
     manifest = {
@@ -297,7 +312,9 @@ def _sample_points(cache: dict[str, Any], *, voxel_size: float, max_points: int)
     }
 
 
-def _load_footprint(artifacts: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _load_footprint(
+    artifacts: dict[str, str]
+) -> tuple[dict[str, Any], dict[str, Any], str]:
     try:
         report_path = Path(artifacts["measurement_report"])
         report = _read_json(report_path)
@@ -310,6 +327,9 @@ def _load_footprint(artifacts: dict[str, str]) -> tuple[dict[str, Any], dict[str
     report_cache = report.get("cache")
     if not isinstance(report_cache, dict):
         raise WebViewerExportError("formal footprint report cache provenance is invalid")
+    mapping_sha256 = report.get("global_mapping_sha256")
+    if not isinstance(mapping_sha256, str) or _SHA256.fullmatch(mapping_sha256) is None:
+        raise WebViewerExportError("formal footprint report global mapping digest is invalid")
     run_id = generation_manifest.get("run_id")
     if not isinstance(run_id, str):
         raise WebViewerExportError("formal footprint manifest run_id is invalid")
@@ -321,10 +341,28 @@ def _load_footprint(artifacts: dict[str, str]) -> tuple[dict[str, Any], dict[str
     accepted = status == "accepted"
     value = report.get("value_m2")
     if accepted:
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
-            raise WebViewerExportError("accepted formal footprint value_m2 must be finite")
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            raise WebViewerExportError(
+                "accepted formal footprint value_m2 must be finite and non-negative"
+            )
+        if report.get("rejection_reason") is not None:
+            raise WebViewerExportError(
+                "accepted formal footprint rejection_reason must be null"
+            )
     elif value is not None:
         raise WebViewerExportError("rejected formal footprint value_m2 must be null")
+    elif (
+        not isinstance(report.get("rejection_reason"), str)
+        or not report["rejection_reason"].strip()
+    ):
+        raise WebViewerExportError(
+            "rejected formal footprint rejection_reason must be non-empty"
+        )
     if (
         geojson.get("type") != "FeatureCollection"
         or geojson.get("coordinate_space") != "local_support_plane_meters"
@@ -346,7 +384,7 @@ def _load_footprint(artifacts: dict[str, str]) -> tuple[dict[str, Any], dict[str
             "support_plane": None,
             "per_global_id": {},
             "union": None,
-        }, report_cache
+        }, report_cache, mapping_sha256
     plane = _support_plane(report)
     per_global_id: dict[str, Any] = {}
     union: dict[str, Any] | None = None
@@ -362,6 +400,12 @@ def _load_footprint(artifacts: dict[str, str]) -> tuple[dict[str, Any], dict[str
             per_global_id[global_id] = geometry
     if union is None:
         raise WebViewerExportError("accepted formal footprint GeoJSON is missing union geometry")
+    if not per_global_id:
+        raise WebViewerExportError("accepted formal footprint GeoJSON is missing per-ID geometry")
+    if union["properties"]["area_m2"] != float(value):
+        raise WebViewerExportError(
+            "accepted formal footprint union area_m2 must equal value_m2"
+        )
     return {
         "metric": report["metric"],
         "unit": report["unit"],
@@ -372,7 +416,18 @@ def _load_footprint(artifacts: dict[str, str]) -> tuple[dict[str, Any], dict[str
         "support_plane": plane,
         "per_global_id": per_global_id,
         "union": union,
-    }, report_cache
+    }, report_cache, mapping_sha256
+
+
+def _mapping_sha256(path: Path) -> str:
+    try:
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except OSError as error:
+        raise WebViewerExportError(f"cannot hash global mapping: {error}") from error
 
 
 def _read_json(path: Path) -> Any:
@@ -409,13 +464,63 @@ def _parse_feature(feature: Any) -> tuple[str, dict[str, Any]]:
     if not isinstance(properties, dict) or not isinstance(properties.get("global_id"), str):
         raise WebViewerExportError("formal footprint GeoJSON global_id is invalid")
     global_id = properties["global_id"]
+    if global_id == "union":
+        expected_keys = {"coordinate_space", "global_id", "area_m2"}
+        if set(properties) != expected_keys:
+            raise WebViewerExportError("formal union footprint properties are invalid")
+        normalized_properties = {
+            "coordinate_space": "local_support_plane_meters",
+            "global_id": "union",
+            "area_m2": _footprint_area(properties.get("area_m2"), "union"),
+        }
+    else:
+        expected_keys = {"coordinate_space", "global_id", "area_m2", "observations_used"}
+        if set(properties) != expected_keys or _GLOBAL_ID.fullmatch(global_id) is None:
+            raise WebViewerExportError("formal per-ID footprint properties are invalid")
+        normalized_properties = {
+            "coordinate_space": "local_support_plane_meters",
+            "global_id": global_id,
+            "area_m2": _footprint_area(properties.get("area_m2"), global_id),
+            "observations_used": _observations_used(properties.get("observations_used")),
+        }
+    if properties.get("coordinate_space") != "local_support_plane_meters":
+        raise WebViewerExportError("formal footprint GeoJSON coordinate_space is invalid")
     if not global_id:
         raise WebViewerExportError("formal footprint GeoJSON global_id is invalid")
     geometry = feature.get("geometry")
     if not isinstance(geometry, dict) or geometry.get("type") not in {"Polygon", "MultiPolygon"}:
         raise WebViewerExportError("formal footprint GeoJSON geometry is invalid")
     polygons = _parse_polygons(geometry["type"], geometry.get("coordinates"))
-    return global_id, {"rings": polygons, "properties": properties}
+    return global_id, {"rings": polygons, "properties": normalized_properties}
+
+
+_GLOBAL_ID = re.compile(r"^(0|[1-9][0-9]*)$")
+
+
+def _footprint_area(value: Any, global_id: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value < 0
+    ):
+        raise WebViewerExportError(
+            f"formal footprint area_m2 is invalid for global ID {global_id}"
+        )
+    return float(value)
+
+
+def _observations_used(value: Any) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or not float(value).is_integer()
+        or value < 0
+        or value > 2**53 - 1
+    ):
+        raise WebViewerExportError("formal per-ID footprint observations_used is invalid")
+    return int(value)
 
 
 def _parse_polygons(geometry_type: str, coordinates: Any) -> list[list[list[list[float]]]]:
