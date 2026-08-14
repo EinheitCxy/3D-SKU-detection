@@ -16,10 +16,16 @@ import type { FootprintBundle, FootprintGeometry, SupportPlane } from "./contrac
 
 export const FOOTPRINT_AMBER = new Color("#f5a524");
 
+export interface FootprintSelectionVisual {
+  readonly fills: readonly MeshBasicMaterial[];
+  readonly outlines: readonly LineBasicMaterial[];
+}
+
 export interface FootprintObjects {
   readonly group: Group;
   readonly pickMeshes: Mesh[];
   readonly focusTargets: ReadonlyMap<string, Group>;
+  readonly selectionVisuals: ReadonlyMap<string, FootprintSelectionVisual>;
 }
 
 export function createFootprintObjects(footprints: FootprintBundle): FootprintObjects {
@@ -27,7 +33,8 @@ export function createFootprintObjects(footprints: FootprintBundle): FootprintOb
   group.name = "footprints";
   const pickMeshes: Mesh[] = [];
   const focusTargets = new Map<string, Group>();
-  if (footprints.status !== "accepted" || footprints.support_plane === null) return { group, pickMeshes, focusTargets };
+  const selectionVisuals = new Map<string, FootprintSelectionVisual>();
+  if (footprints.status !== "accepted" || footprints.support_plane === null) return { group, pickMeshes, focusTargets, selectionVisuals };
 
   if (footprints.union !== null) {
     const union = createOutlineGroup("footprint:union:outline", footprints.union, footprints.support_plane, 0.9);
@@ -38,28 +45,40 @@ export function createFootprintObjects(footprints: FootprintBundle): FootprintOb
     group.add(visual.group);
     pickMeshes.push(...visual.meshes);
     focusTargets.set(globalId, visual.group);
+    selectionVisuals.set(globalId, { fills: visual.fillMaterials, outlines: visual.outlineMaterials });
   }
-  return { group, pickMeshes, focusTargets };
+  return { group, pickMeshes, focusTargets, selectionVisuals };
 }
 
-function createPerIdVisual(globalId: string, geometry: FootprintGeometry, plane: SupportPlane): { group: Group; meshes: Mesh[] } {
+function createPerIdVisual(globalId: string, geometry: FootprintGeometry, plane: SupportPlane): {
+  group: Group;
+  meshes: Mesh[];
+  fillMaterials: MeshBasicMaterial[];
+  outlineMaterials: LineBasicMaterial[];
+} {
   const group = new Group();
   group.name = `footprint:${globalId}`;
   const meshes: Mesh[] = [];
+  const fillMaterials: MeshBasicMaterial[] = [];
+  const outlineMaterials: LineBasicMaterial[] = [];
   geometry.rings.forEach((polygon, index) => {
-    const mesh = new Mesh(createPolygonGeometry(polygon, plane), new MeshBasicMaterial({
+    const fillMaterial = new MeshBasicMaterial({
       color: FOOTPRINT_AMBER, transparent: true, opacity: 0.38, side: 2,
       polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
-    }));
+    });
+    const mesh = new Mesh(createPolygonGeometry(polygon, plane), fillMaterial);
     mesh.name = `footprint:${globalId}:fill:${index}`;
     mesh.renderOrder = 2;
     mesh.userData.globalId = globalId;
     group.add(mesh);
     meshes.push(mesh);
-    group.add(createOutlineGroup(`footprint:${globalId}:outline:${index}`, { rings: [polygon], properties: geometry.properties }, plane, 0.95));
+    fillMaterials.push(fillMaterial);
+    const outline = createOutlineGroup(`footprint:${globalId}:outline:${index}`, { rings: [polygon], properties: geometry.properties }, plane, 0.95);
+    group.add(outline);
+    for (const line of outline.children as Line[]) outlineMaterials.push(line.material as LineBasicMaterial);
   });
   if (meshes.length === 0) throw new Error(`Footprint ${globalId} has no polygons`);
-  return { group, meshes };
+  return { group, meshes, fillMaterials, outlineMaterials };
 }
 
 function createOutlineGroup(name: string, geometry: FootprintGeometry, plane: SupportPlane, opacity: number): Group {

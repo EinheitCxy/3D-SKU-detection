@@ -28,6 +28,27 @@ export interface ViewerSceneController {
   dispose(): void;
 }
 
+export interface FootprintPointerPress {
+  readonly pointerId: number;
+  readonly clientX: number;
+  readonly clientY: number;
+}
+
+export interface FootprintPointerRelease extends FootprintPointerPress {
+  readonly button: number;
+  readonly isPrimary: boolean;
+}
+
+const FOOTPRINT_CLICK_THRESHOLD_PX = 6;
+
+export function isFootprintClickRelease(press: FootprintPointerPress | null, release: FootprintPointerRelease): boolean {
+  return press !== null
+    && release.isPrimary
+    && release.button === 0
+    && release.pointerId === press.pointerId
+    && Math.hypot(release.clientX - press.clientX, release.clientY - press.clientY) <= FOOTPRINT_CLICK_THRESHOLD_PX;
+}
+
 interface FocusAnimation {
   readonly startedAt: number;
   readonly fromPosition: Vector3;
@@ -66,6 +87,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   const raycaster = new Raycaster();
   const pointer = new Vector2();
   let pickHandler: ((globalId: string) => void) | null = null;
+  let primaryPointerPress: FootprintPointerPress | null = null;
   let focusAnimation: FocusAnimation | null = null;
   let animationFrame = 0;
   const resize = () => {
@@ -79,7 +101,18 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   resizeObserver.observe(container);
   resize();
 
+  const onPointerDown = (event: PointerEvent) => {
+    if (event.isPrimary && event.button === 0) {
+      primaryPointerPress = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY };
+    }
+  };
+  const onPointerCancel = (event: PointerEvent) => {
+    if (event.isPrimary && primaryPointerPress?.pointerId === event.pointerId) primaryPointerPress = null;
+  };
   const onPointerUp = (event: PointerEvent) => {
+    const press = primaryPointerPress;
+    if (event.isPrimary && press?.pointerId === event.pointerId) primaryPointerPress = null;
+    if (!isFootprintClickRelease(press, event)) return;
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
@@ -87,7 +120,9 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     const globalId = hit?.object.userData.globalId;
     if (typeof globalId === "string") pickHandler?.(globalId);
   };
+  renderer.domElement.addEventListener("pointerdown", onPointerDown);
   renderer.domElement.addEventListener("pointerup", onPointerUp);
+  renderer.domElement.addEventListener("pointercancel", onPointerCancel);
   controls.addEventListener("start", () => { focusAnimation = null; });
 
   const render = (time: number) => {
@@ -106,10 +141,12 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
 
   return {
     selectGlobalId(globalId) {
-      for (const mesh of footprints.pickMeshes) {
-        const material = mesh.material as { opacity: number };
-        const isSelected = globalId !== null && mesh.userData.globalId === globalId;
-        material.opacity = globalId === null ? 0.38 : isSelected ? 0.72 : 0.12;
+      for (const [footprintId, visual] of footprints.selectionVisuals) {
+        const isSelected = globalId !== null && footprintId === globalId;
+        const fillOpacity = globalId === null ? 0.38 : isSelected ? 0.72 : 0.12;
+        const outlineOpacity = globalId === null ? 0.95 : isSelected ? 1 : 0.18;
+        visual.fills.forEach((material) => { material.opacity = fillOpacity; });
+        visual.outlines.forEach((material) => { material.opacity = outlineOpacity; });
       }
     },
     focusGlobalId(globalId) {
@@ -130,7 +167,9 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     dispose() {
       cancelAnimationFrame(animationFrame);
       resizeObserver.disconnect();
+      renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
+      renderer.domElement.removeEventListener("pointercancel", onPointerCancel);
       controls.dispose();
       scene.traverse((object) => {
         const geometry = (object as { geometry?: BufferGeometry }).geometry;
