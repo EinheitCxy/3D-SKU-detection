@@ -311,9 +311,10 @@ def _publish_new_bundle(
     invalid_reason: str | None,
 ) -> FrameMaskCacheResult:
     _, entries, _, final_entry = _paths(request, key)
-    entries.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=entries))
+    temporary: Path | None = None
     try:
+        entries.mkdir(parents=True, exist_ok=True)
+        temporary = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=entries))
         payload_path = temporary / "masks.npz"
         array = (
             np.stack(masks, axis=0).astype(bool, copy=False)
@@ -341,8 +342,8 @@ def _publish_new_bundle(
             invalid_reason=invalid_reason,
         )
     except OSError as exc:
-        if temporary.exists():
-            shutil.rmtree(temporary)
+        if temporary is not None:
+            shutil.rmtree(temporary, ignore_errors=True)
         return FrameMaskCacheResult(
             masks=masks,
             key=key,

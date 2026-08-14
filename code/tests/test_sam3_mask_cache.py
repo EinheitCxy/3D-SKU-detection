@@ -311,6 +311,46 @@ def test_first_write_failure_reports_miss_then_cache_write_failed(
     assert result.events == ("miss", "cache_write_failed")
 
 
+def test_entries_directory_initialization_failure_returns_fresh_masks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = _request(tmp_path)
+    fresh_mask = np.zeros((8, 8), dtype=bool)
+    fresh_mask[2:8, 1:8] = True
+    original_mkdir = sam3_mask_cache.Path.mkdir
+    entries = request.cache_root / "entries"
+
+    def fail_entries_mkdir(path: Path, *args: object, **kwargs: object) -> None:
+        if path == entries:
+            raise OSError("injected entries initialization failure")
+        original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(sam3_mask_cache.Path, "mkdir", fail_entries_mkdir)
+    result = load_or_compute_frame_masks(request, lambda: [fresh_mask])
+
+    np.testing.assert_array_equal(result.masks[0], fresh_mask)
+    assert result.payload_sha256 is None
+    assert result.events == ("miss", "cache_write_failed")
+
+
+def test_temporary_bundle_initialization_failure_returns_fresh_masks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    request = _request(tmp_path)
+    fresh_mask = np.zeros((8, 8), dtype=bool)
+    fresh_mask[2:8, 1:8] = True
+
+    def fail_mkdtemp(*_args: object, **_kwargs: object) -> str:
+        raise OSError("injected temporary initialization failure")
+
+    monkeypatch.setattr(sam3_mask_cache.tempfile, "mkdtemp", fail_mkdtemp)
+    result = load_or_compute_frame_masks(request, lambda: [fresh_mask])
+
+    np.testing.assert_array_equal(result.masks[0], fresh_mask)
+    assert result.payload_sha256 is None
+    assert result.events == ("miss", "cache_write_failed")
+
+
 def test_invalid_rebuild_write_failure_reports_invalid_then_cache_write_failed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

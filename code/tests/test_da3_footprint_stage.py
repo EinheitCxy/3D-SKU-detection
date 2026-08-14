@@ -15,6 +15,7 @@ from modules.da3_runner import (
     _validate_model_id,
 )
 from utils import footprint_evidence as evidence_module
+from utils import sam3_mask_cache
 
 
 @pytest.fixture(autouse=True)
@@ -864,6 +865,31 @@ def test_cache_write_failure_uses_complete_fresh_masks_and_records_event(monkeyp
         )
 
     monkeypatch.setattr(stage, "load_or_compute_frame_masks", fresh_masks_with_failed_write)
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert result["success"] is True
+    assert report["status"] == "accepted"
+    assert report["value_m2"] == pytest.approx(1.5, abs=0.03)
+    assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
+        ["miss", "cache_write_failed"],
+        ["miss", "cache_write_failed"],
+        ["miss", "cache_write_failed"],
+    ]
+
+
+def test_stage_entries_cache_initialization_failure_uses_fresh_masks(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+    original_mkdir = sam3_mask_cache.Path.mkdir
+    entries = save_root / dataset.name / "sam3_mask_cache" / "v1" / "entries"
+
+    def fail_entries_mkdir(path: Path, *args: object, **kwargs: object) -> None:
+        if path == entries:
+            raise OSError("injected entries initialization failure")
+        original_mkdir(path, *args, **kwargs)
+
+    monkeypatch.setattr(sam3_mask_cache.Path, "mkdir", fail_entries_mkdir)
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
