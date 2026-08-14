@@ -6,7 +6,7 @@
 
 ```
 code/
-├── main.py                        # 统一 CLI 入口（interactive/pipeline/concise/analyzer/dedup）
+├── main.py                        # 统一 CLI 入口（含 viewer-web 静态 bundle 导出）
 ├── modules/                       # 可执行/流水线脚本集合
 │   ├── inference.py               # 匹配引擎（点追踪/3D-2D/两者）
 │   ├── draw_detection_boxes.py    # 检出框可视化
@@ -74,6 +74,10 @@ uv run main.py --mode dedup --dataset imdata/floor_display2 --save_root ./Output
 uv run python main.py --mode ground-stack-area \
   --dataset imdata/my_stack --save_root ./Output
 
+# 导出 TypeScript/Three.js 静态 viewer bundle（只读已有正式产物）
+uv run python main.py --mode viewer-web \
+  --dataset imdata/my_stack --save_root ./Output
+
 # 批量匹配（参考索引 0..N，等价于 main.py concise）
 bash scripts/batch.sh floor_display2 4
 ```
@@ -95,6 +99,34 @@ uv run main.py \
 ### 查看帮助
 ```bash
 uv run main.py --help
+```
+
+## TypeScript/Three.js 静态 viewer
+
+Python 是唯一的数据与证据生产端，负责 DA3/SAM3、匹配、去重、正式 ground footprint 面积和 provenance；TypeScript 只负责严格加载 bundle、渲染点云/正式 footprint 与交互式审查，不重新计算面积。导出与开发分两步：
+
+```bash
+# 第一步：导出到默认 viewer-web/public/data/，也可传 --viewer-web-output
+uv run python main.py --mode viewer-web \
+  --dataset imdata/my_stack --save_root ./Output
+
+# 第二步：在 viewer-web/ 中启动已有 Vite 脚本
+cd ../viewer-web
+npm run dev
+```
+
+`viewer-web` 默认从 `<save_root>/<dataset_name>/da3_cache/predictions.npz`、`dedup_detections/global_mapping.json` 和 `ground_stack_footprint/` 读取正式产物。bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局；前端严格校验 schema、provenance、数组 byte length 和正式 footprint 状态，输入不满足 contract 时直接 fail closed。
+
+导出成功后 CLI 只打印、不执行绝对路径命令 `npm --prefix <repo>/viewer-web run dev`；实际输出会使用当前 checkout 的绝对路径，因此从任意 CWD 调用都不会因相对路径失效。
+
+`accepted` 的数值只表示正式 `da3_ground_footprint_union`；`rejected` 或 `value_m2: null` 表示 unavailable，界面显示 `—`，绝不显示为 `0 m²`。实验性 front-facing area 不接入 v1，青色保留给未来该指标，正式 ground footprint 使用琥珀色。
+
+前端开发验证：
+
+```bash
+cd ../viewer-web
+npm test -- --run
+npm run build
 ```
 
 ## 📦 模块说明（utils/）

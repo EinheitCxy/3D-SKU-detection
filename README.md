@@ -10,6 +10,7 @@
 - **顺序去重 + 全局 ID**：并查集连通分量聚类，跨图传递性匹配 -> 唯一 `global_id`
 - **多 3D 重建后端**：Pi3（缓存式，批量推荐）/ DA3（多视图高精度，subprocess 隔离）/ VGGT（实时，可选）
 - **交互式 3D viewer**：基于 Viser，GPU 加速 KNN 与点云下采样
+- **TypeScript/Three.js 静态 viewer**：Python 导出严格 bundle，浏览器端只负责校验、渲染与交互审查
 - **准确性评估**：对照人工标注计算 Precision/Recall/F1
 - **DA3 地堆 footprint 面积**：对去重 `global_id` 融合多视图 metric 点云，将各 carton 的支撑平面 OBB 做二维 polygon union，输出 `m²`；无需尺寸锚点
 
@@ -87,6 +88,10 @@ uv run python main.py --mode dedup
 uv run python main.py --mode analyzer
 uv run python main.py --mode viewer
 
+# 导出 TypeScript/Three.js 静态 viewer bundle（只读已有正式产物，不启动 Node/浏览器）
+uv run python main.py --mode viewer-web \
+  --dataset ../imdata/my_stack --save_root ../Output
+
 # DA3 地堆 footprint 面积（要求 DA3 cache、global_mapping.json 与本地 SAM3 checkpoint）
 uv run python main.py --mode ground-stack-area \
     --dataset ../imdata/my_stack --save_root ../Output
@@ -95,9 +100,35 @@ uv run python main.py --mode ground-stack-area \
 bash batch_accuracy_evaluation.sh 2 12
 ```
 
-**`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `ground-stack-area` | `reconstruct` | `viewer`
+**`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `ground-stack-area` | `reconstruct` | `viewer` | `viewer-web`
 **`--algorithm`**: `point_tracking` | `3d` | `both`
 **`--recon_backend` / `--match_backend`**: `vggt` | `pi3` | `da3`（默认来自 `config.yaml`）
+
+## TypeScript/Three.js 静态 viewer
+
+Python 是唯一的数据与证据生产端，负责 DA3/SAM3、匹配、去重、正式 ground footprint 面积和 provenance；TypeScript 只负责严格加载 bundle、渲染点云/正式 footprint 与交互式审查，不重新计算面积。两步使用方式如下：
+
+```bash
+cd code
+uv run python main.py --mode viewer-web \
+  --dataset ../imdata/my_stack --save_root ../Output
+
+cd ../viewer-web
+npm run dev
+```
+
+默认 bundle 输出到 `viewer-web/public/data/`，也可用 `--viewer-web-output` 指定目录；`--viewer-web-voxel-size` 默认 `0.01`，`--viewer-web-max-points` 默认 `500000`。bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局，loader 对 schema、provenance、数组 byte length 和 accepted/rejected 关系严格校验，异常输入直接 fail closed。
+
+CLI 成功后只打印、不执行一个不依赖当前 CWD 的后续命令：`npm --prefix <repo>/viewer-web run dev`；实际输出会将 `<repo>` 替换为当前 checkout 的绝对路径。
+
+`accepted` 的数值只表示正式 `da3_ground_footprint_union`；`rejected` 或 `value_m2: null` 表示 unavailable，界面显示 `—`，绝不显示为 `0 m²`。实验性 front-facing area 不接入 v1，青色仍保留给未来该指标；正式 ground footprint 使用琥珀色。
+
+前端开发验证在 `viewer-web/` 执行：
+
+```bash
+npm test -- --run
+npm run build
+```
 
 DA3 在 Git worktree 中运行时，可复用主 checkout 已有的 DA3 环境，无需创建 worktree 专用环境：
 

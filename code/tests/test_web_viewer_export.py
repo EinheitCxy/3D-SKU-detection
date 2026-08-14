@@ -9,6 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from modules.web_viewer_export import export_web_viewer_bundle
+import main as main_module
 
 
 _BUNDLE_FILES = {
@@ -388,3 +389,61 @@ def test_repeated_exports_atomically_switch_current_and_preserve_generations(exp
     }
     assert (output_dir / "user-note.txt").read_text(encoding="utf-8") == "preserve me"
     assert {path.name for path in output_dir.iterdir()} == {"CURRENT", "runs", "user-note.txt"}
+
+
+def test_viewer_web_cli_routes_exporter_arguments(monkeypatch, tmp_path, capsys):
+    dataset = tmp_path / "datasets" / "sample"
+    save_root = tmp_path / "save-root"
+    output_dir = tmp_path / "viewer-bundle"
+    captured = {}
+
+    def fake_export_web_viewer_bundle(**kwargs):
+        captured.update(kwargs)
+        generation = output_dir / "runs" / ("b" * 32)
+        return {
+            "output_dir": str(output_dir),
+            "manifest_path": str(generation / "manifest.json"),
+            "point_count": 7,
+            "footprint_status": "accepted",
+        }
+
+    monkeypatch.setattr(
+        "modules.web_viewer_export.export_web_viewer_bundle",
+        fake_export_web_viewer_bundle,
+    )
+    monkeypatch.setattr(
+        main_module.sys,
+        "argv",
+        [
+            "main.py",
+            "--config",
+            str(main_module.CODE_DIR / "config.yaml"),
+            "--mode",
+            "viewer-web",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+            "--viewer-web-output",
+            str(output_dir),
+            "--viewer-web-voxel-size",
+            "0.125",
+            "--viewer-web-max-points",
+            "123",
+        ],
+    )
+
+    main_module.main()
+
+    dataset_output = save_root.resolve() / dataset.name
+    assert captured == {
+        "da3_cache_path": dataset_output / "da3_cache" / "predictions.npz",
+        "global_mapping_path": dataset_output / "dedup_detections" / "global_mapping.json",
+        "footprint_root": dataset_output / "ground_stack_footprint",
+        "output_dir": output_dir.resolve(),
+        "voxel_size_m": 0.125,
+        "max_points": 123,
+    }
+    assert capsys.readouterr().out.endswith(
+        f"Next step: npm --prefix {main_module.PROJECT_ROOT / 'viewer-web'} run dev\n"
+    )

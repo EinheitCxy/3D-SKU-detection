@@ -1008,8 +1008,8 @@ def main() -> None:
         help="楼层展示数据集编号，例如 15 表示使用 imdata/floor_display15",
     )
     parser.add_argument('--mode', type=str, default=yaml_main.get('mode', "interactive"),
-                       choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'ground-stack-area', 'reconstruct', 'viewer'],
-                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), ground-stack-area(DA3地堆footprint并集面积), reconstruct(3D重建), viewer(3D可视化)")
+                       choices=['interactive', 'pipeline', 'concise', 'analyzer', 'dedup', 'ground-stack-area', 'reconstruct', 'viewer', 'viewer-web'],
+                       help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), ground-stack-area(DA3地堆footprint并集面积), reconstruct(3D重建), viewer(3D可视化), viewer-web(静态bundle导出)")
     parser.add_argument('--algorithm', type=str, default=yaml_main.get('algorithm', "3d"),
                        choices=['point_tracking', '3d', 'both'],
                        help="匹配算法选择")
@@ -1066,6 +1066,12 @@ def main() -> None:
                        help='viewer: 启动后不自动打开浏览器（默认开启自动打开）')
     parser.add_argument('--viewer-force-rebuild', action='store_true',
                        help='viewer: 强制重建缓存')
+    parser.add_argument('--viewer-web-output', type=str, default=None,
+                       help='viewer-web: bundle输出目录（默认：仓库viewer-web/public/data）')
+    parser.add_argument('--viewer-web-voxel-size', type=float, default=0.01,
+                       help='viewer-web: 点云voxel大小（默认0.01）')
+    parser.add_argument('--viewer-web-max-points', type=int, default=500000,
+                       help='viewer-web: 点云最大点数（默认500000）')
 
     args = parser.parse_args()
 
@@ -1147,6 +1153,33 @@ def main() -> None:
             conf_thres=args.recon_conf_thres,
             model_path=args.recon_model_path,
         )
+    elif args.mode == 'viewer-web':
+        dataset = Path(args.dataset)
+        dataset_output = app.save_root / dataset.name
+        viewer_web_output = (
+            Path(args.viewer_web_output).expanduser().resolve()
+            if args.viewer_web_output
+            else PROJECT_ROOT / 'viewer-web' / 'public' / 'data'
+        )
+
+        from modules.web_viewer_export import export_web_viewer_bundle
+
+        result = export_web_viewer_bundle(
+            da3_cache_path=dataset_output / 'da3_cache' / 'predictions.npz',
+            global_mapping_path=dataset_output / 'dedup_detections' / 'global_mapping.json',
+            footprint_root=dataset_output / 'ground_stack_footprint',
+            output_dir=viewer_web_output,
+            voxel_size_m=float(args.viewer_web_voxel_size),
+            max_points=int(args.viewer_web_max_points),
+        )
+        logger.info(
+            'viewer-web export: output_dir=%s manifest_path=%s point_count=%s footprint_status=%s',
+            result['output_dir'],
+            result['manifest_path'],
+            result['point_count'],
+            result['footprint_status'],
+        )
+        print(f'Next step: npm --prefix {PROJECT_ROOT / "viewer-web"} run dev')
     elif args.mode == 'viewer':
         # 完全复用 --save_root 和 --dataset，无需额外参数
         dataset = Path(args.dataset)
