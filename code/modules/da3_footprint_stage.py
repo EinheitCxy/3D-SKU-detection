@@ -910,6 +910,11 @@ def _artifact_paths_from_current(output_root: Path) -> dict[str, str]:
         )
 
 
+def resolve_current_footprint_artifacts(output_root: Path) -> dict[str, str]:
+    """Return the verified artifact paths for the currently published generation."""
+    return _artifact_paths_from_current(Path(output_root))
+
+
 def _publish_generation(
     output_root: Path,
     report: dict[str, Any],
