@@ -50,6 +50,12 @@ export async function loadViewerBundle(
   const manifest = validateManifest(manifestValue);
   const objects = validateObjectIndex(objectsValue);
   const footprints = validateFootprints(footprintsValue);
+  if (
+    manifest.source.footprint.run_id !== footprints.run_id
+    || manifest.source.footprint.status !== footprints.status
+  ) {
+    throw new Error("Invalid viewer bundle: manifest source footprint does not match footprints.json");
+  }
   const positions = decodeFloat32(positionsBuffer, manifest.arrays.positions, manifest.point_count);
   const colors = decodeUint8(colorsBuffer, manifest.arrays.colors, manifest.point_count);
   const confidences = decodeFloat32(confidencesBuffer, manifest.arrays.confidences, manifest.point_count);

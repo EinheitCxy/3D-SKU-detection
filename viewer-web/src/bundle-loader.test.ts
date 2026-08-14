@@ -3,6 +3,21 @@ import { assertLittleEndian, isLittleEndian, loadViewerBundle } from "./bundle-l
 
 const baseUrl = "https://example.test/data/";
 const current = { schema_version: "1.0.0", run_id: "a".repeat(32), complete: true };
+const source = {
+  da3_cache: {
+    schema_version: 2,
+    source_model: "depth-anything/DA3NESTED-GIANT-LARGE",
+    affine_convention: "pixel_center_v1",
+    preprocess_resolution: 2,
+    preprocess_method: "upper_bound_resize",
+    frame_count: 1,
+    processed_size: [2, 2],
+    image_ids: [7],
+    source_image_sha256: ["0".repeat(64)],
+  },
+  footprint: { run_id: "a".repeat(32), status: "accepted" },
+  export: { voxel_size_m: 0.01, max_points: 10 },
+};
 const manifest = {
   schema_version: "1.0.0",
   coordinate_space: "da3_world_meters",
@@ -15,7 +30,7 @@ const manifest = {
   },
   objects_path: "objects.json",
   footprints_path: "footprints.json",
-  source: {},
+  source,
   capabilities: { point_picking: false, footprint_picking: true, formal_ground_footprint: true },
 };
 const objects = {
@@ -29,8 +44,16 @@ const footprints = {
   metric: "da3_ground_footprint_union", unit: "m2", status: "accepted", value_m2: 1,
   rejection_reason: null, run_id: "a".repeat(32),
   support_plane: { point: [0, 0, 0], u_axis: [1, 0, 0], v_axis: [0, 1, 0], normal: [0, 0, 1] },
-  per_global_id: { "11": { rings: [[square]], properties: { global_id: "11" } } },
-  union: { rings: [[square]], properties: { global_id: "union" } },
+  per_global_id: {
+    "11": {
+      rings: [[square]],
+      properties: { coordinate_space: "local_support_plane_meters", global_id: "11", area_m2: 0.5, observations_used: 1 },
+    },
+  },
+  union: {
+    rings: [[square]],
+    properties: { coordinate_space: "local_support_plane_meters", global_id: "union", area_m2: 1 },
+  },
 };
 
 function bufferOf<T extends ArrayBufferView>(array: T): ArrayBuffer {
@@ -91,6 +114,46 @@ describe("loadViewerBundle", () => {
       [`${baseUrl}runs/${current.run_id}/manifest.json`]: {
         ...manifest,
         arrays: { ...manifest.arrays, positions: { ...manifest.arrays.positions, components: 4 } },
+      },
+    }))).rejects.toThrow();
+  });
+
+  it("fails closed when real JSON responses tamper with source binding", async () => {
+    await expect(loadViewerBundle(baseUrl, makeFetcher({
+      [`${baseUrl}runs/${current.run_id}/manifest.json`]: {
+        ...manifest,
+        source: { ...source, footprint: { run_id: "b".repeat(32), status: "accepted" } },
+      },
+    }))).rejects.toThrow();
+    await expect(loadViewerBundle(baseUrl, makeFetcher({
+      [`${baseUrl}runs/${current.run_id}/manifest.json`]: {
+        ...manifest,
+        source: { ...source, footprint: { run_id: source.footprint.run_id, status: "rejected" } },
+      },
+    }))).rejects.toThrow();
+  });
+
+  it("fails closed when real JSON responses tamper with instance-derived arrays", async () => {
+    await expect(loadViewerBundle(baseUrl, makeFetcher({
+      [`${baseUrl}runs/${current.run_id}/objects.json`]: {
+        "11": {
+          images: [999], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
+          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false }],
+        },
+      },
+    }))).rejects.toThrow();
+  });
+
+  it("fails closed when real JSON responses tamper with exact footprint properties", async () => {
+    await expect(loadViewerBundle(baseUrl, makeFetcher({
+      [`${baseUrl}runs/${current.run_id}/footprints.json`]: {
+        ...footprints,
+        per_global_id: {
+          "11": {
+            ...footprints.per_global_id["11"],
+            properties: { coordinate_space: "local_support_plane_meters", global_id: "11", area_m2: 0.5 },
+          },
+        },
       },
     }))).rejects.toThrow();
   });
