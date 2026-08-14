@@ -15,7 +15,7 @@
 - [完成] 汇总三份 sol 报告，形成 `recommendation.md`、方案比较、模块边界和最小验证矩阵。
 - [完成] Rick 确认 Python bundle + TypeScript/Three.js 混合路线，并授权在当前 `main` 上进入 implementation phase。
 - [完成] 固化 `typescript-viewer-implementation-plan.md`，定义 bundle v1、任务边界、agent 顺序与精简验证矩阵。
-- [完成] Tasks 1-4 已按计划实现；最终 coordinator/Terra review 待完成。
+- [完成] Tasks 1-4、两轮 final review fixes 与最终 scoped Terra review 均已完成。
 
 ## Agent 记录
 
@@ -42,3 +42,8 @@
 - [完成] TDD GREEN：`main.py` 仅在 resolved output 等于 `PROJECT_ROOT / viewer-web / public / data` 时打印绝对 npm 命令；custom output 改为打印明确的 output 路径及必须 serve/mount 到浏览器 `/data/` 的提示。focused pytest 得到 `25 passed in 8.25s`。
 - [完成] 三份用户 README 与研究记录同步 `/data/` mounting semantics、raw mapping SHA-256 binding、导出前后 digest/变化拒绝、accepted object/geometry ID-set mismatch、历史缺 digest generation 需重跑 `--mode ground-stack-area` 且无 fallback。
 - [边界] 本 fix 只运行 focused Python module 和 `git diff --check`；不运行 npm、浏览器、GPU、DA3/SAM3、数据/模型下载或 broad suite。精确 RED/GREEN、diff-check、changed paths、自检和 concerns 已记录在本节。
+
+## 2026-08-14 Final scoped review
+
+- [完成] Terra 对 `44dd065..495b958` 及最终集成文件做只读复审，mapping byte-snapshot digest、导出前后校验、accepted ID-set、Python/TypeScript footprint contract、默认/custom output 与三份 README 均无残留 finding，结论 `CLEAN`。
+- [边界] 复审复用已记录的 focused Python `25 passed`；未重跑 npm、浏览器、GPU 或 full suite，未修改工作树。

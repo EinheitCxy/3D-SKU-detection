@@ -34,6 +34,7 @@
 - [x] Task 3：Three.js 点云、footprint、选择、相机和 evidence UI。
 - [x] Task 4：`main.py` CLI、README 和精简整体验证；验证收据见 [progress.md](progress.md) 的「2026-08-14 Task 4」章节。
 - [x] Final review fix 2：custom viewer output 不再打印默认 npm 命令；默认 output 保留可直接运行命令，并补齐 `/data/` 挂载与 strict mapping digest/regeneration 文档。
+- [x] Final scoped Terra review：mapping provenance、跨语言 footprint contract 和 custom-output 修复复审 `CLEAN`，无 residual finding。
 
 ## 实施边界
 
