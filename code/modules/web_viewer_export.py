@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shutil
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -34,8 +36,16 @@ _REQUIRED_CACHE_FIELDS = frozenset(
         "world_points",
         "world_points_conf",
         "images",
+        "source_image_sizes",
+        "source_to_processed_affine",
+        "source_image_sha256",
+        "affine_convention",
+        "preprocess_resolution",
+        "preprocess_method",
     }
 )
+_MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class WebViewerExportError(ValueError):
@@ -56,7 +66,11 @@ def export_web_viewer_bundle(
     cache = _load_da3_cache(Path(da3_cache_path))
     sampled = _sample_points(cache, voxel_size=voxel_size, max_points=max_points)
     artifacts = resolve_current_footprint_artifacts(Path(footprint_root))
-    footprint = _load_footprint(artifacts)
+    footprint, report_cache = _load_footprint(artifacts)
+    if report_cache != cache["provenance"]:
+        raise WebViewerExportError(
+            "DA3 cache provenance does not match formal footprint report"
+        )
     objects = build_global_object_index(GlobalIDMapper(str(global_mapping_path)))
     output_path = Path(output_dir)
 
@@ -94,9 +108,7 @@ def export_web_viewer_bundle(
         "footprints_path": "footprints.json",
         "source": {
             "da3_cache": {
-                "schema_version": 2,
-                "source_model": cache["source_model"],
-                "image_ids": cache["image_ids"].tolist(),
+                **cache["provenance"],
             },
             "footprint": {
                 "run_id": footprint["run_id"],
@@ -110,10 +122,10 @@ def export_web_viewer_bundle(
             "formal_ground_footprint": True,
         },
     }
-    _publish_bundle(output_path, manifest, objects, footprint, sampled)
+    generation = _publish_bundle(output_path, manifest, objects, footprint, sampled)
     return {
         "output_dir": str(output_path),
-        "manifest_path": str(output_path / "manifest.json"),
+        "manifest_path": str(generation / "manifest.json"),
         "point_count": int(len(sampled["positions"])),
         "footprint_status": footprint["status"],
     }
@@ -150,20 +162,20 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
     schema = cache["cache_schema_version"]
     if schema.shape != () or schema.dtype.kind not in "iu" or int(schema.item()) != 2:
         raise WebViewerExportError("DA3 cache schema version must be exactly 2")
-    source_model = cache["source_model"]
-    if source_model.shape != () or source_model.dtype.kind != "U" or not source_model.item():
-        raise WebViewerExportError("DA3 cache source_model must be a nonempty unicode scalar")
+    source_model = _unicode_scalar(cache["source_model"], "source_model")
+    if not _MODEL_ID.fullmatch(source_model):
+        raise WebViewerExportError("DA3 cache source_model is unsafe")
     points = cache["world_points"]
     confidence = cache["world_points_conf"]
     images = cache["images"]
     image_ids = cache["image_ids"]
-    if points.dtype.kind != "f" or points.ndim != 4 or points.shape[-1] != 3:
-        raise WebViewerExportError("DA3 cache world_points must be a float (N, H, W, 3) array")
+    if points.dtype != np.dtype(np.float32) or points.ndim != 4 or points.shape[-1] != 3:
+        raise WebViewerExportError("DA3 cache world_points must be float32 with shape (N, H, W, 3)")
     frame_count, height, width, _ = points.shape
     if frame_count < 1 or height < 1 or width < 1:
         raise WebViewerExportError("DA3 cache world_points grid must be nonempty")
-    if confidence.dtype.kind != "f" or confidence.shape != points.shape[:3]:
-        raise WebViewerExportError("DA3 cache world_points_conf must align with world_points")
+    if confidence.dtype != np.dtype(np.float32) or confidence.shape != points.shape[:3]:
+        raise WebViewerExportError("DA3 cache world_points_conf must be float32 and align with world_points")
     if images.dtype != np.dtype(np.uint8) or images.shape != (frame_count, height, width, 3):
         raise WebViewerExportError("DA3 cache images must be uint8 and align with world_points")
     if image_ids.dtype.kind not in "iu" or image_ids.shape != (frame_count,):
@@ -171,15 +183,72 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
     if len({int(value) for value in image_ids}) != frame_count:
         raise WebViewerExportError("DA3 cache image_ids must be unique")
     integer_info = np.iinfo(np.int32)
-    if np.any(image_ids > integer_info.max):
+    if (
+        (image_ids.dtype.kind == "i" and np.any(image_ids < integer_info.min))
+        or np.any(image_ids > integer_info.max)
+    ):
         raise WebViewerExportError("DA3 cache image_ids cannot be represented as int32")
+    sizes = cache["source_image_sizes"]
+    affine = cache["source_to_processed_affine"]
+    hashes = cache["source_image_sha256"]
+    convention = _unicode_scalar(cache["affine_convention"], "affine_convention")
+    resolution = _integer_scalar(cache["preprocess_resolution"], "preprocess_resolution")
+    method = _unicode_scalar(cache["preprocess_method"], "preprocess_method")
+    if sizes.dtype.kind not in "iu" or sizes.shape != (frame_count, 2) or np.any(sizes <= 0):
+        raise WebViewerExportError("DA3 cache source_image_sizes must be positive integer pairs")
+    if affine.dtype.kind not in "fiu" or affine.shape != (frame_count, 2, 3) or not np.isfinite(affine).all():
+        raise WebViewerExportError("DA3 cache source_to_processed_affine is invalid")
+    _validate_affine_linear_parts(affine)
+    if hashes.dtype.kind != "U" or hashes.shape != (frame_count,) or any(
+        _SHA256.fullmatch(str(value)) is None for value in hashes
+    ):
+        raise WebViewerExportError("DA3 cache source_image_sha256 is invalid")
+    if convention != "pixel_center_v1" or resolution <= 0 or method != "upper_bound_resize":
+        raise WebViewerExportError("DA3 cache formal preprocessing metadata is invalid")
+    provenance = {
+        "schema_version": 2,
+        "source_model": source_model,
+        "affine_convention": convention,
+        "preprocess_resolution": resolution,
+        "preprocess_method": method,
+        "frame_count": int(frame_count),
+        "processed_size": [int(width), int(height)],
+        "image_ids": [int(value) for value in image_ids],
+        "source_image_sha256": [str(value) for value in hashes],
+    }
     return {
-        "source_model": str(source_model.item()),
         "image_ids": image_ids.astype(np.int32, copy=False),
         "points": points,
         "confidence": confidence,
         "images": images,
+        "provenance": provenance,
     }
+
+
+def _unicode_scalar(value: np.ndarray, field: str) -> str:
+    if value.shape != () or value.dtype.kind != "U" or not value.item():
+        raise WebViewerExportError(f"DA3 cache {field} must be a nonempty unicode scalar")
+    return str(value.item())
+
+
+def _integer_scalar(value: np.ndarray, field: str) -> int:
+    if value.shape != () or value.dtype.kind not in "iu":
+        raise WebViewerExportError(f"DA3 cache {field} must be an integer scalar")
+    return int(value.item())
+
+
+def _validate_affine_linear_parts(affine: np.ndarray) -> None:
+    linear = affine[:, :, :2]
+    if not np.allclose(linear[:, 0, 1], 0.0, rtol=0.0, atol=1e-8) or not np.allclose(
+        linear[:, 1, 0], 0.0, rtol=0.0, atol=1e-8
+    ):
+        raise WebViewerExportError("DA3 cache affine linear part must be axis-aligned")
+    if np.any(linear[:, 0, 0] <= 0.0) or np.any(linear[:, 1, 1] <= 0.0):
+        raise WebViewerExportError("DA3 cache affine linear scales must be positive")
+    if np.any(np.linalg.det(linear) <= 0.0):
+        raise WebViewerExportError("DA3 cache affine determinant must be positive")
+    if any(np.linalg.matrix_rank(matrix) != 2 for matrix in linear):
+        raise WebViewerExportError("DA3 cache affine linear part must have rank two")
 
 
 def _sample_points(cache: dict[str, Any], *, voxel_size: float, max_points: int) -> dict[str, np.ndarray]:
@@ -228,7 +297,7 @@ def _sample_points(cache: dict[str, Any], *, voxel_size: float, max_points: int)
     }
 
 
-def _load_footprint(artifacts: dict[str, str]) -> dict[str, Any]:
+def _load_footprint(artifacts: dict[str, str]) -> tuple[dict[str, Any], dict[str, Any]]:
     try:
         report_path = Path(artifacts["measurement_report"])
         report = _read_json(report_path)
@@ -238,6 +307,9 @@ def _load_footprint(artifacts: dict[str, str]) -> dict[str, Any]:
         raise WebViewerExportError("footprint resolver omitted a required artifact") from error
     if not isinstance(report, dict) or not isinstance(geojson, dict) or not isinstance(generation_manifest, dict):
         raise WebViewerExportError("formal footprint artifacts must contain JSON objects")
+    report_cache = report.get("cache")
+    if not isinstance(report_cache, dict):
+        raise WebViewerExportError("formal footprint report cache provenance is invalid")
     run_id = generation_manifest.get("run_id")
     if not isinstance(run_id, str):
         raise WebViewerExportError("formal footprint manifest run_id is invalid")
@@ -274,7 +346,7 @@ def _load_footprint(artifacts: dict[str, str]) -> dict[str, Any]:
             "support_plane": None,
             "per_global_id": {},
             "union": None,
-        }
+        }, report_cache
     plane = _support_plane(report)
     per_global_id: dict[str, Any] = {}
     union: dict[str, Any] | None = None
@@ -300,7 +372,7 @@ def _load_footprint(artifacts: dict[str, str]) -> dict[str, Any]:
         "support_plane": plane,
         "per_global_id": per_global_id,
         "union": union,
-    }
+    }, report_cache
 
 
 def _read_json(path: Path) -> Any:
@@ -385,9 +457,14 @@ def _publish_bundle(
     objects: dict[str, Any],
     footprint: dict[str, Any],
     arrays: dict[str, np.ndarray],
-) -> None:
+) -> Path:
     output_dir.parent.mkdir(parents=True, exist_ok=True)
-    temporary = Path(tempfile.mkdtemp(prefix=f".{output_dir.name}.", dir=output_dir.parent))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    runs_root = output_dir / "runs"
+    runs_root.mkdir(exist_ok=True)
+    run_id = uuid.uuid4().hex
+    generation = runs_root / run_id
+    temporary = Path(tempfile.mkdtemp(prefix=f".{run_id}.", dir=runs_root))
     try:
         _write_json(temporary / "manifest.json", manifest)
         (temporary / "positions.f32.bin").write_bytes(arrays["positions"].tobytes(order="C"))
@@ -396,13 +473,30 @@ def _publish_bundle(
         (temporary / "frame_ids.i32.bin").write_bytes(arrays["frame_ids"].tobytes(order="C"))
         _write_json(temporary / "objects.json", objects)
         _write_json(temporary / "footprints.json", footprint)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for filename in _BUNDLE_FILES:
-            os.replace(temporary / filename, output_dir / filename)
-        temporary.rmdir()
+        os.rename(temporary, generation)
+        _atomic_replace_current(
+            output_dir / "CURRENT",
+            {"complete": True, "run_id": run_id, "schema_version": "1.0.0"},
+        )
+        return generation
     except BaseException:
         if temporary.exists():
             shutil.rmtree(temporary)
+        raise
+
+
+def _atomic_replace_current(current_path: Path, pointer: dict[str, object]) -> None:
+    payload = (json.dumps(pointer, indent=2, sort_keys=True, allow_nan=False) + "\n").encode("utf-8")
+    descriptor, temporary_name = tempfile.mkstemp(prefix=".CURRENT.", dir=current_path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, current_path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
         raise
 
 
