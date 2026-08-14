@@ -601,8 +601,6 @@ def _attach_shadow_evidence(
     observations: tuple[EvidenceObservation, ...],
     formal_snapshot: FormalSnapshot,
 ) -> dict[str, object]:
-    if formal_snapshot.plane is None:
-        return {"mode": "shadow", "status": "unavailable_no_formal_geometry"}
     try:
         return build_shadow_evidence(
             cache_path=cache_path,
@@ -611,7 +609,12 @@ def _attach_shadow_evidence(
             formal_snapshot=formal_snapshot,
         )
     except Exception as error:
-        return {"mode": "shadow", "status": "failed_evidence", "reason": str(error)}
+        return {
+            "mode": "shadow",
+            "status": "failed_evidence",
+            "reason": str(error),
+            "mask_robustness": {"status": "failed_evidence", "reason": str(error)},
+        }
 
 
 def _valid_points(points: np.ndarray, confidence: np.ndarray) -> np.ndarray:

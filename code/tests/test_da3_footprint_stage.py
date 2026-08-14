@@ -497,6 +497,49 @@ def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_pat
     assert geojson["features"] == []
 
 
+def test_no_formal_plane_keeps_unavailable_shadow_schema_and_rejected_artifacts(
+    monkeypatch, tmp_path
+):
+    """Catches bypassing the shadow builder when formal plane selection rejects."""
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    cache_path = save_root / dataset.name / "da3_cache" / "predictions.npz"
+    with np.load(cache_path, allow_pickle=False) as cache:
+        fields = {key: cache[key] for key in cache.files}
+    world_points = np.zeros_like(fields["world_points"])
+    _put_carton(world_points, 0, [16, 24, 80, 104], (0.0, 1.0), 0.02)
+    _put_carton(world_points, 1, [18, 22, 82, 102], (0.0, 1.0), 0.03)
+    _put_carton(world_points, 2, [62, 24, 126, 104], (0.5, 1.5), 0.80)
+    fields["world_points"] = world_points
+    np.savez_compressed(cache_path, **fields)
+    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+
+    first_result = stage.run_da3_footprint(str(dataset), save_root)
+    first_report = json.loads(Path(first_result["report_path"]).read_text())
+    first_projection = _published_projection(first_result)
+    second_result = stage.run_da3_footprint(str(dataset), save_root)
+    second_projection = _published_projection(second_result)
+
+    assert first_result["success"] is False
+    assert first_report["status"] == "rejected"
+    assert first_report["value_m2"] is None
+    assert first_report["plane"] == {"candidates": [], "selected": None}
+    assert first_report["evidence"]["status"] == "unavailable_no_formal_geometry"
+    assert (
+        first_report["evidence"]["mask_robustness"]["status"]
+        == "unavailable_no_formal_geometry"
+    )
+    assert first_projection[0] == second_projection[0]
+    assert first_projection[1] == second_projection[1]
+    assert np.array_equal(first_projection[2], second_projection[2])
+    assert json.loads(first_projection[1]) == {
+        "type": "FeatureCollection",
+        "coordinate_space": "local_support_plane_meters",
+        "status": "rejected",
+        "measurement_complete": False,
+        "features": [],
+    }
+
+
 @pytest.mark.parametrize("formal_status", ["accepted", "rejected"])
 def test_evidence_failures_do_not_change_frozen_formal_result(
     monkeypatch, tmp_path, formal_status
@@ -530,6 +573,10 @@ def test_evidence_failures_do_not_change_frozen_formal_result(
     assert np.array_equal(observed_projection[2], baseline_projection[2])
     assert observed["evidence"]["status"] == "failed_evidence"
     assert observed["evidence"]["reason"] == "boom"
+    assert observed["evidence"]["mask_robustness"] == {
+        "status": "failed_evidence",
+        "reason": "boom",
+    }
     assert builder_calls == ["baseline", "failed"]
 
 
