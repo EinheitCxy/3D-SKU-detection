@@ -557,6 +557,53 @@ def test_viewer_web_cli_routes_exporter_arguments(monkeypatch, tmp_path, capsys)
         "voxel_size_m": 0.125,
         "max_points": 123,
     }
+    output = capsys.readouterr().out
+    assert f"Custom viewer-web output: {output_dir.resolve()}" in output
+    assert "must be served or mounted at browser URL /data/ before starting the frontend" in output
+    assert "npm --prefix" not in output
+
+
+def test_viewer_web_cli_default_output_keeps_directly_runnable_next_step(
+    monkeypatch, tmp_path, capsys
+):
+    dataset = tmp_path / "datasets" / "sample"
+    save_root = tmp_path / "save-root"
+    default_output = main_module.PROJECT_ROOT / "viewer-web" / "public" / "data"
+    captured = {}
+
+    def fake_export_web_viewer_bundle(**kwargs):
+        captured.update(kwargs)
+        generation = default_output / "runs" / ("c" * 32)
+        return {
+            "output_dir": str(default_output),
+            "manifest_path": str(generation / "manifest.json"),
+            "point_count": 7,
+            "footprint_status": "accepted",
+        }
+
+    monkeypatch.setattr(
+        "modules.web_viewer_export.export_web_viewer_bundle",
+        fake_export_web_viewer_bundle,
+    )
+    monkeypatch.setattr(
+        main_module.sys,
+        "argv",
+        [
+            "main.py",
+            "--config",
+            str(main_module.CODE_DIR / "config.yaml"),
+            "--mode",
+            "viewer-web",
+            "--dataset",
+            str(dataset),
+            "--save_root",
+            str(save_root),
+        ],
+    )
+
+    main_module.main()
+
+    assert captured["output_dir"] == default_output
     assert capsys.readouterr().out.endswith(
         f"Next step: npm --prefix {main_module.PROJECT_ROOT / 'viewer-web'} run dev\n"
     )

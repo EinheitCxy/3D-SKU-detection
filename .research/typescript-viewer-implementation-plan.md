@@ -215,3 +215,11 @@ loader 必须绑定 `manifest.source.footprint.run_id/status` 与 `footprints.js
 - Web viewer 能加载 bundle、显示 RGB 点云、正式 footprint、global ID 对象证据，并支持 orbit/pan/zoom、搜索、Prev/Next、点击选择和相机聚焦。
 - rejected/null 不被显示为 0，实验性 front-facing area 不进入首版 KPI。
 - 精简测试与 production build 通过，README 与 `.research` 记录同步。
+
+## Final review fix 2
+
+- [x] 保持 `--viewer-web-output` 与 exporter path forwarding 不变；resolved output 等于 `PROJECT_ROOT / "viewer-web" / "public" / "data"` 时保留绝对 `npm --prefix <repo>/viewer-web run dev` 后续命令。
+- [x] custom output 不打印默认 npm dev command，而是明确指出 custom output 必须在前端启动前部署，或挂载/serve 到浏览器 URL `/data/`；不启动 Node、不复制、不软链接、不添加 fallback/compatibility。
+- [x] formal report 绑定生成时读取的 raw `global_mapping.json` 字节快照 SHA-256（`global_mapping_sha256`）；exporter 在 object-index 前后校验 digest，mapping 不同/变化或 accepted object/geometry ID-set mismatch 时 fail closed。
+- [x] 没有 `global_mapping_sha256` 的历史 formal generation fail closed，必须先重新运行 `--mode ground-stack-area` 再 viewer export；不记录任何 fallback。
+- [x] TDD evidence：RED `24 passed, 1 failed`；GREEN `25 passed in 8.25s`。本 fix 的验证仅为 focused Python module 与 `git diff --check`，不包含 npm、浏览器、GPU、数据/模型下载或 broad suite。

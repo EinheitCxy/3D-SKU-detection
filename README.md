@@ -119,7 +119,9 @@ npm run dev
 
 默认 bundle 输出到 `viewer-web/public/data/`，也可用 `--viewer-web-output` 指定目录；`--viewer-web-voxel-size` 默认 `0.01`，`--viewer-web-max-points` 默认 `500000`。bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局，loader 对 schema、provenance、数组 byte length 和 accepted/rejected 关系严格校验，异常输入直接 fail closed。
 
-CLI 成功后只打印、不执行一个不依赖当前 CWD 的后续命令：`npm --prefix <repo>/viewer-web run dev`；实际输出会将 `<repo>` 替换为当前 checkout 的绝对路径。
+Vite 本地 `/data/` 只会直接对应默认的 `viewer-web/public/data/`。因此只有使用默认 output 时，CLI 打印的 `npm --prefix <repo>/viewer-web run dev` 才能直接启动并读取 bundle；`<repo>` 会替换为当前 checkout 的绝对路径。使用 `--viewer-web-output <custom-output>` 时，CLI 不打印该默认 npm 命令，而会明确提示 custom output 必须在前端启动前部署，或挂载/serve 到浏览器 URL `/data/`。
+
+正式 report 绑定生成时读取的 raw `global_mapping.json` 字节快照 SHA-256（`global_mapping_sha256`）。viewer exporter 会在构建 object index 前后重新计算该 digest；mapping 不同或在导出期间变化会 fail closed，且 `accepted` generation 的 object ID 集与 footprint geometry ID 集不一致也会拒绝发布。没有 `global_mapping_sha256` 的历史 formal generation 同样 fail closed，必须先重新运行 `--mode ground-stack-area`，再执行 viewer export；不提供 fallback。
 
 `accepted` 的数值只表示正式 `da3_ground_footprint_union`；`rejected` 或 `value_m2: null` 表示 unavailable，界面显示 `—`，绝不显示为 `0 m²`。实验性 front-facing area 不接入 v1，青色仍保留给未来该指标；正式 ground footprint 使用琥珀色。
 

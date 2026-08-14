@@ -25,3 +25,5 @@
 Task 1 strict bundle exporter、Task 2 TypeScript contract/loader、Task 3 Three.js scene/presentation 和 Task 4 CLI/文档均已按计划串行落地；Task 4 基于 `fe0d8ee` 开始，CLI 只调用 exporter 的既有六参数 API，并记录其四字段返回值。架构边界保持不变：Python 生产 DA3/SAM3、匹配、去重、正式 footprint 与 provenance，TypeScript 只严格加载和交互渲染；front-facing area v1 不接入，青色保留给未来指标。
 
 bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局并 fail closed。`accepted` 只表示正式 `da3_ground_footprint_union`；`rejected`/`null` 为 unavailable（`—`），不是零。Task 4 的精确命令、RED/GREEN、npm 构建输出和未覆盖的浏览器/GPU/full benchmark 边界，直接记录在 [.research/progress.md](progress.md) 的 Task 4 条目中。
+
+Final review fix 2（基于 `eb6a769`）保持 CLI path forwarding 不变：默认 `viewer-web/public/data/` 才能由本地 Vite 直接对应浏览器 `/data/`，custom output 仅在部署或显式挂载/serve 到 `/data/` 后启动前端。formal report 绑定 raw `global_mapping.json` 字节快照的 `global_mapping_sha256`；exporter 对导出前后 digest、mapping 变化和 accepted object/geometry ID-set mismatch fail closed。历史 generation 缺少该 digest 时必须先重新运行 `--mode ground-stack-area`，没有 fallback。该 fix 只验证 focused Python module 和 `git diff --check`，不包含 npm、浏览器、GPU、数据/模型下载或 broad suite。

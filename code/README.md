@@ -117,7 +117,9 @@ npm run dev
 
 `viewer-web` 默认从 `<save_root>/<dataset_name>/da3_cache/predictions.npz`、`dedup_detections/global_mapping.json` 和 `ground_stack_footprint/` 读取正式产物。bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局；前端严格校验 schema、provenance、数组 byte length 和正式 footprint 状态，输入不满足 contract 时直接 fail closed。
 
-导出成功后 CLI 只打印、不执行绝对路径命令 `npm --prefix <repo>/viewer-web run dev`；实际输出会使用当前 checkout 的绝对路径，因此从任意 CWD 调用都不会因相对路径失效。
+Vite 本地 `/data/` 只直接对应默认的 `viewer-web/public/data/`。默认 output 导出成功后，CLI 只打印、不执行绝对路径命令 `npm --prefix <repo>/viewer-web run dev`，实际输出使用当前 checkout 的绝对路径；使用 `--viewer-web-output <custom-output>` 时不会打印该默认 npm 命令，custom output 必须在前端启动前部署，或挂载/serve 到浏览器 URL `/data/`。
+
+正式 report 绑定生成时读取的 raw `global_mapping.json` 字节快照 SHA-256（`global_mapping_sha256`）。exporter 会在构建 object index 前后校验该 digest；mapping 不同或在导出期间变化会 fail closed，且 `accepted` generation 的 object ID 集与 footprint geometry ID 集不一致也会拒绝发布。没有 `global_mapping_sha256` 的历史 formal generation 必须先重新运行 `--mode ground-stack-area`，再执行 viewer export；不提供 fallback。
 
 `accepted` 的数值只表示正式 `da3_ground_footprint_union`；`rejected` 或 `value_m2: null` 表示 unavailable，界面显示 `—`，绝不显示为 `0 m²`。实验性 front-facing area 不接入 v1，青色保留给未来该指标，正式 ground footprint 使用琥珀色。
 

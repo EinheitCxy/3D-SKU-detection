@@ -32,7 +32,8 @@
 - [x] Task 1：Python strict bundle exporter 与聚焦测试。
 - [x] Task 2：TypeScript bundle contract/loader 与构建。
 - [x] Task 3：Three.js 点云、footprint、选择、相机和 evidence UI。
-- [x] Task 4：`main.py` CLI、README 和精简整体验证；验证收据见 Task 4 report。
+- [x] Task 4：`main.py` CLI、README 和精简整体验证；验证收据见 [progress.md](progress.md) 的「2026-08-14 Task 4」章节。
+- [x] Final review fix 2：custom viewer output 不再打印默认 npm 命令；默认 output 保留可直接运行命令，并补齐 `/data/` 挂载与 strict mapping digest/regeneration 文档。
 
 ## 实施边界
 
@@ -40,3 +41,4 @@
 - bundle 采用不可变 `CURRENT -> runs/<run_id>/`，schema/provenance/数组长度不符时 fail closed。
 - `accepted` 为正式 ground footprint；`rejected`/`null` 显示 unavailable（`—`），不显示零；front-facing area v1 不接入，青色保留。
 - 已完成的 npm build 可能有 non-fatal Three.js chunk-size warning；它不等同于浏览器或性能验证。
+- Final review fix 2 的验证边界严格限定为 `code/tests/test_web_viewer_export.py` 与 `git diff --check`；不运行 npm、浏览器、GPU、数据/模型下载或 broad test suite。

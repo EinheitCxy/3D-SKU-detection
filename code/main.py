@@ -1179,7 +1179,14 @@ def main() -> None:
             result['point_count'],
             result['footprint_status'],
         )
-        print(f'Next step: npm --prefix {PROJECT_ROOT / "viewer-web"} run dev')
+        default_viewer_web_output = PROJECT_ROOT / 'viewer-web' / 'public' / 'data'
+        if viewer_web_output == default_viewer_web_output:
+            print(f'Next step: npm --prefix {PROJECT_ROOT / "viewer-web"} run dev')
+        else:
+            print(
+                f'Custom viewer-web output: {viewer_web_output}; '
+                'it must be served or mounted at browser URL /data/ before starting the frontend.'
+            )
     elif args.mode == 'viewer':
         # 完全复用 --save_root 和 --dataset，无需额外参数
         dataset = Path(args.dataset)
