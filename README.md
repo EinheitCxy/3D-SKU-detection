@@ -9,8 +9,7 @@
 - **跨图 SKU 匹配**：点追踪（`point_tracking`）与 3D→2D 投影（`3d`）两套算法，可独立或并行
 - **顺序去重 + 全局 ID**：并查集连通分量聚类，跨图传递性匹配 -> 唯一 `global_id`
 - **多 3D 重建后端**：Pi3（缓存式，批量推荐）/ DA3（多视图高精度，subprocess 隔离）/ VGGT（实时，可选）
-- **交互式 3D viewer**：基于 Viser，GPU 加速 KNN 与点云下采样
-- **TypeScript/Three.js 静态 viewer**：Python 导出严格 bundle，浏览器端只负责校验、渲染与交互审查
+- **TypeScript/Three.js 静态 viewer**：Python 导出严格 bundle（同源点云过滤），浏览器端只负责校验、渲染与交互审查
 - **准确性评估**：对照人工标注计算 Precision/Recall/F1
 - **DA3 地堆 footprint 面积**：对去重 `global_id` 融合多视图 metric 点云，将各 carton 的支撑平面 OBB 做二维 polygon union，输出 `m²`；无需尺寸锚点
 
@@ -20,9 +19,8 @@
 3D_Recognization/
 ├── code/                   # 核心 R&D 系统（pyproject.toml + .venv，Python 3.11）
 │   ├── main.py             # 统一 CLI 入口（SKUDetectionMain）
-│   ├── modules/            # 流水线阶段（匹配/去重/重建/分析/viewer）
+│   ├── modules/            # 流水线阶段（匹配/去重/重建/分析/viewer-web 导出）
 │   ├── utils/              # 复用库（算法/几何/配置/可视化）
-│   ├── viewer/             # Viser 3D viewer 子系统
 │   ├── scripts/            # 批量/评估脚本（batch.sh / k.sh 等）
 │   └── config.yaml         # 单一可调参数源
 ├── bbox_gen.py             # YOLO SKU 检测 CLI（生成 detections_results，code/ 上游）
@@ -81,12 +79,11 @@ uv run python main.py --mode pipeline --floor 2
 # 交互模式
 uv run python main.py --mode interactive
 
-# 仅 3D 重建 / 仅匹配 / 仅去重 / 仅分析 / 3D viewer
+# 仅 3D 重建 / 仅匹配 / 仅去重 / 仅分析
 uv run python main.py --mode reconstruct --recon_backend pi3
 uv run python main.py --mode concise   --match_backend pi3 --algorithm 3d
 uv run python main.py --mode dedup
 uv run python main.py --mode analyzer
-uv run python main.py --mode viewer
 
 # 导出 TypeScript/Three.js 静态 viewer bundle（只读已有正式产物，不启动 Node/浏览器）
 uv run python main.py --mode viewer-web \
@@ -100,7 +97,7 @@ uv run python main.py --mode ground-stack-area \
 bash batch_accuracy_evaluation.sh 2 12
 ```
 
-**`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `ground-stack-area` | `reconstruct` | `viewer` | `viewer-web`
+**`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `ground-stack-area` | `reconstruct` | `viewer-web`
 **`--algorithm`**: `point_tracking` | `3d` | `both`
 **`--recon_backend` / `--match_backend`**: `vggt` | `pi3` | `da3`（默认来自 `config.yaml`）
 
@@ -117,13 +114,21 @@ cd ../viewer-web
 npm run dev
 ```
 
-默认 bundle 输出到 `viewer-web/public/data/`，也可用 `--viewer-web-output` 指定目录；`--viewer-web-voxel-size` 默认 `0.01`，`--viewer-web-max-points` 默认 `500000`。bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局，loader 对 schema、provenance、数组 byte length 和 accepted/rejected 关系严格校验，异常输入直接 fail closed。
+默认 bundle 输出到 `viewer-web/public/data/`，也可用 `--viewer-web-output` 指定目录；`--viewer-web-voxel-size` 默认 `0.005`，`--viewer-web-max-points` 默认 `1500000`。bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局，loader 对 schema、provenance、数组 byte length、`world_to_view`（行主序 4×4，DA3 CV 坐标 -> viewer Y-up）和 accepted/rejected 关系严格校验，异常输入直接 fail closed。
 
 Vite 本地 `/data/` 只会直接对应默认的 `viewer-web/public/data/`。因此只有使用默认 output 时，CLI 打印的 `npm --prefix <repo>/viewer-web run dev` 才能直接启动并读取 bundle；`<repo>` 会替换为当前 checkout 的绝对路径。使用 `--viewer-web-output <custom-output>` 时，CLI 不打印该默认 npm 命令，而会明确提示 custom output 必须在前端启动前部署，或挂载/serve 到浏览器 URL `/data/`。
 
 正式 report 绑定生成时读取的 raw `global_mapping.json` 字节快照 SHA-256（`global_mapping_sha256`）。viewer exporter 会在构建 object index 前后重新计算该 digest；mapping 不同或在导出期间变化会 fail closed，且 `accepted` generation 的 object ID 集与 footprint geometry ID 集不一致也会拒绝发布。没有 `global_mapping_sha256` 的历史 formal generation 同样 fail closed，必须先重新运行 `--mode ground-stack-area`，再执行 viewer export；不提供 fallback。
 
 `accepted` 的数值只表示正式 `da3_ground_footprint_union`；`rejected` 或 `value_m2: null` 表示 unavailable，界面显示 `—`，绝不显示为 `0 m²`。实验性 front-facing area 不接入 v1，青色仍保留给未来该指标；正式 ground footprint 使用琥珀色。
+
+当前展示入口已加入以下 v1 体验增强：
+
+- 上下文 status bar（dataset/backend/points/footprint 概况）
+- 左侧 global ID 列表搜索 + Prev/Next/Clear
+- 中台 scene 控制（点云大小、footprint 不透明度、相机预设）
+- 右侧 evidence drawer（全局统计 + per-ID 观测与状态）
+- `H` 键隐藏/显示 evidence 抽屉，`Esc` 取消选择，快捷键不依赖后端重跑
 
 前端开发验证在 `viewer-web/` 执行：
 
@@ -143,6 +148,8 @@ uv run python main.py --mode pipeline --algorithm 3d \
 ## DA3 地堆 footprint 并集面积
 
 `ground-stack-area` 是锚点无关的只读计量阶段：它读取 schema-v2 DA3 cache 中的 metric `world_points`、`world_points_conf`、逐帧原图→处理网格 affine、缓存时的原图尺寸与去重后的 `global_mapping.json`，用本地 SAM3 checkpoint 对每个检测框生成 mask。对每一物理 `global_id`，把它全部有效观测的 3D 点沿拟合支撑平面法向投影到该平面并恢复其 OBB；最终取所有 carton OBB 投影的**多边形并集面积**（`m²`），指标 `da3_ground_footprint_union`。若任一 global ID 几何不完整（缺 mask、有效点不足、OBB 退化等），整体拒绝并输出 `status: rejected` 与 `value_m2: null`，不会以部分结果冒充总面积。旧 runner 生成的 cache 不满足该 schema/provenance 合约，必须先用 DA3 reconstruction 重新生成 cache。DA3 尺度是模型估计，现场 reference 仍可作为 QA，而非运行前提。
+
+SAM3 的 `predict_inst` 在自动混合精度环境下会根据模型参数的 `dtype` 对齐推理上下文：模型为 `float32` 时会显式关闭 `torch.autocast`，模型为 `half`/`bfloat16` 时会启用对应精度的 `autocast`。该逻辑用于避免 `ground-stack-area` 中的 input/weight dtype 混用导致的 BF16 mismatch。
 
 公开输出根为 `<save_root>/<dataset>/ground_stack_footprint/`。每次运行先把完整结果写入并 fsync 到不可变的 `runs/<run_id>/`，其中严格只有下列三个产物和 `manifest.json`；全部完成后才原子替换 `CURRENT`。generation 的创建/fsync 可以并行，但 publisher 会在固定 `locks/publication.lock` 上持有 exclusive `flock`，把 `CURRENT` replace 与“按本次 expected run ID 解析自身 generation”作为一个串行区；公开 reader 持有同一 inode 的 shared lock 后解析。expected run ID 不符会报 `OSError`，不会返回竞争运行的路径。`CURRENT` replace 前的 write/fsync/rename/temp/replace 失败会向调用方报错并保留上一完整 generation 或不创建 CURRENT；成功 replace 是逻辑发布点，之后 output-root directory fsync 失败只产生明确的 durability warning，新 generation 仍作为成功结果返回且不尝试回滚。读取方始终只看到一个完整的旧或新 generation，不会读到跨运行混合的 JSON/GeoJSON/PNG；历史 generation 保持不变。
 

@@ -106,7 +106,13 @@ def test_ground_stack_area_cli_preserves_rejected_exit_and_report_log(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["main.py", "--mode", "ground-stack-area", "--save_root", str(tmp_path / "Output")],
+        [
+            "main.py",
+            "--mode",
+            "ground-stack-area",
+            "--save_root",
+            str(tmp_path / "Output"),
+        ],
     )
 
     with pytest.raises(SystemExit) as exc_info:
@@ -161,11 +167,15 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
         image_path = images / f"{frame}.png"
         _write_image(image_path)
         detection_path = detections / f"{frame}.json"
-        detection_path.write_text(json.dumps({"objects": [{"position": box} for box in frame_boxes]}))
+        detection_path.write_text(
+            json.dumps({"objects": [{"position": box} for box in frame_boxes]})
+        )
         input_paths.extend([image_path, detection_path])
 
     world_points = np.zeros((3, 126, 126, 3), dtype=np.float32)
-    xs, ys = np.meshgrid(np.linspace(-1.0, 2.0, 126), np.linspace(-1.0, 2.0, 126), indexing="xy")
+    xs, ys = np.meshgrid(
+        np.linspace(-1.0, 2.0, 126), np.linspace(-1.0, 2.0, 126), indexing="xy"
+    )
     world_points[..., 0] = xs
     world_points[..., 1] = ys
     _put_carton(world_points, 0, boxes[0][0], (0.0, 1.0), 0.02)
@@ -181,9 +191,13 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
         source_to_processed_affine=np.asarray(
             [[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]] * 3, dtype=np.float32
         ),
-        cache_schema_version=np.asarray(2, dtype=np.int32),
+        cache_schema_version=np.asarray(3, dtype=np.int32),
+        is_metric=np.asarray(1, dtype=np.int32),
+        scale_factor=np.asarray(1.0, dtype=np.float32),
         source_model=np.asarray("depth-anything/DA3NESTED-GIANT-LARGE", dtype="<U64"),
-        source_image_sha256=np.asarray([_sha256(path) for path in source_paths], dtype="<U64"),
+        source_image_sha256=np.asarray(
+            [_sha256(path) for path in source_paths], dtype="<U64"
+        ),
         affine_convention=np.asarray("pixel_center_v1", dtype="<U32"),
         preprocess_resolution=np.asarray(126, dtype=np.int32),
         preprocess_method=np.asarray("upper_bound_resize", dtype="<U32"),
@@ -201,18 +215,22 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
     return dataset, save_root, input_paths
 
 
-def exact_bbox_masks(image_path: str, bboxes: list[list[float]], *_: object) -> list[np.ndarray]:
+def exact_bbox_masks(
+    image_path: str, bboxes: list[list[float]], *_: object
+) -> list[np.ndarray]:
     with Image.open(image_path) as image:
         width, height = image.size
     masks: list[np.ndarray] = []
     for x1, y1, x2, y2 in bboxes:
         mask = np.zeros((height, width), dtype=bool)
-        mask[int(y1):int(y2), int(x1):int(x2)] = True
+        mask[int(y1) : int(y2), int(x1) : int(x2)] = True
         masks.append(mask)
     return masks
 
 
-def masks_with_one_empty(image_path: str, bboxes: list[list[float]], *args: object) -> list[np.ndarray]:
+def masks_with_one_empty(
+    image_path: str, bboxes: list[list[float]], *args: object
+) -> list[np.ndarray]:
     masks = exact_bbox_masks(image_path, bboxes, *args)
     if Path(image_path).stem == "2":
         masks[0][:] = False
@@ -239,7 +257,9 @@ def _formal_projection(report: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _published_projection(result: dict[str, object]) -> tuple[dict[str, object], str, np.ndarray]:
+def _published_projection(
+    result: dict[str, object],
+) -> tuple[dict[str, object], str, np.ndarray]:
     generation = Path(str(result["report_path"])).parent
     report = json.loads((generation / "measurement_report.json").read_text())
     geojson = json.loads((generation / "footprints.geojson").read_text())
@@ -401,7 +421,9 @@ def _publish_two_processes_with_forced_replace_resolve_interleaving(
         assert process.exitcode == 0
     results = [queue.get(timeout=2), queue.get(timeout=2)]
     assert all(item[0] == "ok" for item in results), results
-    by_marker = {item[1]: {"returned_marker": item[2], "paths": item[3]} for item in results}
+    by_marker = {
+        item[1]: {"returned_marker": item[2], "paths": item[3]} for item in results
+    }
     current_paths = stage._artifact_paths_from_current(output_root)
     current_report = json.loads(Path(current_paths["measurement_report"]).read_text())
     return by_marker["first"], by_marker["second"], current_report
@@ -485,7 +507,9 @@ def test_stage_records_digest_of_exact_raw_mapping_bytes(monkeypatch, tmp_path):
     """Catches hashing a reserialized mapping rather than the parsed byte snapshot."""
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
-    mapping_path.write_bytes(b'{\n  "1": [\n    {"image_id": 0, "object_id": 0, "bbox": [16,24,80,104]},\n    {"image_id": 1, "object_id": 0, "bbox": [18,22,82,102]}\n  ],\n  "2": [ {"image_id": 2, "object_id": 0, "bbox": [62,24,126,104]} ]\n}\n')
+    mapping_path.write_bytes(
+        b'{\n  "1": [\n    {"image_id": 0, "object_id": 0, "bbox": [16,24,80,104]},\n    {"image_id": 1, "object_id": 0, "bbox": [18,22,82,102]}\n  ],\n  "2": [ {"image_id": 2, "object_id": 0, "bbox": [62,24,126,104]} ]\n}\n'
+    )
     monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
@@ -496,7 +520,9 @@ def test_stage_records_digest_of_exact_raw_mapping_bytes(monkeypatch, tmp_path):
 
 def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_path):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", masks_with_one_empty)
+    monkeypatch.setattr(
+        stage, "sam3_masks_from_bboxes_predict_inst", masks_with_one_empty
+    )
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -505,7 +531,9 @@ def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_pat
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert "empty" in report["per_global_id"]["2"]["observations"][0]["rejection"]
-    geojson = json.loads((Path(result["report_path"]).parent / "footprints.geojson").read_text())
+    geojson = json.loads(
+        (Path(result["report_path"]).parent / "footprints.geojson").read_text()
+    )
     assert geojson["status"] == "rejected"
     assert geojson["measurement_complete"] is False
     assert geojson["features"] == []
@@ -568,9 +596,7 @@ def test_evidence_failures_do_not_change_frozen_formal_result(
         return {"mode": "shadow", "status": "baseline_evidence"}
 
     monkeypatch.setattr(stage, "build_shadow_evidence", baseline_builder, raising=False)
-    baseline_result, _ = _run_evidence_fixture(
-        baseline_root, monkeypatch, masks=masks
-    )
+    baseline_result, _ = _run_evidence_fixture(baseline_root, monkeypatch, masks=masks)
     baseline_projection = _published_projection(baseline_result)
 
     def failed_builder(**_kwargs: object) -> dict[str, object]:
@@ -606,9 +632,7 @@ def test_stage_reports_valid_shadow_evidence_without_changing_formal_area(
 
     assert _formal_projection(with_camera) == _formal_projection(without_camera)
     assert with_camera["evidence"]["status"] == "available"
-    assert without_camera["evidence"]["status"] == (
-        "unavailable_missing_camera_fields"
-    )
+    assert without_camera["evidence"]["status"] == ("unavailable_missing_camera_fields")
     observation = with_camera["evidence"]["per_global_id"]["1"]["observations"][0]
     assert observation["source_mask_pixel_count"] == 64 * 80
     assert observation["processed_mask_pixel_count"] == 64 * 80
@@ -659,7 +683,10 @@ def test_mask_robustness_failure_does_not_change_formal_projection_or_artifacts(
     assert robustness["status"] == "available"
     assert robustness["variants"]["eroded"]["status"] == "rejected"
     assert robustness["variants"]["eroded"]["value_m2"] is None
-    assert "injected source morphology failure" in robustness["variants"]["eroded"]["reason"]
+    assert (
+        "injected source morphology failure"
+        in robustness["variants"]["eroded"]["reason"]
+    )
     assert "polygons" not in robustness["variants"]["eroded"]
     assert observed_projection[:2] == baseline_projection[:2]
     assert np.array_equal(observed_projection[2], baseline_projection[2])
@@ -676,9 +703,7 @@ def test_duplicate_observation_does_not_increase_distinct_image_count(
     detection_path.write_text(json.dumps(detections))
     mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
     mapping = json.loads(mapping_path.read_text())
-    mapping["1"].append(
-        {"image_id": 0, "object_id": 1, "bbox": duplicate_bbox}
-    )
+    mapping["1"].append({"image_id": 0, "object_id": 1, "bbox": duplicate_bbox})
     mapping_path.write_text(json.dumps(mapping))
     _add_camera_fields(save_root / dataset.name / "da3_cache" / "predictions.npz")
     monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
@@ -691,8 +716,7 @@ def test_duplicate_observation_does_not_increase_distinct_image_count(
     assert len(per_id["observations"]) == 3
     assert per_id["distinct_image_id_count"] == 2
     assert all(
-        pair["source_image_id"] != pair["target_image_id"]
-        for pair in per_id["pairs"]
+        pair["source_image_id"] != pair["target_image_id"] for pair in per_id["pairs"]
     )
 
 
@@ -711,7 +735,7 @@ def test_wrong_mask_is_the_highest_leave_one_out_influence(monkeypatch, tmp_path
         if Path(image_path).stem == "2":
             x1, y1, x2, y2 = (int(value) for value in bboxes[0])
             masks[0][:] = False
-            masks[0][y1:y2, (x1 + x2) // 2:x2] = True
+            masks[0][y1:y2, (x1 + x2) // 2 : x2] = True
         return masks
 
     monkeypatch.setattr(
@@ -772,7 +796,9 @@ def test_stage_second_run_uses_cached_masks_and_keeps_area(monkeypatch, tmp_path
     first_result = stage.run_da3_footprint(str(dataset), save_root)
     first = json.loads(Path(first_result["report_path"]).read_text())
     first_projection = _published_projection(first_result)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called)
+    monkeypatch.setattr(
+        stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called
+    )
     second_result = stage.run_da3_footprint(str(dataset), save_root)
     second = json.loads(Path(second_result["report_path"]).read_text())
     second_projection = _published_projection(second_result)
@@ -806,11 +832,16 @@ def test_hit_only_stage_hashes_checkpoint_only_at_entry_and_exit(monkeypatch, tm
         return expected_digest
 
     monkeypatch.setattr(stage, "checkpoint_sha256", counted_checkpoint_sha256)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called)
+    monkeypatch.setattr(
+        stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called
+    )
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
-    assert checksum_calls == [Path(stage._SAM3_CHECKPOINT), Path(stage._SAM3_CHECKPOINT)]
+    assert checksum_calls == [
+        Path(stage._SAM3_CHECKPOINT),
+        Path(stage._SAM3_CHECKPOINT),
+    ]
     assert result["success"] is True
     assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
         ["hit"],
@@ -819,7 +850,9 @@ def test_hit_only_stage_hashes_checkpoint_only_at_entry_and_exit(monkeypatch, tm
     ]
 
 
-def test_exit_checkpoint_mismatch_rejects_after_recording_all_hit_events(monkeypatch, tmp_path):
+def test_exit_checkpoint_mismatch_rejects_after_recording_all_hit_events(
+    monkeypatch, tmp_path
+):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
     stage.run_da3_footprint(str(dataset), save_root)
@@ -827,7 +860,9 @@ def test_exit_checkpoint_mismatch_rejects_after_recording_all_hit_events(monkeyp
     digests = iter((expected_digest, "f" * 64))
 
     monkeypatch.setattr(stage, "checkpoint_sha256", lambda _path: next(digests))
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called)
+    monkeypatch.setattr(
+        stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called
+    )
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
@@ -844,9 +879,13 @@ def test_exit_checkpoint_mismatch_rejects_after_recording_all_hit_events(monkeyp
 
 def test_cached_empty_mask_rejects_full_total(monkeypatch, tmp_path):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", masks_with_one_empty)
+    monkeypatch.setattr(
+        stage, "sam3_masks_from_bboxes_predict_inst", masks_with_one_empty
+    )
     stage.run_da3_footprint(str(dataset), save_root)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called)
+    monkeypatch.setattr(
+        stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called
+    )
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -855,10 +894,15 @@ def test_cached_empty_mask_rejects_full_total(monkeypatch, tmp_path):
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert "empty" in report["per_global_id"]["2"]["observations"][0]["rejection"]
-    assert all(frame["cache_events"] == ["hit"] for frame in report["sam3_mask_cache"]["frames"])
+    assert all(
+        frame["cache_events"] == ["hit"]
+        for frame in report["sam3_mask_cache"]["frames"]
+    )
 
 
-def test_cache_write_failure_uses_complete_fresh_masks_and_records_event(monkeypatch, tmp_path):
+def test_cache_write_failure_uses_complete_fresh_masks_and_records_event(
+    monkeypatch, tmp_path
+):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
 
     def fresh_masks_with_failed_write(request, compute_masks):
@@ -877,7 +921,9 @@ def test_cache_write_failure_uses_complete_fresh_masks_and_records_event(monkeyp
             invalid_reason="injected cache write failure",
         )
 
-    monkeypatch.setattr(stage, "load_or_compute_frame_masks", fresh_masks_with_failed_write)
+    monkeypatch.setattr(
+        stage, "load_or_compute_frame_masks", fresh_masks_with_failed_write
+    )
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
@@ -891,7 +937,9 @@ def test_cache_write_failure_uses_complete_fresh_masks_and_records_event(monkeyp
     ]
 
 
-def test_stage_entries_cache_initialization_failure_uses_fresh_masks(monkeypatch, tmp_path):
+def test_stage_entries_cache_initialization_failure_uses_fresh_masks(
+    monkeypatch, tmp_path
+):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
     original_mkdir = sam3_mask_cache.Path.mkdir
@@ -991,7 +1039,9 @@ def test_cached_masks_are_not_requested_until_complete_inputs_are_validated(
     )
 
     def fail_cache_request(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError("mask cache must not run before complete mapping validation")
+        raise AssertionError(
+            "mask cache must not run before complete mapping validation"
+        )
 
     monkeypatch.setattr(stage, "load_or_compute_frame_masks", fail_cache_request)
     result = stage.run_da3_footprint(str(dataset), save_root)
@@ -1038,8 +1088,8 @@ def test_two_publishers_return_own_generation_and_reader_sees_complete_current(
     output_root = tmp_path / "ground_stack_footprint"
     output_root.mkdir()
 
-    first, second, current = _publish_two_processes_with_forced_replace_resolve_interleaving(
-        output_root
+    first, second, current = (
+        _publish_two_processes_with_forced_replace_resolve_interleaving(output_root)
     )
 
     assert first["returned_marker"] == "first"
@@ -1108,13 +1158,17 @@ def test_pre_current_replace_failure_preserves_previous_complete_generation(
         monkeypatch.setattr(
             stage,
             "_write_artifacts",
-            lambda *_args: (_ for _ in ()).throw(OSError("injected generation write failure")),
+            lambda *_args: (_ for _ in ()).throw(
+                OSError("injected generation write failure")
+            ),
         )
     elif failure_point == "artifact_fsync":
         monkeypatch.setattr(
             stage,
             "_fsync_file",
-            lambda *_args: (_ for _ in ()).throw(OSError("injected artifact fsync failure")),
+            lambda *_args: (_ for _ in ()).throw(
+                OSError("injected artifact fsync failure")
+            ),
         )
     elif failure_point == "generation_fsync":
         original_fsync_directory = stage._fsync_directory
@@ -1129,19 +1183,25 @@ def test_pre_current_replace_failure_preserves_previous_complete_generation(
         monkeypatch.setattr(
             stage.os,
             "rename",
-            lambda *_args: (_ for _ in ()).throw(OSError("injected generation rename failure")),
+            lambda *_args: (_ for _ in ()).throw(
+                OSError("injected generation rename failure")
+            ),
         )
     elif failure_point == "current_temp":
         monkeypatch.setattr(
             stage.tempfile,
             "mkstemp",
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("injected CURRENT temp failure")),
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                OSError("injected CURRENT temp failure")
+            ),
         )
     else:
         monkeypatch.setattr(
             stage.os,
             "replace",
-            lambda *_args: (_ for _ in ()).throw(OSError("injected CURRENT replace failure")),
+            lambda *_args: (_ for _ in ()).throw(
+                OSError("injected CURRENT replace failure")
+            ),
         )
 
     with pytest.raises(OSError, match="injected"):
@@ -1151,7 +1211,9 @@ def test_pre_current_replace_failure_preserves_previous_complete_generation(
     assert stage._artifact_paths_from_current(output_root) == old_paths
 
 
-@pytest.mark.parametrize("has_previous_current", [False, True], ids=["first", "replacement"])
+@pytest.mark.parametrize(
+    "has_previous_current", [False, True], ids=["first", "replacement"]
+)
 @pytest.mark.parametrize(
     "failure_point",
     [
@@ -1219,7 +1281,9 @@ def test_post_current_replace_directory_fsync_warns_and_returns_new_generation(
     assert "durability" in caplog.text
 
 
-@pytest.mark.parametrize("mutation", ["stale_hash", "legacy_schema", "incomplete_mapping"])
+@pytest.mark.parametrize(
+    "mutation", ["stale_hash", "legacy_schema", "incomplete_mapping"]
+)
 def test_stage_rejects_cache_or_mapping_contract(monkeypatch, tmp_path, mutation):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     output = save_root / dataset.name
@@ -1228,11 +1292,15 @@ def test_stage_rejects_cache_or_mapping_contract(monkeypatch, tmp_path, mutation
         _write_image(dataset / "images" / "0.png", value=201)
     elif mutation == "legacy_schema":
         with np.load(cache_path, allow_pickle=False) as cache:
-            fields = {key: cache[key] for key in cache.files if key != "cache_schema_version"}
+            fields = {
+                key: cache[key] for key in cache.files if key != "cache_schema_version"
+            }
         np.savez_compressed(cache_path, **fields)
     else:
         (output / "dedup_detections" / "global_mapping.json").write_text(
-            json.dumps({"1": [{"image_id": 0, "object_id": 0, "bbox": [16, 24, 80, 104]}]})
+            json.dumps(
+                {"1": [{"image_id": 0, "object_id": 0, "bbox": [16, 24, 80, 104]}]}
+            )
         )
     monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
@@ -1257,14 +1325,18 @@ def test_runner_affine_uses_pixel_centres():
 
 
 def test_runner_preprocess_geometry_records_input_processor_dimensions():
-    geometry = _preprocess_geometry(100, 50, process_res=84, output_height=42, output_width=84)
+    geometry = _preprocess_geometry(
+        100, 50, process_res=84, output_height=42, output_width=84
+    )
 
     assert geometry["processed_width"] == 84
     assert geometry["processed_height"] == 42
     assert np.allclose(geometry["affine"], [[0.84, 0.0, -0.08], [0.0, 0.84, -0.08]])
 
 
-def test_stage_rejects_current_numeric_image_and_detection_absent_from_cache(monkeypatch, tmp_path):
+def test_stage_rejects_current_numeric_image_and_detection_absent_from_cache(
+    monkeypatch, tmp_path
+):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     _write_image(dataset / "images" / "3.png")
     (dataset / "detections_results" / "3.json").write_text(json.dumps({"objects": []}))
@@ -1292,7 +1364,9 @@ def test_stage_converts_sam_runtime_error_to_rejected_report(monkeypatch, tmp_pa
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert "SAM3 failed" in report["rejection_reason"]
-    geojson = json.loads((Path(result["report_path"]).parent / "footprints.geojson").read_text())
+    geojson = json.loads(
+        (Path(result["report_path"]).parent / "footprints.geojson").read_text()
+    )
     assert geojson["measurement_complete"] is False
     assert geojson["features"] == []
 
@@ -1311,7 +1385,9 @@ def test_nonempty_mask_without_valid_da3_points_rejects_total(monkeypatch, tmp_p
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
     observation = report["per_global_id"]["2"]["observations"][0]
-    geojson = json.loads((Path(result["report_path"]).parent / "footprints.geojson").read_text())
+    geojson = json.loads(
+        (Path(result["report_path"]).parent / "footprints.geojson").read_text()
+    )
 
     assert result["success"] is False
     assert report["status"] == "rejected"
@@ -1329,9 +1405,17 @@ def test_runner_rejects_unsafe_model_id_before_inference():
 
 @pytest.mark.parametrize(
     "mutation",
-    ["singular_affine", "reflection_affine", "translated_affine", "missing_provenance", "bad_method"],
+    [
+        "singular_affine",
+        "reflection_affine",
+        "translated_affine",
+        "missing_provenance",
+        "bad_method",
+    ],
 )
-def test_stage_rejects_unverified_affine_or_preprocess_provenance(monkeypatch, tmp_path, mutation):
+def test_stage_rejects_unverified_affine_or_preprocess_provenance(
+    monkeypatch, tmp_path, mutation
+):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     cache_path = save_root / dataset.name / "da3_cache" / "predictions.npz"
     with np.load(cache_path, allow_pickle=False) as cache:
@@ -1358,11 +1442,16 @@ def test_stage_rejects_unverified_affine_or_preprocess_provenance(monkeypatch, t
     assert result["success"] is False
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
-    assert "preprocess" in report["rejection_reason"] or "affine" in report["rejection_reason"]
+    assert (
+        "preprocess" in report["rejection_reason"]
+        or "affine" in report["rejection_reason"]
+    )
 
 
 @pytest.mark.parametrize("mutation", ["affine_unicode", "sizes_unicode"])
-def test_stage_rejects_non_numeric_affine_or_non_integer_source_sizes(monkeypatch, tmp_path, mutation):
+def test_stage_rejects_non_numeric_affine_or_non_integer_source_sizes(
+    monkeypatch, tmp_path, mutation
+):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     cache_path = save_root / dataset.name / "da3_cache" / "predictions.npz"
     with np.load(cache_path, allow_pickle=False) as cache:

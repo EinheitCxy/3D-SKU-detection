@@ -103,7 +103,7 @@ uv run main.py --help
 
 ## TypeScript/Three.js 静态 viewer
 
-Python 是唯一的数据与证据生产端，负责 DA3/SAM3、匹配、去重、正式 ground footprint 面积和 provenance；TypeScript 只负责严格加载 bundle、渲染点云/正式 footprint 与交互式审查，不重新计算面积。导出与开发分两步：
+Python 是唯一的数据与证据生产端，负责 DA3/SAM3、匹配、去重、正式 ground footprint 面积和 provenance；TypeScript 只负责严格加载 bundle、渲染点云/正式 footprint 与交互式审查，不重新计算面积。导出时在 web-export 阶段自动进行**场景点云过滤**（`utils/pointcloud_filter.py`：有限值/零点掩码 -> SOR 统计离群点移除 -> DBSCAN 保留主要簇 -> 带双侧护栏的 RANSAC 地面剔除，`export_web_viewer_bundle(filter_config=...)` 可覆盖），随后再做 voxel 去重。实例标签/染色的范围与保护范围同源：导出时读取 `<save_root>/<dataset>/sam3_mask_cache/v1/`（与 `ground-stack-area` 共用同一不可变 cache），按 DA3 affine 把处理网格点映射回源图像素、做最近邻掩码采样，mask 未覆盖即不标签；入口缺失/schema 不符/bbox 与 global_mapping 不一致（canonical binary64 逐位相等）均 fail closed。**仅 `labels >= 0` 的有效 SAM3 mask 点硬保护**：它们必须仍通过有限/非零基础有效性，但绕过 SOR、DBSCAN、ground-plane 与 sky-line；bbox 或 mask 外点不受保护，继续作为背景过滤。voxel 内先按 `(voxel, instance label)` 保留每个保护实例的最高 confidence 代表，并淘汰同 voxel 的未标注竞争点；只有无保护实例的 voxel 才保留其最高 confidence 背景代表。`max_points` 会先完整保留全部保护代表，若保护代表本身超限则 fail closed，绝不静默删除 SKU。导出还会计算**朝向校正矩阵** `world_to_view = T_center @ R_level @ M_flip`（行主序写入 manifest）：`M_flip = diag(1,-1,-1,1)` 做 CV->glTF 翻转；`R_level` 在**过滤前**有效点集（过滤会剔除地面，故不能用过滤后点集）上以 RANSAC 迭代拟合地平面（地堆/货架场景最大平面常是竖直墙/货架面，故最多剔除 8 个已拟合平面再试），候选平面须同时满足内点比 >= 0.05、法向与 -Y 夹角 <= 60°、**地板性门**（< 15% 点位于平面下方 0.1 m 之外--地面从下方支撑场景，斜穿主体的平面必然有大比例点在其下方）；法向定向到相机一侧后取到 +Y 的最短弧旋转，无合格平面时不摆平仅翻转；`T_center` 把翻转+摆平后过滤点云的逐轴 median 移到原点。摆平至关重要：DA3 world 锚定首帧相机姿态，俯拍 ~20° 的地堆场景里地面在世界系倾斜 ~20°，不摆平会把真实周边货架/商品点渲染到"空中"（fd6 实测 58k 点因此显示为天空噪点）。在过滤之后还做**天空线裁剪**：摆平坐标系中以实例标签点高度的 p99.9 + 0.15 m 为界，裁掉界以上的未保护点（天花板/天空薄片与主簇稠密相连、SOR/DBSCAN 剔不干净），并有 30% 最大裁剪比例护栏。同时为 `objects.json` 每个实例写入 `point_index_range: [start, end)`（体素采样后按实例稳定排序，使各实例点集连续），供前端选中 3D 包围框使用。导出还会为**每个实例（含 removed）**生成缩略图：从 `<dataset>/images/<image_id>.JPG` 按 bbox（四周加 10% padding 并 clamp 到图内）裁剪、长边缩到 <=256px、JPEG q85，写入 `runs/<run_id>/thumbs/<globalId>_<instanceIndex>.jpg`，并把相对路径写进 `objects.json` 每个实例的 `thumbnail` 字段（前端必填契约，缺失即 fail closed 提示重新导出）。源图目录按 `da3_runner.py` 同一约定解析（文件名 stem 数字 = image_id），且逐文件 SHA-256 必须与 DA3 cache 的 `source_image_sha256` 一致、bbox 必须落在源图尺寸内，否则 fail closed；字节级一致保证缩略图坐标系（raw 未转置像素空间，与 bbox/affine 相同）与 DA3 推理时读到的图像一致（EXIF 方向已验证：fd6 全部 11 张 EXIF orientation=1，裁剪区域平均色与 cache 低清图 affine 映射区域逐通道差 <=0.9/255）。默认密度参数为 `--viewer-web-voxel-size 0.005` / `--viewer-web-max-points 1500000`。导出与开发分两步：
 
 ```bash
 # 第一步：导出到默认 viewer-web/public/data/，也可传 --viewer-web-output
@@ -115,13 +115,20 @@ cd ../viewer-web
 npm run dev
 ```
 
-`viewer-web` 默认从 `<save_root>/<dataset_name>/da3_cache/predictions.npz`、`dedup_detections/global_mapping.json` 和 `ground_stack_footprint/` 读取正式产物。bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局；前端严格校验 schema、provenance、数组 byte length 和正式 footprint 状态，输入不满足 contract 时直接 fail closed。
+每个新 bundle 的 `manifest.source.export` 还冻结了实际 `filter_config`、导出器源码 SHA-256、读取时两次校验的 `global_mapping.json` SHA-256，以及每个实际使用的 SAM3 cache entry 的 `image_id`、content-addressed `key` 与 `masks.npz` SHA-256。导出会严格验证该 entry 的 canonical key payload、payload digest、逐 mask digest/true-pixel count 和 canonical bbox clipping；历史同图像 entry 可并存，但只有唯一精确覆盖当前 mapping 的 entry 能被使用，歧义或任一篡改均 fail closed。前端 contract 对这些字段使用 exact-key 校验，旧 bundle 必须重新导出。
+
+`viewer-web` 默认从 `<save_root>/<dataset_name>/da3_cache/predictions.npz`、`dedup_detections/global_mapping.json`、`ground_stack_footprint/` 读取正式产物，并额外要求 `--dataset` 指向的数据集存在 `<dataset>/images/` 源图目录（用于实例缩略图）。bundle 使用不可变 `CURRENT -> runs/<run_id>/` 布局；exporter 对最终 `positions` 精确计算每轴 p01/p99，写入 manifest 必填 `display_bounds: [min_x,min_y,min_z,max_x,max_y,max_z]`（bundle/source 坐标、六个有限数且逐轴 min<=max）。前端严格校验 schema、provenance、数组 byte length、`display_bounds`、`world_to_view`（必需 16 个有限 float）与 `normals` int8 数组；缺失任一字段均提示用最新导出器重新导出，且不做前端全量点排序 fallback。
+exporter 在任何临时 generation 创建前还验证从 mapping 得到的 object index：global ID 是 canonical decimal string（前端以 `BigInt` 排序）；只有 image/object ID 必须是 JavaScript safe integer（排除 bool，`abs(id) <= 2**53-1`）。此外 removed 必须为 bool、bbox 必须为四个 finite 且有序数，derived images/objects 和 active/removed/total counts 必须与 instances 完全一致；否则 fail closed，绝不发布浏览器会拒绝的 bundle。RANSAC 若返回零/非有限法向则记录并跳过该退化候选，绝不执行归一化除零。
 
 Vite 本地 `/data/` 只直接对应默认的 `viewer-web/public/data/`。默认 output 导出成功后，CLI 只打印、不执行绝对路径命令 `npm --prefix <repo>/viewer-web run dev`，实际输出使用当前 checkout 的绝对路径；使用 `--viewer-web-output <custom-output>` 时不会打印该默认 npm 命令，custom output 必须在前端启动前部署，或挂载/serve 到浏览器 URL `/data/`。
 
 正式 report 绑定生成时读取的 raw `global_mapping.json` 字节快照 SHA-256（`global_mapping_sha256`）。exporter 会在构建 object index 前后校验该 digest；mapping 不同或在导出期间变化会 fail closed，且 `accepted` generation 的 object ID 集与 footprint geometry ID 集不一致也会拒绝发布。没有 `global_mapping_sha256` 的历史 formal generation 必须先重新运行 `--mode ground-stack-area`，再执行 viewer export；不提供 fallback。
 
 `accepted` 的数值只表示正式 `da3_ground_footprint_union`；`rejected` 或 `value_m2: null` 表示 unavailable，界面显示 `—`，绝不显示为 `0 m²`。实验性 front-facing area 不接入 v1，青色保留给未来该指标，正式 ground footprint 使用琥珀色。
+
+> **注意（2026-08 缓存修复）**：旧版 `save_predictions_cache` 把 `source_model` 写成 object dtype，严格加载（`allow_pickle=False`）会拒绝。此类历史 `da3_cache/predictions.npz` 必须重新运行重建生成后才能导出 viewer-web bundle；新写入器已统一为 unicode 标量。bundle 数组为 `positions.f32.bin` / `colors.u8.bin` / `normals.i8.bin`（不再携带前端未消费的 `confidences` / `frame_ids`；`normals.i8.bin` 只在 voxel/protected/max-points 完成后的最终代表点集合上估计，再随实例排序与 colors 同步置换，供前端 half-Lambert 光照，缺失时前端 fail-closed 提示重新导出）。
+>
+> **DA3 缓存 schema v3（米制硬门）**：`da3_runner.py` 推理后强制校验 `prediction.is_metric == 1`，非 metric 模型（如 DA3-GIANT-1.1，输出相对尺度点云）直接 fail-closed 不写缓存；`is_metric` 与 `scale_factor` 写入 npz，ground footprint 阶段与 viewer-web 导出均要求 schema 恰好为 3 且 `is_metric == 1`。所有 v2 及更早缓存需重新运行 `--mode reconstruct` 生成。默认 checkpoint 已切换为修复训练问题的 `-1.1`（`depth-anything/DA3NESTED-GIANT-LARGE-1.1`，2026-08-20 起；全量 fd2–12 A/B：micro F1 78.62%→80.51%，详见 `.research`/memory）。`--recon_model_path` 仍可覆盖任意兼容 checkpoint；旧默认 `DA3NESTED-GIANT-LARGE` 的缓存与 1.1 缓存不要混用（provenance 的 `source_model` 字段区分）。
 
 前端开发验证：
 
@@ -145,6 +152,8 @@ npm run build
 | `sku_matching_system.py` | 系统封装（pi3/da3/vggt 后端） | torch |
 | `bbox_utils.py` | 检出框工具 | 基础Python |
 | `process_image_orientation.py` | 图像方向修复 | PIL |
+| `pointcloud_filter.py` | 场景点云过滤（SOR/主簇/地面剔除，web viewer 导出使用） | numpy, open3d |
+| `da3_cache_validation.py` | DA3 缓存标量/仿射契约校验（web 导出与 footprint 阶段共用） | numpy |
 
 附：可执行脚本位于 `modules/` 目录，例如 `modules/inference.py`、`modules/draw_detection_boxes.py`、`modules/deduplicate_detections.py` 等。
 
@@ -293,7 +302,7 @@ print(matching_cfg)
 
 Depth-Anything-3 依赖 `omegaconf/addict/e3nn/evo` 等 `code/` 未安装的包（code/ 与 DA3 均为 numpy<2，无 numpy 冲突）。因此 `da3_3d_reconstructor.py` **不 in-process 加载 DA3**，而是通过 **subprocess** 调用 `Depth-Anything-3/.venv/bin/python modules/da3_runner.py`（自包含脚本，不 import `code/`）：
 
-- `da3_runner.py`：在 DA3 venv 中加载 `depth-anything/DA3NESTED-GIANT-LARGE`（6.3GB，米制，CC BY-NC 4.0），多视图批量推理，输出 `da3_cache/predictions.npz`（depth/extrinsics(w2c)/intrinsics，并反投影出 `world_points`，schema 与 `pi3_cache` 完全一致）。
+- `da3_runner.py`：在 DA3 venv 中加载 `depth-anything/DA3NESTED-GIANT-LARGE-1.1`（6.3GB，米制，CC BY-NC 4.0；`DEFAULT_HF_REPO` 常量，可被 `--recon_model_path` 覆盖），多视图批量推理，输出 `da3_cache/predictions.npz`（depth/extrinsics(w2c)/intrinsics，并反投影出 `world_points`，schema 与 `pi3_cache` 完全一致）。
 - `da3_3d_reconstructor.py`：`load_model` 为 no-op（仅校验 venv/runner 存在），`run_inference` 调 subprocess 生成 npz 后读回，`export_glb` 跳过（SKU matching 仅需 npz）。
 - 前置条件：`Depth-Anything-3/.venv` 必须存在且已装 DA3 依赖；HF 权重首次运行自动下载（6.3GB）。
 

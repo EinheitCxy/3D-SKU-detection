@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ViewerBundle } from "./bundle-loader";
-import { buildEvidenceView, formatFormalMetric, listGlobalIds } from "./presentation";
+import { buildEvidenceView, canFocusGlobalId, entryHasGeometry, formatFormalMetric, listGlobalIds } from "./presentation";
+import { dataCandidates } from "./data-candidates";
 
 const runId = "a".repeat(32);
 const square = [[0, 0], [1, 0], [1, 1], [0, 0]] as const;
@@ -8,35 +9,44 @@ const square = [[0, 0], [1, 0], [1, 1], [0, 0]] as const;
 function makeBundle(): ViewerBundle {
   return {
     current: { schema_version: "1.0.0", run_id: runId, complete: true },
+    generationUrl: `https://example.test/data/runs/${runId}/`,
     manifest: {
       schema_version: "1.0.0", coordinate_space: "da3_world_meters", point_count: 0,
+      display_bounds: [0, 0, 0, 0, 0, 0],
       arrays: {
         positions: { path: "positions.f32.bin", dtype: "float32", components: 3, byte_length: 0 },
         colors: { path: "colors.u8.bin", dtype: "uint8", components: 3, byte_length: 0 },
-        confidences: { path: "confidences.f32.bin", dtype: "float32", components: 1, byte_length: 0 },
-        frame_ids: { path: "frame_ids.i32.bin", dtype: "int32", components: 1, byte_length: 0 },
+        normals: { path: "normals.i8.bin", dtype: "int8", components: 3, byte_length: 0 },
       },
       objects_path: "objects.json", footprints_path: "footprints.json",
+      world_to_view: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      coordinate_convention: "DA3 native CV coordinates; world_to_view maps to viewer Y-up (row-major)",
       source: {
         da3_cache: {
           schema_version: 2, source_model: "da3", affine_convention: "pixel_center_v1",
           preprocess_resolution: 2, preprocess_method: "upper_bound_resize", frame_count: 1,
           processed_size: [2, 2], image_ids: [7], source_image_sha256: ["0".repeat(64)],
         },
-        footprint: { run_id: runId, status: "accepted" }, export: { voxel_size_m: 0.01, max_points: 10 },
+        footprint: { run_id: runId, status: "accepted" },
+        export: {
+          voxel_size_m: 0.01, max_points: 10,
+          filter_config: { enabled: true, sor_nb_neighbors: 20, sor_std_ratio: 2, keep_main_clusters: true, cluster_eps_scale: 5, cluster_min_points: 10, min_cluster_ratio: 0.01, remove_ground: true, ground_dist_scale: 3, ground_min_inlier_ratio: 0.08, min_remaining_ratio: 0.2, min_points: 1000 },
+          exporter_source_sha256: "1".repeat(64), global_mapping_sha256: "2".repeat(64),
+          sam3_mask_entries: [{ image_id: 7, key: "3".repeat(64), payload_sha256: "4".repeat(64) }],
+        },
       },
       capabilities: { point_picking: false, footprint_picking: true, formal_ground_footprint: true },
     },
     objects: {
       "2": {
         images: [7], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
-        instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false }],
+        instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 0], thumbnail: "thumbs/2_0.jpg" }],
       },
       "11": {
         images: [8, 9], objects: [4, 5], active_count: 1, removed_count: 1, total_count: 2,
         instances: [
-          { image_id: 8, object_id: 4, bbox: [10, 20, 30, 40], removed: false },
-          { image_id: 9, object_id: 5, bbox: [11, 21, 31, 41], removed: true },
+          { image_id: 8, object_id: 4, bbox: [10, 20, 30, 40], removed: false, point_index_range: [0, 2], thumbnail: "thumbs/11_0.jpg" },
+          { image_id: 9, object_id: 5, bbox: [11, 21, 31, 41], removed: true, point_index_range: [2, 2], thumbnail: "thumbs/11_1.jpg" },
         ],
       },
     },
@@ -55,7 +65,7 @@ function makeBundle(): ViewerBundle {
         properties: { coordinate_space: "local_support_plane_meters", global_id: "union", area_m2: 3.5 },
       },
     },
-    positions: new Float32Array(), colors: new Uint8Array(), confidences: new Float32Array(), frameIds: new Int32Array(),
+    positions: new Float32Array(), colors: new Uint8Array(), normals: new Int8Array(),
   };
 }
 
@@ -81,5 +91,51 @@ describe("presentation", () => {
     expect(buildEvidenceView(bundle, "2")).toMatchObject({
       globalId: "2", footprint: { available: false, areaM2: null, observationsUsed: null },
     });
+  });
+
+  it("maps every instance to an absolute thumbnail URL next to the generation", () => {
+    const view = buildEvidenceView(makeBundle(), "11");
+    expect(view?.instances).toEqual([
+      { imageId: 8, objectId: 4, removed: false, thumbnailUrl: `https://example.test/data/runs/${runId}/thumbs/11_0.jpg` },
+      { imageId: 9, objectId: 5, removed: true, thumbnailUrl: `https://example.test/data/runs/${runId}/thumbs/11_1.jpg` },
+    ]);
+    expect(buildEvidenceView(makeBundle(), "2")?.instances).toEqual([
+      { imageId: 7, objectId: 3, removed: false, thumbnailUrl: `https://example.test/data/runs/${runId}/thumbs/2_0.jpg` },
+    ]);
+  });
+
+  it("keeps evidence thumbnail URLs absolute when using the default data root", () => {
+    const dataRoot = dataCandidates("https://example.test/review/")[0];
+    const bundle = { ...makeBundle(), generationUrl: `${dataRoot}runs/${runId}/` };
+    expect(buildEvidenceView(bundle, "2")?.instances[0].thumbnailUrl).toBe(`https://example.test/review/data/runs/${runId}/thumbs/2_0.jpg`);
+  });
+
+  it("derives hasGeometry from the instance point ranges", () => {
+    const bundle = makeBundle();
+    expect(entryHasGeometry(bundle.objects["11"])).toBe(true);
+    expect(entryHasGeometry(bundle.objects["2"])).toBe(false);
+    expect(buildEvidenceView(bundle, "11")?.hasGeometry).toBe(true);
+    expect(buildEvidenceView(bundle, "2")?.hasGeometry).toBe(false);
+    const flipped = {
+      ...bundle,
+      objects: {
+        ...bundle.objects,
+        "11": {
+          ...bundle.objects["11"],
+          instances: bundle.objects["11"].instances.map((instance, index) => (
+            index === 0
+              ? { ...instance, point_index_range: [0, 0] as const }
+              : { ...instance, point_index_range: [0, 4] as const }
+          )),
+        },
+      },
+    };
+    expect(entryHasGeometry(flipped.objects["11"])).toBe(true);
+  });
+
+  it("disables focus only when an ID has neither footprint nor points", () => {
+    const bundle = makeBundle();
+    expect(canFocusGlobalId(bundle.objects["11"], bundle.footprints, "11")).toBe(true);
+    expect(canFocusGlobalId(bundle.objects["2"], bundle.footprints, "2")).toBe(false);
   });
 });

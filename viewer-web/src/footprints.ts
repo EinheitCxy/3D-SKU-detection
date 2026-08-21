@@ -15,6 +15,7 @@ import {
 import type { FootprintBundle, FootprintGeometry, SupportPlane } from "./contracts";
 
 export const FOOTPRINT_AMBER = new Color("#f5a524");
+const FOOTPRINT_UNION_OPACITY = 0.98;
 
 export interface FootprintSelectionVisual {
   readonly fills: readonly MeshBasicMaterial[];
@@ -37,7 +38,7 @@ export function createFootprintObjects(footprints: FootprintBundle): FootprintOb
   if (footprints.status !== "accepted" || footprints.support_plane === null) return { group, pickMeshes, focusTargets, selectionVisuals };
 
   if (footprints.union !== null) {
-    const union = createOutlineGroup("footprint:union:outline", footprints.union, footprints.support_plane, 0.9);
+    const union = createOutlineGroup("footprint:union:outline", footprints.union, footprints.support_plane, FOOTPRINT_UNION_OPACITY, true);
     group.add(union);
   }
   for (const [globalId, geometry] of Object.entries(footprints.per_global_id)) {
@@ -73,7 +74,7 @@ function createPerIdVisual(globalId: string, geometry: FootprintGeometry, plane:
     group.add(mesh);
     meshes.push(mesh);
     fillMaterials.push(fillMaterial);
-    const outline = createOutlineGroup(`footprint:${globalId}:outline:${index}`, { rings: [polygon], properties: geometry.properties }, plane, 0.95);
+    const outline = createOutlineGroup(`footprint:${globalId}:outline:${index}`, { rings: [polygon], properties: geometry.properties }, plane, 0.95, false);
     group.add(outline);
     for (const line of outline.children as Line[]) outlineMaterials.push(line.material as LineBasicMaterial);
   });
@@ -81,15 +82,20 @@ function createPerIdVisual(globalId: string, geometry: FootprintGeometry, plane:
   return { group, meshes, fillMaterials, outlineMaterials };
 }
 
-function createOutlineGroup(name: string, geometry: FootprintGeometry, plane: SupportPlane, opacity: number): Group {
+function createOutlineGroup(name: string, geometry: FootprintGeometry, plane: SupportPlane, opacity: number, isUnion: boolean): Group {
   const group = new Group();
   group.name = name;
   for (const polygon of geometry.rings) {
     for (const ring of polygon) {
       const lineGeometry = new BufferGeometry();
       lineGeometry.setAttribute("position", new Float32BufferAttribute(ring.flatMap(([u, v]) => toWorld(u, v, plane).toArray()), 3));
-      const line = new Line(lineGeometry, new LineBasicMaterial({ color: FOOTPRINT_AMBER, transparent: true, opacity }));
-      line.renderOrder = 3;
+      const line = new Line(lineGeometry, new LineBasicMaterial({
+        color: FOOTPRINT_AMBER,
+        transparent: true,
+        opacity,
+        depthWrite: !isUnion,
+      }));
+      line.renderOrder = isUnion ? 5 : 3;
       group.add(line);
     }
   }

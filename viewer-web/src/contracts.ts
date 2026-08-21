@@ -8,8 +8,8 @@ export interface CurrentPointer {
 
 export interface ArrayDescriptor {
   readonly path: string;
-  readonly dtype: "float32" | "uint8" | "int32";
-  readonly components: 1 | 3;
+  readonly dtype: "float32" | "uint8" | "int8";
+  readonly components: 3;
   readonly byte_length: number;
 }
 
@@ -17,12 +17,14 @@ export interface Manifest {
   readonly schema_version: "1.0.0";
   readonly coordinate_space: "da3_world_meters";
   readonly point_count: number;
+  readonly display_bounds: readonly [number, number, number, number, number, number];
   readonly arrays: Readonly<{
     readonly positions: ArrayDescriptor;
     readonly colors: ArrayDescriptor;
-    readonly confidences: ArrayDescriptor;
-    readonly frame_ids: ArrayDescriptor;
+    readonly normals: ArrayDescriptor;
   }>;
+  readonly world_to_view: readonly number[];
+  readonly coordinate_convention: string;
   readonly objects_path: "objects.json";
   readonly footprints_path: "footprints.json";
   readonly source: ManifestSource;
@@ -53,6 +55,31 @@ export interface FootprintSource {
 export interface ExportSource {
   readonly voxel_size_m: number;
   readonly max_points: number;
+  readonly filter_config: PointCloudFilterSource;
+  readonly exporter_source_sha256: string;
+  readonly global_mapping_sha256: string;
+  readonly sam3_mask_entries: readonly Sam3MaskEntrySource[];
+}
+
+export interface PointCloudFilterSource {
+  readonly enabled: boolean;
+  readonly sor_nb_neighbors: number;
+  readonly sor_std_ratio: number;
+  readonly keep_main_clusters: boolean;
+  readonly cluster_eps_scale: number;
+  readonly cluster_min_points: number;
+  readonly min_cluster_ratio: number;
+  readonly remove_ground: boolean;
+  readonly ground_dist_scale: number;
+  readonly ground_min_inlier_ratio: number;
+  readonly min_remaining_ratio: number;
+  readonly min_points: number;
+}
+
+export interface Sam3MaskEntrySource {
+  readonly image_id: number;
+  readonly key: string;
+  readonly payload_sha256: string;
 }
 
 export interface ManifestSource {
@@ -66,6 +93,8 @@ export interface ObjectInstance {
   readonly object_id: number;
   readonly bbox: readonly [number, number, number, number];
   readonly removed: boolean;
+  readonly point_index_range: readonly [number, number];
+  readonly thumbnail: string;
 }
 
 export interface ObjectIndexEntry {
@@ -121,6 +150,7 @@ export interface FootprintBundle {
 
 const RUN_ID = /^[0-9a-f]{32}$/;
 const GLOBAL_ID = /^(0|[1-9][0-9]*)$/;
+const THUMBNAIL_PATH = /^thumbs\/(0|[1-9][0-9]*)_[0-9]+\.jpg$/;
 
 export function validateCurrent(value: unknown): CurrentPointer {
   const record = asRecord(value, "CURRENT");
@@ -134,17 +164,24 @@ export function validateCurrent(value: unknown): CurrentPointer {
 
 export function validateManifest(value: unknown): Manifest {
   const record = asRecord(value, "manifest");
+  if (!("world_to_view" in record)) {
+    throw contractError("bundle 缺 world_to_view，请用最新导出器重新导出");
+  }
   requireExactKeys(record, [
-    "schema_version", "coordinate_space", "point_count", "arrays", "objects_path",
-    "footprints_path", "source", "capabilities",
+    "schema_version", "coordinate_space", "point_count", "display_bounds", "arrays", "world_to_view",
+    "coordinate_convention", "objects_path", "footprints_path", "source", "capabilities",
   ], "manifest");
   if (record.schema_version !== "1.0.0") throw contractError("manifest schema_version must be 1.0.0");
   if (record.coordinate_space !== "da3_world_meters") throw contractError("manifest coordinate_space is invalid");
   const pointCount = asSafeInteger(record.point_count, "manifest point_count");
   if (pointCount < 0) throw contractError("manifest point_count must be non-negative");
+  const displayBounds = validateDisplayBounds(record.display_bounds);
   if (record.objects_path !== "objects.json" || record.footprints_path !== "footprints.json") {
     throw contractError("manifest JSON paths are invalid");
   }
+  const worldToView = validateWorldToView(record.world_to_view);
+  const coordinateConvention = asString(record.coordinate_convention, "manifest coordinate_convention");
+  if (coordinateConvention.trim().length === 0) throw contractError("manifest coordinate_convention must be non-empty");
   const source = validateManifestSource(record.source);
   const capabilities = asRecord(record.capabilities, "manifest capabilities");
   requireExactKeys(capabilities, ["point_picking", "footprint_picking", "formal_ground_footprint"], "manifest capabilities");
@@ -152,18 +189,23 @@ export function validateManifest(value: unknown): Manifest {
     throw contractError("manifest capabilities are invalid");
   }
   const arraysRecord = asRecord(record.arrays, "manifest arrays");
-  requireExactKeys(arraysRecord, ["positions", "colors", "confidences", "frame_ids"], "manifest arrays");
+  if (!("normals" in arraysRecord)) {
+    throw contractError("bundle 缺 normals，请用最新导出器重新导出");
+  }
+  requireExactKeys(arraysRecord, ["positions", "colors", "normals"], "manifest arrays");
   const arrays = {
-    positions: validateArrayDescriptor(arraysRecord.positions, "positions", "positions.f32.bin", "float32", 3, pointCount),
-    colors: validateArrayDescriptor(arraysRecord.colors, "colors", "colors.u8.bin", "uint8", 3, pointCount),
-    confidences: validateArrayDescriptor(arraysRecord.confidences, "confidences", "confidences.f32.bin", "float32", 1, pointCount),
-    frame_ids: validateArrayDescriptor(arraysRecord.frame_ids, "frame_ids", "frame_ids.i32.bin", "int32", 1, pointCount),
+    positions: validateArrayDescriptor(arraysRecord.positions, "positions", "positions.f32.bin", "float32", pointCount),
+    colors: validateArrayDescriptor(arraysRecord.colors, "colors", "colors.u8.bin", "uint8", pointCount),
+    normals: validateArrayDescriptor(arraysRecord.normals, "normals", "normals.i8.bin", "int8", pointCount),
   };
   return {
     schema_version: "1.0.0",
     coordinate_space: "da3_world_meters",
     point_count: pointCount,
+    display_bounds: displayBounds,
     arrays,
+    world_to_view: worldToView,
+    coordinate_convention: coordinateConvention,
     objects_path: "objects.json",
     footprints_path: "footprints.json",
     source,
@@ -171,9 +213,42 @@ export function validateManifest(value: unknown): Manifest {
   };
 }
 
-export function validateObjectIndex(value: unknown): ObjectIndex {
+function validateDisplayBounds(value: unknown): readonly [number, number, number, number, number, number] {
+  const bounds = asArray(value, "manifest display_bounds");
+  if (bounds.length !== 6 || bounds.some((item) => !isFiniteNumber(item))) {
+    throw contractError("manifest display_bounds must contain six finite numbers");
+  }
+  const numericBounds = bounds as number[];
+  if (numericBounds[0] > numericBounds[3] || numericBounds[1] > numericBounds[4] || numericBounds[2] > numericBounds[5]) {
+    throw contractError("manifest display_bounds minimum must not exceed maximum");
+  }
+  return bounds as readonly [number, number, number, number, number, number];
+}
+
+function validateWorldToView(value: unknown): readonly number[] {
+  const matrix = asArray(value, "manifest world_to_view");
+  if (matrix.length !== 16 || matrix.some((item) => !isFiniteNumber(item))) {
+    throw contractError("manifest world_to_view must contain sixteen finite numbers (row-major 4x4)");
+  }
+  const m = matrix as number[];
+  const epsilon = 1e-5;
+  if (![0, 0, 0, 1].every((value, index) => Math.abs(m[12 + index] - value) <= epsilon)) {
+    throw contractError("manifest world_to_view must be a row-major rigid affine transform");
+  }
+  const rotation = [[m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]];
+  for (let row = 0; row < 3; row += 1) for (let column = 0; column < 3; column += 1) {
+    const dot = rotation[row][0] * rotation[column][0] + rotation[row][1] * rotation[column][1] + rotation[row][2] * rotation[column][2];
+    if (Math.abs(dot - (row === column ? 1 : 0)) > epsilon) throw contractError("manifest world_to_view rotation must be orthonormal");
+  }
+  const determinant = m[0] * (m[5] * m[10] - m[6] * m[9]) - m[1] * (m[4] * m[10] - m[6] * m[8]) + m[2] * (m[4] * m[9] - m[5] * m[8]);
+  if (Math.abs(determinant - 1) > epsilon) throw contractError("manifest world_to_view rotation must have determinant +1");
+  return m;
+}
+
+export function validateObjectIndex(value: unknown, pointCount: number): ObjectIndex {
   const record = asRecord(value, "objects");
   const result: Record<string, ObjectIndexEntry> = {};
+  const nonEmptyRanges: Array<readonly [number, number]> = [];
   for (const [globalId, rawEntry] of Object.entries(record)) {
     if (!GLOBAL_ID.test(globalId)) throw contractError(`objects global ID key is invalid: ${globalId}`);
     const entry = asRecord(rawEntry, `objects[${globalId}]`);
@@ -185,7 +260,7 @@ export function validateObjectIndex(value: unknown): ObjectIndex {
     const totalCount = asNonNegativeInteger(entry.total_count, `objects[${globalId}].total_count`);
     if (activeCount + removedCount !== totalCount) throw contractError(`objects[${globalId}] counts do not add up`);
     const rawInstances = asArray(entry.instances, `objects[${globalId}].instances`);
-    const instances = rawInstances.map((instance, index) => validateInstance(instance, `objects[${globalId}].instances[${index}]`));
+    const instances = rawInstances.map((instance, index) => validateInstance(instance, `objects[${globalId}].instances[${index}]`, pointCount, `thumbs/${globalId}_${index}.jpg`));
     if (instances.length !== totalCount) throw contractError(`objects[${globalId}] total_count does not match instances`);
     if (instances.filter((instance) => instance.removed).length !== removedCount) throw contractError(`objects[${globalId}] removed_count does not match instances`);
     if (instances.filter((instance) => !instance.removed).length !== activeCount) throw contractError(`objects[${globalId}] active_count does not match instances`);
@@ -193,8 +268,11 @@ export function validateObjectIndex(value: unknown): ObjectIndex {
     const derivedObjects = instances.map((instance) => instance.object_id).sort((left, right) => left - right);
     if (!sameNumberArray(images, derivedImages)) throw contractError(`objects[${globalId}].images does not match instances`);
     if (!sameNumberArray(objects, derivedObjects)) throw contractError(`objects[${globalId}].objects does not match instances`);
+    for (const instance of instances) if (instance.point_index_range[1] > instance.point_index_range[0]) nonEmptyRanges.push(instance.point_index_range);
     result[globalId] = { images, objects, active_count: activeCount, removed_count: removedCount, total_count: totalCount, instances };
   }
+  nonEmptyRanges.sort((left, right) => left[0] - right[0]);
+  for (let index = 1; index < nonEmptyRanges.length; index += 1) if (nonEmptyRanges[index][0] < nonEmptyRanges[index - 1][1]) throw contractError("objects point_index_range values overlap");
   return result;
 }
 
@@ -230,25 +308,36 @@ export function validateFootprints(value: unknown): FootprintBundle {
   return { metric: "da3_ground_footprint_union", unit: "m2", status, value_m2: null, rejection_reason: rejectionReason, run_id: runId, support_plane: null, per_global_id: {}, union: null };
 }
 
-function validateArrayDescriptor(value: unknown, name: string, path: string, dtype: ArrayDescriptor["dtype"], components: 1 | 3, pointCount: number): ArrayDescriptor {
+function validateArrayDescriptor(value: unknown, name: string, path: string, dtype: ArrayDescriptor["dtype"], pointCount: number): ArrayDescriptor {
   const record = asRecord(value, `manifest arrays.${name}`);
   requireExactKeys(record, ["path", "dtype", "components", "byte_length"], `manifest arrays.${name}`);
-  if (record.path !== path || record.dtype !== dtype || record.components !== components) throw contractError(`manifest arrays.${name} descriptor is invalid`);
+  if (record.path !== path || record.dtype !== dtype || record.components !== 3) throw contractError(`manifest arrays.${name} descriptor is invalid`);
   const byteLength = asNonNegativeInteger(record.byte_length, `manifest arrays.${name}.byte_length`);
-  const bytesPerElement = dtype === "uint8" ? 1 : 4;
-  if (byteLength !== pointCount * components * bytesPerElement) throw contractError(`manifest arrays.${name}.byte_length is inconsistent with point_count`);
-  return { path, dtype, components, byte_length: byteLength };
+  const bytesPerElement = dtype === "float32" ? 4 : 1;
+  if (byteLength !== pointCount * 3 * bytesPerElement) throw contractError(`manifest arrays.${name}.byte_length is inconsistent with point_count`);
+  return { path, dtype, components: 3, byte_length: byteLength };
 }
 
-function validateInstance(value: unknown, label: string): ObjectInstance {
+function validateInstance(value: unknown, label: string, pointCount: number, expectedThumbnail: string): ObjectInstance {
   const record = asRecord(value, label);
-  requireExactKeys(record, ["image_id", "object_id", "bbox", "removed"], label);
+  if (!("thumbnail" in record)) {
+    throw contractError(`bundle 缺 instance thumbnail，请用最新导出器重新导出`);
+  }
+  requireExactKeys(record, ["image_id", "object_id", "bbox", "removed", "point_index_range", "thumbnail"], label);
   const imageId = asSafeInteger(record.image_id, `${label}.image_id`);
   const objectId = asSafeInteger(record.object_id, `${label}.object_id`);
   const rawBbox = asArray(record.bbox, `${label}.bbox`);
   if (rawBbox.length !== 4 || rawBbox.some((item) => !isFiniteNumber(item))) throw contractError(`${label}.bbox must contain four finite numbers`);
+  if ((rawBbox[0] as number) > (rawBbox[2] as number) || (rawBbox[1] as number) > (rawBbox[3] as number)) throw contractError(`${label}.bbox must be ordered`);
   if (typeof record.removed !== "boolean") throw contractError(`${label}.removed must be boolean`);
-  return { image_id: imageId, object_id: objectId, bbox: [rawBbox[0] as number, rawBbox[1] as number, rawBbox[2] as number, rawBbox[3] as number], removed: record.removed };
+  const range = asArray(record.point_index_range, `${label}.point_index_range`);
+  if (range.length !== 2 || range.some((item) => !Number.isSafeInteger(item))) throw contractError(`${label}.point_index_range must contain two safe integers`);
+  const start = range[0] as number;
+  const end = range[1] as number;
+  if (start < 0 || end < start || end > pointCount) throw contractError(`${label}.point_index_range is out of bounds`);
+  const thumbnail = asString(record.thumbnail, `${label}.thumbnail`);
+  if (!THUMBNAIL_PATH.test(thumbnail) || thumbnail !== expectedThumbnail) throw contractError(`${label}.thumbnail must match its global-ID instance identity`);
+  return { image_id: imageId, object_id: objectId, bbox: [rawBbox[0] as number, rawBbox[1] as number, rawBbox[2] as number, rawBbox[3] as number], removed: record.removed, point_index_range: [start, end], thumbnail };
 }
 
 function validateSupportPlane(value: unknown): SupportPlane {
@@ -351,9 +440,16 @@ function validateManifestSource(value: unknown): ManifestSource {
   if (!RUN_ID.test(footprintRunId) || (footprint.status !== "accepted" && footprint.status !== "rejected")) throw contractError("manifest source footprint is invalid");
 
   const exportSource = asRecord(source.export, "manifest source export");
-  requireExactKeys(exportSource, ["voxel_size_m", "max_points"], "manifest source export");
+  requireExactKeys(exportSource, ["voxel_size_m", "max_points", "filter_config", "exporter_source_sha256", "global_mapping_sha256", "sam3_mask_entries"], "manifest source export");
   if (!isFiniteNumber(exportSource.voxel_size_m) || exportSource.voxel_size_m <= 0) throw contractError("manifest source voxel_size_m is invalid");
   const maxPoints = asPositiveInteger(exportSource.max_points, "manifest source max_points");
+  const filterConfig = validatePointCloudFilterSource(exportSource.filter_config);
+  const exporterSourceSha256 = asSha256(exportSource.exporter_source_sha256, "manifest source exporter_source_sha256");
+  const globalMappingSha256 = asSha256(exportSource.global_mapping_sha256, "manifest source global_mapping_sha256");
+  const sam3MaskEntries = validateSam3MaskEntries(exportSource.sam3_mask_entries);
+  if (sam3MaskEntries.some((entry) => !imageIds.includes(entry.image_id))) {
+    throw contractError("manifest source sam3_mask_entries image IDs must come from da3_cache");
+  }
   return {
     da3_cache: {
       schema_version: 2,
@@ -367,8 +463,71 @@ function validateManifestSource(value: unknown): ManifestSource {
       source_image_sha256: hashes,
     },
     footprint: { run_id: footprintRunId, status: footprint.status },
-    export: { voxel_size_m: exportSource.voxel_size_m, max_points: maxPoints },
+    export: {
+      voxel_size_m: exportSource.voxel_size_m,
+      max_points: maxPoints,
+      filter_config: filterConfig,
+      exporter_source_sha256: exporterSourceSha256,
+      global_mapping_sha256: globalMappingSha256,
+      sam3_mask_entries: sam3MaskEntries,
+    },
   };
+}
+
+function validatePointCloudFilterSource(value: unknown): PointCloudFilterSource {
+  const record = asRecord(value, "manifest source filter_config");
+  requireExactKeys(record, ["enabled", "sor_nb_neighbors", "sor_std_ratio", "keep_main_clusters", "cluster_eps_scale", "cluster_min_points", "min_cluster_ratio", "remove_ground", "ground_dist_scale", "ground_min_inlier_ratio", "min_remaining_ratio", "min_points"], "manifest source filter_config");
+  if (typeof record.enabled !== "boolean" || typeof record.keep_main_clusters !== "boolean" || typeof record.remove_ground !== "boolean") throw contractError("manifest source filter_config booleans are invalid");
+  const sorNbNeighbors = asPositiveInteger(record.sor_nb_neighbors, "manifest source filter_config.sor_nb_neighbors");
+  const clusterMinPoints = asPositiveInteger(record.cluster_min_points, "manifest source filter_config.cluster_min_points");
+  const minPoints = asPositiveInteger(record.min_points, "manifest source filter_config.min_points");
+  const sorStdRatio = asPositiveFiniteNumber(record.sor_std_ratio, "manifest source filter_config.sor_std_ratio");
+  const clusterEpsScale = asPositiveFiniteNumber(record.cluster_eps_scale, "manifest source filter_config.cluster_eps_scale");
+  const minClusterRatio = asPositiveFiniteNumber(record.min_cluster_ratio, "manifest source filter_config.min_cluster_ratio");
+  const groundDistScale = asPositiveFiniteNumber(record.ground_dist_scale, "manifest source filter_config.ground_dist_scale");
+  const groundMinInlierRatio = asPositiveFiniteNumber(record.ground_min_inlier_ratio, "manifest source filter_config.ground_min_inlier_ratio");
+  const minRemainingRatio = asPositiveFiniteNumber(record.min_remaining_ratio, "manifest source filter_config.min_remaining_ratio");
+  return {
+    enabled: record.enabled,
+    sor_nb_neighbors: sorNbNeighbors,
+    sor_std_ratio: sorStdRatio,
+    keep_main_clusters: record.keep_main_clusters,
+    cluster_eps_scale: clusterEpsScale,
+    cluster_min_points: clusterMinPoints,
+    min_cluster_ratio: minClusterRatio,
+    remove_ground: record.remove_ground,
+    ground_dist_scale: groundDistScale,
+    ground_min_inlier_ratio: groundMinInlierRatio,
+    min_remaining_ratio: minRemainingRatio,
+    min_points: minPoints,
+  };
+}
+
+function validateSam3MaskEntries(value: unknown): readonly Sam3MaskEntrySource[] {
+  const entries = asArray(value, "manifest source sam3_mask_entries");
+  const result = entries.map((entry, index) => {
+    const record = asRecord(entry, `manifest source sam3_mask_entries[${index}]`);
+    requireExactKeys(record, ["image_id", "key", "payload_sha256"], `manifest source sam3_mask_entries[${index}]`);
+    return {
+      image_id: asSafeInteger(record.image_id, `manifest source sam3_mask_entries[${index}].image_id`),
+      key: asSha256(record.key, `manifest source sam3_mask_entries[${index}].key`),
+      payload_sha256: asSha256(record.payload_sha256, `manifest source sam3_mask_entries[${index}].payload_sha256`),
+    };
+  });
+  if (result.some((entry) => entry.image_id < -2147483648 || entry.image_id > 2147483647)) throw contractError("manifest source sam3_mask_entries image_id must be int32");
+  if (new Set(result.map((entry) => entry.image_id)).size !== result.length || result.some((entry, index) => index > 0 && entry.image_id <= result[index - 1].image_id)) throw contractError("manifest source sam3_mask_entries must have unique ascending image IDs");
+  return result;
+}
+
+function asSha256(value: unknown, label: string): string {
+  const digest = asString(value, label);
+  if (!/^[0-9a-f]{64}$/.test(digest)) throw contractError(`${label} must be a lowercase SHA-256 digest`);
+  return digest;
+}
+
+function asPositiveFiniteNumber(value: unknown, label: string): number {
+  if (!isFiniteNumber(value) || value <= 0) throw contractError(`${label} must be positive and finite`);
+  return value;
 }
 
 function validatePositiveIntegerTuple(value: unknown, label: string): readonly [number, number] {

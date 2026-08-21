@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
-import utils.ground_stack_footprint as footprint_geometry
 
+import utils.ground_stack_footprint as footprint_geometry
 from utils.ground_stack_footprint import (
     FootprintError,
     RansacOutcome,
@@ -136,9 +136,7 @@ def test_fit_support_plane_recovers_metric_table_with_outliers():
 
     plane = fit_support_plane(np.vstack([table, random_outliers]))
 
-    assert abs(np.dot(plane.normal, [0.0, 0.0, 1.0])) == pytest.approx(
-        1.0, abs=1e-3
-    )
+    assert abs(np.dot(plane.normal, [0.0, 0.0, 1.0])) == pytest.approx(1.0, abs=1e-3)
     assert plane.inlier_count >= 10_000
 
 
@@ -214,7 +212,9 @@ def test_support_plane_gates_use_final_ten_mm_support_points(monkeypatch):
         [
             tail_x.ravel(),
             tail_y.ravel(),
-            np.where((np.indices(tail_x.shape).sum(axis=0) % 2) == 0, 0.0119, -0.0119).ravel(),
+            np.where(
+                (np.indices(tail_x.shape).sum(axis=0) % 2) == 0, 0.0119, -0.0119
+            ).ravel(),
         ]
     )
     background = np.vstack([table, tail])
@@ -275,7 +275,10 @@ def test_support_plane_preserves_refinement_rejection_diagnostics(monkeypatch):
     candidates = raised.value.diagnostics["candidates"]
     assert candidates
     assert all(candidate["refinement"]["passed"] is False for candidate in candidates)
-    assert all(candidate["refinement"]["reason"].startswith("support plane residual") for candidate in candidates)
+    assert all(
+        candidate["refinement"]["reason"].startswith("support plane residual")
+        for candidate in candidates
+    )
     assert all(candidate["raw_inlier_count"] >= 10_000 for candidate in candidates)
     assert all(candidate["raw_inlier_fraction"] >= 0.10 for candidate in candidates)
 
@@ -347,9 +350,7 @@ def boundary_preserving_carton_points() -> np.ndarray:
     x_values = np.concatenate(
         [np.zeros(12), np.linspace(0.005, 0.045, 9), np.full(12, 0.05)]
     )
-    y_values = np.concatenate(
-        [np.zeros(12), np.linspace(0.01, 0.99, 99), np.ones(12)]
-    )
+    y_values = np.concatenate([np.zeros(12), np.linspace(0.01, 0.99, 99), np.ones(12)])
     x_grid, y_grid = np.meshgrid(x_values, y_values, indexing="xy")
     first_face = np.column_stack(
         [x_grid.ravel(), y_grid.ravel(), np.full(x_grid.size, 0.2)]
@@ -412,9 +413,7 @@ def test_line_like_carton_points_are_rejected():
 
 
 def test_narrow_carton_obb_is_rejected():
-    narrow_points = carton_points(
-        x_range=(0.0, 0.049), y_range=(0.0, 1.0), height=0.2
-    )
+    narrow_points = carton_points(x_range=(0.0, 0.049), y_range=(0.0, 1.0), height=0.2)
 
     with pytest.raises(FootprintError, match="OBB"):
         carton_footprint_polygon(narrow_points, horizontal_support_plane())
@@ -433,12 +432,8 @@ def test_exactly_five_centimeter_carton_obb_is_accepted():
 
 
 def test_carton_with_multiple_substantial_components_is_rejected():
-    first_component = carton_points(
-        x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2
-    )
-    second_component = carton_points(
-        x_range=(3.0, 4.0), y_range=(0.0, 1.0), height=0.2
-    )
+    first_component = carton_points(x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2)
+    second_component = carton_points(x_range=(3.0, 4.0), y_range=(0.0, 1.0), height=0.2)
 
     with pytest.raises(FootprintError, match="multiple substantial components"):
         carton_footprint_polygon(
@@ -478,13 +473,15 @@ def test_ransac_triplet_sampling_is_distinct_and_seed_deterministic():
 def test_select_support_plane_prefers_table_over_larger_wall():
     coordinates = np.linspace(-1.0, 1.0, 120)
     x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
-    table = np.column_stack([x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)])
-    wall_y, wall_z = np.meshgrid(np.linspace(-2.0, 2.0, 160), np.linspace(0.0, 2.0, 160), indexing="xy")
+    table = np.column_stack(
+        [x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)]
+    )
+    wall_y, wall_z = np.meshgrid(
+        np.linspace(-2.0, 2.0, 160), np.linspace(0.0, 2.0, 160), indexing="xy"
+    )
     wall = np.column_stack([np.full(wall_y.size, 3.0), wall_y.ravel(), wall_z.ravel()])
     object_points = carton_points((0.0, 0.8), (0.0, 0.8), 0.02)
-    frame_ids = np.concatenate(
-        [np.arange(len(table)) % 3, np.arange(len(wall)) % 3]
-    )
+    frame_ids = np.concatenate([np.arange(len(table)) % 3, np.arange(len(wall)) % 3])
 
     plane, diagnostics = select_support_plane(
         np.vstack([table, wall]), frame_ids, object_points
@@ -500,7 +497,9 @@ def test_projected_voxel_balance_ignores_height_density():
         [[0.001, 0.001, 0.02], [0.001, 0.001, 0.80], [0.006, 0.001, 0.30]]
     )
 
-    balanced = voxel_balance_projected(project_to_plane(points, plane), voxel_size_m=0.005)
+    balanced = voxel_balance_projected(
+        project_to_plane(points, plane), voxel_size_m=0.005
+    )
 
     assert balanced.shape == (2, 2)
 
@@ -511,7 +510,9 @@ def test_component_uses_exact_twenty_millimetre_dbscan_radius():
     at_twenty_mm = np.column_stack([np.full(len(y_values), 0.020), y_values])
     at_thirty_mm = np.column_stack([np.full(len(y_values), 0.030), y_values])
 
-    component, diagnostics = select_footprint_component(np.vstack([first, at_twenty_mm]))
+    component, diagnostics = select_footprint_component(
+        np.vstack([first, at_twenty_mm])
+    )
 
     assert len(component) == 34
     assert diagnostics["eps_m"] == pytest.approx(0.020)
@@ -541,7 +542,9 @@ def test_support_plane_rejects_when_four_of_five_observation_centres_are_outside
 def test_ambiguous_wall_and_table_preserve_candidate_diagnostics():
     coordinates = np.linspace(-1.0, 1.0, 120)
     x_values, y_values = np.meshgrid(coordinates, coordinates, indexing="xy")
-    table = np.column_stack([x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)])
+    table = np.column_stack(
+        [x_values.ravel(), y_values.ravel(), np.zeros(x_values.size)]
+    )
     wall_y, wall_z = np.meshgrid(coordinates, coordinates, indexing="xy")
     wall = np.column_stack([np.zeros(wall_y.size), wall_y.ravel(), wall_z.ravel()])
     objects = [carton_points((0.02, 0.08), (0.0, 0.2), 0.02)]

@@ -67,6 +67,54 @@ _BATCH_QUERY_COUNTER = 0
 _BATCH_QUERY_LOCK = threading.Lock()
 
 
+def _sam3_autocast_context(model: Any, device: str) -> Any:
+    """Return a safe autocast context matching SAM3 model dtype.
+
+    Older/mixed checkpoints can report BF16 input/FP32-weight mismatches when a
+    fixed BF16 autocast is used. We infer model dtype from its first tensor
+    parameter and align the nested autocast context:
+      - half precision weights -> keep corresponding autocast on
+      - fp32 weights -> force autocast off to avoid inherited outer BF16 contexts
+    """
+    if not device.startswith("cuda"):
+        return torch.autocast(device_type=device, enabled=False)
+
+    params = [p for p in getattr(model, "parameters", lambda: [])() if isinstance(p, torch.Tensor)]
+    if not params:
+        return nullcontext()
+
+    dtype = params[0].dtype
+    if dtype == torch.float16:
+        return torch.autocast(device_type="cuda", dtype=torch.float16, enabled=True)
+    if dtype == torch.bfloat16:
+        return torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True)
+
+    return torch.autocast(device_type="cuda", enabled=False)
+
+
+def _coerce_sam3_batch_dtype(batch: Any, model: Any) -> Any:
+    """Cast floating tensors in batch to the model's parameter dtype when needed."""
+    params = [p for p in getattr(model, "parameters", lambda: [])() if isinstance(p, torch.Tensor)]
+    if not params:
+        return batch
+    target_dtype = params[0].dtype
+    if target_dtype not in (torch.float16, torch.bfloat16, torch.float32):
+        return batch
+
+    if isinstance(batch, torch.Tensor):
+        if batch.is_floating_point() and batch.dtype != target_dtype:
+            return batch.to(dtype=target_dtype)
+        return batch
+    if isinstance(batch, tuple):
+        return tuple(_coerce_sam3_batch_dtype(item, model) for item in batch)
+    if isinstance(batch, list):
+        return [_coerce_sam3_batch_dtype(item, model) for item in batch]
+    if isinstance(batch, dict):
+        return {k: _coerce_sam3_batch_dtype(v, model) for k, v in batch.items()}
+
+    return batch
+
+
 def _infer_transform_output_size(
     transform: Optional[ImageTransformBase],
 ) -> Tuple[Optional[str], Optional[Tuple[int, int]]]:
@@ -165,13 +213,16 @@ def _build_sam3_model_and_processor(checkpoint_path: str, device: str) -> Tuple[
     from sam3.model_builder import build_sam3_image_model  # type: ignore
     from sam3.model.sam3_image_processor import Sam3Processor  # type: ignore
 
+    setup_device = "cuda" if device.startswith("cuda") else device
     model = build_sam3_image_model(
         checkpoint_path=str(checkpoint_path),
         load_from_HF=False,
-        device=device,
+        device=setup_device,
         # Use the dedicated box-prompt mask head (SAM1/2-style) for bbox->mask.
         enable_inst_interactivity=True,
     )
+    if setup_device == "cuda":
+        model = model.to(device)
     processor = Sam3Processor(model, device=device, confidence_threshold=0.0)
     return model, processor
 
@@ -659,23 +710,25 @@ def sam3_masks_from_bboxes_predict_inst(
         expected_checkpoint_sha256=expected_checkpoint_sha256,
     )
     image = Image.open(image_path).convert("RGB")
-    state = processor.set_image(image)
     w, h = image.size
 
-    # Warn if visual exemplar is provided (not supported by predict_inst API)
-    if positive_exemplar:
-        logger.warning(
-            "positive_exemplar parameter provided but is NOT supported by SAM3's predict_inst API. "
-            "Visual exemplars require batch inference API (see sam3_image_batched_inference.ipynb). "
-            "Ignoring exemplar and falling back to text+geometry prompts only."
-        )
+    with _sam3_autocast_context(model, device):
+        state = processor.set_image(image)
 
-    # Set text prompt if provided
-    if text_prompt:
-        logger.info(f"Using text prompt: '{text_prompt}'")
-        state = processor.set_text_prompt(text_prompt, state)
-    else:
-        logger.info(f"Using geometry prompts only for {len(bboxes_xyxy)} bbox(es)")
+        # Warn if visual exemplar is provided (not supported by predict_inst API)
+        if positive_exemplar:
+            logger.warning(
+                "positive_exemplar parameter provided but is NOT supported by SAM3's predict_inst API. "
+                "Visual exemplars require batch inference API (see sam3_image_batched_inference.ipynb). "
+                "Ignoring exemplar and falling back to text+geometry prompts only."
+            )
+
+        # Set text prompt if provided
+        if text_prompt:
+            logger.info(f"Using text prompt: '{text_prompt}'")
+            state = processor.set_text_prompt(text_prompt, state)
+        else:
+            logger.info(f"Using geometry prompts only for {len(bboxes_xyxy)} bbox(es)")
 
     # Use geometry prompts (bboxes) - this is the only mode supported by predict_inst
     boxes = np.asarray(bboxes_xyxy, dtype=np.float32)
@@ -690,13 +743,14 @@ def sam3_masks_from_bboxes_predict_inst(
         raise RuntimeError(f"Unexpected SAM3 mask output shape: {m.shape}")
 
     # Run SAM3 inference with geometry (+ optional text) prompts
-    masks_np, ious_np, _ = model.predict_inst(  # type: ignore[attr-defined]
-        state,
-        box=boxes,
-        multimask_output=True,
-        normalize_coords=True,
-        return_logits=False,
-    )
+    with _sam3_autocast_context(model, device):
+        masks_np, ious_np, _ = model.predict_inst(  # type: ignore[attr-defined]
+            state,
+            box=boxes,
+            multimask_output=True,
+            normalize_coords=True,
+            return_logits=False,
+        )
 
     masks_bchw = _ensure_bchw(masks_np)
     ious_b = np.asarray(ious_np)
@@ -746,15 +800,16 @@ def sam3_masks_from_bboxes_predict_inst(
         cx = (x1 + x2) / 2.0
         cy = (y1 + y2) / 2.0
         try:
-            masks2, ious2, _ = model.predict_inst(  # type: ignore[attr-defined]
-                state,
-                box=np.asarray([bbox], dtype=np.float32),
-                point_coords=np.asarray([[cx, cy]], dtype=np.float32),
-                point_labels=np.asarray([1], dtype=np.int32),
-                multimask_output=True,
-                normalize_coords=True,
-                return_logits=False,
-            )
+            with _sam3_autocast_context(model, device):
+                masks2, ious2, _ = model.predict_inst(  # type: ignore[attr-defined]
+                    state,
+                    box=np.asarray([bbox], dtype=np.float32),
+                    point_coords=np.asarray([[cx, cy]], dtype=np.float32),
+                    point_labels=np.asarray([1], dtype=np.int32),
+                    multimask_output=True,
+                    normalize_coords=True,
+                    return_logits=False,
+                )
             masks2_bchw = _ensure_bchw(masks2)
             ious2_b = np.asarray(ious2)
             if ious2_b.ndim == 1:
@@ -938,6 +993,7 @@ def sam3_masks_from_bboxes_batch_api(
     # Collate and move to device
     batch = collate([datapoint], dict_key="sam3")["sam3"]
     batch = copy_data_to_device(batch, torch.device(device), non_blocking=True)
+    batch = _coerce_sam3_batch_dtype(batch, model)
 
     # Run inference
     with torch.inference_mode():
@@ -946,11 +1002,7 @@ def sam3_masks_from_bboxes_batch_api(
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
 
-        autocast_ctx = (
-            torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-            if device.startswith("cuda")
-            else nullcontext()
-        )
+        autocast_ctx = _sam3_autocast_context(model, device)
         with autocast_ctx:
             output = model(batch)
 
@@ -1343,6 +1395,7 @@ def sam3_masks_self_exemplar(
         # Collate and move to device
         batch = collate([datapoint], dict_key="sam3")["sam3"]
         batch = copy_data_to_device(batch, torch.device(device), non_blocking=True)
+        batch = _coerce_sam3_batch_dtype(batch, model)
 
         # Run inference
         with torch.inference_mode():
@@ -1350,11 +1403,7 @@ def sam3_masks_self_exemplar(
                 torch.backends.cuda.matmul.allow_tf32 = True
                 torch.backends.cudnn.allow_tf32 = True
 
-            autocast_ctx = (
-                torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-                if device.startswith("cuda")
-                else nullcontext()
-            )
+            autocast_ctx = _sam3_autocast_context(model, device)
             with autocast_ctx:
                 output = model(batch)
 

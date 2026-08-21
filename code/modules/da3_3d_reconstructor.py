@@ -15,9 +15,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
-import logging
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -33,9 +33,9 @@ if not logger.handlers and not logging.getLogger().handlers:
     logger.setLevel(logging.INFO)
 
 # 路径注入：DA3 源码位于仓库根目录/Depth-Anything-3/src
-THIS_DIR = Path(__file__).resolve().parent   # code/modules
-CODE_ROOT = THIS_DIR.parent                  # code/
-REPO_ROOT = CODE_ROOT.parent                 # 3D_Recognization/
+THIS_DIR = Path(__file__).resolve().parent  # code/modules
+CODE_ROOT = THIS_DIR.parent  # code/
+REPO_ROOT = CODE_ROOT.parent  # 3D_Recognization/
 DA3_SRC = REPO_ROOT / "Depth-Anything-3" / "src"
 
 if str(DA3_SRC) not in sys.path:
@@ -45,8 +45,8 @@ if str(CODE_ROOT) not in sys.path:
 
 from .reconstructor_base import ReconstructorBase, register_reconstructor  # noqa: E402
 
-
 # ---- DA3 重建器 ----
+
 
 @register_reconstructor("da3")
 class DA33DReconstructor(ReconstructorBase):
@@ -58,7 +58,7 @@ class DA33DReconstructor(ReconstructorBase):
     """
 
     # HuggingFace 默认模型；可通过 model_path 覆盖
-    DEFAULT_HF_REPO = "depth-anything/DA3NESTED-GIANT-LARGE"
+    DEFAULT_HF_REPO = "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
     # DA3 自带 venv（含 numpy<2 + omegaconf/addict/e3nn 等 DA3 依赖）
     DEFAULT_DA3_VENV_PYTHON = (
         REPO_ROOT / "Depth-Anything-3" / ".venv" / "bin" / "python"
@@ -98,8 +98,7 @@ class DA33DReconstructor(ReconstructorBase):
         """返回目录下排好序的图片路径列表（DA3 接受路径列表）。"""
         exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
         paths = sorted(
-            str(p) for p in Path(input_dir).iterdir()
-            if p.suffix.lower() in exts
+            str(p) for p in Path(input_dir).iterdir() if p.suffix.lower() in exts
         )
         if not paths:
             raise ValueError(f"目录中未找到图片: {input_dir}")
@@ -129,10 +128,14 @@ class DA33DReconstructor(ReconstructorBase):
         cmd = [
             str(self.da3_venv_python),
             str(self.DA3_RUNNER),
-            "--input_dir", input_dir,
-            "--output_npz", str(tmp_npz),
-            "--model_path", self.model_path or self.DEFAULT_HF_REPO,
-            "--device", self.device,
+            "--input_dir",
+            input_dir,
+            "--output_npz",
+            str(tmp_npz),
+            "--model_path",
+            self.model_path or self.DEFAULT_HF_REPO,
+            "--device",
+            self.device,
         ]
         logger.info(f"DA3 subprocess: {' '.join(cmd)}")
         t0 = time.time()
@@ -164,7 +167,9 @@ class DA33DReconstructor(ReconstructorBase):
     ) -> None:
         """subprocess 模式跳过 GLB（无 _prediction 对象；SKU matching 仅需 npz 缓存）。"""
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(f"DA3 export_glb: subprocess 模式跳过 GLB（期望路径 {output_path}）")
+        logger.info(
+            f"DA3 export_glb: subprocess 模式跳过 GLB（期望路径 {output_path}）"
+        )
 
     # ---- 保存缓存 ----
 
@@ -195,10 +200,14 @@ class DA33DReconstructor(ReconstructorBase):
         ):
             val = predictions.get(key)
             if val is not None and isinstance(val, np.ndarray):
-                save_kwargs[key] = val.astype(np.float32 if key != "images" else np.uint8, copy=False)
+                save_kwargs[key] = val.astype(
+                    np.float32 if key != "images" else np.uint8, copy=False
+                )
 
         source_image_sizes = predictions.get("source_image_sizes")
-        if source_image_sizes is not None and isinstance(source_image_sizes, np.ndarray):
+        if source_image_sizes is not None and isinstance(
+            source_image_sizes, np.ndarray
+        ):
             save_kwargs["source_image_sizes"] = source_image_sizes.astype(
                 np.int32, copy=False
             )
@@ -223,21 +232,29 @@ class DA33DReconstructor(ReconstructorBase):
         if src is not None and isinstance(src, np.ndarray):
             save_kwargs["source_model"] = src
         else:
-            save_kwargs["source_model"] = np.array(["depth-anything/DA3NESTED-GIANT-LARGE"], dtype=object)
+            save_kwargs["source_model"] = np.asarray(
+                "depth-anything/DA3NESTED-GIANT-LARGE-1.1", dtype="<U64"
+            )
 
         # 帧对齐索引（对齐 pi3 schema，从 da3_runner 透传）
-        for fa_key in ("frame_alignment_sorted_indices", "frame_alignment_map_keys", "frame_alignment_map_values"):
+        for fa_key in (
+            "frame_alignment_sorted_indices",
+            "frame_alignment_map_keys",
+            "frame_alignment_map_values",
+        ):
             fa_val = predictions.get(fa_key)
             if fa_val is not None and isinstance(fa_val, np.ndarray):
                 save_kwargs[fa_key] = fa_val
 
-        # schema-v2 provenance 透传（da3_runner 写入；footprint 阶段要求，不能丢弃）
+        # schema-v3 provenance 透传（da3_runner 写入；footprint 阶段要求，不能丢弃）
         for prov_key in (
             "cache_schema_version",
             "source_image_sha256",
             "affine_convention",
             "preprocess_resolution",
             "preprocess_method",
+            "is_metric",
+            "scale_factor",
         ):
             prov_val = predictions.get(prov_key)
             if prov_val is not None and isinstance(prov_val, np.ndarray):
@@ -249,13 +266,18 @@ class DA33DReconstructor(ReconstructorBase):
 
 # ---- CLI 入口 ----
 
+
 def _cli() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="DA3 3D重建器 CLI")
     parser.add_argument("--input_dir", required=True, help="图片目录")
-    parser.add_argument("--output_file", default="reconstruction_da3.glb", help="输出 GLB 路径")
-    parser.add_argument("--model_path", default=None, help="DA3 模型本地路径（默认从 HuggingFace 加载）")
+    parser.add_argument(
+        "--output_file", default="reconstruction_da3.glb", help="输出 GLB 路径"
+    )
+    parser.add_argument(
+        "--model_path", default=None, help="DA3 模型本地路径（默认从 HuggingFace 加载）"
+    )
     parser.add_argument("--conf_thres", type=float, default=50.0)
     parser.add_argument("--no_cam", action="store_true")
     args = parser.parse_args()

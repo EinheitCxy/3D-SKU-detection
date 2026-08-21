@@ -19,6 +19,7 @@ from typing import Any
 
 import cv2
 import matplotlib
+
 matplotlib.use("Agg")
 import numpy as np
 import shapely
@@ -29,6 +30,11 @@ from shapely import set_precision
 from shapely.geometry import mapping
 from shapely.ops import unary_union
 
+from utils.da3_cache_validation import (
+    integer_scalar,
+    unicode_scalar,
+    validate_affine_linear_parts,
+)
 from utils.detection_objects import flatten_detection_objects
 from utils.footprint_evidence import (
     EvidenceObservation,
@@ -69,6 +75,8 @@ _CACHE_FIELDS = {
     "affine_convention",
     "preprocess_resolution",
     "preprocess_method",
+    "is_metric",
+    "scale_factor",
 }
 _MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
 _SAM3_CHECKPOINT = str(
@@ -145,7 +153,9 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
     active_stage = "validation_and_io"
     active_stage_started_at = measurement_started_at
     try:
-        mapping_path = Path(save_root) / dataset.name / "dedup_detections" / "global_mapping.json"
+        mapping_path = (
+            Path(save_root) / dataset.name / "dedup_detections" / "global_mapping.json"
+        )
         cache = _load_cache(cache_path)
         cache_frame_ids = cache["image_ids"]
         image_paths = _image_paths(dataset / "images")
@@ -181,12 +191,19 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             report["sam3_mask_cache"]["frames"],
         )
         if checkpoint_sha256(sam3_checkpoint) != sam3_checkpoint_sha256:
-            raise FootprintStageError("SAM3 checkpoint changed during mask cache access")
+            raise FootprintStageError(
+                "SAM3 checkpoint changed during mask cache access"
+            )
         all_object_points = [
-            points for observations in masked_observations.values() for points in observations if len(points)
+            points
+            for observations in masked_observations.values()
+            for points in observations
+            if len(points)
         ]
         if not all_object_points:
-            raise FootprintStageError("no mapped observations produced valid object points")
+            raise FootprintStageError(
+                "no mapped observations produced valid object points"
+            )
         stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
         active_stage = "select_support_plane"
         active_stage_started_at = time.monotonic()
@@ -216,7 +233,9 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             per_id = report["per_global_id"][global_id]
             accepted = [points for points in observation_points if len(points) >= 32]
             if len(accepted) != len(observation_points):
-                per_id["rejection"] = "observation has fewer than 32 valid masked points"
+                per_id["rejection"] = (
+                    "observation has fewer than 32 valid masked points"
+                )
                 continue
             fused = np.concatenate(accepted)
             heights = (fused - plane.point) @ plane.normal
@@ -228,10 +247,14 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             balanced_projected = voxel_balance_projected(projected, voxel_size_m=0.005)
             per_id["projected_voxel_point_count"] = int(len(balanced_projected))
             if len(balanced_projected) < 64:
-                per_id["rejection"] = "fused global id has fewer than 64 projected voxel points"
+                per_id["rejection"] = (
+                    "fused global id has fewer than 64 projected voxel points"
+                )
                 continue
             try:
-                polygon, metrics = carton_footprint_polygon_from_projected(balanced_projected)
+                polygon, metrics = carton_footprint_polygon_from_projected(
+                    balanced_projected
+                )
             except FootprintError as error:
                 per_id["rejection"] = str(error)
                 per_id["component_diagnostics"] = error.diagnostics
@@ -242,10 +265,16 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             polygons[global_id] = polygon
         missing = sorted(set(masked_observations) - set(polygons), key=_global_id_key)
         if missing:
-            raise FootprintStageError("one or more global ids were rejected: " + ", ".join(missing))
-        precise_polygons = {key: set_precision(polygon, 0.0001) for key, polygon in polygons.items()}
+            raise FootprintStageError(
+                "one or more global ids were rejected: " + ", ".join(missing)
+            )
+        precise_polygons = {
+            key: set_precision(polygon, 0.0001) for key, polygon in polygons.items()
+        }
         union = union_footprints(list(precise_polygons.values()))
-        coarse_union = unary_union([set_precision(polygon, 0.001) for polygon in polygons.values()])
+        coarse_union = unary_union(
+            [set_precision(polygon, 0.001) for polygon in polygons.values()]
+        )
         accepted_area = float(union.area)
         coarse_area = float(coarse_union.area)
         sensitivity = abs(accepted_area - coarse_area)
@@ -260,11 +289,19 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             "sensitivity_tolerance_m2": tolerance,
         }
         if sensitivity > tolerance:
-            raise FootprintStageError("footprint union precision sensitivity exceeds tolerance")
+            raise FootprintStageError(
+                "footprint union precision sensitivity exceeds tolerance"
+            )
         polygons = precise_polygons
         report["status"] = "accepted"
         report["value_m2"] = accepted_area
-    except (FootprintStageError, FootprintError, OSError, ValueError, KeyError) as error:
+    except (
+        FootprintStageError,
+        FootprintError,
+        OSError,
+        ValueError,
+        KeyError,
+    ) as error:
         if active_stage is not None and stages_seconds[active_stage] is None:
             stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
         report["rejection_reason"] = str(error)
@@ -312,20 +349,44 @@ def _load_cache(path: Path) -> dict[str, np.ndarray]:
     with np.load(path, allow_pickle=False) as loaded:
         missing = sorted(_CACHE_FIELDS - set(loaded.files))
         if missing:
-            raise FootprintStageError("DA3 cache missing required schema-v2 fields: " + ", ".join(missing))
+            raise FootprintStageError(
+                "DA3 cache missing required schema-v3 fields: " + ", ".join(missing)
+            )
         return {key: loaded[key].copy() for key in _CACHE_FIELDS}
 
 
-def _validate_cache(cache: dict[str, np.ndarray], images: dict[int, Path]) -> dict[str, object]:
+def _validate_cache(
+    cache: dict[str, np.ndarray], images: dict[int, Path]
+) -> dict[str, object]:
     schema = cache["cache_schema_version"]
-    if schema.shape != () or int(schema) != 2:
-        raise FootprintStageError("DA3 cache schema version must be exactly 2")
-    model = _safe_text(cache["source_model"], "source_model")
-    convention = _safe_text(cache["affine_convention"], "affine_convention")
-    preprocess_resolution = _safe_scalar_integer(
-        cache["preprocess_resolution"], "preprocess_resolution"
+    if schema.shape != () or int(schema) != 3:
+        raise FootprintStageError("DA3 cache schema version must be exactly 3")
+    is_metric = integer_scalar(
+        cache["is_metric"], "is_metric", error=FootprintStageError
     )
-    preprocess_method = _safe_text(cache["preprocess_method"], "preprocess_method")
+    if is_metric != 1:
+        raise FootprintStageError(
+            f"DA3 cache is_metric must be 1 (metric model), got {is_metric}"
+        )
+    scale_factor = cache["scale_factor"]
+    if scale_factor.shape != () or scale_factor.dtype.kind != "f":
+        raise FootprintStageError("DA3 cache scale_factor must be a float scalar")
+    if not np.isnan(float(scale_factor)) and float(scale_factor) <= 0:
+        raise FootprintStageError("DA3 cache scale_factor must be positive")
+    model = unicode_scalar(
+        cache["source_model"], "source_model", error=FootprintStageError
+    )
+    convention = unicode_scalar(
+        cache["affine_convention"], "affine_convention", error=FootprintStageError
+    )
+    preprocess_resolution = integer_scalar(
+        cache["preprocess_resolution"],
+        "preprocess_resolution",
+        error=FootprintStageError,
+    )
+    preprocess_method = unicode_scalar(
+        cache["preprocess_method"], "preprocess_method", error=FootprintStageError
+    )
     if not _MODEL_ID.fullmatch(model):
         raise FootprintStageError("DA3 cache source_model is unsafe")
     if convention != "pixel_center_v1":
@@ -340,8 +401,14 @@ def _validate_cache(cache: dict[str, np.ndarray], images: dict[int, Path]) -> di
     sizes = cache["source_image_sizes"]
     affine = cache["source_to_processed_affine"]
     hashes = cache["source_image_sha256"]
-    if points.ndim != 4 or points.shape[-1] != 3 or confidence.shape != points.shape[:3]:
-        raise FootprintStageError("DA3 world point/cache confidence shapes are inconsistent")
+    if (
+        points.ndim != 4
+        or points.shape[-1] != 3
+        or confidence.shape != points.shape[:3]
+    ):
+        raise FootprintStageError(
+            "DA3 world point/cache confidence shapes are inconsistent"
+        )
     frame_count, height, width, _ = points.shape
     if image_ids.shape != (frame_count,) or image_ids.dtype.kind not in "iu":
         raise FootprintStageError("DA3 cache image_ids must be an integer vector")
@@ -350,24 +417,32 @@ def _validate_cache(cache: dict[str, np.ndarray], images: dict[int, Path]) -> di
     if sizes.shape != (frame_count, 2) or affine.shape != (frame_count, 2, 3):
         raise FootprintStageError("DA3 cache source size or affine shape is invalid")
     if affine.dtype.kind not in "fiu":
-        raise FootprintStageError("DA3 cache source_to_processed_affine dtype must be numeric")
+        raise FootprintStageError(
+            "DA3 cache source_to_processed_affine dtype must be numeric"
+        )
     if sizes.dtype.kind not in "iu":
         raise FootprintStageError("DA3 cache source_image_sizes dtype must be integer")
     if hashes.shape != (frame_count,) or hashes.dtype.kind != "U":
         raise FootprintStageError("DA3 cache source_image_sha256 must be safe unicode")
     if not np.isfinite(affine).all() or np.any(sizes <= 0):
         raise FootprintStageError("DA3 cache source sizes or affine values are invalid")
-    _validate_affine_linear_parts(affine)
+    validate_affine_linear_parts(affine, error=FootprintStageError)
     for index, image_id in enumerate(image_ids):
         image_id = int(image_id)
         if image_id not in images:
-            raise FootprintStageError(f"image {image_id} is absent from current dataset")
+            raise FootprintStageError(
+                f"image {image_id} is absent from current dataset"
+            )
         with Image.open(images[image_id]) as image:
             if tuple(sizes[index].tolist()) != image.size:
-                raise FootprintStageError(f"source image size mismatch for image {image_id}")
+                raise FootprintStageError(
+                    f"source image size mismatch for image {image_id}"
+                )
         current_hash = _sha256(images[image_id])
         if str(hashes[index]) != current_hash:
-            raise FootprintStageError(f"source image SHA256 mismatch for image {image_id}")
+            raise FootprintStageError(
+                f"source image SHA256 mismatch for image {image_id}"
+            )
         expected_affine = _expected_pixel_center_affine(
             image.width, image.height, preprocess_resolution, height, width
         )
@@ -393,7 +468,11 @@ def _image_paths(images_dir: Path) -> dict[int, Path]:
         raise FootprintStageError(f"images directory is missing: {images_dir}")
     paths: dict[int, Path] = {}
     for path in images_dir.iterdir():
-        if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"} and path.stem.isdigit():
+        if (
+            path.is_file()
+            and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+            and path.stem.isdigit()
+        ):
             image_id = int(path.stem)
             if image_id in paths:
                 raise FootprintStageError(f"multiple source images have id {image_id}")
@@ -409,13 +488,17 @@ def _detection_paths(detections_dir: Path) -> dict[int, Path]:
         if path.is_file() and path.suffix.lower() == ".json" and path.stem.isdigit():
             image_id = int(path.stem)
             if image_id in paths:
-                raise FootprintStageError(f"multiple detection JSON files have id {image_id}")
+                raise FootprintStageError(
+                    f"multiple detection JSON files have id {image_id}"
+                )
             paths[image_id] = path
     return paths
 
 
 def _validate_complete_source_ids(
-    cache_ids: np.ndarray, image_paths: dict[int, Path], detection_paths: dict[int, Path]
+    cache_ids: np.ndarray,
+    image_paths: dict[int, Path],
+    detection_paths: dict[int, Path],
 ) -> None:
     numeric_cache_ids = {int(value) for value in cache_ids}
     numeric_image_ids = set(image_paths)
@@ -432,13 +515,17 @@ def _validate_complete_source_ids(
         )
 
 
-def _load_detections(detection_paths: dict[int, Path]) -> dict[int, list[dict[str, Any]]]:
+def _load_detections(
+    detection_paths: dict[int, Path],
+) -> dict[int, list[dict[str, Any]]]:
     detections: dict[int, list[dict[str, Any]]] = {}
     for image_id, path in sorted(detection_paths.items()):
         try:
             objects = flatten_detection_objects(json.loads(path.read_text()))
         except (json.JSONDecodeError, ValueError) as error:
-            raise FootprintStageError(f"invalid detection JSON for image {image_id}: {error}") from error
+            raise FootprintStageError(
+                f"invalid detection JSON for image {image_id}: {error}"
+            ) from error
         checked: list[dict[str, Any]] = []
         for object_id, obj in enumerate(objects):
             bbox = _bbox(obj.get("position", obj.get("bbox")), image_id, object_id)
@@ -459,7 +546,11 @@ def _load_mapping(
         raise FootprintStageError(f"invalid global_mapping.json: {error}") from error
     if not isinstance(raw, dict) or not raw:
         raise FootprintStageError("global_mapping.json must be a nonempty object")
-    expected = {(image_id, item["object_id"]): item for image_id, items in detections.items() for item in items}
+    expected = {
+        (image_id, item["object_id"]): item
+        for image_id, items in detections.items()
+        for item in items
+    }
     seen: set[tuple[int, int]] = set()
     mapping_by_id: dict[str, list[dict[str, Any]]] = {}
     for global_id, entries in raw.items():
@@ -469,18 +560,30 @@ def _load_mapping(
         checked: list[dict[str, Any]] = []
         for entry in entries:
             if not isinstance(entry, dict):
-                raise FootprintStageError(f"global id {string_id} has invalid observation")
+                raise FootprintStageError(
+                    f"global id {string_id} has invalid observation"
+                )
             key = (entry.get("image_id"), entry.get("object_id"))
-            if not all(isinstance(value, int) for value in key) or key not in expected or key in seen:
-                raise FootprintStageError("mapping must contain each detection (frame, object_id) exactly once")
+            if (
+                not all(isinstance(value, int) for value in key)
+                or key not in expected
+                or key in seen
+            ):
+                raise FootprintStageError(
+                    "mapping must contain each detection (frame, object_id) exactly once"
+                )
             bbox = _bbox(entry.get("bbox"), key[0], key[1])
             if not np.allclose(bbox, expected[key]["bbox"], rtol=0.0, atol=0.0):
-                raise FootprintStageError(f"mapping bbox mismatch for image {key[0]} object {key[1]}")
+                raise FootprintStageError(
+                    f"mapping bbox mismatch for image {key[0]} object {key[1]}"
+                )
             seen.add(key)
             checked.append({**expected[key], "global_id": string_id})
         mapping_by_id[string_id] = checked
     if seen != set(expected):
-        raise FootprintStageError("mapping observations do not exactly equal the full detection collection")
+        raise FootprintStageError(
+            "mapping observations do not exactly equal the full detection collection"
+        )
     return mapping_by_id, hashlib.sha256(raw_bytes).hexdigest()
 
 
@@ -504,12 +607,18 @@ def _masked_observations(
 ]:
     point_clouds = cache["world_points"]
     confidence = cache["world_points_conf"]
-    frame_for_id = {int(image_id): index for index, image_id in enumerate(cache["image_ids"])}
+    frame_for_id = {
+        int(image_id): index for index, image_id in enumerate(cache["image_ids"])
+    }
     observations = {global_id: [] for global_id in mapping_by_id}
     evidence_observations: list[EvidenceObservation] = []
     background_points: list[np.ndarray] = []
     background_frames: list[np.ndarray] = []
-    lookup = {(item["image_id"], item["object_id"]): item["global_id"] for entries in mapping_by_id.values() for item in entries}
+    lookup = {
+        (item["image_id"], item["object_id"]): item["global_id"]
+        for entries in mapping_by_id.values()
+        for item in entries
+    }
     for image_id, frame_detections in detections.items():
         frame_index = frame_for_id[image_id]
         height, width = point_clouds.shape[1:3]
@@ -541,17 +650,23 @@ def _masked_observations(
                 ),
             )
         except RuntimeError as error:
-            raise FootprintStageError(f"SAM3 failed for image {image_id}: {error}") from error
+            raise FootprintStageError(
+                f"SAM3 failed for image {image_id}: {error}"
+            ) from error
         mask_cache_frames.append(_mask_cache_report_entry(image_id, cache_result))
         masks = cache_result.masks
         if len(masks) != len(frame_detections):
-            raise FootprintStageError(f"SAM3 did not return one mask per detection for image {image_id}")
+            raise FootprintStageError(
+                f"SAM3 did not return one mask per detection for image {image_id}"
+            )
         all_masks = np.zeros((height, width), dtype=bool)
         for item, mask in zip(frame_detections, masks):
             source_mask = np.asarray(mask, dtype=bool)
             with Image.open(image_paths[image_id]) as image:
                 if source_mask.shape != (image.height, image.width):
-                    raise FootprintStageError(f"SAM3 mask source dimensions mismatch for image {image_id}")
+                    raise FootprintStageError(
+                        f"SAM3 mask source dimensions mismatch for image {image_id}"
+                    )
             source_to_processed_affine = cache["source_to_processed_affine"][
                 frame_index
             ]
@@ -561,8 +676,14 @@ def _masked_observations(
                 (height, width),
             )
             global_id = lookup[(image_id, item["object_id"])]
-            diagnostic = {"image_id": image_id, "object_id": item["object_id"], "valid_point_count": 0}
-            per_global_id.setdefault(global_id, {"observations": []})["observations"].append(diagnostic)
+            diagnostic = {
+                "image_id": image_id,
+                "object_id": item["object_id"],
+                "valid_point_count": 0,
+            }
+            per_global_id.setdefault(global_id, {"observations": []})[
+                "observations"
+            ].append(diagnostic)
             valid_grid = _valid_points(
                 point_clouds[frame_index], confidence[frame_index]
             )
@@ -587,11 +708,18 @@ def _masked_observations(
                 if len(points) < 32:
                     diagnostic["rejection"] = "mask has fewer than 32 valid DA3 points"
                 observations[global_id].append(points)
-            all_masks |= cv2.dilate(warped.astype(np.uint8), np.ones((5, 5), dtype=np.uint8), iterations=1).astype(bool)
-        valid_background = _valid_points(point_clouds[frame_index], confidence[frame_index]) & ~all_masks
+            all_masks |= cv2.dilate(
+                warped.astype(np.uint8), np.ones((5, 5), dtype=np.uint8), iterations=1
+            ).astype(bool)
+        valid_background = (
+            _valid_points(point_clouds[frame_index], confidence[frame_index])
+            & ~all_masks
+        )
         frame_background = point_clouds[frame_index][valid_background]
         background_points.append(frame_background)
-        background_frames.append(np.full(len(frame_background), image_id, dtype=np.int32))
+        background_frames.append(
+            np.full(len(frame_background), image_id, dtype=np.int32)
+        )
     return (
         observations,
         np.concatenate(background_points),
@@ -623,7 +751,12 @@ def _attach_shadow_evidence(
 
 
 def _valid_points(points: np.ndarray, confidence: np.ndarray) -> np.ndarray:
-    return np.isfinite(points).all(axis=-1) & (np.linalg.norm(points, axis=-1) > 0) & np.isfinite(confidence) & (confidence >= 1.0)
+    return (
+        np.isfinite(points).all(axis=-1)
+        & (np.linalg.norm(points, axis=-1) > 0)
+        & np.isfinite(confidence)
+        & (confidence >= 1.0)
+    )
 
 
 def _compute_verified_sam3_masks(
@@ -679,7 +812,9 @@ def _sam3_runtime_fingerprint(device: str) -> dict[str, object]:
     try:
         normalized_device = normalize_device(device)
     except RuntimeError as error:
-        raise FootprintStageError(f"SAM3 runtime device is unavailable: {error}") from error
+        raise FootprintStageError(
+            f"SAM3 runtime device is unavailable: {error}"
+        ) from error
     sam3_init = Path(__file__).resolve().parents[2] / "sam3" / "sam3" / "__init__.py"
     version_match = re.search(
         r'^__version__\s*=\s*["\']([^"\']+)["\']',
@@ -710,19 +845,50 @@ def _sam3_runtime_fingerprint(device: str) -> dict[str, object]:
     }
 
 
-def _write_artifacts(output_dir: Path, report: dict[str, Any], polygons: dict[str, Any], union: Any) -> None:
+def _write_artifacts(
+    output_dir: Path, report: dict[str, Any], polygons: dict[str, Any], union: Any
+) -> None:
     geojson_path = output_dir / "footprints.geojson"
     figure_path = output_dir / "top_down_footprint.png"
     accepted = report["status"] == "accepted"
     features: list[dict[str, Any]] = []
     if accepted:
         for global_id, polygon in polygons.items():
-            features.append({"type": "Feature", "geometry": mapping(polygon), "properties": {"coordinate_space": "local_support_plane_meters", "global_id": global_id, "area_m2": float(polygon.area), "observations_used": report["per_global_id"][global_id].get("observations_used", 0)}})
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": mapping(polygon),
+                    "properties": {
+                        "coordinate_space": "local_support_plane_meters",
+                        "global_id": global_id,
+                        "area_m2": float(polygon.area),
+                        "observations_used": report["per_global_id"][global_id].get(
+                            "observations_used", 0
+                        ),
+                    },
+                }
+            )
         if union is not None:
-            features.append({"type": "Feature", "geometry": mapping(union), "properties": {"coordinate_space": "local_support_plane_meters", "global_id": "union", "area_m2": float(union.area)}})
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": mapping(union),
+                    "properties": {
+                        "coordinate_space": "local_support_plane_meters",
+                        "global_id": "union",
+                        "area_m2": float(union.area),
+                    },
+                }
+            )
     geojson_path.write_text(
         json.dumps(
-            {"type": "FeatureCollection", "coordinate_space": "local_support_plane_meters", "status": report["status"], "measurement_complete": accepted, "features": features},
+            {
+                "type": "FeatureCollection",
+                "coordinate_space": "local_support_plane_meters",
+                "status": report["status"],
+                "measurement_complete": accepted,
+                "features": features,
+            },
             indent=2,
             allow_nan=False,
         )
@@ -739,7 +905,16 @@ def _write_artifacts(output_dir: Path, report: dict[str, Any], polygons: dict[st
                 x_values, y_values = geometry.exterior.xy
                 axis.fill(x_values, y_values, alpha=0.2, color="black", label="union")
     else:
-        axis.text(0.5, 0.5, "REJECTED\nmeasurement incomplete", ha="center", va="center", color="firebrick", transform=axis.transAxes, fontsize=16)
+        axis.text(
+            0.5,
+            0.5,
+            "REJECTED\nmeasurement incomplete",
+            ha="center",
+            va="center",
+            color="firebrick",
+            transform=axis.transAxes,
+            fontsize=16,
+        )
     axis.set_xlabel("support-plane u (m)")
     axis.set_ylabel("support-plane v (m)")
     axis.set_aspect("equal", adjustable="box")
@@ -823,7 +998,9 @@ def _atomic_replace_current(current_path: Path, pointer: dict[str, object]) -> N
     payload = (
         json.dumps(pointer, indent=2, sort_keys=True, allow_nan=False) + "\n"
     ).encode("utf-8")
-    descriptor, temporary_name = tempfile.mkstemp(prefix=".CURRENT.", dir=current_path.parent)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".CURRENT.", dir=current_path.parent
+    )
     temporary = Path(temporary_name)
     try:
         with os.fdopen(descriptor, "wb") as handle:
@@ -850,9 +1027,7 @@ def _publication_lock(output_root: Path, *, exclusive: bool):
     locks_root.mkdir(parents=True, exist_ok=True)
     lock_path = locks_root / "publication.lock"
     with lock_path.open("a+b") as handle:
-        fcntl.flock(
-            handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
-        )
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
         try:
             yield
         finally:
@@ -863,7 +1038,9 @@ def _current_run_id_unlocked(output_root: Path) -> str:
     try:
         pointer = json.loads((output_root / "CURRENT").read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-        raise OSError(f"cannot resolve ground-stack artifact CURRENT: {error}") from error
+        raise OSError(
+            f"cannot resolve ground-stack artifact CURRENT: {error}"
+        ) from error
     run_id = pointer.get("run_id") if isinstance(pointer, dict) else None
     if (
         not isinstance(pointer, dict)
@@ -885,10 +1062,15 @@ def _artifact_paths_from_current_unlocked(
             f"{expected_run_id}"
         )
     generation = output_root / "runs" / run_id
-    if not generation.is_dir() or {path.name for path in generation.iterdir()} != _GENERATION_FILES:
+    if (
+        not generation.is_dir()
+        or {path.name for path in generation.iterdir()} != _GENERATION_FILES
+    ):
         raise OSError("ground-stack artifact generation is incomplete")
     try:
-        manifest = json.loads((generation / "manifest.json").read_text(encoding="utf-8"))
+        manifest = json.loads(
+            (generation / "manifest.json").read_text(encoding="utf-8")
+        )
     except (OSError, json.JSONDecodeError) as error:
         raise OSError(f"cannot read ground-stack artifact manifest: {error}") from error
     expected_sha256 = {
@@ -950,41 +1132,20 @@ def _publish_generation(
 
 
 def _bbox(value: Any, image_id: int, object_id: int) -> list[float]:
-    if not isinstance(value, list) or len(value) != 4 or not all(isinstance(item, (int, float)) for item in value):
-        raise FootprintStageError(f"invalid bbox for image {image_id} object {object_id}")
+    if (
+        not isinstance(value, list)
+        or len(value) != 4
+        or not all(isinstance(item, (int, float)) for item in value)
+    ):
+        raise FootprintStageError(
+            f"invalid bbox for image {image_id} object {object_id}"
+        )
     x1, y1, x2, y2 = (float(item) for item in value)
     if not np.isfinite([x1, y1, x2, y2]).all() or x2 <= x1 or y2 <= y1:
-        raise FootprintStageError(f"nonpositive bbox for image {image_id} object {object_id}")
+        raise FootprintStageError(
+            f"nonpositive bbox for image {image_id} object {object_id}"
+        )
     return [x1, y1, x2, y2]
-
-
-def _safe_text(value: np.ndarray, field: str) -> str:
-    if value.shape != () or value.dtype.kind != "U":
-        raise FootprintStageError(f"DA3 cache {field} must be a scalar safe unicode string")
-    return str(value.item())
-
-
-def _safe_scalar_integer(value: np.ndarray, field: str) -> int:
-    if value.shape != () or value.dtype.kind not in "iu":
-        raise FootprintStageError(f"DA3 cache {field} must be a scalar integer")
-    return int(value.item())
-
-
-def _validate_affine_linear_parts(affine: np.ndarray) -> None:
-    linear = affine[:, :, :2]
-    if not np.allclose(linear[:, 0, 1], 0.0, rtol=0.0, atol=1e-8) or not np.allclose(
-        linear[:, 1, 0], 0.0, rtol=0.0, atol=1e-8
-    ):
-        raise FootprintStageError("DA3 cache affine must be axis aligned")
-    scale_x = linear[:, 0, 0]
-    scale_y = linear[:, 1, 1]
-    if np.any(scale_x <= 0.0) or np.any(scale_y <= 0.0):
-        raise FootprintStageError("DA3 cache affine scales must be positive")
-    determinants = np.linalg.det(linear)
-    if np.any(determinants <= 0.0):
-        raise FootprintStageError("DA3 cache affine determinant must be positive")
-    if any(np.linalg.matrix_rank(matrix) != 2 for matrix in linear):
-        raise FootprintStageError("DA3 cache affine linear part must have rank two")
 
 
 def _nearest_patch_multiple(value: int) -> int:

@@ -549,9 +549,7 @@ def test_nonidentity_world_to_camera_rotation_and_translation_reconstruct_world(
 ):
     fields = _identity_camera_arrays(1, 2, 2, focal_length=2.0)
     fields["depth"][:] = 5.0
-    rotation = np.array(
-        [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
-    )
+    rotation = np.array([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]])
     translation = np.array([1.0, 2.0, 3.0])
     fields["extrinsic"][0, :, :3] = rotation
     fields["extrinsic"][0, :, 3] = translation

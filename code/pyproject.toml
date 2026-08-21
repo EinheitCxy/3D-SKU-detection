@@ -20,13 +20,13 @@ dependencies = [
     "decord>=0.6.0",  # Required for SAM3 image/video loading
     "pycocotools>=2.0.7",  # Required for SAM3 COCO format support
     # SAM3 dependencies
+    "psutil>=5.9.0",  # sam3_video_predictor 运行时依赖（此前由 viser 传递引入）
     "timm>=1.0.17",  # Vision transformers for SAM3
     "ftfy==6.1.1",  # Text formatting
     "regex",  # Regular expressions
     "iopath>=0.1.10",  # I/O utilities
     # 3D processing and visualization
     "trimesh>=4.0.0",
-    "viser>=0.2.0",
     # 3D file formats
     "pygltflib>=1.15.0",
     # Deep learning utilities
@@ -61,10 +61,6 @@ dev = [
     "flake8>=6.1.0; python_version>='3.8.1'",
 ]
 
-viewer = [
-    # plotly和dash已被viser替代，不再需要
-]
-
 # 调试和可视化工具（可选）
 debug = [
     "matplotlib>=3.7.0",
@@ -85,13 +81,8 @@ accelerate = [
     "faiss-cpu>=1.7.0",  # CPU加速的最近邻搜索（性能提升3-5倍）
 ]
 
-# Mesh渲染（需要CUDA环境）
-rendering = [
-    "nvdiffrast @ git+https://github.com/NVlabs/nvdiffrast.git",  # GPU加速光栅化渲染
-]
-
 all = [
-    "3d-sku-detection[demo,vggt,dev,viewer,rendering]"
+    "3d-sku-detection[demo,vggt,dev]"
 ]
 
 [build-system]

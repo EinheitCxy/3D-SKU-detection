@@ -32,16 +32,18 @@ import torch  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
 logger = logging.getLogger("da3_runner")
 
-DEFAULT_HF_REPO = "depth-anything/DA3NESTED-GIANT-LARGE"
+DEFAULT_HF_REPO = "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 PATCH_SIZE = 14
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3  # v3: + is_metric / scale_factor 米制证据（硬门）
 AFFINE_CONVENTION = "pixel_center_v1"
 PREPROCESS_METHOD = "upper_bound_resize"
 SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
 
 
-def _depth_to_world_points(depth: np.ndarray, intrinsics: np.ndarray, extrinsics: np.ndarray) -> np.ndarray:
+def _depth_to_world_points(
+    depth: np.ndarray, intrinsics: np.ndarray, extrinsics: np.ndarray
+) -> np.ndarray:
     """深度图 + 内外参 -> 世界坐标系点云 (N,H,W,3)。extrinsics 为 w2c (N,4,4)。"""
     N, H, W = depth.shape
     ys, xs = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
@@ -61,7 +63,9 @@ def _depth_to_world_points(depth: np.ndarray, intrinsics: np.ndarray, extrinsics
         # 无效深度过滤（参考 DA3 export/glb.py: isfinite(d) & (d > 0)）
         valid = np.isfinite(d) & (d > 0)
         p_cam = (K_inv @ pixels_flat.T).T * d[:, None]  # (H*W,3)
-        p_cam_h = np.concatenate([p_cam, np.ones((len(p_cam), 1), dtype=np.float32)], axis=-1)
+        p_cam_h = np.concatenate(
+            [p_cam, np.ones((len(p_cam), 1), dtype=np.float32)], axis=-1
+        )
         p_world = (C2W @ p_cam_h.T).T[:, :3]
         # 无效像素的 world_points 置 0
         p_world[~valid] = 0.0
@@ -94,7 +98,11 @@ def _source_to_processed_affines(
     for original_width, original_height in image_sizes:
         transforms.append(
             _preprocess_geometry(
-                original_width, original_height, process_res, output_height, output_width
+                original_width,
+                original_height,
+                process_res,
+                output_height,
+                output_width,
             )["affine"]
         )
     return np.stack(transforms)
@@ -108,7 +116,10 @@ def _preprocess_geometry(
     output_width: int,
 ) -> dict[str, int | np.ndarray]:
     """Reproduce DA3 InputProcessor resize, patch rounding, and centre crop."""
-    if min(original_width, original_height, process_res, output_height, output_width) <= 0:
+    if (
+        min(original_width, original_height, process_res, output_height, output_width)
+        <= 0
+    ):
         raise ValueError("preprocess dimensions and resolution must be positive")
     scale = process_res / float(max(original_width, original_height))
     resized_width = max(1, int(round(original_width * scale)))
@@ -146,17 +157,30 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="DA3 推理 -> predictions.npz")
     ap.add_argument("--input_dir", required=True, help="图片目录")
     ap.add_argument("--output_npz", required=True, help="输出 npz 路径")
-    ap.add_argument("--model_path", default=DEFAULT_HF_REPO, help=f"模型路径/HF repo（默认 {DEFAULT_HF_REPO}）")
+    ap.add_argument(
+        "--model_path",
+        default=DEFAULT_HF_REPO,
+        help=f"模型路径/HF repo（默认 {DEFAULT_HF_REPO}）",
+    )
     ap.add_argument("--device", default="cuda", help="推理设备（默认 cuda）")
-    ap.add_argument("--process_res", type=int, default=504, help="推理分辨率（默认 504）")
+    ap.add_argument(
+        "--process_res", type=int, default=504, help="推理分辨率（默认 504）"
+    )
     args = ap.parse_args()
     args.model_path = _validate_model_id(args.model_path)
 
-    from PIL import Image
     from depth_anything_3.api import DepthAnything3
+    from PIL import Image
 
     input_dir = Path(args.input_dir)
-    paths = sorted((str(p) for p in input_dir.iterdir() if p.suffix.lower() in IMG_EXTS and p.is_file()), key=lambda p: int(re.search(r"(\d+)", Path(p).stem).group(1)))
+    paths = sorted(
+        (
+            str(p)
+            for p in input_dir.iterdir()
+            if p.suffix.lower() in IMG_EXTS and p.is_file()
+        ),
+        key=lambda p: int(re.search(r"(\d+)", Path(p).stem).group(1)),
+    )
     if not paths:
         raise SystemExit(f"目录中未找到图片: {input_dir}")
     logger.info(f"[da3_runner] {len(paths)} imgs from {input_dir}")
@@ -180,17 +204,38 @@ def main() -> None:
     )
     logger.info(f"[da3_runner] inference done ({time.time()-t1:.1f}s)")
 
-    depth = np.asarray(prediction.depth, dtype=np.float32)          # (N,H,W)
-    extrinsics = np.asarray(prediction.extrinsics, dtype=np.float32)  # (N,3,4) [R|t] w2c（非方阵，求逆时在 _depth_to_world_points 内补齐为 4x4）
+    # 米制硬门：非 metric 模型（如 DA3-GIANT-1.1）输出的是相对尺度点云，
+    # 看似米制实际不是，必须在此 fail-closed，不得写入缓存。
+    is_metric = int(prediction.is_metric)
+    if is_metric != 1:
+        raise RuntimeError(
+            f"[da3_runner] model {args.model_path} returned is_metric={is_metric} "
+            "(expected 1); refusing to write a non-metric cache"
+        )
+    scale_factor = prediction.scale_factor
+    logger.info(f"[da3_runner] metric gate OK: is_metric=1 scale_factor={scale_factor}")
+
+    depth = np.asarray(prediction.depth, dtype=np.float32)  # (N,H,W)
+    extrinsics = np.asarray(
+        prediction.extrinsics, dtype=np.float32
+    )  # (N,3,4) [R|t] w2c（非方阵，求逆时在 _depth_to_world_points 内补齐为 4x4）
     intrinsics = np.asarray(prediction.intrinsics, dtype=np.float32)  # (N,3,3)
     conf = prediction.conf
-    conf = np.asarray(conf, dtype=np.float32) if conf is not None else np.ones_like(depth)
+    conf = (
+        np.asarray(conf, dtype=np.float32) if conf is not None else np.ones_like(depth)
+    )
     proc_imgs = prediction.processed_images
     N, H, W = depth.shape
-    logger.info(f"[da3_runner] output N={N} H={H} W={W} depth_range=[{depth.min():.2f},{depth.max():.2f}]")
+    logger.info(
+        f"[da3_runner] output N={N} H={H} W={W} depth_range=[{depth.min():.2f},{depth.max():.2f}]"
+    )
 
     world_points = _depth_to_world_points(depth, intrinsics, extrinsics)  # (N,H,W,3)
-    images_np = np.asarray(proc_imgs, dtype=np.uint8) if proc_imgs is not None else np.zeros((N, H, W, 3), dtype=np.uint8)
+    images_np = (
+        np.asarray(proc_imgs, dtype=np.uint8)
+        if proc_imgs is not None
+        else np.zeros((N, H, W, 3), dtype=np.uint8)
+    )
     image_ids = _extract_image_ids(paths)
     image_ids_array = np.asarray(image_ids, dtype=np.int32)
     source_to_processed_affine = _source_to_processed_affines(
@@ -199,7 +244,9 @@ def main() -> None:
 
     # 帧对齐索引（对齐 pi3 schema：sorted_indices + id->frame 映射）
     sorted_indices = np.argsort(image_ids_array)
-    id_to_frame_map = {int(img_id): int(idx) for idx, img_id in enumerate(image_ids_array)}
+    id_to_frame_map = {
+        int(img_id): int(idx) for idx, img_id in enumerate(image_ids_array)
+    }
     map_keys = np.array(list(id_to_frame_map.keys()), dtype=np.int32)
     map_values = np.array(list(id_to_frame_map.values()), dtype=np.int32)
 
@@ -207,22 +254,30 @@ def main() -> None:
     out.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(
         out,
-        depth=depth[..., None].astype(np.float32),            # (N,H,W,1) - matcher 要求最后一维
-        depth_conf=conf.astype(np.float32),                    # (N,H,W)
-        world_points=world_points.astype(np.float32),          # (N,H,W,3)
-        world_points_conf=conf.astype(np.float32),              # (N,H,W)
-        extrinsic=extrinsics.astype(np.float32),                # (N,3,4) [R|t] w2c（保存原始非方阵；matcher 与 _depth_to_world_points 内部按需补齐）
-        intrinsic=intrinsics.astype(np.float32),               # (N,3,3)
-        images=images_np.astype(np.uint8),                      # (N,H,W,3)
-        image_ids=image_ids_array,                              # (N,)
+        depth=depth[..., None].astype(np.float32),  # (N,H,W,1) - matcher 要求最后一维
+        depth_conf=conf.astype(np.float32),  # (N,H,W)
+        world_points=world_points.astype(np.float32),  # (N,H,W,3)
+        world_points_conf=conf.astype(np.float32),  # (N,H,W)
+        extrinsic=extrinsics.astype(
+            np.float32
+        ),  # (N,3,4) [R|t] w2c（保存原始非方阵；matcher 与 _depth_to_world_points 内部按需补齐）
+        intrinsic=intrinsics.astype(np.float32),  # (N,3,3)
+        images=images_np.astype(np.uint8),  # (N,H,W,3)
+        image_ids=image_ids_array,  # (N,)
         source_image_sizes=np.asarray(source_image_sizes, dtype=np.int32),
         source_to_processed_affine=source_to_processed_affine,
         cache_schema_version=np.asarray(CACHE_SCHEMA_VERSION, dtype=np.int32),
-        source_model=np.asarray(args.model_path, dtype=f"<U{max(1, len(args.model_path))}"),
+        source_model=np.asarray(
+            args.model_path, dtype=f"<U{max(1, len(args.model_path))}"
+        ),
         source_image_sha256=source_image_sha256,
         affine_convention=np.asarray(AFFINE_CONVENTION, dtype="<U15"),
         preprocess_resolution=np.asarray(args.process_res, dtype=np.int32),
         preprocess_method=np.asarray(PREPROCESS_METHOD, dtype="<U18"),
+        is_metric=np.asarray(is_metric, dtype=np.int32),
+        scale_factor=np.asarray(
+            scale_factor if scale_factor is not None else np.nan, dtype=np.float32
+        ),
         frame_alignment_sorted_indices=sorted_indices,
         frame_alignment_map_keys=map_keys,
         frame_alignment_map_values=map_values,

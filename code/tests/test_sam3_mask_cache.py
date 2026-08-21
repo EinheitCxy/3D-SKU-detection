@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import multiprocessing
-import hashlib
 from dataclasses import replace
 from pathlib import Path
 
@@ -23,14 +23,18 @@ from utils.sam3_mask_cache import (
 from utils.sam3_utils import clip_mask_to_bbox
 
 
-def _prompt(object_id: int, bbox_xyxy: tuple[float, float, float, float]) -> DetectionPrompt:
+def _prompt(
+    object_id: int, bbox_xyxy: tuple[float, float, float, float]
+) -> DetectionPrompt:
     return DetectionPrompt.from_bbox(object_id, bbox_xyxy)
 
 
 def _request(
     tmp_path: Path,
     *,
-    detections: tuple[tuple[int, tuple[float, float, float, float]], ...] = ((7, (1.0, 2.0, 8.0, 8.0)),),
+    detections: tuple[tuple[int, tuple[float, float, float, float]], ...] = (
+        (7, (1.0, 2.0, 8.0, 8.0)),
+    ),
 ) -> FrameMaskCacheRequest:
     image_path = tmp_path / "source.png"
     Image.fromarray(np.zeros((8, 8, 3), dtype=np.uint8)).save(image_path)
@@ -50,7 +54,9 @@ def _request(
     )
 
 
-def _mutate_request(request: FrameMaskCacheRequest, mutation: str) -> FrameMaskCacheRequest:
+def _mutate_request(
+    request: FrameMaskCacheRequest, mutation: str
+) -> FrameMaskCacheRequest:
     if mutation == "image":
         Image.fromarray(np.ones((8, 8, 3), dtype=np.uint8)).save(request.image_path)
         return request
@@ -59,21 +65,32 @@ def _mutate_request(request: FrameMaskCacheRequest, mutation: str) -> FrameMaskC
     if mutation == "order":
         return replace(
             request,
-            detections=(_prompt(8, (1.0, 2.0, 8.0, 8.0)), _prompt(7, (1.0, 2.0, 8.0, 8.0))),
+            detections=(
+                _prompt(8, (1.0, 2.0, 8.0, 8.0)),
+                _prompt(7, (1.0, 2.0, 8.0, 8.0)),
+            ),
         )
     if mutation == "checkpoint":
         return replace(request, checkpoint_sha256="c" * 64)
     if mutation == "contract":
-        return replace(request, inference_contract={"api": "predict_inst", "threshold": 0.0})
+        return replace(
+            request, inference_contract={"api": "predict_inst", "threshold": 0.0}
+        )
     if mutation == "image_id":
         return replace(request, image_id=43)
     if mutation == "image_size":
-        request.image_path.write_bytes(request.image_path.read_bytes() + b"trailing-cache-key-bytes")
+        request.image_path.write_bytes(
+            request.image_path.read_bytes() + b"trailing-cache-key-bytes"
+        )
         return request
     if mutation == "code_fingerprint":
-        return replace(request, code_fingerprint={"files": {"utils/sam3_utils.py": "d" * 64}})
+        return replace(
+            request, code_fingerprint={"files": {"utils/sam3_utils.py": "d" * 64}}
+        )
     if mutation == "runtime_fingerprint":
-        return replace(request, runtime_fingerprint={"python": "3.12", "device": "cuda"})
+        return replace(
+            request, runtime_fingerprint={"python": "3.12", "device": "cuda"}
+        )
     raise AssertionError(f"unknown mutation {mutation}")
 
 
@@ -91,7 +108,13 @@ def _producer_that_fails_if_called() -> list[np.ndarray]:
     raise AssertionError("valid cache hit must not call the mask producer")
 
 
-def _concurrent_worker(cache_root: str, image_path: str, checkpoint_path: str, barrier: object, queue: object) -> None:
+def _concurrent_worker(
+    cache_root: str,
+    image_path: str,
+    checkpoint_path: str,
+    barrier: object,
+    queue: object,
+) -> None:
     request = FrameMaskCacheRequest(
         cache_root=Path(cache_root),
         image_id=42,
@@ -121,7 +144,13 @@ def _concurrently_load_same_request(tmp_path: Path):
     processes = [
         context.Process(
             target=_concurrent_worker,
-            args=(str(request.cache_root), str(request.image_path), str(request.checkpoint_path), barrier, queue),
+            args=(
+                str(request.cache_root),
+                str(request.image_path),
+                str(request.checkpoint_path),
+                barrier,
+                queue,
+            ),
         )
         for _ in range(2)
     ]
@@ -161,7 +190,10 @@ def test_key_input_mutation_is_a_miss(tmp_path: Path, mutation: str) -> None:
     first_request = _request(tmp_path)
     load_or_compute_frame_masks(first_request, lambda: [np.ones((8, 8), dtype=bool)])
     changed_request = _mutate_request(first_request, mutation)
-    result = load_or_compute_frame_masks(changed_request, lambda: [np.ones((8, 8), dtype=bool)] * len(changed_request.detections))
+    result = load_or_compute_frame_masks(
+        changed_request,
+        lambda: [np.ones((8, 8), dtype=bool)] * len(changed_request.detections),
+    )
     assert result.events == ("miss", "written")
 
 
@@ -176,7 +208,9 @@ def test_corrupt_payload_is_quarantined_then_recomputed(tmp_path: Path) -> None:
 
 def test_manifest_bbox_escape_is_quarantined_and_never_returned(tmp_path: Path) -> None:
     request = _request(tmp_path, detections=((7, (2.0, 2.0, 6.0, 6.0)),))
-    first = load_or_compute_frame_masks(request, lambda: [np.ones((8, 8), dtype=bool) & False])
+    first = load_or_compute_frame_masks(
+        request, lambda: [np.ones((8, 8), dtype=bool) & False]
+    )
     payload = request.cache_root / "entries" / first.key / "masks.npz"
     escaped = np.zeros((1, 8, 8), dtype=bool)
     escaped[0, 0, 0] = True
@@ -187,7 +221,9 @@ def test_manifest_bbox_escape_is_quarantined_and_never_returned(tmp_path: Path) 
     manifest["masks"][0]["sha256"] = hashlib.sha256(escaped[0].tobytes()).hexdigest()
     manifest["masks"][0]["true_pixel_count"] = 1
     manifest_path.write_text(json.dumps(manifest))
-    result = load_or_compute_frame_masks(request, lambda: [np.zeros((8, 8), dtype=bool)])
+    result = load_or_compute_frame_masks(
+        request, lambda: [np.zeros((8, 8), dtype=bool)]
+    )
     assert result.events == ("invalid", "written")
     assert result.masks[0].sum() == 0
 
@@ -248,7 +284,9 @@ def test_negative_zero_has_same_canonical_key_as_positive_zero(tmp_path: Path) -
     assert canonical_frame_mask_key(negative) == canonical_frame_mask_key(positive)
 
 
-def test_direct_prompt_constructor_normalizes_hex_and_negative_zero(tmp_path: Path) -> None:
+def test_direct_prompt_constructor_normalizes_hex_and_negative_zero(
+    tmp_path: Path,
+) -> None:
     direct = DetectionPrompt(
         object_id=7,
         bbox_xyxy_f64be_hex=(
@@ -262,7 +300,9 @@ def test_direct_prompt_constructor_normalizes_hex_and_negative_zero(tmp_path: Pa
     direct_request = replace(_request(tmp_path), detections=(direct,))
     canonical_request = replace(_request(tmp_path), detections=(canonical,))
     assert direct.bbox_xyxy_f64be_hex == canonical.bbox_xyxy_f64be_hex
-    assert canonical_frame_mask_key(direct_request) == canonical_frame_mask_key(canonical_request)
+    assert canonical_frame_mask_key(direct_request) == canonical_frame_mask_key(
+        canonical_request
+    )
 
 
 def test_checkpoint_digest_is_lowercase_syntax_normalized(tmp_path: Path) -> None:
@@ -280,12 +320,16 @@ def test_two_processes_publish_one_complete_bundle(tmp_path: Path) -> None:
 
 
 def test_complete_empty_mask_is_cached_without_bbox_fallback(tmp_path: Path) -> None:
-    result = load_or_compute_frame_masks(_request(tmp_path), lambda: [np.zeros((8, 8), dtype=bool)])
+    result = load_or_compute_frame_masks(
+        _request(tmp_path), lambda: [np.zeros((8, 8), dtype=bool)]
+    )
     assert result.masks[0].sum() == 0
     assert result.events == ("miss", "written")
 
 
-def test_image_mutation_during_producer_rejects_and_does_not_publish(tmp_path: Path) -> None:
+def test_image_mutation_during_producer_rejects_and_does_not_publish(
+    tmp_path: Path,
+) -> None:
     request = _request(tmp_path)
     original_key = canonical_frame_mask_key(request)
 
@@ -367,7 +411,9 @@ def test_invalid_rebuild_write_failure_reports_invalid_then_cache_write_failed(
     assert any((request.cache_root / "corrupt").iterdir())
 
 
-def test_zero_detection_bundle_writes_bool_payload_and_hits_without_producer(tmp_path: Path) -> None:
+def test_zero_detection_bundle_writes_bool_payload_and_hits_without_producer(
+    tmp_path: Path,
+) -> None:
     request = _request(tmp_path, detections=())
     calls: list[int] = []
 
@@ -377,7 +423,9 @@ def test_zero_detection_bundle_writes_bool_payload_and_hits_without_producer(tmp
 
     first = load_or_compute_frame_masks(request, producer)
     second = load_or_compute_frame_masks(request, _producer_that_fails_if_called)
-    with np.load(request.cache_root / "entries" / first.key / "masks.npz", allow_pickle=False) as payload:
+    with np.load(
+        request.cache_root / "entries" / first.key / "masks.npz", allow_pickle=False
+    ) as payload:
         assert payload["masks"].dtype == np.bool_
         assert payload["masks"].shape == (0, 8, 8)
     assert calls == [1]
@@ -404,7 +452,9 @@ def test_model_cache_reloads_when_checkpoint_bytes_are_replaced(
         return object(), object()
 
     monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
-    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", build, raising=False)
+    monkeypatch.setattr(
+        sam3_utils, "_build_sam3_model_and_processor", build, raising=False
+    )
     first_digest = hashlib.sha256(b"first checkpoint contents").hexdigest()
     sam3_utils._get_sam3_model_and_processor(
         str(checkpoint), "cuda:0", expected_checkpoint_sha256=first_digest
@@ -431,7 +481,12 @@ def test_checkpoint_mutation_during_model_load_is_rejected_without_cache_publish
         return object(), object()
 
     monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
-    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", mutate_checkpoint_while_building, raising=False)
+    monkeypatch.setattr(
+        sam3_utils,
+        "_build_sam3_model_and_processor",
+        mutate_checkpoint_while_building,
+        raising=False,
+    )
 
     with pytest.raises(RuntimeError, match="changed while loading"):
         sam3_utils._get_sam3_model_and_processor(
@@ -464,7 +519,10 @@ def test_model_cache_keeps_explicit_cuda_ordinals_in_independent_entries(
     )
 
     assert builder_devices == ["cuda:0", "cuda:1"]
-    assert {key[1] for key in sam3_utils._SAM3_PREDICT_INST_CACHE} == {"cuda:0", "cuda:1"}
+    assert {key[1] for key in sam3_utils._SAM3_PREDICT_INST_CACHE} == {
+        "cuda:0",
+        "cuda:1",
+    }
 
 
 def test_model_cache_resolves_bare_cuda_to_current_ordinal(
@@ -515,7 +573,10 @@ def test_model_cache_reloads_when_inference_contract_fingerprint_changes(
     )
 
     assert builder_calls == [1, 1]
-    assert {key[2] for key in sam3_utils._SAM3_PREDICT_INST_CACHE} == {"contract-a", "contract-b"}
+    assert {key[2] for key in sam3_utils._SAM3_PREDICT_INST_CACHE} == {
+        "contract-a",
+        "contract-b",
+    }
 
 
 def test_final_digest_change_before_cache_publish_rejects_without_entry(
@@ -529,7 +590,11 @@ def test_final_digest_change_before_cache_publish_rejects_without_entry(
 
     monkeypatch.setattr(sam3_utils, "_SAM3_PREDICT_INST_CACHE", {})
     monkeypatch.setattr(sam3_utils, "checkpoint_sha256", lambda _path: next(digests))
-    monkeypatch.setattr(sam3_utils, "_build_sam3_model_and_processor", lambda *_args: (object(), object()))
+    monkeypatch.setattr(
+        sam3_utils,
+        "_build_sam3_model_and_processor",
+        lambda *_args: (object(), object()),
+    )
 
     with pytest.raises(RuntimeError, match="changed while loading"):
         sam3_utils._get_sam3_model_and_processor(
