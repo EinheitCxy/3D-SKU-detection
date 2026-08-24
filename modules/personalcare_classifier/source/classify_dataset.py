@@ -110,9 +110,10 @@ def classify_dataset(
             json.dumps(payload, ensure_ascii=False), encoding="utf-8"
         )
 
-    frame_count = len(frame_paths)
+    frame_ids = [frame_id for frame_id, _, _ in frame_paths]
+    frame_count = len(frame_ids)
     _validate_output_counts(
-        temporary_detections, frame_count, object_count, unavailable_count
+        temporary_detections, frame_ids, frame_count, object_count, unavailable_count
     )
     result = ClassificationRunResult(
         run_id=run_id,
@@ -229,15 +230,33 @@ def _unavailable_classification(project_id: int) -> dict[str, object]:
 
 def _validate_output_counts(
     detection_dir: Path,
+    expected_frame_ids: list[int],
     frame_count: int,
     object_count: int,
     unavailable_count: int,
 ) -> None:
-    output_files = sorted(detection_dir.glob("*.json"))
-    if len(output_files) != frame_count:
-        raise ValueError("published frame count does not match input")
-    if unavailable_count > object_count:
-        raise ValueError("unavailable object count exceeds object count")
+    output_paths = _numeric_files(detection_dir, image=False)
+    if sorted(output_paths) != expected_frame_ids:
+        raise ValueError("published frame IDs do not match input")
+    if len(output_paths) != frame_count:
+        raise ValueError("published frame count does not match result")
+
+    published_object_count = 0
+    published_unavailable_count = 0
+    for frame_id in expected_frame_ids:
+        payload = json.loads(output_paths[frame_id].read_text(encoding="utf-8"))
+        references = _object_references(payload)
+        published_object_count += len(references)
+        for reference in references:
+            classification = reference.object_data.get("classification")
+            if not isinstance(classification, dict):
+                raise ValueError("published object is missing classification")
+            if classification.get("status") == "unavailable":
+                published_unavailable_count += 1
+    if published_object_count != object_count:
+        raise ValueError("published object count does not match result")
+    if published_unavailable_count != unavailable_count:
+        raise ValueError("published unavailable count does not match result")
 
 
 def _replace_current(current_path: Path, run_id: str) -> None:

@@ -5,6 +5,7 @@ import cv2
 import numpy as np
 import pytest
 
+import modules.personalcare_classifier.source.classify_dataset as classifier_runner
 from modules.personalcare_classifier.source.classify_dataset import classify_dataset
 from modules.personalcare_classifier.source.contracts import (
     lookup_sku_metadata,
@@ -162,3 +163,68 @@ def test_canonical_checkpoint_decodes_to_a_state_dict() -> None:
     )
     state_dict = PersonalcarePredictor._load_state_dict(model_path)
     assert "features.0.0.weight" in state_dict
+
+
+def test_classify_dataset_sends_more_than_32_crops_in_bounded_batches(
+    tmp_path: Path,
+) -> None:
+    dataset = make_dataset(tmp_path, positions=[[0, 0, 1, 1]] * 33)
+
+    class RecordingPredictor:
+        project_id = 51
+
+        def __init__(self) -> None:
+            self.batch_sizes: list[int] = []
+
+        def predict(self, crops: list[np.ndarray]) -> list[tuple[str, float]]:
+            self.batch_sizes.append(len(crops))
+            return [("430085^产品A", 0.9)] * len(crops)
+
+    predictor = RecordingPredictor()
+    result = classify_dataset(dataset, tmp_path / "Output", "cuda:0", predictor)
+
+    assert predictor.batch_sizes == [32, 1]
+    assert result.object_count == 33
+
+
+def test_corrupted_staging_unavailable_count_does_not_replace_current(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset = make_dataset(tmp_path, positions=[[5, 5, 5, 12]])
+    current = tmp_path / "Output" / dataset.name / "personalcare_classification" / "CURRENT"
+    current.parent.mkdir(parents=True)
+    current.write_text('{"run_id":"old","complete":true}', encoding="utf-8")
+    validate_output_counts = classifier_runner._validate_output_counts
+
+    def corrupt_then_validate(
+        detection_dir: Path,
+        expected_frame_ids: list[int],
+        frame_count: int,
+        object_count: int,
+        unavailable_count: int,
+    ) -> None:
+        output_path = detection_dir / "0.json"
+        payload = json.loads(output_path.read_text(encoding="utf-8"))
+        payload["skus"][0]["objects"][0]["classification"]["status"] = "resolved"
+        output_path.write_text(json.dumps(payload), encoding="utf-8")
+        validate_output_counts(
+            detection_dir,
+            expected_frame_ids,
+            frame_count,
+            object_count,
+            unavailable_count,
+        )
+
+    monkeypatch.setattr(
+        classifier_runner, "_validate_output_counts", corrupt_then_validate
+    )
+
+    class PredictorThatMustNotRun:
+        project_id = 51
+
+        def predict(self, crops: list[np.ndarray]) -> list[tuple[str, float]]:
+            raise AssertionError("invalid bbox must not reach predictor")
+
+    with pytest.raises(ValueError, match="published unavailable count"):
+        classify_dataset(dataset, tmp_path / "Output", "cuda:0", PredictorThatMustNotRun())
+    assert json.loads(current.read_text(encoding="utf-8"))["run_id"] == "old"
