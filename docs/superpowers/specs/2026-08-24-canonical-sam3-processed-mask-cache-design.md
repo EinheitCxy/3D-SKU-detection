@@ -97,7 +97,7 @@ The internal cache schema is exactly `sam3_self_exemplar_processed_mask_cache_v1
 }
 ```
 
-No additional or missing manifest keys are accepted. All numeric values must be finite; IDs are safe integers; bboxes are ordered and clipped to the declared coordinate-space bounds; affine shape is `(2, 3)`; detections have unique object IDs and unique mask indices covering `0..mask_count-1`.
+No additional or missing manifest keys are accepted. All numeric values must be finite; IDs are safe integers; bboxes are ordered and clipped to the declared coordinate-space bounds; affine shape is `(2, 3)`; detections have unique object IDs and unique mask indices covering `0..mask_count-1`. Every true mask pixel must lie inside its declared processed bbox under the same canonical clipping rule used by the producer; a mask outside its bbox is invalid.
 
 The payload uses uncompressed NumPy storage after bit packing:
 
