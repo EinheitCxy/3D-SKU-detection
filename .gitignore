@@ -12,7 +12,7 @@ __pycache__/
 *.bin
 checkpoints/
 
-# Vendored model libraries: core source is tracked (sam3/ Pi3/ Depth-Anything-3/);
+# Vendored model libraries: core source is tracked (sam3/ and Depth-Anything-3/);
 # only env/weights/non-core artifacts inside them are ignored (see CLAUDE.md).
 # vggt-main stays fully ignored (backend disabled in code/modules/__init__.py; re-clone if needed)
 vggt-main/
@@ -25,16 +25,16 @@ sam3/outputs/
 sam3/build/
 sam3/*.backup
 
-# Pi3 interior exclusions
-Pi3/assets/
-Pi3/examples/
+# Archived Pi3 interior exclusions
+legacy/Pi3/assets/
+legacy/Pi3/examples/
 
 # Depth-Anything-3 interior exclusions
 Depth-Anything-3/assets/
 Depth-Anything-3/output/
 Depth-Anything-3/notebooks/
 
-# Service-dir duplicate code copies (repo-level dedup: root code/ is canonical)
+# Removed service-dir duplicate code copies
 Global-ID-Mapping/code/
 Dockered_GlobalIDMapping/code/
 
@@ -50,6 +50,7 @@ imdata/.~*
 # Run outputs & logs
 Output/
 Output*/
+runtime/
 runs/
 *.glb
 *.npz
@@ -72,3 +73,7 @@ small_fd_video/
 
 # Autoresearch loop work state (program/progress/results ledgers; local-only, not tracked)
 auto-research-loop/
+
+# Local archival and research notes; keep out of commits.
+legacy/
+knowledge/

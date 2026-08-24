@@ -1,0 +1,84 @@
+# 3D SKU Detection 系统完整配置文件
+
+
+# 主程序配置 (main.py)
+main:
+  dataset: "imdata/floor_display2"  # 数据集路径，需包含images/和detections_results/子目录
+  mode: "interactive"  # 运行模式: interactive(交互菜单)/pipeline(完整流水线)/concise(精简)/analyzer(聚类分析)/dedup(去重)/ground-stack-area(footprint面积)/reconstruct(3D重建)/viewer(3D可视化)
+  algorithm: "3d"  # 匹配算法: point_tracking(点追踪，追踪特征点轨迹)/3d(3D投影，利用深度信息投影匹配)/both(两者对比)
+  reference_idx: 0  # 参考图像索引(0-based)，其他图像与该图像进行匹配
+  max_images: 50  # 最大处理图像数，用于大数据集快速测试
+  device: "cuda"  # 计算设备: cuda(GPU加速)/cpu
+  save_json: true  # 是否保存JSON格式匹配结果(correspondences.json)
+  save_root: "Output"  # 输出根目录，结果保存到<save_root>/<dataset_name>/
+  batch_all_refs: true  # true=依次将每张图作为参考图匹配，false=仅用reference_idx指定的图
+
+# 3D重建配置（DA3 为当前默认后端）
+reconstruction:
+  backend: "da3"  # 可选 vggt/pi3/da3；当前可运行默认是 DA3
+  input_dir: "images"  # 输入图像目录(相对于数据集目录)
+  output_file: "reconstruction.glb"  # 输出文件名，实际会自动添加后端名: reconstruction_vggt.glb或reconstruction_pi3.glb
+  device: "cuda"  # 计算设备: cuda/cpu
+  model_path: null  # 预训练模型路径，null=从HuggingFace自动下载
+  conf_thres: 50.0  # 点云置信度阈值(0-100)，低于此值的3D点被过滤，值越高点云越稀疏但质量越好
+  show_cam: true  # 是否在GLB中显示相机位置标记
+  mask_black_bg: false  # 是否过滤黑色背景区域的点
+  mask_white_bg: false  # 是否过滤白色背景区域的点
+  mask_sky: false  # 是否过滤天空区域的点(户外场景用)
+
+# SKU匹配推理配置 (src/inference.py)
+inference:
+  # 说明: 该段仅作为SKUMatchingConfig的覆盖项，未填写字段使用utils/config.py内的默认值
+
+  # 匹配参数
+  max_points_per_bbox: 50  # 每个检测框最大采样点数，点越多匹配越准但计算越慢
+  confidence_threshold: 0.5  # 点追踪置信度阈值(0-1)，低于此值的追踪点被忽略
+  min_confident_points: 10  # 最小置信点数，少于此数的物体跳过匹配
+  min_hit_ratio: 0.4  # 最小命中率阈值(0-1)，落入目标框的点比例需超过此值才算匹配
+  min_3d_sample_points: 10  # 3D采样最少有效点数(货架小bbox可调低，如5)
+  pairing_3d: "next"  # 3D配对策略: all=参考图与所有目标匹配，next=只与下一张匹配(环形)
+
+  # SAM3 mask引导采样(可选，提高采样精度)
+  enable_sam3_mask_sampling: true  # 是否启用SAM3分割mask引导采样，从物体mask内采样而非整个bbox
+  sam3_checkpoint_path: "sam3/checkpoints/sam3.pt"  # 相对仓库根的 SAM3 模型权重路径
+  sam3_use_self_exemplar: true  # 是否使用self-exemplar模式，每个bbox作为自己的视觉样本进行分割
+  sam3_self_exemplar_threshold: 0.5  # self-exemplar检测阈值(0-1)，控制分割mask的置信度过滤
+  sam3_max_batch_size: 32  # self-exemplar每批最多bbox数(128/64 OOM,32通过);fd6实测sam3 -38% wall-clock -15% R -0.51pt边界
+
+# 检出框可视化配置 (modules/draw_detection_boxes.py)
+visualization:
+  image_dir: "images"  # 原始图像目录(相对于数据集)
+  detection_dir: "detections_results"  # 检测结果JSON目录
+  output_dir: "imdata_with_bbox"  # 可视化输出目录
+  confidence_threshold: 0.3  # 显示阈值(0-1)，低于此置信度的检测框不绘制
+  no_confidence: false  # true=不在图上显示置信度数值
+  no_class: false  # true=不在图上显示类别标签
+  image_format: "jpg"  # 输出图像格式: jpg/png
+
+# 顺序去重配置 (modules/deduplicate_detections.py)
+deduplication:
+  dataset: "imdata/floor_display2"  # 数据集路径
+  summary: null  # matching_summary.txt路径，null=使用默认路径<dataset>/output_pt/0/matching_summary.txt
+  keep: null  # 保留的图片编号(逗号分隔)，这些图片的检测框不会被去重
+  dedup: null  # 需要去重的图片编号(逗号分隔)，null=处理所有图片
+  max_image: null  # 最大图片编号，超过此编号的图片不处理
+  output_dir: null  # 输出目录，null=使用默认路径output_dedup/<dataset_name>/
+  same_names: true  # true=输出文件名与原始一致(0.json,1.json...)，false=使用新命名
+  dedup_mode: "any"  # 去重模式: any(与任一已出现物体匹配即去重)/best(仅去重最佳匹配)
+
+# 准确性评估配置 (accuracy_annotation.py)
+accuracy:
+  benchmark_csv: "imdata/picture_mapping_benchmark.csv"  # 人工标注基准数据CSV文件路径(必需)
+  system_result: null  # 系统输出文件路径(必需)，支持VGGT/Pi3/Point Tracking的matching_summary.txt
+  dataset_filter: null  # 数据集过滤器，如"floor_display2"，仅评估包含该字符串的数据
+  output: null  # 评估报告输出路径，null=自动生成到accuracy_results/目录
+
+# 批量准确性分析配置 (modules/analyze_accuracy_metrics.py)
+batch_accuracy:
+  base_dir: "imdata"  # 包含floor_display*目录的根目录，用于批量扫描所有数据集进行评估
+
+# 地堆 footprint 面积配置（--mode ground-stack-area）
+# 指标：da3_ground_footprint_union —— 每个 carton OBB 投影到支撑平面的多边形并集（m²）
+# 锚点无关（无标尺/校准参数）；要求 DA3 cache、global_mapping.json 与本地 SAM3 checkpoint。
+ground_stack_footprint:
+  metric: "da3_ground_footprint_union"  # 并集面积，不是 bbox 面积算术和

@@ -1,0 +1,5 @@
+# Per-run caches, source outputs, Chromium downloads, and raw telemetry are large
+# and depend on this host. Keep the harness and the human-readable summary tracked.
+runs/
+.playwright/
+node_modules/

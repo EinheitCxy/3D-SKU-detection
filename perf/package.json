@@ -1,0 +1,12 @@
+{
+  "name": "da3-viewer-performance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/browser-benchmark.test.mjs",
+    "browser": "node browser-benchmark.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

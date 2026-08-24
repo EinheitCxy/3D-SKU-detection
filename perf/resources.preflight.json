@@ -1,0 +1,109 @@
+{
+  "timestamp": "2026-08-24T11:25:35.845818",
+  "os": {
+    "system": "Linux",
+    "release": "5.14.0-503.26.1.el9_5.x86_64",
+    "version": "#1 SMP PREEMPT_DYNAMIC Wed Feb 19 16:28:19 UTC 2025",
+    "machine": "x86_64",
+    "python_version": "3.11.11"
+  },
+  "cpu": {
+    "physical_cores": 20,
+    "logical_cores": 40,
+    "max_frequency_mhz": 3200.0,
+    "architecture": "x86_64",
+    "processor": "x86_64",
+    "current_frequency_mhz": 3006.8322
+  },
+  "memory": {
+    "total_gb": 502.97,
+    "available_gb": 381.28,
+    "used_gb": 121.68,
+    "percent_used": 24.2,
+    "swap_total_gb": 0.0,
+    "swap_available_gb": 0.0
+  },
+  "disk": {
+    "path": "/home/xingyu/3D_Recognization/code",
+    "total_gb": 2003.02,
+    "available_gb": 73.58,
+    "used_gb": 1929.45,
+    "percent_used": 96.3
+  },
+  "gpu": {
+    "nvidia_gpus": [
+      {
+        "index": 0,
+        "name": "NVIDIA GeForce RTX 4090 D",
+        "memory_total_mb": 49140.0,
+        "memory_free_mb": 48509.0,
+        "driver_version": "575.57.08",
+        "compute_capability": "8.9",
+        "type": "NVIDIA",
+        "backend": "CUDA"
+      },
+      {
+        "index": 1,
+        "name": "NVIDIA GeForce RTX 4090 D",
+        "memory_total_mb": 49140.0,
+        "memory_free_mb": 47695.0,
+        "driver_version": "575.57.08",
+        "compute_capability": "8.9",
+        "type": "NVIDIA",
+        "backend": "CUDA"
+      },
+      {
+        "index": 2,
+        "name": "NVIDIA GeForce RTX 4090 D",
+        "memory_total_mb": 24564.0,
+        "memory_free_mb": 24081.0,
+        "driver_version": "575.57.08",
+        "compute_capability": "8.9",
+        "type": "NVIDIA",
+        "backend": "CUDA"
+      }
+    ],
+    "amd_gpus": [],
+    "apple_silicon": null,
+    "total_gpus": 3,
+    "available_backends": [
+      "CUDA"
+    ]
+  },
+  "recommendations": {
+    "parallel_processing": {
+      "strategy": "high_parallelism",
+      "suggested_workers": 38,
+      "libraries": [
+        "joblib",
+        "multiprocessing",
+        "dask"
+      ]
+    },
+    "memory_strategy": {
+      "strategy": "memory_abundant",
+      "note": "Can load most datasets into memory"
+    },
+    "gpu_acceleration": {
+      "available": true,
+      "backends": [
+        "CUDA"
+      ],
+      "suggested_libraries": [
+        "pytorch",
+        "tensorflow",
+        "jax",
+        "cupy",
+        "rapids"
+      ]
+    },
+    "large_data_handling": {
+      "strategy": "moderate_disk",
+      "libraries": [
+        "zarr",
+        "h5py",
+        "parquet"
+      ]
+    }
+  }
+}
