@@ -521,12 +521,12 @@ def map_mask_to_final_space(mask: np.ndarray, transform: ImageTransformBase) -> 
 def _clamp_bbox_xyxy_to_image(
     bbox_xyxy: Sequence[Union[int, float]], width: int, height: int
 ) -> Tuple[int, int, int, int]:
-    """Clamp bbox to image bounds and return integer pixel XYXY with x2>x1, y2>y1."""
+    """Apply the v2 cache's processed-pixel boundary rule to one bbox."""
     x1f, y1f, x2f, y2f = [float(v) for v in bbox_xyxy]
-    x1 = int(max(0, min(width - 1, np.floor(x1f))))
-    y1 = int(max(0, min(height - 1, np.floor(y1f))))
-    x2 = int(max(x1 + 1, min(width, np.ceil(x2f))))
-    y2 = int(max(y1 + 1, min(height, np.ceil(y2f))))
+    x1 = int(max(0, min(width - 1, round(x1f))))
+    y1 = int(max(0, min(height - 1, round(y1f))))
+    x2 = int(max(x1 + 1, min(width, round(x2f))))
+    y2 = int(max(y1 + 1, min(height, round(y2f))))
     return x1, y1, x2, y2
 
 

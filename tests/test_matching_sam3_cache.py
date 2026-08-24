@@ -74,6 +74,18 @@ def test_master_gate_defaults_true_and_cache_root_is_explicit() -> None:
     assert config.sam3_mask_cache_root == "/tmp/output/dataset/sam3_mask_cache/v2"
 
 
+def test_self_exemplar_clip_uses_the_v2_processed_pixel_boundary_rule() -> None:
+    """Fractional self-exemplar boxes must clip exactly as a v2 cache entry."""
+    from utils.sam3_utils import _clamp_bbox_xyxy_to_image
+
+    assert _clamp_bbox_xyxy_to_image([0.6, 0.6, 3.6, 3.6], width=5, height=5) == (
+        1,
+        1,
+        4,
+        4,
+    )
+
+
 def test_matching_publishes_complete_frame_once_and_restores_rng(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
