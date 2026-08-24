@@ -246,6 +246,42 @@ def test_fractional_processed_bbox_uses_floor_ceil_pixel_slice(
         load_complete_frame_masks(req)
 
 
+@pytest.mark.parametrize(
+    ("source_bbox", "processed_bbox", "allowed_pixel", "outside_pixel"),
+    [
+        ((2.0, 2.0, 2.0, 4.0), (1.0, 1.0, 1.0, 2.0), (1, 1), (1, 2)),
+        ((8.0, 8.0, 8.0, 8.0), (5.0, 5.0, 5.0, 5.0), (4, 4), (4, 3)),
+        ((8.0, 8.0, 8.0, 8.0), (5.2, 5.2, 6.0, 6.0), (4, 4), (4, 3)),
+    ],
+)
+def test_degenerate_processed_bbox_preserves_producer_one_pixel_slice(
+    tmp_path: Path,
+    source_bbox: tuple[float, float, float, float],
+    processed_bbox: tuple[float, float, float, float],
+    allowed_pixel: tuple[int, int],
+    outside_pixel: tuple[int, int],
+) -> None:
+    req = dataclasses.replace(
+        request(tmp_path),
+        processed_shape_hw=(5, 5),
+        detections=(ProcessedDetectionPrompt(7, source_bbox, processed_bbox),),
+    )
+    expected = np.zeros((5, 5), dtype=bool)
+    expected[allowed_pixel] = True
+    result = load_or_compute_frame_masks(req, lambda: {7: np.ones((5, 5), dtype=bool)})
+    np.testing.assert_array_equal(result.masks_by_object_id[7], expected)
+
+    escaped = expected.copy()
+    escaped[outside_pixel] = True
+    payload_path = req.cache_root / "entries" / "7" / "masks.npz"
+    np.savez(
+        payload_path,
+        packed_masks=np.packbits(escaped.reshape(1, -1), axis=1, bitorder="little"),
+    )
+    with pytest.raises(FrameMaskCacheError, match="outside"):
+        load_complete_frame_masks(req)
+
+
 def test_payload_true_pixel_outside_processed_bbox_is_rejected(tmp_path: Path) -> None:
     req = request(
         tmp_path,

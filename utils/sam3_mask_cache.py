@@ -88,9 +88,7 @@ def _positive_pair(value: object, name: str) -> tuple[int, int]:
     return first, second
 
 
-def _bbox(
-    value: object, bounds_wh: tuple[int, int], name: str
-) -> tuple[float, float, float, float]:
+def _bbox(value: object, name: str) -> tuple[float, float, float, float]:
     if not isinstance(value, tuple) or len(value) != 4:
         raise FrameMaskCacheError(f"{name} must contain four finite coordinates")
     try:
@@ -101,13 +99,8 @@ def _bbox(
         ) from exc
     if not all(math.isfinite(coordinate) for coordinate in (x1, y1, x2, y2)):
         raise FrameMaskCacheError(f"{name} coordinates must be finite")
-    width, height = bounds_wh
     if x1 > x2 or y1 > y2:
         raise FrameMaskCacheError(f"{name} coordinates must be ordered")
-    if x1 < 0 or y1 < 0 or x2 > width or y2 > height:
-        raise FrameMaskCacheError(
-            f"{name} must be clipped to its coordinate-space bounds"
-        )
     return x1, y1, x2, y2
 
 
@@ -164,12 +157,8 @@ def _validated_request(request: FrameMaskCacheRequest) -> _ValidatedRequest:
                 "detections must contain ProcessedDetectionPrompt values"
             )
         object_id = _safe_integer(prompt.object_id, "object_id")
-        source_bbox = _bbox(prompt.source_bbox_xyxy, source_size_wh, "source_bbox_xyxy")
-        processed_bbox = _bbox(
-            prompt.processed_bbox_xyxy,
-            (processed_width, processed_height),
-            "processed_bbox_xyxy",
-        )
+        source_bbox = _bbox(prompt.source_bbox_xyxy, "source_bbox_xyxy")
+        processed_bbox = _bbox(prompt.processed_bbox_xyxy, "processed_bbox_xyxy")
         object_ids.append(object_id)
         processed_bboxes.append(processed_bbox)
         manifest_detections.append(
@@ -224,10 +213,10 @@ def _canonical_clip(
     """Apply the producer's pixel-boundary clip rule in processed space."""
     height, width = mask.shape
     x1, y1, x2, y2 = bbox_xyxy
-    xi1 = max(0, min(width, math.floor(x1)))
-    yi1 = max(0, min(height, math.floor(y1)))
-    xi2 = max(0, min(width, math.ceil(x2)))
-    yi2 = max(0, min(height, math.ceil(y2)))
+    xi1 = max(0, min(width - 1, math.floor(x1)))
+    yi1 = max(0, min(height - 1, math.floor(y1)))
+    xi2 = max(xi1 + 1, min(width, math.ceil(x2)))
+    yi2 = max(yi1 + 1, min(height, math.ceil(y2)))
     clipped = mask.copy()
     clipped[:yi1, :] = False
     clipped[yi2:, :] = False
