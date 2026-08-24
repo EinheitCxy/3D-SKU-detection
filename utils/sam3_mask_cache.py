@@ -1,107 +1,44 @@
-"""Immutable, audited per-source-frame SAM3 mask cache primitives.
-
-This module intentionally knows nothing about global IDs, DA3, or measurement
-totals.  It stores only the complete ordered source-frame mask bundle supplied
-by its caller.
-"""
+"""Processed-space, complete-frame SAM3 self-exemplar mask cache."""
 
 from __future__ import annotations
 
 import contextlib
 import fcntl
-import hashlib
 import json
 import math
 import os
 import shutil
-import struct
 import tempfile
-import uuid
-import zipfile
+import time
 from dataclasses import dataclass
+from numbers import Integral
 from pathlib import Path
-from typing import Callable, Iterator, Mapping, Sequence
+from typing import Callable, Iterator, Literal, Mapping
 
 import numpy as np
 
-from utils.sam3_utils import clip_mask_to_bbox
+
+SCHEMA = "sam3_self_exemplar_processed_mask_cache_v1"
+_SAFE_INTEGER_LIMIT = (1 << 53) - 1
+_INFERENCE_CONTRACT = {
+    "api": "self_exemplar",
+    "threshold": 0.5,
+    "image_size": 1008,
+    "max_batch_size": 32,
+    "max_dets_per_query": 1,
+    "clip_to_bbox": True,
+}
 
 
-_SCHEMA_VERSION = "sam3_frame_mask_cache_v2_canonical_bbox_clip"
-
-
-def _sha256_bytes(value: bytes) -> str:
-    return hashlib.sha256(value).hexdigest()
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _canonical_json_bytes(value: object) -> bytes:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-
-
-def _canonical_binary64_hex(encoded: str) -> tuple[str, float]:
-    try:
-        raw = bytes.fromhex(encoded)
-        value = struct.unpack(">d", raw)[0]
-    except (TypeError, ValueError, struct.error) as exc:
-        raise ValueError("invalid binary64 bbox encoding") from exc
-    if len(raw) != 8 or not math.isfinite(value):
-        raise ValueError("bbox coordinates must be finite binary64 values")
-    if value == 0.0:
-        value = 0.0
-    return struct.pack(">d", value).hex(), value
+class FrameMaskCacheError(RuntimeError):
+    """A frame cache entry is missing, malformed, or mismatched."""
 
 
 @dataclass(frozen=True)
-class DetectionPrompt:
-    """One ordered source-frame prompt with canonical binary64 bbox values."""
-
+class ProcessedDetectionPrompt:
     object_id: int
-    bbox_xyxy_f64be_hex: tuple[str, str, str, str]
-
-    def __post_init__(self) -> None:
-        if len(self.bbox_xyxy_f64be_hex) != 4:
-            raise ValueError("bbox_xyxy_f64be_hex must contain exactly four values")
-        normalized: list[str] = []
-        values: list[float] = []
-        for encoded in self.bbox_xyxy_f64be_hex:
-            canonical, value = _canonical_binary64_hex(encoded)
-            normalized.append(canonical)
-            values.append(value)
-        if values[2] < values[0] or values[3] < values[1]:
-            raise ValueError("bbox_xyxy must not be reversed")
-        object.__setattr__(self, "object_id", int(self.object_id))
-        object.__setattr__(self, "bbox_xyxy_f64be_hex", tuple(normalized))
-
-    @classmethod
-    def from_bbox(
-        cls, object_id: int, bbox_xyxy: Sequence[float]
-    ) -> "DetectionPrompt":
-        if len(bbox_xyxy) != 4:
-            raise ValueError("bbox_xyxy must contain exactly four coordinates")
-        encoded: list[str] = []
-        for coordinate in bbox_xyxy:
-            value = float(coordinate)
-            if not math.isfinite(value):
-                raise ValueError("bbox coordinates must be finite binary64 values")
-            if value == 0.0:
-                value = 0.0
-            encoded.append(struct.pack(">d", value).hex())
-        return cls(int(object_id), tuple(encoded))  # type: ignore[arg-type]
-
-    def bbox_xyxy(self) -> tuple[float, float, float, float]:
-        values: list[float] = []
-        for encoded in self.bbox_xyxy_f64be_hex:
-            _, value = _canonical_binary64_hex(encoded)
-            values.append(value)
-        return tuple(values)  # type: ignore[return-value]
+    source_bbox_xyxy: tuple[float, float, float, float]
+    processed_bbox_xyxy: tuple[float, float, float, float]
 
 
 @dataclass(frozen=True)
@@ -109,82 +46,169 @@ class FrameMaskCacheRequest:
     cache_root: Path
     image_id: int
     image_path: Path
-    detections: Sequence[DetectionPrompt]
-    checkpoint_path: Path
-    checkpoint_sha256: str
-    code_fingerprint: Mapping[str, object]
-    runtime_fingerprint: Mapping[str, object]
+    source_size_wh: tuple[int, int]
+    processed_shape_hw: tuple[int, int]
+    source_to_processed_affine: np.ndarray
+    detections: tuple[ProcessedDetectionPrompt, ...]
     inference_contract: Mapping[str, object]
-    output_shape_hw: tuple[int, int]
-
-    def __post_init__(self) -> None:
-        digest = str(self.checkpoint_sha256).lower()
-        if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
-            raise ValueError("checkpoint_sha256 must be a 64-character hexadecimal digest")
-        object.__setattr__(self, "checkpoint_sha256", digest)
-        object.__setattr__(self, "detections", tuple(self.detections))
 
 
 @dataclass(frozen=True)
 class FrameMaskCacheResult:
-    masks: tuple[np.ndarray, ...]
-    key: str
-    events: tuple[str, ...]
-    payload_sha256: str | None
-    checkpoint_sha256: str
-    code_fingerprint: Mapping[str, object]
-    invalid_reason: str | None
+    masks_by_object_id: Mapping[int, np.ndarray]
+    cache_event: Literal["hit", "miss"]
+    schema: str
 
 
-def _source_image_identity(image_path: Path) -> dict[str, object]:
+@dataclass(frozen=True)
+class _ValidatedRequest:
+    manifest_prefix: dict[str, object]
+    object_ids: tuple[int, ...]
+    processed_bboxes: tuple[tuple[float, float, float, float], ...]
+    processed_shape_hw: tuple[int, int]
+
+
+def _safe_integer(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral):
+        raise FrameMaskCacheError(f"{name} must be a safe integer")
+    result = int(value)
+    if not -_SAFE_INTEGER_LIMIT <= result <= _SAFE_INTEGER_LIMIT:
+        raise FrameMaskCacheError(f"{name} must be a safe integer")
+    return result
+
+
+def _positive_pair(value: object, name: str) -> tuple[int, int]:
+    if not isinstance(value, tuple) or len(value) != 2:
+        raise FrameMaskCacheError(f"{name} must contain two positive integers")
+    first = _safe_integer(value[0], name)
+    second = _safe_integer(value[1], name)
+    if first <= 0 or second <= 0:
+        raise FrameMaskCacheError(f"{name} must contain two positive integers")
+    return first, second
+
+
+def _bbox(
+    value: object, bounds_wh: tuple[int, int], name: str
+) -> tuple[float, float, float, float]:
+    if not isinstance(value, tuple) or len(value) != 4:
+        raise FrameMaskCacheError(f"{name} must contain four finite coordinates")
     try:
-        image_bytes = image_path.read_bytes()
-    except OSError as exc:
-        raise ValueError(f"cannot read source image for cache key: {image_path}") from exc
-    return {"sha256": _sha256_bytes(image_bytes), "size_bytes": len(image_bytes)}
-
-
-def _request_key_payload(
-    request: FrameMaskCacheRequest, source_image_identity: Mapping[str, object] | None = None
-) -> dict[str, object]:
-    image_identity = dict(source_image_identity or _source_image_identity(request.image_path))
-    height, width = request.output_shape_hw
-    if not isinstance(height, int) or not isinstance(width, int) or height <= 0 or width <= 0:
-        raise ValueError("output_shape_hw must contain positive integer height and width")
-    detections = []
-    for prompt in request.detections:
-        # Validate raw canonical form before any cache filesystem operation.
-        prompt.bbox_xyxy()
-        detections.append(
-            {"object_id": int(prompt.object_id), "bbox_xyxy_f64be_hex": list(prompt.bbox_xyxy_f64be_hex)}
+        x1, y1, x2, y2 = (float(coordinate) for coordinate in value)
+    except (TypeError, ValueError) as exc:
+        raise FrameMaskCacheError(
+            f"{name} must contain four finite coordinates"
+        ) from exc
+    if not all(math.isfinite(coordinate) for coordinate in (x1, y1, x2, y2)):
+        raise FrameMaskCacheError(f"{name} coordinates must be finite")
+    width, height = bounds_wh
+    if x1 > x2 or y1 > y2:
+        raise FrameMaskCacheError(f"{name} coordinates must be ordered")
+    if x1 < 0 or y1 < 0 or x2 > width or y2 > height:
+        raise FrameMaskCacheError(
+            f"{name} must be clipped to its coordinate-space bounds"
         )
-    return {
-        "schema": _SCHEMA_VERSION,
-        "image": {"image_id": int(request.image_id), **image_identity},
-        "detections": detections,
-        "checkpoint_sha256": request.checkpoint_sha256,
-        "code_fingerprint": dict(request.code_fingerprint),
-        "runtime_fingerprint": dict(request.runtime_fingerprint),
-        "inference_contract": dict(request.inference_contract),
-        "output_contract": {"shape_hw": [height, width], "dtype": "bool"},
-    }
+    return x1, y1, x2, y2
 
 
-def canonical_frame_mask_key(request: FrameMaskCacheRequest) -> str:
-    """Return the content-addressed key for one complete source-frame bundle."""
-    return _sha256_bytes(_canonical_json_bytes(_request_key_payload(request)))
+def _validated_request(request: FrameMaskCacheRequest) -> _ValidatedRequest:
+    cache_root = Path(request.cache_root)
+    if cache_root.name != "v2":
+        raise FrameMaskCacheError("cache_root must name the v2 cache root")
+    image_id = _safe_integer(request.image_id, "image_id")
+    source_size_wh = _positive_pair(request.source_size_wh, "source_size_wh")
+    processed_height, processed_width = _positive_pair(
+        request.processed_shape_hw, "processed_shape_hw"
+    )
+    affine = np.asarray(request.source_to_processed_affine)
+    if affine.shape != (2, 3):
+        raise FrameMaskCacheError("source_to_processed_affine must have shape (2, 3)")
+    try:
+        affine_values = affine.astype(np.float64, copy=False)
+    except (TypeError, ValueError) as exc:
+        raise FrameMaskCacheError("source_to_processed_affine must be finite") from exc
+    if not np.all(np.isfinite(affine_values)):
+        raise FrameMaskCacheError("source_to_processed_affine must be finite")
+    try:
+        inference = dict(request.inference_contract)
+    except (TypeError, ValueError) as exc:
+        raise FrameMaskCacheError("inference contract is invalid") from exc
+    if set(inference) != set(_INFERENCE_CONTRACT):
+        raise FrameMaskCacheError(
+            "inference contract keys do not match the v2 contract"
+        )
+    if (
+        inference["api"] != "self_exemplar"
+        or type(inference["threshold"]) is not float
+        or inference["threshold"] != 0.5
+        or type(inference["image_size"]) is not int
+        or inference["image_size"] != 1008
+        or type(inference["max_batch_size"]) is not int
+        or inference["max_batch_size"] != 32
+        or type(inference["max_dets_per_query"]) is not int
+        or inference["max_dets_per_query"] != 1
+        or type(inference["clip_to_bbox"]) is not bool
+        or inference["clip_to_bbox"] is not True
+    ):
+        raise FrameMaskCacheError(
+            "inference contract values do not match the v2 contract"
+        )
+    if not isinstance(request.detections, tuple):
+        raise FrameMaskCacheError("detections must be an ordered tuple")
+    object_ids: list[int] = []
+    processed_bboxes: list[tuple[float, float, float, float]] = []
+    manifest_detections: list[dict[str, object]] = []
+    for mask_index, prompt in enumerate(request.detections):
+        if not isinstance(prompt, ProcessedDetectionPrompt):
+            raise FrameMaskCacheError(
+                "detections must contain ProcessedDetectionPrompt values"
+            )
+        object_id = _safe_integer(prompt.object_id, "object_id")
+        source_bbox = _bbox(prompt.source_bbox_xyxy, source_size_wh, "source_bbox_xyxy")
+        processed_bbox = _bbox(
+            prompt.processed_bbox_xyxy,
+            (processed_width, processed_height),
+            "processed_bbox_xyxy",
+        )
+        object_ids.append(object_id)
+        processed_bboxes.append(processed_bbox)
+        manifest_detections.append(
+            {
+                "object_id": object_id,
+                "source_bbox_xyxy": list(source_bbox),
+                "processed_bbox_xyxy": list(processed_bbox),
+                "mask_index": mask_index,
+            }
+        )
+    if len(set(object_ids)) != len(object_ids):
+        raise FrameMaskCacheError("detection object IDs must be unique")
+    return _ValidatedRequest(
+        manifest_prefix={
+            "schema": SCHEMA,
+            "image_id": image_id,
+            "source_size_wh": list(source_size_wh),
+            "processed_shape_hw": [processed_height, processed_width],
+            "source_to_processed_affine": affine_values.tolist(),
+            "detections": manifest_detections,
+            "inference": _INFERENCE_CONTRACT.copy(),
+        },
+        object_ids=tuple(object_ids),
+        processed_bboxes=tuple(processed_bboxes),
+        processed_shape_hw=(processed_height, processed_width),
+    )
 
 
-def _paths(request: FrameMaskCacheRequest, key: str) -> tuple[Path, Path, Path, Path]:
-    root = request.cache_root
-    return root / "locks", root / "entries", root / "corrupt", root / "entries" / key
+def _entry_path(request: FrameMaskCacheRequest) -> Path:
+    return Path(request.cache_root) / "entries" / str(int(request.image_id))
+
+
+def _lock_path(request: FrameMaskCacheRequest) -> Path:
+    return Path(request.cache_root) / "locks" / f"{int(request.image_id)}.lock"
 
 
 @contextlib.contextmanager
-def _key_lock(cache_root: Path, key: str, *, exclusive: bool) -> Iterator[None]:
-    locks = cache_root / "locks"
-    locks.mkdir(parents=True, exist_ok=True)
-    lock_path = locks / f"{key}.lock"
+def _frame_lock(request: FrameMaskCacheRequest, *, exclusive: bool) -> Iterator[None]:
+    lock_path = _lock_path(request)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
     with lock_path.open("a+b") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
         try:
@@ -193,194 +217,208 @@ def _key_lock(cache_root: Path, key: str, *, exclusive: bool) -> Iterator[None]:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
-def _fsync_file(path: Path) -> None:
-    with path.open("rb") as handle:
-        os.fsync(handle.fileno())
+def _canonical_clip(
+    mask: np.ndarray, bbox_xyxy: tuple[float, float, float, float]
+) -> np.ndarray:
+    """Apply the producer's pixel-boundary clip rule in processed space."""
+    height, width = mask.shape
+    x1, y1, x2, y2 = bbox_xyxy
+    xi1 = int(max(0, min(width - 1, round(x1))))
+    yi1 = int(max(0, min(height - 1, round(y1))))
+    xi2 = int(max(xi1 + 1, min(width, round(x2))))
+    yi2 = int(max(yi1 + 1, min(height, round(y2))))
+    clipped = mask.copy()
+    clipped[:yi1, :] = False
+    clipped[yi2:, :] = False
+    clipped[:, :xi1] = False
+    clipped[:, xi2:] = False
+    return clipped
 
 
-def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-    try:
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+def _pack_masks(masks: np.ndarray) -> np.ndarray:
+    mask_count, height, width = masks.shape
+    return np.packbits(
+        masks.reshape(mask_count, height * width), axis=1, bitorder="little"
+    )
 
 
-def _validate_produced_masks(
-    request: FrameMaskCacheRequest, masks: Sequence[np.ndarray]
-) -> tuple[np.ndarray, ...]:
-    if len(masks) != len(request.detections):
-        raise ValueError("mask producer returned a different number of masks than detections")
-    validated: list[np.ndarray] = []
-    for prompt, mask in zip(request.detections, masks):
-        array = np.asarray(mask)
-        if array.dtype != np.bool_:
-            raise ValueError("mask producer must return boolean source masks")
-        if array.shape != request.output_shape_hw:
-            raise ValueError("mask producer returned a mask with the wrong source shape")
-        validated.append(clip_mask_to_bbox(array, prompt.bbox_xyxy()))
-    return tuple(validated)
+def _unpack_masks(
+    packed: np.ndarray, mask_count: int, shape_hw: tuple[int, int]
+) -> np.ndarray:
+    flat_size = shape_hw[0] * shape_hw[1]
+    unpacked = np.unpackbits(packed, axis=1, count=flat_size, bitorder="little")
+    return unpacked.reshape(mask_count, *shape_hw).astype(bool, copy=False)
 
 
-def _mask_metadata(mask: np.ndarray) -> dict[str, object]:
-    return {"sha256": _sha256_bytes(mask.tobytes(order="C")), "true_pixel_count": int(mask.sum())}
-
-
-def _manifest(
-    key: str,
-    key_payload: Mapping[str, object],
-    masks: tuple[np.ndarray, ...],
-    payload_sha256: str,
-) -> dict[str, object]:
+def _manifest(validated: _ValidatedRequest) -> dict[str, object]:
+    mask_count = len(validated.object_ids)
+    flat_mask_size = validated.processed_shape_hw[0] * validated.processed_shape_hw[1]
+    packed_width = (flat_mask_size + 7) // 8
     return {
+        **validated.manifest_prefix,
+        "payload": {
+            "path": "masks.npz",
+            "array": "packed_masks",
+            "dtype": "uint8",
+            "bitorder": "little",
+            "mask_count": mask_count,
+            "flat_mask_size": flat_mask_size,
+            "packed_width": packed_width,
+        },
         "complete": True,
-        "key": key,
-        "key_payload": dict(key_payload),
-        "payload_sha256": payload_sha256,
-        "masks": [_mask_metadata(mask) for mask in masks],
     }
 
 
-def _load_valid_bundle(
-    request: FrameMaskCacheRequest, key: str, key_payload: Mapping[str, object]
-) -> tuple[FrameMaskCacheResult | None, str | None]:
-    _, _, _, entry = _paths(request, key)
+def _load_entry(
+    request: FrameMaskCacheRequest, validated: _ValidatedRequest
+) -> FrameMaskCacheResult:
+    entry = _entry_path(request)
     if not entry.exists():
-        return None, None
+        raise FrameMaskCacheError("cache entry is missing")
+    if not entry.is_dir():
+        raise FrameMaskCacheError("cache entry is not a directory")
     manifest_path = entry / "manifest.json"
     payload_path = entry / "masks.npz"
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if not isinstance(manifest, dict) or manifest.get("complete") is not True:
-            raise ValueError("manifest is incomplete")
-        if manifest.get("key") != key or manifest.get("key_payload") != key_payload:
-            raise ValueError("manifest request provenance does not match")
-        payload_sha256 = manifest.get("payload_sha256")
-        if not isinstance(payload_sha256, str) or _sha256_file(payload_path) != payload_sha256:
-            raise ValueError("payload SHA-256 does not match manifest")
-        with np.load(payload_path, allow_pickle=False) as payload:
-            if payload.files != ["masks"]:
-                raise ValueError("payload must contain exactly one masks array")
-            array = payload["masks"]
-        expected_shape = (len(request.detections), *request.output_shape_hw)
-        if array.dtype != np.bool_ or array.shape != expected_shape:
-            raise ValueError("payload mask dtype or shape does not match contract")
-        metadata = manifest.get("masks")
-        if not isinstance(metadata, list) or len(metadata) != len(request.detections):
-            raise ValueError("manifest mask metadata does not match detections")
-        masks = []
-        for prompt, mask, expected in zip(request.detections, array, metadata):
-            if not isinstance(expected, dict) or expected != _mask_metadata(mask):
-                raise ValueError("per-mask digest or pixel count does not match")
-            if not np.array_equal(mask, clip_mask_to_bbox(mask, prompt.bbox_xyxy())):
-                raise ValueError("cached mask contains true pixels outside its clipped bbox")
-            masks.append(mask.copy())
-        return (
-            FrameMaskCacheResult(
-                masks=tuple(masks),
-                key=key,
-                events=("hit",),
-                payload_sha256=payload_sha256,
-                checkpoint_sha256=request.checkpoint_sha256,
-                code_fingerprint=dict(request.code_fingerprint),
-                invalid_reason=None,
-            ),
-            None,
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise FrameMaskCacheError("cache manifest is malformed") from exc
+    expected_manifest = _manifest(validated)
+    if manifest != expected_manifest:
+        raise FrameMaskCacheError(
+            "cache manifest does not match the requested v2 contract"
         )
-    except (OSError, ValueError, json.JSONDecodeError, KeyError, zipfile.BadZipFile) as exc:
-        return None, str(exc)
+    try:
+        with np.load(payload_path, allow_pickle=False) as payload:
+            if payload.files != ["packed_masks"]:
+                raise FrameMaskCacheError(
+                    "cache payload keys do not match the v2 contract"
+                )
+            packed = payload["packed_masks"].copy()
+    except FrameMaskCacheError:
+        raise
+    except (OSError, ValueError, EOFError) as exc:
+        raise FrameMaskCacheError("cache payload is malformed") from exc
+    mask_count = len(validated.object_ids)
+    flat_size = validated.processed_shape_hw[0] * validated.processed_shape_hw[1]
+    packed_width = (flat_size + 7) // 8
+    if packed.dtype != np.uint8 or packed.shape != (mask_count, packed_width):
+        raise FrameMaskCacheError(
+            "cache payload dtype or shape does not match the v2 contract"
+        )
+    used_bits = flat_size % 8
+    tail_mask = ((1 << (8 - used_bits)) - 1) << used_bits if used_bits else 0
+    if tail_mask and np.any(packed[:, -1] & np.uint8(tail_mask)):
+        raise FrameMaskCacheError("cache payload has nonzero tail bits")
+    masks = _unpack_masks(packed, mask_count, validated.processed_shape_hw)
+    masks_by_object_id: dict[int, np.ndarray] = {}
+    for object_id, bbox_xyxy, mask in zip(
+        validated.object_ids, validated.processed_bboxes, masks
+    ):
+        if not np.array_equal(mask, _canonical_clip(mask, bbox_xyxy)):
+            raise FrameMaskCacheError(
+                "cache mask contains true pixels outside its processed bbox"
+            )
+        masks_by_object_id[object_id] = mask.copy()
+    return FrameMaskCacheResult(masks_by_object_id, "hit", SCHEMA)
 
 
-def _quarantine_invalid_entry(request: FrameMaskCacheRequest, key: str) -> None:
-    _, entries, corrupt, entry = _paths(request, key)
+def load_complete_frame_masks(request: FrameMaskCacheRequest) -> FrameMaskCacheResult:
+    """Read a complete, matching v2 frame entry without invoking inference."""
+    validated = _validated_request(request)
+    with _frame_lock(request, exclusive=False):
+        return _load_entry(request, validated)
+
+
+def _validate_computed_masks(
+    computed: Mapping[int, np.ndarray], validated: _ValidatedRequest
+) -> np.ndarray:
+    if not isinstance(computed, Mapping):
+        raise FrameMaskCacheError(
+            "mask producer must return a mapping keyed by object IDs"
+        )
+    computed_ids = {
+        _safe_integer(object_id, "computed object_id") for object_id in computed
+    }
+    if computed_ids != set(validated.object_ids) or len(computed) != len(
+        validated.object_ids
+    ):
+        raise FrameMaskCacheError(
+            "mask producer object IDs must exactly match requested object IDs"
+        )
+    masks: list[np.ndarray] = []
+    for object_id, bbox_xyxy in zip(validated.object_ids, validated.processed_bboxes):
+        mask = np.asarray(computed[object_id])
+        if mask.dtype != np.bool_:
+            raise FrameMaskCacheError(
+                "mask producer must return boolean processed masks"
+            )
+        if mask.shape != validated.processed_shape_hw:
+            raise FrameMaskCacheError(
+                "mask producer returned a mask with the wrong processed shape"
+            )
+        masks.append(_canonical_clip(mask, bbox_xyxy))
+    if masks:
+        return np.stack(masks, axis=0)
+    height, width = validated.processed_shape_hw
+    return np.zeros((0, height, width), dtype=bool)
+
+
+def _quarantine_entry(request: FrameMaskCacheRequest) -> None:
+    entry = _entry_path(request)
     if not entry.exists():
         return
+    corrupt = Path(request.cache_root) / "corrupt"
     corrupt.mkdir(parents=True, exist_ok=True)
-    destination = corrupt / f"{key}.{uuid.uuid4().hex}"
+    destination = corrupt / f"{int(request.image_id)}.{time.time_ns()}"
     os.replace(entry, destination)
-    _fsync_directory(entries)
-    _fsync_directory(corrupt)
 
 
-def _publish_new_bundle(
-    request: FrameMaskCacheRequest,
-    key: str,
-    key_payload: Mapping[str, object],
-    masks: tuple[np.ndarray, ...],
-    *,
-    invalid_reason: str | None,
-) -> FrameMaskCacheResult:
-    _, entries, _, final_entry = _paths(request, key)
-    temporary: Path | None = None
+def _write_entry(
+    request: FrameMaskCacheRequest, validated: _ValidatedRequest, masks: np.ndarray
+) -> None:
+    entries = Path(request.cache_root) / "entries"
+    entries.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{int(request.image_id)}.", dir=entries))
     try:
-        entries.mkdir(parents=True, exist_ok=True)
-        temporary = Path(tempfile.mkdtemp(prefix=f".{key}.", dir=entries))
-        payload_path = temporary / "masks.npz"
-        array = (
-            np.stack(masks, axis=0).astype(bool, copy=False)
-            if masks
-            else np.zeros((0, *request.output_shape_hw), dtype=bool)
+        np.savez(temporary / "masks.npz", packed_masks=_pack_masks(masks))
+        (temporary / "manifest.json").write_text(
+            json.dumps(_manifest(validated), sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
         )
-        np.savez_compressed(payload_path, masks=array)
-        _fsync_file(payload_path)
-        payload_sha256 = _sha256_file(payload_path)
-        manifest_path = temporary / "manifest.json"
-        manifest_path.write_bytes(_canonical_json_bytes(_manifest(key, key_payload, masks, payload_sha256)))
-        _fsync_file(manifest_path)
-        _fsync_directory(temporary)
+        final_entry = _entry_path(request)
         if final_entry.exists():
-            raise FileExistsError(f"cache entry unexpectedly appeared: {final_entry}")
+            raise FrameMaskCacheError("cache entry appeared while publishing")
         os.rename(temporary, final_entry)
-        _fsync_directory(entries)
-        return FrameMaskCacheResult(
-            masks=masks,
-            key=key,
-            events=("invalid", "written") if invalid_reason else ("miss", "written"),
-            payload_sha256=payload_sha256,
-            checkpoint_sha256=request.checkpoint_sha256,
-            code_fingerprint=dict(request.code_fingerprint),
-            invalid_reason=invalid_reason,
-        )
-    except OSError as exc:
-        if temporary is not None:
-            shutil.rmtree(temporary, ignore_errors=True)
-        return FrameMaskCacheResult(
-            masks=masks,
-            key=key,
-            events=("invalid", "cache_write_failed") if invalid_reason else ("miss", "cache_write_failed"),
-            payload_sha256=None,
-            checkpoint_sha256=request.checkpoint_sha256,
-            code_fingerprint=dict(request.code_fingerprint),
-            invalid_reason=str(exc),
-        )
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
 
 
 def load_or_compute_frame_masks(
     request: FrameMaskCacheRequest,
-    compute_masks: Callable[[], Sequence[np.ndarray]],
+    compute_masks: Callable[[], Mapping[int, np.ndarray]],
 ) -> FrameMaskCacheResult:
-    """Load one immutable bundle or compute and atomically publish it.
-
-    ``checkpoint_sha256`` is caller-supplied opaque input.  This utility does
-    not verify the checkpoint file or load-time equality; Task 3 owns that
-    TOCTOU contract.
-    """
-    source_identity = _source_image_identity(request.image_path)
-    key_payload = _request_key_payload(request, source_identity)
-    key = _sha256_bytes(_canonical_json_bytes(key_payload))
-    with _key_lock(request.cache_root, key, exclusive=False):
-        cached, _ = _load_valid_bundle(request, key, key_payload)
-        if cached is not None:
-            return cached
-    with _key_lock(request.cache_root, key, exclusive=True):
-        cached, invalid_reason = _load_valid_bundle(request, key, key_payload)
-        if cached is not None:
-            return cached
-        if invalid_reason is not None:
-            _quarantine_invalid_entry(request, key)
-        if _source_image_identity(request.image_path) != source_identity:
-            raise ValueError("source image changed before mask production")
-        masks = _validate_produced_masks(request, tuple(compute_masks()))
-        if _source_image_identity(request.image_path) != source_identity:
-            raise ValueError("source image changed during mask production")
-        return _publish_new_bundle(request, key, key_payload, masks, invalid_reason=invalid_reason)
+    """Load a complete v2 frame or compute and atomically publish it once."""
+    validated = _validated_request(request)
+    with _frame_lock(request, exclusive=False):
+        try:
+            return _load_entry(request, validated)
+        except FrameMaskCacheError:
+            pass
+    with _frame_lock(request, exclusive=True):
+        try:
+            return _load_entry(request, validated)
+        except FrameMaskCacheError:
+            if _entry_path(request).exists():
+                _quarantine_entry(request)
+        masks = _validate_computed_masks(compute_masks(), validated)
+        _write_entry(request, validated, masks)
+        return FrameMaskCacheResult(
+            {
+                object_id: mask.copy()
+                for object_id, mask in zip(validated.object_ids, masks)
+            },
+            "miss",
+            SCHEMA,
+        )
