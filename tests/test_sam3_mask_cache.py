@@ -216,6 +216,36 @@ def test_producer_masks_are_canonically_clipped_to_processed_bbox(
     np.testing.assert_array_equal(result.masks_by_object_id[7], expected)
 
 
+def test_fractional_processed_bbox_uses_floor_ceil_pixel_slice(
+    tmp_path: Path,
+) -> None:
+    req = dataclasses.replace(
+        request(tmp_path),
+        processed_shape_hw=(5, 5),
+        detections=(
+            ProcessedDetectionPrompt(
+                7,
+                (1.2, 1.2, 7.2, 7.2),
+                (0.6, 0.6, 3.6, 3.6),
+            ),
+        ),
+    )
+    expected = np.zeros((5, 5), dtype=bool)
+    expected[:4, :4] = True
+    result = load_or_compute_frame_masks(req, lambda: {7: np.ones((5, 5), dtype=bool)})
+    np.testing.assert_array_equal(result.masks_by_object_id[7], expected)
+
+    escaped = expected.copy()
+    escaped[4, 0] = True
+    payload_path = req.cache_root / "entries" / "7" / "masks.npz"
+    np.savez(
+        payload_path,
+        packed_masks=np.packbits(escaped.reshape(1, -1), axis=1, bitorder="little"),
+    )
+    with pytest.raises(FrameMaskCacheError, match="outside"):
+        load_complete_frame_masks(req)
+
+
 def test_payload_true_pixel_outside_processed_bbox_is_rejected(tmp_path: Path) -> None:
     req = request(
         tmp_path,

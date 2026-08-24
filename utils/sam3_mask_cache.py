@@ -224,10 +224,10 @@ def _canonical_clip(
     """Apply the producer's pixel-boundary clip rule in processed space."""
     height, width = mask.shape
     x1, y1, x2, y2 = bbox_xyxy
-    xi1 = int(max(0, min(width - 1, round(x1))))
-    yi1 = int(max(0, min(height - 1, round(y1))))
-    xi2 = int(max(xi1 + 1, min(width, round(x2))))
-    yi2 = int(max(yi1 + 1, min(height, round(y2))))
+    xi1 = max(0, min(width, math.floor(x1)))
+    yi1 = max(0, min(height, math.floor(y1)))
+    xi2 = max(0, min(width, math.ceil(x2)))
+    yi2 = max(0, min(height, math.ceil(y2)))
     clipped = mask.copy()
     clipped[:yi1, :] = False
     clipped[yi2:, :] = False
