@@ -1,7 +1,9 @@
 import argparse
 import logging
 import sys
+import threading
 from datetime import datetime
+from functools import wraps
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from re import T
@@ -138,6 +140,25 @@ def _configure_logging_to_save_root(save_root: Path) -> logging.Logger:
 
 
 logger = logging.getLogger(__name__)
+_MATCHING_INFERENCE_LOCK = threading.RLock()
+
+
+def _serialize_matching_inference(call):
+    """Serialize matching because its sampling stack uses process-global RNG."""
+    @wraps(call)
+    def wrapped(self, *args, **kwargs):
+        reference_idx = kwargs.get("reference_idx")
+        if reference_idx is None:
+            reference_idx = args[2]
+        with _MATCHING_INFERENCE_LOCK:
+            logger.info(
+                "Correctness serialization: reference %d enters the global "
+                "Python/NumPy/torch RNG matching boundary",
+                reference_idx,
+            )
+            return call(self, *args, **kwargs)
+
+    return wrapped
 
 
 class StepResult(TypedDict, total=False):
@@ -436,6 +457,7 @@ class SKUDetectionMain:
                 logger.info(f"[PROF] dumped to {_prof_path}")
             sys.argv = original_argv
 
+    @_serialize_matching_inference
     def _run_single_matching(
         self,
         dataset_path: str,
@@ -454,7 +476,6 @@ class SKUDetectionMain:
             backend: 3D重建模型后端 (vggt/pi3)
         """
         start = perf_counter()
-        original_argv = sys.argv.copy()
         try:
             logger.debug(
                 f"单次匹配 - 算法: {algorithm}, 后端: {backend}, 参考索引: {reference_idx}"
@@ -469,7 +490,6 @@ class SKUDetectionMain:
             output_dir = (self.save_root / dataset.name) if self.save_root else dataset
 
             argv = [
-                "inference.py",
                 "--image_folder",
                 str(image_folder),
                 "--detection_dir",
@@ -500,8 +520,7 @@ class SKUDetectionMain:
                 for _k, _v in match_overrides.items():
                     argv.extend([f"--{_k}", str(_v)])
 
-            sys.argv = argv
-            inference_main()
+            inference_main(argv)
 
             duration = perf_counter() - start
             logger.debug(f"单次匹配完成 - 耗时 {duration:.2f}s")
@@ -519,9 +538,6 @@ class SKUDetectionMain:
                 exc_info=True,
             )
             return {"success": False, "error": str(e), "duration_s": duration}
-        finally:
-            sys.argv = original_argv
-
     def run_detection_visualization(
         self,
         dataset_path: str,

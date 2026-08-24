@@ -3,6 +3,7 @@ import logging
 import sys
 from pathlib import Path
 import time
+from typing import Sequence
 
 # 使用主程序配置的日志；若独立运行且无处理器，则退回到控制台输出
 logger = logging.getLogger(__name__)
@@ -291,7 +292,7 @@ def run_3d_mapping(args) -> dict:
         return run_3d_mapping_algorithm(args)
 
 
-def main() -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     """主函数，处理命令行参数并执行相应的SKU匹配算法。
     
     解析命令行参数，验证输入路径，并根据用户选择执行相应的
@@ -355,7 +356,7 @@ def main() -> None:
     parser.add_argument("--pairing_3d", type=str, default=None, choices=["all","next"], help="3D配对策略(覆盖config)")
     parser.add_argument("--enable_profiling", action="store_true", default=False,
                        help="启用 per-stage 计时 instrumentation（默认关闭，零开销 no-op）")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     
     try:
         if not Path(args.image_folder).exists():

@@ -1622,6 +1622,9 @@ def get_self_exemplar_masks_for_reference(
     device = normalize_device(config.device)
 
     def compute_masks() -> dict[int, np.ndarray]:
+        if not ordered_ids:
+            return {}
+
         from PIL import Image
 
         with Image.open(request.image_path) as source_image:

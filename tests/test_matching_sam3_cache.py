@@ -246,3 +246,89 @@ def test_disabled_sam3_gate_writes_no_cache(tmp_path: Path) -> None:
         == {}
     )
     assert not cache_root.exists()
+
+
+def test_empty_and_filtered_reference_frames_publish_complete_v2_entries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every detection frame publishes once even when matching has no refs."""
+    from utils import matching_algorithms, sam3_utils
+    from utils.sam3_mask_cache import load_complete_frame_masks
+
+    image_paths: list[str] = []
+    transforms: list[Pi3ImageTransform] = []
+    for frame_id in range(3):
+        image_path = tmp_path / f"{frame_id}.JPG"
+        Image.new("RGB", (8, 6)).save(image_path)
+        image_paths.append(str(image_path))
+        transform = Pi3ImageTransform(8, 6, 4, 3)
+        transform.image_id = frame_id
+        transforms.append(transform)
+    detections = [
+        {"objects": []},
+        {"objects": [{"position": [0.0, 0.0, 1.0, 1.0]}]},
+        {"objects": []},
+    ]
+    cache_root = tmp_path / "sam3_mask_cache" / "v2"
+    config = _config(cache_root)
+    config.output_dir = str(tmp_path / "Output" / "sample" / "output_3dmapping_da3" / "0")
+    cache_path = Path(config.output_dir).parent.parent / "da3_cache" / "predictions.npz"
+    cache_path.parent.mkdir(parents=True)
+    np.savez(
+        cache_path,
+        depth=np.zeros((3, 3, 4, 1), dtype=np.float32),
+        depth_conf=np.ones((3, 3, 4), dtype=np.float32),
+        world_points=np.zeros((3, 3, 4, 3), dtype=np.float32),
+        world_points_conf=np.ones((3, 3, 4), dtype=np.float32),
+        extrinsic=np.repeat(np.eye(4, dtype=np.float32)[None], 3, axis=0),
+        intrinsic=np.repeat(np.eye(3, dtype=np.float32)[None], 3, axis=0),
+    )
+    producer_batches: list[list[list[float]]] = []
+
+    def fake_self_exemplar(*, bboxes_xyxy, **_kwargs):
+        producer_batches.append(bboxes_xyxy)
+        return [np.ones((3, 4), dtype=bool) for _ in bboxes_xyxy]
+
+    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", fake_self_exemplar)
+    images = torch.zeros((3, 3, 3, 4), dtype=torch.float32)
+    for reference_idx in range(3):
+        correspondences, points = matching_algorithms.find_correspondences_3d_mapping(
+            None,
+            detections,
+            images,
+            config,
+            reference_image_idx=reference_idx,
+            transforms_info=transforms,
+            image_paths=image_paths,
+        )
+        assert correspondences == {}
+        assert points is None
+
+    assert producer_batches == [[[0.0, 0.0, 0.5, 0.5]]]
+    for frame_id, frame in enumerate(detections):
+        request = sam3_utils._processed_frame_request(
+            cache_root=cache_root,
+            image_path=Path(image_paths[frame_id]),
+            image_id=frame_id,
+            frame_detections=frame["objects"],
+            transform=transforms[frame_id],
+        )
+        result = load_complete_frame_masks(request)
+        assert set(result.masks_by_object_id) == set(range(len(frame["objects"])))
+
+    disabled_root = tmp_path / "disabled" / "sam3_mask_cache" / "v2"
+    disabled = _config(disabled_root)
+    disabled.enable_sam3_mask_sampling = False
+    disabled.output_dir = config.output_dir
+    correspondences, points = matching_algorithms.find_correspondences_3d_mapping(
+        None,
+        detections,
+        images,
+        disabled,
+        reference_image_idx=0,
+        transforms_info=transforms,
+        image_paths=image_paths,
+    )
+    assert correspondences == {}
+    assert points is None
+    assert not disabled_root.exists()

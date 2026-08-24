@@ -415,7 +415,7 @@ def find_correspondences_3d_mapping(
         
         # 2. 获取参考图像的检出框
         ref_bboxes = extract_bboxes_from_detections([detections[reference_image_idx]], 0, config)
-        if not ref_bboxes:
+        if not ref_bboxes and not config.enable_sam3_mask_sampling:
             logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
             return {}, None
 
@@ -436,6 +436,10 @@ def find_correspondences_3d_mapping(
             )
         _t_mask_post = time.perf_counter()
         StageTimer.record("mask_postprocess", time.perf_counter() - _t_mask_post)
+
+        if not ref_bboxes:
+            logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
+            return {}, None
 
         correspondences = {}
         points_per_object = {}
@@ -651,7 +655,7 @@ def find_correspondences_point_tracking(
         
         ref_bboxes = extract_bboxes_from_detections(detections, reference_image_idx, config)
 
-        if not ref_bboxes:
+        if not ref_bboxes and not config.enable_sam3_mask_sampling:
             logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
             return {}, None
 
@@ -687,6 +691,9 @@ def find_correspondences_point_tracking(
             ref_bboxes=ref_bboxes,
             transform=ref_transform,
         )
+        if not ref_bboxes:
+            logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
+            return {}, None
         if sam_masks_by_obj_id:
             all_pts = []
             points_per_object = {}
