@@ -10,6 +10,7 @@ import os
 import shutil
 import tempfile
 import time
+import zipfile
 from dataclasses import dataclass
 from numbers import Integral
 from pathlib import Path
@@ -297,7 +298,7 @@ def _load_entry(
             packed = payload["packed_masks"].copy()
     except FrameMaskCacheError:
         raise
-    except (OSError, ValueError, EOFError) as exc:
+    except (OSError, ValueError, EOFError, zipfile.BadZipFile) as exc:
         raise FrameMaskCacheError("cache payload is malformed") from exc
     mask_count = len(validated.object_ids)
     flat_size = validated.processed_shape_hw[0] * validated.processed_shape_hw[1]

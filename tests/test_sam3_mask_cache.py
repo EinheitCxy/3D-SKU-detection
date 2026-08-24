@@ -5,7 +5,9 @@ from __future__ import annotations
 import dataclasses
 import json
 import multiprocessing
+import struct
 from pathlib import Path
+import zipfile
 
 import numpy as np
 import pytest
@@ -283,6 +285,58 @@ def test_manifest_and_payload_require_exact_schema(tmp_path: Path) -> None:
     manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(FrameMaskCacheError, match="manifest"):
         load_complete_frame_masks(req)
+
+
+def test_manifest_missing_required_key_is_rejected(tmp_path: Path) -> None:
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+    manifest_path = req.cache_root / "entries" / "7" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["payload"]
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(FrameMaskCacheError, match="manifest"):
+        load_complete_frame_masks(req)
+
+
+def _corrupt_packed_masks_member_crc(payload_path: Path) -> None:
+    """Flip a stored member byte without updating the ZIP central-directory CRC."""
+    with zipfile.ZipFile(payload_path) as archive:
+        member = archive.getinfo("packed_masks.npy")
+    raw = bytearray(payload_path.read_bytes())
+    name_length, extra_length = struct.unpack_from(
+        "<HH", raw, member.header_offset + 26
+    )
+    data_offset = member.header_offset + 30 + name_length + extra_length
+    raw[data_offset + member.compress_size - 1] ^= 1
+    payload_path.write_bytes(raw)
+
+
+def test_crc_corrupt_payload_fails_closed_with_typed_error(tmp_path: Path) -> None:
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+    _corrupt_packed_masks_member_crc(req.cache_root / "entries" / "7" / "masks.npz")
+    with pytest.raises(FrameMaskCacheError, match="payload"):
+        load_complete_frame_masks(req)
+
+
+def test_crc_corrupt_payload_is_quarantined_and_recomputed(tmp_path: Path) -> None:
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+    _corrupt_packed_masks_member_crc(req.cache_root / "entries" / "7" / "masks.npz")
+    calls: list[int] = []
+
+    def compute() -> dict[int, np.ndarray]:
+        calls.append(1)
+        return {7: np.ones((4, 4), dtype=bool)}
+
+    result = load_or_compute_frame_masks(req, compute)
+    assert result.cache_event == "miss"
+    assert calls == [1]
+    assert len(list((req.cache_root / "corrupt").iterdir())) == 1
+    np.testing.assert_array_equal(
+        load_complete_frame_masks(req).masks_by_object_id[7],
+        np.ones((4, 4), dtype=bool),
+    )
 
 
 def _concurrent_worker(
