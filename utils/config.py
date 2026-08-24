@@ -111,6 +111,11 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
     else:
         section = data
 
+    if "sam3_use_self_exemplar" in section:
+        raise ValueError(
+            "sam3_use_self_exemplar was removed; self-exemplar is now the only SAM3 mode"
+        )
+
     algo = (algorithm or section.get("algorithm") or "point_tracking").lower()
 
     # Map allowed fields into overrides for dataclass builders
@@ -131,7 +136,7 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
         # Optional SAM3-guided sampling (minimal knobs)
         "enable_sam3_mask_sampling",
         "sam3_checkpoint_path",
-        "sam3_use_self_exemplar",
+        "sam3_mask_cache_root",
         "sam3_self_exemplar_threshold",
         "sam3_device",
         "sam3_max_queries_per_forward",
@@ -231,9 +236,9 @@ class SKUMatchingConfig:
 
     # === SAM3 mask 引导采样（可选）===
     # 目标：在 bbox 点采样前先用 SAM3 预测 mask，再从 mask 内采样点
-    enable_sam3_mask_sampling: bool = False      # 是否启用 SAM3 mask 引导采样
+    enable_sam3_mask_sampling: bool = True       # 是否启用 SAM3 mask 引导采样
     sam3_checkpoint_path: Optional[str] = None   # sam3.pt 本地路径（禁用 HF 下载）
-    sam3_use_self_exemplar: bool = False         # 是否使用self-exemplar分割（每个bbox作为自己的visual exemplar）
+    sam3_mask_cache_root: str = ""               # matching 显式传入的 canonical v2 cache 根目录
     sam3_self_exemplar_threshold: float = 0.5    # self-exemplar检测阈值
     sam3_device: str = "auto"                   # SAM3单独设备: auto/cuda/cpu
     sam3_max_queries_per_forward: int = 16       # self-exemplar时每次forward的最大query数（降低显存峰值）

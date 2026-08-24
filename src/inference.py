@@ -99,6 +99,11 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         "seed": args.seed,
         "save_json": args.save_json,
         "output_dir": output_dir,
+        "sam3_mask_cache_root": str(
+            Path(args.sam3_mask_cache_root)
+            if args.sam3_mask_cache_root
+            else Path(args.output_dir) / "sam3_mask_cache" / "v2"
+        ),
     }
     # 可选 3D 阈值覆盖（网格扫描用，None=用 config 默认）
     for _k in ("plane_normal_alignment_threshold", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
@@ -118,6 +123,11 @@ def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
     cfg = build_matching_config_from_yaml(args.config, algorithm=algorithm_type, backend=getattr(args, "backend", None))
     # Always route outputs to per-ref subdir like CLI path does
     cfg.output_dir = _compute_output_dir(args.output_dir, algorithm_type, args.reference_idx, getattr(args, "backend", None))
+    cfg.sam3_mask_cache_root = str(
+        Path(args.sam3_mask_cache_root)
+        if args.sam3_mask_cache_root
+        else Path(args.output_dir) / "sam3_mask_cache" / "v2"
+    )
     # Override a few runtime knobs from CLI
     cfg.device = args.device
     cfg.save_json = bool(args.save_json)
@@ -318,6 +328,8 @@ def main() -> None:
     parser.add_argument("--image_folder", type=str, default="imdata/floor_display2/images", help="图像文件夹路径")
     parser.add_argument("--detection_dir", type=str, default="imdata/floor_display2/detections_results", help="检测结果目录路径")
     parser.add_argument("--output_dir", type=str, default="Output/floor_display2", help="输出根目录路径")
+    parser.add_argument("--sam3_mask_cache_root", type=str, default=None,
+                       help="canonical SAM3 v2 cache 根目录（默认由 output_dir 推导）")
     parser.add_argument("--reference_idx", type=int, default=0, help="参考图像索引")
     parser.add_argument("--max_images", type=int, default=50, help="最大处理图像数量")
     # 算法选择

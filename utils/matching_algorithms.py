@@ -24,7 +24,7 @@ from .geometry_3d import (
 )
 from .transforms import ImageTransformBase
 from .sam3_utils import (
-    maybe_run_sam3_for_reference,
+    get_self_exemplar_masks_for_reference,
     sample_3d_points_from_mask,
     sample_points_from_mask,
 )
@@ -35,6 +35,39 @@ logger = logging.getLogger(__name__)
 # Pi3 场景缓存：避免重复从磁盘加载并拷贝到 device
 # key 形如 "<npz_path>::<device>"，value 为包含 depth/world_points 等张量的字典
 PI3_SCENE_CACHE: Dict[str, Dict[str, torch.Tensor]] = {}
+
+
+def _matching_sam3_masks(
+    config: SKUMatchingConfig,
+    *,
+    detections: List[Dict],
+    image_paths: Optional[List[str]],
+    reference_image_idx: int,
+    ref_bboxes: List[Dict],
+    transform: ImageTransformBase,
+) -> Dict[int, np.ndarray]:
+    """Get the complete frame cache while retaining matching's original IDs."""
+    if not config.enable_sam3_mask_sampling:
+        return {}
+    if image_paths is None or not (0 <= reference_image_idx < len(image_paths)):
+        raise ValueError("SAM3 enabled but image_paths missing or reference index out of range.")
+    frame_objects = detections[reference_image_idx].get("objects")
+    if not isinstance(frame_objects, list):
+        raise ValueError("SAM3 enabled but reference frame objects are missing.")
+    image_id = getattr(transform, "image_id", None)
+    if image_id is None:
+        try:
+            image_id = int(Path(image_paths[reference_image_idx]).stem)
+        except ValueError as exc:
+            raise ValueError("SAM3 enabled but reference image ID is not numeric.") from exc
+    return get_self_exemplar_masks_for_reference(
+        config,
+        image_path=Path(image_paths[reference_image_idx]),
+        image_id=int(image_id),
+        frame_detections=frame_objects,
+        matching_object_ids=[int(bbox["object_id"]) for bbox in ref_bboxes],
+        transform=transform,
+    )
 
 
 def _empty_stats(ref_object_id: int, valid_points: int, num_target_bboxes: int) -> Dict:
@@ -393,18 +426,15 @@ def find_correspondences_3d_mapping(
 
         sam_masks_by_obj_id: Dict[int, "np.ndarray"] = {}
         with StageTimer("sam3_mask"):
-            masks = maybe_run_sam3_for_reference(
+            sam_masks_by_obj_id = _matching_sam3_masks(
                 config=config,
-                image_paths=image_paths,
+                detections=detections,
                 reference_image_idx=reference_image_idx,
-                ref_bboxes_xyxy=[b["bbox"] for b in ref_bboxes],
+                image_paths=image_paths,
+                ref_bboxes=ref_bboxes,
                 transform=ref_transform,
-                output_mask_space="final",
             )
         _t_mask_post = time.perf_counter()
-        if masks is not None:
-            for b, m in zip(ref_bboxes, masks):
-                sam_masks_by_obj_id[int(b["object_id"])] = m
         StageTimer.record("mask_postprocess", time.perf_counter() - _t_mask_post)
 
         correspondences = {}
@@ -649,20 +679,21 @@ def find_correspondences_point_tracking(
         # 4. 生成查询点：启用 SAM3 时从 mask 内采样，否则沿用 bbox 采样
         all_query_points_tensor = None
         points_per_object = None
-        masks = maybe_run_sam3_for_reference(
+        sam_masks_by_obj_id = _matching_sam3_masks(
             config=config,
-            image_paths=image_paths,
+            detections=detections,
             reference_image_idx=reference_image_idx,
-            ref_bboxes_xyxy=[b["bbox"] for b in ref_bboxes],
+            image_paths=image_paths,
+            ref_bboxes=ref_bboxes,
             transform=ref_transform,
-            output_mask_space="final",
         )
-        if masks is not None:
+        if sam_masks_by_obj_id:
             all_pts = []
             points_per_object = {}
             total_points = 0
-            for b_orig, b_mapped, m in zip(ref_bboxes, mapped_bboxes, masks):
+            for b_orig, b_mapped in zip(ref_bboxes, mapped_bboxes):
                 obj_id = int(b_orig["object_id"])
+                m = sam_masks_by_obj_id[obj_id]
                 # masks 已经是 final 空间，使用 mapped bbox 坐标
                 # 混合采样：SAM3 mask + 高斯加权
                 use_gaussian = config.enable_gaussian_sampling and config.enable_gaussian_in_sam3_mask

@@ -476,6 +476,8 @@ class SKUDetectionMain:
                 str(detection_dir),
                 "--output_dir",
                 str(output_dir),
+                "--sam3_mask_cache_root",
+                str(output_dir / "sam3_mask_cache" / "v2"),
                 "--algorithm",
                 algorithm,
                 "--reference_idx",

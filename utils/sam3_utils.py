@@ -20,16 +20,23 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import random
 import sys
 import threading
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
+from numbers import Integral
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterator, List, Literal, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import torch
 
 from .config import SKUMatchingConfig
+from .sam3_mask_cache import (
+    FrameMaskCacheRequest,
+    ProcessedDetectionPrompt,
+    load_or_compute_frame_masks,
+)
 from .transforms import ImageTransformBase
 
 logger = logging.getLogger(__name__)
@@ -61,6 +68,7 @@ _SAM3_BATCH_API_CACHE: Dict[Tuple[Any, ...], Tuple[object, object, object]] = {}
 
 # Global counter for batch inference query IDs
 _BATCH_QUERY_COUNTER = 0
+_CACHE_BOUNDARY_RNG_LOCK = threading.RLock()
 
 # Lock guarding _BATCH_QUERY_COUNTER for thread-safe allocation under
 # parallel_refs ThreadPoolExecutor (query_id must be unique across threads).
@@ -1488,73 +1496,167 @@ def sam3_masks_self_exemplar(
     return all_result_masks
 
 
-def maybe_run_sam3_for_reference(
-    config: SKUMatchingConfig,
-    image_paths: Optional[List[str]],
-    reference_image_idx: int,
-    ref_bboxes_xyxy: List[List[float]],
-    transform: Optional[ImageTransformBase] = None,
-    output_mask_space: Literal["original", "final"] = "original",
-) -> Optional[List[np.ndarray]]:
-    """Thin convenience wrapper with config gating + error handling.
+@contextmanager
+def _preserve_cache_boundary_rng(device: str) -> Iterator[None]:
+    """Keep cache lookup and miss inference invisible to downstream sampling RNG."""
+    with _CACHE_BOUNDARY_RNG_LOCK:
+        python_state = random.getstate()
+        numpy_state = np.random.get_state()
+        torch_cpu_state = torch.random.get_rng_state()
+        cuda_state = None
+        cuda_device = None
+        if device.startswith("cuda") and torch.cuda.is_available():
+            cuda_device = torch.device(device)
+            cuda_state = torch.cuda.get_rng_state(cuda_device)
+        try:
+            yield
+        finally:
+            random.setstate(python_state)
+            np.random.set_state(numpy_state)
+            torch.random.set_rng_state(torch_cpu_state)
+            if cuda_state is not None and cuda_device is not None:
+                torch.cuda.set_rng_state(cuda_state, cuda_device)
 
-    根据配置选择使用:
-    - self-exemplar模式 (sam3_use_self_exemplar=True): 每个bbox作为自己的visual exemplar
-    - 标准模式: 使用predict_inst API进行bbox prompt分割
-    """
+
+def _processed_frame_request(
+    *,
+    cache_root: Path,
+    image_path: Path,
+    image_id: int,
+    frame_detections: Sequence[dict[str, object]],
+    transform: ImageTransformBase,
+) -> FrameMaskCacheRequest:
+    """Build the exact DA3 processed-space request in source detection order."""
+    if isinstance(image_id, bool) or not isinstance(image_id, Integral):
+        raise ValueError("image_id must be an integer")
+    try:
+        source_width = int(getattr(transform, "orig_width"))
+        source_height = int(getattr(transform, "orig_height"))
+        processed_width = int(getattr(transform, "target_width"))
+        processed_height = int(getattr(transform, "target_height"))
+        scale_x = float(getattr(transform, "scale_x"))
+        scale_y = float(getattr(transform, "scale_y"))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("SAM3 cache requires a DA3 resize transform") from exc
+    if min(source_width, source_height, processed_width, processed_height) <= 0:
+        raise ValueError("SAM3 cache transform dimensions must be positive")
+
+    from PIL import Image
+
+    with Image.open(image_path) as source_image:
+        if source_image.size != (source_width, source_height):
+            raise ValueError("SAM3 cache transform source size does not match image")
+
+    prompts: list[ProcessedDetectionPrompt] = []
+    for object_id, detection in enumerate(frame_detections):
+        position = detection.get("position")
+        if not isinstance(position, (list, tuple)) or len(position) != 4:
+            raise ValueError(f"frame detection {object_id} has no valid position")
+        source_bbox = tuple(float(value) for value in position)
+        processed_bbox = tuple(float(value) for value in transform.map_bbox_to_final(list(source_bbox)))
+        prompts.append(
+            ProcessedDetectionPrompt(
+                object_id=object_id,
+                source_bbox_xyxy=source_bbox,
+                processed_bbox_xyxy=processed_bbox,
+            )
+        )
+
+    return FrameMaskCacheRequest(
+        cache_root=cache_root,
+        image_id=int(image_id),
+        image_path=image_path,
+        source_size_wh=(source_width, source_height),
+        processed_shape_hw=(processed_height, processed_width),
+        source_to_processed_affine=np.asarray(
+            [[scale_x, 0.0, 0.0], [0.0, scale_y, 0.0]], dtype=np.float64
+        ),
+        detections=tuple(prompts),
+        inference_contract={
+            "api": "self_exemplar",
+            "threshold": 0.5,
+            "image_size": 1008,
+            "max_batch_size": 32,
+            "max_dets_per_query": 1,
+            "clip_to_bbox": True,
+        },
+    )
+
+
+def get_self_exemplar_masks_for_reference(
+    config: SKUMatchingConfig,
+    *,
+    image_path: Path,
+    image_id: int,
+    frame_detections: Sequence[dict[str, object]],
+    matching_object_ids: Sequence[int],
+    transform: ImageTransformBase,
+) -> dict[int, np.ndarray]:
+    """Load or publish a complete processed-space SAM3 frame for matching."""
     if not config.enable_sam3_mask_sampling:
-        return None
+        return {}
     if not config.sam3_checkpoint_path:
         raise ValueError("SAM3 enabled but sam3_checkpoint_path is empty.")
-    if not image_paths or not (0 <= reference_image_idx < len(image_paths)):
-        raise ValueError("SAM3 enabled but image_paths missing or reference index out of range.")
-    ckpt = Path(str(config.sam3_checkpoint_path))
-    if not ckpt.exists():
-        raise FileNotFoundError(f"SAM3 checkpoint not found: {ckpt}")
+    cache_root = Path(config.sam3_mask_cache_root)
+    if cache_root.name != "v2":
+        raise ValueError("sam3_mask_cache_root must name the v2 cache root")
 
-    masks_are_final = False
-    if config.sam3_use_self_exemplar:
-        fallback_size = int(config.sam3_batch_image_size) if config.sam3_batch_image_size else 1008
-        sam3_image_input: Union[str, Path, Any] = image_paths[reference_image_idx]
-        sam3_bboxes = ref_bboxes_xyxy
+    request = _processed_frame_request(
+        cache_root=cache_root,
+        image_path=Path(image_path),
+        image_id=image_id,
+        frame_detections=frame_detections,
+        transform=transform,
+    )
+    all_ids = [prompt.object_id for prompt in request.detections]
+    matching_ids = [int(object_id) for object_id in matching_object_ids]
+    if len(set(matching_ids)) != len(matching_ids) or any(
+        object_id not in set(all_ids) for object_id in matching_ids
+    ):
+        raise ValueError("matching_object_ids must be unique frame object IDs")
+    matching_id_set = set(matching_ids)
+    ordered_ids = matching_ids + [
+        object_id for object_id in all_ids if object_id not in matching_id_set
+    ]
+    prompts_by_id = {prompt.object_id: prompt for prompt in request.detections}
+    device = normalize_device(config.device)
 
-        # 优化：当需要 final 空间 mask 时，先把图像和 bbox resize 到 final 空间
-        # SAM3 内部会再 resize 到 1008x1008 正方形（skip_resize=False），输出 mask 会 resize 回 final 尺寸
-        if transform is not None and output_mask_space == "final":
-            from PIL import Image
-            pil_image = Image.open(image_paths[reference_image_idx]).convert("RGB")
-            aligned_image, aligned = _prepare_sam3_input_image(pil_image, transform)
-            if aligned:
-                sam3_image_input = aligned_image
-                sam3_bboxes = [transform.map_bbox_to_final(b) for b in ref_bboxes_xyxy]
-                masks_are_final = True
+    def compute_masks() -> dict[int, np.ndarray]:
+        from PIL import Image
 
-        logger.info(f"Using SAM3 self-exemplar mode for {len(ref_bboxes_xyxy)} bboxes")
+        with Image.open(request.image_path) as source_image:
+            processed_image, aligned = _prepare_sam3_input_image(
+                source_image.convert("RGB"), transform
+            )
+        if not aligned or processed_image.size != (
+            request.processed_shape_hw[1],
+            request.processed_shape_hw[0],
+        ):
+            raise ValueError("SAM3 cache requires DA3 processed-space image alignment")
+        ordered_bboxes = [
+            list(prompts_by_id[object_id].processed_bbox_xyxy)
+            for object_id in ordered_ids
+        ]
         masks = sam3_masks_self_exemplar(
-            image_path=sam3_image_input,
-            bboxes_xyxy=sam3_bboxes,
-            checkpoint_path=str(ckpt),
-            device=normalize_device(config.device),
-            detection_threshold=config.sam3_self_exemplar_threshold,
-            fallback_size=fallback_size,
-            skip_resize=False,  # 必须为 False，SAM3 ViT 使用 RoPE 需要正方形输入
-            max_batch_size=int(getattr(config, "sam3_max_batch_size", 5)),
+            image_path=processed_image,
+            bboxes_xyxy=ordered_bboxes,
+            checkpoint_path=str(config.sam3_checkpoint_path),
+            device=device,
+            detection_threshold=0.5,
+            fallback_size=1008,
+            skip_resize=False,
+            max_batch_size=32,
         )
-    else:
-        # 标准模式：使用predict_inst API
-        masks = sam3_masks_from_bboxes_predict_inst(
-            image_path=image_paths[reference_image_idx],
-            bboxes_xyxy=ref_bboxes_xyxy,
-            checkpoint_path=str(ckpt),
-            device=normalize_device(config.device),
-        )
+        if len(masks) != len(ordered_ids):
+            raise RuntimeError("SAM3 self-exemplar returned an incomplete frame")
+        return {
+            object_id: np.asarray(mask, dtype=bool)
+            for object_id, mask in zip(ordered_ids, masks)
+        }
 
-    if output_mask_space == "final":
-        if transform is None:
-            raise ValueError("SAM3 masks requested in final space but transform is None.")
-        # 如果已经在 final 空间处理，直接返回；否则需要转换
-        if masks_are_final:
-            return masks
-        return [map_mask_to_final_space(m, transform) for m in masks]
-
-    return masks
+    with _preserve_cache_boundary_rng(device):
+        result = load_or_compute_frame_masks(request, compute_masks)
+    return {
+        int(object_id): np.asarray(mask, dtype=bool)
+        for object_id, mask in result.masks_by_object_id.items()
+    }
