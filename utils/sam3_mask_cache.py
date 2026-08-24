@@ -104,6 +104,18 @@ def _bbox(value: object, name: str) -> tuple[float, float, float, float]:
     return x1, y1, x2, y2
 
 
+def _bounded_bbox(
+    value: object, bounds_wh: tuple[int, int], name: str
+) -> tuple[float, float, float, float]:
+    x1, y1, x2, y2 = _bbox(value, name)
+    width, height = bounds_wh
+    if x1 < 0 or y1 < 0 or x2 > width or y2 > height:
+        raise FrameMaskCacheError(
+            f"{name} must be clipped to its coordinate-space bounds"
+        )
+    return x1, y1, x2, y2
+
+
 def _validated_request(request: FrameMaskCacheRequest) -> _ValidatedRequest:
     cache_root = Path(request.cache_root)
     if cache_root.name != "v2":
@@ -157,7 +169,9 @@ def _validated_request(request: FrameMaskCacheRequest) -> _ValidatedRequest:
                 "detections must contain ProcessedDetectionPrompt values"
             )
         object_id = _safe_integer(prompt.object_id, "object_id")
-        source_bbox = _bbox(prompt.source_bbox_xyxy, "source_bbox_xyxy")
+        source_bbox = _bounded_bbox(
+            prompt.source_bbox_xyxy, source_size_wh, "source_bbox_xyxy"
+        )
         processed_bbox = _bbox(prompt.processed_bbox_xyxy, "processed_bbox_xyxy")
         object_ids.append(object_id)
         processed_bboxes.append(processed_bbox)

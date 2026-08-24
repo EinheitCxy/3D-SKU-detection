@@ -314,6 +314,46 @@ def test_malformed_request_is_rejected_before_filesystem_access(tmp_path: Path) 
     assert not (tmp_path / "sam3_mask_cache" / "v1").exists()
 
 
+@pytest.mark.parametrize(
+    "source_bbox",
+    [
+        (-0.1, 0.0, 8.0, 8.0),
+        (0.0, -0.1, 8.0, 8.0),
+    ],
+)
+def test_source_bbox_negative_coordinate_is_rejected(
+    tmp_path: Path,
+    source_bbox: tuple[float, float, float, float],
+) -> None:
+    req = request(
+        tmp_path,
+        (ProcessedDetectionPrompt(7, source_bbox, (0.0, 0.0, 4.0, 4.0)),),
+    )
+    with pytest.raises(FrameMaskCacheError, match="source_bbox_xyxy.*bounds"):
+        load_complete_frame_masks(req)
+    assert not req.cache_root.exists()
+
+
+@pytest.mark.parametrize(
+    "source_bbox",
+    [
+        (0.0, 0.0, 8.1, 8.0),
+        (0.0, 0.0, 8.0, 8.1),
+    ],
+)
+def test_source_bbox_right_or_bottom_overflow_is_rejected(
+    tmp_path: Path,
+    source_bbox: tuple[float, float, float, float],
+) -> None:
+    req = request(
+        tmp_path,
+        (ProcessedDetectionPrompt(7, source_bbox, (0.0, 0.0, 4.0, 4.0)),),
+    )
+    with pytest.raises(FrameMaskCacheError, match="source_bbox_xyxy.*bounds"):
+        load_complete_frame_masks(req)
+    assert not req.cache_root.exists()
+
+
 def test_v1_sibling_is_never_read(tmp_path: Path) -> None:
     req = request(tmp_path)
     legacy = req.cache_root.parent / "v1" / "entries" / "7"
