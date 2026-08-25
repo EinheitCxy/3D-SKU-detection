@@ -611,7 +611,9 @@ def _masked_observations(
             ProcessedDetectionPrompt(
                 object_id=int(item["object_id"]),
                 source_bbox_xyxy=tuple(float(value) for value in item["bbox"]),
-                processed_bbox_xyxy=_map_bbox_affine(item["bbox"], affine),
+                processed_bbox_xyxy=_map_bbox_affine(
+                    item["bbox"], affine, (height, width)
+                ),
             )
             for item in frame_detections
         )
@@ -704,9 +706,11 @@ def _masked_observations(
 
 
 def _map_bbox_affine(
-    bbox_xyxy: list[float] | tuple[float, ...], affine: np.ndarray
+    bbox_xyxy: list[float] | tuple[float, ...],
+    affine: np.ndarray,
+    processed_shape_hw: tuple[int, int],
 ) -> tuple[float, float, float, float]:
-    return map_source_bbox_to_processed(bbox_xyxy, affine)
+    return map_source_bbox_to_processed(bbox_xyxy, affine, processed_shape_hw)
 
 
 def _attach_shadow_evidence(

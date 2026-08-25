@@ -291,6 +291,23 @@ def test_producer_masks_are_canonically_clipped_to_processed_bbox(
     np.testing.assert_array_equal(result.masks_by_object_id[7], expected)
 
 
+@pytest.mark.parametrize(
+    "processed_bbox",
+    [(-0.1, 0.0, 2.0, 2.0), (0.0, 0.0, 4.1, 2.0)],
+)
+def test_request_rejects_unclipped_processed_bbox(
+    tmp_path: Path, processed_bbox: tuple[float, float, float, float]
+) -> None:
+    """Raw out-of-grid prompts cannot become cache manifests."""
+    req = request(
+        tmp_path,
+        (ProcessedDetectionPrompt(7, (0.0, 0.0, 4.0, 4.0), processed_bbox),),
+    )
+
+    with pytest.raises(FrameMaskCacheError, match="clipped"):
+        load_or_compute_frame_masks(req, lambda: {7: np.zeros((4, 4), dtype=bool)})
+
+
 def test_fractional_processed_bbox_uses_floor_ceil_pixel_slice(
     tmp_path: Path,
 ) -> None:
@@ -323,11 +340,10 @@ def test_fractional_processed_bbox_uses_floor_ceil_pixel_slice(
 
 @pytest.mark.parametrize(
     ("source_bbox", "processed_bbox", "allowed_pixel", "outside_pixel"),
-    [
-        ((2.0, 2.0, 2.0, 4.0), (1.0, 1.0, 1.0, 2.0), (1, 1), (1, 2)),
-        ((8.0, 8.0, 8.0, 8.0), (5.0, 5.0, 5.0, 5.0), (4, 4), (4, 3)),
-        ((8.0, 8.0, 8.0, 8.0), (5.2, 5.2, 6.0, 6.0), (4, 4), (4, 3)),
-    ],
+        [
+            ((2.0, 2.0, 2.0, 4.0), (1.0, 1.0, 1.0, 2.0), (1, 1), (1, 2)),
+            ((8.0, 8.0, 8.0, 8.0), (5.0, 5.0, 5.0, 5.0), (4, 4), (4, 3)),
+        ],
 )
 def test_degenerate_processed_bbox_preserves_producer_one_pixel_slice(
     tmp_path: Path,

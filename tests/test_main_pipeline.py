@@ -206,7 +206,7 @@ def test_root_parallel_refs_publish_real_complete_frame_cache(
     from utils.data_utils import extract_bboxes_from_detections, load_detections
     from utils.sam3_mask_cache import FrameMaskCacheError, load_complete_frame_masks
     from utils import sam3_utils
-    from utils.transforms import Pi3ImageTransform
+    from utils.transforms import DA3ImageTransform
 
     dataset = tmp_path / "datasets" / "sample"
     images = dataset / "images"
@@ -234,6 +234,14 @@ def test_root_parallel_refs_publish_real_complete_frame_cache(
     records: list[tuple[int, str, list[str]]] = []
     producer_calls: list[list[list[float]]] = []
 
+    def cache_bound_transform(frame_id: int) -> DA3ImageTransform:
+        transform = DA3ImageTransform(8, 6, 4, 3)
+        transform.bind_da3_cache_geometry(
+            np.asarray([[0.5, 0.0, 0.0], [0.0, 0.5, 0.0]]), (3, 4)
+        )
+        transform.image_id = frame_id
+        return transform
+
     def fake_self_exemplar(*, bboxes_xyxy, **_kwargs):
         producer_calls.append(bboxes_xyxy)
         return [np.ones((3, 4), dtype=bool) for _ in bboxes_xyxy]
@@ -252,9 +260,7 @@ def test_root_parallel_refs_publish_real_complete_frame_cache(
             detections = load_detections(detection_dir)
             transforms = []
             for frame_id in range(3):
-                transform = Pi3ImageTransform(8, 6, 4, 3)
-                transform.image_id = frame_id
-                transforms.append(transform)
+                transforms.append(cache_bound_transform(frame_id))
             events: list[str] = []
             with guard:
                 active += 1
@@ -329,8 +335,7 @@ def test_root_parallel_refs_publish_real_complete_frame_cache(
     assert event_sequences.count(["hit", "hit", "hit"]) == 2
     assert len(producer_calls) == 2
     for frame_id, frame in enumerate(frames):
-        transform = Pi3ImageTransform(8, 6, 4, 3)
-        transform.image_id = frame_id
+        transform = cache_bound_transform(frame_id)
         request = sam3_utils._processed_frame_request(
             cache_root=output_root / dataset.name / "sam3_mask_cache" / "v2",
             image_path=images / f"{frame_id}.JPG",

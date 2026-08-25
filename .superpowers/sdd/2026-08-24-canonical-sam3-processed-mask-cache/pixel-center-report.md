@@ -124,3 +124,28 @@ semantics, not a causal claim about accuracy.
 
 The only remaining concern is the independent formal support-plane rejection
 on fd2. It is not a pixel-center, SAM3 cache, or viewer-contract failure.
+
+## Round 2 reviewer corrections
+
+Round 2 removes the producer's final scale-only escape hatch. A DA3 transform
+is provisional until matching binds it by image ID to the cache's exact
+`source_to_processed_affine`, `source_image_sizes`, and `(height,width)` grid;
+missing or mismatched geometry now fails closed. The map helper also clips
+every processed bbox to that grid and guarantees a one-pixel extent, while the
+cache validator rejects raw out-of-grid requests. Footprint and exporter use
+the same map-plus-clip helper.
+
+New RED tests cover the true fd2 coordinate direction (`source_size_wh`
+`(3024,4032)`, `processed_shape_hw` `(504,378)`), unbound transforms, an
+explicit non-14-aligned cache geometry, and raw out-of-grid prompt rejection.
+Focused no-GPU results after these changes are recorded in the final command
+receipt. GPU2 reran fd2 direct/cold/warm: all produced 53 matches; direct and
+warm masks, manifests, summary, and JSON are byte-equal. The changed clipped
+manifest SHA-256 is `39b41ee1b3fcff14c148f5457f921ec7beb8bc2323df9ebba6e4d81056cd6edb`.
+
+The round-2 fd2 batch-all-refs pipeline again produced 194 matches and 243
+global IDs without reconstruction. Footprint had five exact v2 cache hits and
+no affine/bbox mismatch, then rejected only on the existing support-plane
+compatibility gate. Viewer export succeeded with 456455 points and 436
+thumbnails at `/tmp/da3-pixel-center-r2/viewer/runs/30d9db8edeff47a19ea152ed8966e465/`.
+Because the core fd2 matching count did not change, fd6/fd12 were not rerun.

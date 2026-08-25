@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 
 from utils.config import SKUMatchingConfig, build_matching_config_from_yaml
-from utils.transforms import DA3ImageTransform, Pi3ImageTransform
+from utils.transforms import DA3ImageTransform, bind_da3_transforms_from_cache
 
 
 def _frame_objects() -> list[dict[str, object]]:
@@ -30,6 +30,31 @@ def _config(cache_root: Path) -> SKUMatchingConfig:
         sam3_checkpoint_path="unused-by-injected-producer.pt",
         sam3_mask_cache_root=str(cache_root),
     )
+
+
+def _bound_da3_transform(
+    image_id: int = 0,
+    *,
+    source_size_wh: tuple[int, int] = (8, 6),
+    processed_shape_hw: tuple[int, int] = (3, 4),
+    affine: np.ndarray | None = None,
+) -> DA3ImageTransform:
+    source_width, source_height = source_size_wh
+    processed_height, processed_width = processed_shape_hw
+    transform = DA3ImageTransform(
+        source_width, source_height, processed_width, processed_height
+    )
+    if affine is None:
+        affine = np.asarray(
+            [
+                [processed_width / source_width, 0.0, 0.0],
+                [0.0, processed_height / source_height, 0.0],
+            ],
+            dtype=np.float64,
+        )
+    transform.bind_da3_cache_geometry(affine, processed_shape_hw)
+    transform.image_id = image_id
+    return transform
 
 
 def _snapshot_rng() -> tuple[object, tuple[object, ...], torch.Tensor]:
@@ -94,9 +119,13 @@ def test_da3_processed_request_uses_pixel_center_affine_exactly(
     from utils.sam3_mask_cache import map_source_bbox_to_processed
 
     image_path = tmp_path / "0.JPG"
-    Image.new("RGB", (4032, 3024)).save(image_path)
-    transform = DA3ImageTransform(4032, 3024, 504, 378)
+    Image.new("RGB", (3024, 4032)).save(image_path)
+    transform = DA3ImageTransform(3024, 4032, 378, 504)
     source_bbox = [1143.0, 2198.0, 1322.0, 2612.0]
+    expected_affine = np.asarray(
+        [[0.125, 0.0, -0.4375], [0.0, 0.125, -0.4375]], dtype=np.float64
+    )
+    transform.bind_da3_cache_geometry(expected_affine, (504, 378))
 
     request = sam3_utils._processed_frame_request(
         cache_root=tmp_path / "sam3_mask_cache" / "v2",
@@ -106,13 +135,79 @@ def test_da3_processed_request_uses_pixel_center_affine_exactly(
         transform=transform,
     )
 
-    expected_affine = np.asarray(
-        [[0.125, 0.0, -0.4375], [0.0, 0.125, -0.4375]], dtype=np.float64
-    )
     expected_bbox = (142.4375, 274.3125, 164.8125, 326.0625)
     assert np.array_equal(request.source_to_processed_affine, expected_affine)
+    assert request.source_size_wh == (3024, 4032)
+    assert request.processed_shape_hw == (504, 378)
     assert request.detections[0].processed_bbox_xyxy == expected_bbox
-    assert map_source_bbox_to_processed(source_bbox, expected_affine) == expected_bbox
+    assert (
+        map_source_bbox_to_processed(source_bbox, expected_affine, (504, 378))
+        == expected_bbox
+    )
+
+
+def test_da3_processed_request_rejects_unbound_transform(tmp_path: Path) -> None:
+    """A DA3 producer cannot synthesize an affine from resize dimensions."""
+    from utils import sam3_utils
+
+    image_path = tmp_path / "0.JPG"
+    Image.new("RGB", (8, 6)).save(image_path)
+
+    with pytest.raises(ValueError, match="explicit DA3 cache affine and processed shape"):
+        sam3_utils._processed_frame_request(
+            cache_root=tmp_path / "sam3_mask_cache" / "v2",
+            image_path=image_path,
+            image_id=0,
+            frame_detections=[{"position": [0.0, 0.0, 2.0, 2.0]}],
+            transform=DA3ImageTransform(8, 6, 4, 3),
+        )
+
+
+def test_da3_cache_binding_uses_non_aligned_affine_and_shape_exactly(
+    tmp_path: Path,
+) -> None:
+    """A cache crop/rounding geometry is authoritative over process_res recomputation."""
+    from utils import sam3_utils
+    from utils.sam3_mask_cache import map_source_bbox_to_processed
+
+    image_path = tmp_path / "9.JPG"
+    Image.new("RGB", (1000, 700)).save(image_path)
+    transform = DA3ImageTransform(1000, 700, 504, 353)
+    transform.image_id = 9
+    cache_affine = np.asarray([[0.51, 0.0, -3.245], [0.0, 0.49, -2.755]])
+    bind_da3_transforms_from_cache(
+        [transform],
+        image_ids=np.asarray([9], dtype=np.int32),
+        source_image_sizes=np.asarray([[1000, 700]], dtype=np.int32),
+        source_to_processed_affine=np.asarray([cache_affine]),
+        processed_shape_hw=(341, 497),
+    )
+    source_bbox = [10.0, 8.0, 998.0, 699.0]
+
+    request = sam3_utils._processed_frame_request(
+        cache_root=tmp_path / "sam3_mask_cache" / "v2",
+        image_path=image_path,
+        image_id=9,
+        frame_detections=[{"position": source_bbox}],
+        transform=transform,
+    )
+
+    assert request.processed_shape_hw == (341, 497)
+    assert np.array_equal(request.source_to_processed_affine, cache_affine)
+    assert request.detections[0].processed_bbox_xyxy == map_source_bbox_to_processed(
+        source_bbox, cache_affine, (341, 497)
+    )
+
+
+def test_processed_bbox_mapping_clips_to_cache_grid_with_one_pixel_extent() -> None:
+    """Prompts and manifests never retain raw negative processed coordinates."""
+    from utils.sam3_mask_cache import map_source_bbox_to_processed
+
+    assert map_source_bbox_to_processed(
+        [0.0, 0.0, 1.0, 1.0],
+        np.asarray([[0.125, 0.0, -0.4375], [0.0, 0.125, -0.4375]]),
+        (504, 378),
+    ) == (0.0, 0.0, 1.0, 1.0)
 
 
 def test_matching_publishes_complete_frame_once_and_restores_rng(
@@ -123,7 +218,7 @@ def test_matching_publishes_complete_frame_once_and_restores_rng(
 
     image_path = tmp_path / "7.jpg"
     Image.new("RGB", (8, 6), color=(10, 20, 30)).save(image_path)
-    transform = Pi3ImageTransform(8, 6, 4, 3)
+    transform = _bound_da3_transform(7)
     config = _config(tmp_path / "sam3_mask_cache" / "v2")
     calls: list[list[tuple[float, float, float, float]]] = []
 
@@ -205,7 +300,7 @@ def test_matching_never_inspects_a_v1_sibling(
         image_id=8,
         frame_detections=_frame_objects(),
         matching_object_ids=[0],
-        transform=Pi3ImageTransform(8, 6, 4, 3),
+        transform=_bound_da3_transform(8),
     )
 
     assert calls == 1
@@ -238,7 +333,7 @@ def test_concurrent_references_share_one_complete_frame_producer(
             image_id=9,
             frame_detections=_frame_objects(),
             matching_object_ids=[1, 0],
-            transform=Pi3ImageTransform(8, 6, 4, 3),
+            transform=_bound_da3_transform(9),
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -270,7 +365,7 @@ def test_disabled_sam3_gate_writes_no_cache(tmp_path: Path) -> None:
             image_id=10,
             frame_detections=_frame_objects(),
             matching_object_ids=[0],
-            transform=Pi3ImageTransform(8, 6, 4, 3),
+            transform=_bound_da3_transform(10),
         )
         == {}
     )
@@ -285,12 +380,12 @@ def test_empty_and_filtered_reference_frames_publish_complete_v2_entries(
     from utils.sam3_mask_cache import load_complete_frame_masks
 
     image_paths: list[str] = []
-    transforms: list[Pi3ImageTransform] = []
+    transforms: list[DA3ImageTransform] = []
     for frame_id in range(3):
         image_path = tmp_path / f"{frame_id}.JPG"
         Image.new("RGB", (8, 6)).save(image_path)
         image_paths.append(str(image_path))
-        transform = Pi3ImageTransform(8, 6, 4, 3)
+        transform = DA3ImageTransform(8, 6, 4, 3)
         transform.image_id = frame_id
         transforms.append(transform)
     detections = [
@@ -311,8 +406,13 @@ def test_empty_and_filtered_reference_frames_publish_complete_v2_entries(
         depth_conf=np.ones((3, 3, 4), dtype=np.float32),
         world_points=np.zeros((3, 3, 4, 3), dtype=np.float32),
         world_points_conf=np.ones((3, 3, 4), dtype=np.float32),
-        extrinsic=np.repeat(np.eye(4, dtype=np.float32)[None], 3, axis=0),
-        intrinsic=np.repeat(np.eye(3, dtype=np.float32)[None], 3, axis=0),
+            extrinsic=np.repeat(np.eye(4, dtype=np.float32)[None], 3, axis=0),
+            intrinsic=np.repeat(np.eye(3, dtype=np.float32)[None], 3, axis=0),
+            image_ids=np.asarray([0, 1, 2], dtype=np.int32),
+            source_image_sizes=np.asarray([[8, 6], [8, 6], [8, 6]], dtype=np.int32),
+            source_to_processed_affine=np.repeat(
+                np.asarray([[[0.5, 0.0, 0.0], [0.0, 0.5, 0.0]]]), 3, axis=0
+            ),
     )
     producer_batches: list[list[list[float]]] = []
 
@@ -337,6 +437,11 @@ def test_empty_and_filtered_reference_frames_publish_complete_v2_entries(
 
     assert producer_batches == [[[0.0, 0.0, 0.5, 0.5]]]
     for frame_id, frame in enumerate(detections):
+        assert transforms[frame_id].processed_shape_hw == (3, 4)
+        assert np.array_equal(
+            transforms[frame_id].source_to_processed_affine,
+            np.asarray([[0.5, 0.0, 0.0], [0.0, 0.5, 0.0]]),
+        )
         request = sam3_utils._processed_frame_request(
             cache_root=cache_root,
             image_path=Path(image_paths[frame_id]),

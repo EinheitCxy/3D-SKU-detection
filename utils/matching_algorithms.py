@@ -22,7 +22,7 @@ from .geometry_3d import (
     apply_uniqueness_constraint,
     transform_world_to_camera,
 )
-from .transforms import ImageTransformBase
+from .transforms import ImageTransformBase, bind_da3_transforms_from_cache
 from .sam3_utils import (
     get_self_exemplar_masks_for_reference,
     sample_3d_points_from_mask,
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Pi3 场景缓存：避免重复从磁盘加载并拷贝到 device
 # key 形如 "<npz_path>::<device>"，value 为包含 depth/world_points 等张量的字典
-PI3_SCENE_CACHE: Dict[str, Dict[str, torch.Tensor]] = {}
+PI3_SCENE_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def _matching_sam3_masks(
@@ -347,6 +347,14 @@ def find_correspondences_3d_mapping(
 
                 # 验证必需字段
                 required_keys = ["depth", "depth_conf", "world_points", "world_points_conf", "extrinsic", "intrinsic"]
+                if config.backend == "da3":
+                    required_keys.extend(
+                        [
+                            "image_ids",
+                            "source_image_sizes",
+                            "source_to_processed_affine",
+                        ]
+                    )
                 missing = [k for k in required_keys if k not in data]
                 if missing:
                     raise ValueError(f"Pi3缓存缺少字段: {missing}")
@@ -361,6 +369,8 @@ def find_correspondences_3d_mapping(
                 if S_cache < S:
                     raise ValueError(f"Pi3缓存帧数({S_cache})少于当前图像数({S})")
 
+                depth_conf_np = data["depth_conf"]
+                world_conf_np = data["world_points_conf"]
                 # 帧对齐：根据image_ids重排数据
                 image_ids_cache = data.get("image_ids")
                 if image_ids_cache is not None and transforms_info is not None:
@@ -368,26 +378,55 @@ def find_correspondences_3d_mapping(
                         desired_ids = [int(getattr(t, "image_id")) for t in transforms_info]
                         id_to_idx = {int(img_id): i for i, img_id in enumerate(image_ids_cache)}
                         index_map = np.array([id_to_idx[img_id] for img_id in desired_ids])
-                        depth_np, world_np = depth_np[index_map], world_np[index_map]
+                        depth_np, depth_conf_np = depth_np[index_map], depth_conf_np[index_map]
+                        world_np, world_conf_np = world_np[index_map], world_conf_np[index_map]
                         extr_np, intr_np = extr_np[index_map], intr_np[index_map]
+                        if config.backend == "da3":
+                            source_sizes_np = data["source_image_sizes"][index_map]
+                            affine_np = data["source_to_processed_affine"][index_map]
+                            image_ids_np = data["image_ids"][index_map]
                     except (AttributeError, KeyError) as e:
+                        if config.backend == "da3":
+                            raise ValueError("DA3 cache/image frame alignment failed") from e
                         logger.warning(f"帧对齐失败，使用原始顺序: {e}")
+                elif config.backend == "da3":
+                    raise ValueError("DA3 cache requires image IDs and matching transforms")
 
                 # 构建scene_data
                 _t_scene = time.perf_counter()
                 scene_data = {
                     "depth": torch.from_numpy(depth_np).to(device),
-                    "depth_conf": torch.from_numpy(data["depth_conf"]).to(device),
+                    "depth_conf": torch.from_numpy(depth_conf_np).to(device),
                     "world_points": torch.from_numpy(world_np).to(device),
-                    "world_points_conf": torch.from_numpy(data["world_points_conf"]).to(device),
+                    "world_points_conf": torch.from_numpy(world_conf_np).to(device),
                     "extrinsic": torch.from_numpy(extr_np).to(device),
                     "intrinsic": torch.from_numpy(intr_np).to(device),
                 }
+                if config.backend == "da3":
+                    scene_data.update(
+                        {
+                            "source_image_sizes": source_sizes_np,
+                            "source_to_processed_affine": affine_np,
+                            "image_ids": image_ids_np,
+                            "processed_shape_hw": (int(H_pi3), int(W_pi3)),
+                        }
+                    )
                 StageTimer.record("scene_data_build", time.perf_counter() - _t_scene)
                 PI3_SCENE_CACHE[cache_key] = scene_data
                 logger.info(f"加载{config.backend.upper()}缓存: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})")
             else:
                 logger.info(f"复用 {config.backend.upper()} 场景缓存: {cache_path}")
+
+            if config.backend == "da3":
+                if transforms_info is None:
+                    raise ValueError("DA3 matching requires transforms")
+                bind_da3_transforms_from_cache(
+                    transforms_info,
+                    image_ids=scene_data["image_ids"],
+                    source_image_sizes=scene_data["source_image_sizes"],
+                    source_to_processed_affine=scene_data["source_to_processed_affine"],
+                    processed_shape_hw=scene_data["processed_shape_hw"],
+                )
 
         else:  # backend == "vggt"
             # 原有VGGT逻辑

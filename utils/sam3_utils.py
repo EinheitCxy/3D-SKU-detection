@@ -1639,13 +1639,13 @@ def _processed_frame_request(
     try:
         source_width = int(getattr(transform, "orig_width"))
         source_height = int(getattr(transform, "orig_height"))
-        processed_width = int(getattr(transform, "target_width"))
-        processed_height = int(getattr(transform, "target_height"))
-        scale_x = float(getattr(transform, "scale_x"))
-        scale_y = float(getattr(transform, "scale_y"))
+        affine = getattr(transform, "source_to_processed_affine")
+        processed_shape_hw = getattr(transform, "processed_shape_hw")
     except (AttributeError, TypeError, ValueError) as exc:
-        raise ValueError("SAM3 cache requires a DA3 resize transform") from exc
-    if min(source_width, source_height, processed_width, processed_height) <= 0:
+        raise ValueError(
+            "SAM3 cache requires explicit DA3 cache affine and processed shape"
+        ) from exc
+    if min(source_width, source_height) <= 0:
         raise ValueError("SAM3 cache transform dimensions must be positive")
 
     from PIL import Image
@@ -1654,15 +1654,17 @@ def _processed_frame_request(
         if source_image.size != (source_width, source_height):
             raise ValueError("SAM3 cache transform source size does not match image")
 
-    affine = getattr(transform, "source_to_processed_affine", None)
-    if affine is None:
-        affine = np.asarray(
-            [[scale_x, 0.0, 0.0], [0.0, scale_y, 0.0]], dtype=np.float64
-        )
-    else:
-        affine = np.asarray(affine, dtype=np.float64)
-    if affine.shape != (2, 3) or not np.isfinite(affine).all():
-        raise ValueError("SAM3 cache transform affine must be finite with shape (2, 3)")
+    affine = np.asarray(affine, dtype=np.float64) if affine is not None else None
+    if (
+        affine is None
+        or affine.shape != (2, 3)
+        or not np.isfinite(affine).all()
+        or not isinstance(processed_shape_hw, tuple)
+        or len(processed_shape_hw) != 2
+        or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in processed_shape_hw)
+    ):
+        raise ValueError("SAM3 cache requires explicit DA3 cache affine and processed shape")
+    processed_height, processed_width = processed_shape_hw
 
     prompts: list[ProcessedDetectionPrompt] = []
     for object_id, detection in enumerate(frame_detections):
@@ -1670,7 +1672,9 @@ def _processed_frame_request(
         if not isinstance(position, (list, tuple)) or len(position) != 4:
             raise ValueError(f"frame detection {object_id} has no valid position")
         source_bbox = tuple(float(value) for value in position)
-        processed_bbox = map_source_bbox_to_processed(source_bbox, affine)
+        processed_bbox = map_source_bbox_to_processed(
+            source_bbox, affine, processed_shape_hw
+        )
         prompts.append(
             ProcessedDetectionPrompt(
                 object_id=object_id,

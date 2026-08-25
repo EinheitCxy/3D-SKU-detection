@@ -147,7 +147,7 @@ class Pi3ImageTransform(ImageTransformBase):
 
 
 class DA3ImageTransform(Pi3ImageTransform):
-    """DA3 source-to-grid transform with the canonical pixel-centre affine."""
+    """DA3 source-to-grid transform bound to authoritative cache geometry."""
 
     def __init__(
         self,
@@ -157,27 +157,82 @@ class DA3ImageTransform(Pi3ImageTransform):
         target_height: int,
     ):
         super().__init__(orig_width, orig_height, target_width, target_height)
-        self.source_to_processed_affine = np.asarray(
-            [
-                [self.scale_x, 0.0, (self.scale_x - 1.0) / 2.0],
-                [0.0, self.scale_y, (self.scale_y - 1.0) / 2.0],
-            ],
-            dtype=np.float64,
-        )
+        self.source_to_processed_affine: Optional[np.ndarray] = None
+        self.processed_shape_hw: Optional[Tuple[int, int]] = None
+
+    def bind_da3_cache_geometry(
+        self, source_to_processed_affine: np.ndarray, processed_shape_hw: Tuple[int, int]
+    ) -> None:
+        """Bind this transform to one exact cache frame before DA3 matching."""
+        affine = np.asarray(source_to_processed_affine, dtype=np.float64)
+        if affine.shape != (2, 3) or not np.isfinite(affine).all():
+            raise ValueError("DA3 cache affine must be finite with shape (2, 3)")
+        if (
+            not isinstance(processed_shape_hw, tuple)
+            or len(processed_shape_hw) != 2
+            or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in processed_shape_hw)
+        ):
+            raise ValueError("DA3 cache processed shape must be two positive integers")
+        height, width = processed_shape_hw
+        self.source_to_processed_affine = affine.copy()
+        self.processed_shape_hw = (height, width)
+        self.target_width = width
+        self.target_height = height
+        self.scale_x = float(affine[0, 0])
+        self.scale_y = float(affine[1, 1])
+
+    def _require_cache_geometry(self) -> tuple[np.ndarray, Tuple[int, int]]:
+        if self.source_to_processed_affine is None or self.processed_shape_hw is None:
+            raise ValueError("DA3 transform requires explicit DA3 cache affine and processed shape")
+        return self.source_to_processed_affine, self.processed_shape_hw
 
     def map_xy_to_final(self, x: float, y: float) -> Tuple[float, float]:
-        affine = self.source_to_processed_affine
+        affine, _ = self._require_cache_geometry()
         return (
             float(affine[0, 0] * x + affine[0, 2]),
             float(affine[1, 1] * y + affine[1, 2]),
         )
 
     def map_xy_to_original(self, x: float, y: float) -> Tuple[float, float]:
-        affine = self.source_to_processed_affine
+        affine, _ = self._require_cache_geometry()
         return (
             float((x - affine[0, 2]) / affine[0, 0]),
             float((y - affine[1, 2]) / affine[1, 1]),
         )
+
+
+def bind_da3_transforms_from_cache(
+    transforms: Sequence[ImageTransformBase],
+    *,
+    image_ids: np.ndarray,
+    source_image_sizes: np.ndarray,
+    source_to_processed_affine: np.ndarray,
+    processed_shape_hw: Tuple[int, int],
+) -> None:
+    """Bind ordered DA3 matching transforms to exact cache frame geometry."""
+    ids = np.asarray(image_ids)
+    sizes = np.asarray(source_image_sizes)
+    affines = np.asarray(source_to_processed_affine)
+    if ids.ndim != 1 or sizes.shape != (len(ids), 2) or affines.shape != (len(ids), 2, 3):
+        raise ValueError("DA3 cache geometry arrays do not match frame count")
+    if ids.dtype.kind not in "iu" or sizes.dtype.kind not in "iu":
+        raise ValueError("DA3 cache image IDs and source sizes must be integers")
+    if not np.isfinite(affines).all():
+        raise ValueError("DA3 cache affine values must be finite")
+    if len(set(int(value) for value in ids)) != len(ids):
+        raise ValueError("DA3 cache image IDs must be unique")
+    by_id = {int(image_id): index for index, image_id in enumerate(ids)}
+    for transform in transforms:
+        if not isinstance(transform, DA3ImageTransform):
+            raise ValueError("DA3 matching requires DA3ImageTransform instances")
+        image_id = getattr(transform, "image_id", None)
+        if isinstance(image_id, bool) or not isinstance(image_id, int) or image_id not in by_id:
+            raise ValueError("DA3 transform image ID is absent from cache")
+        index = by_id[image_id]
+        source_width, source_height = (int(value) for value in sizes[index])
+        if (transform.orig_width, transform.orig_height) != (source_width, source_height):
+            raise ValueError("DA3 transform source size does not match cache")
+        transform.bind_da3_cache_geometry(affines[index], processed_shape_hw)
 
 
 def build_pi3_transforms(

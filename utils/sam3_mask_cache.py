@@ -36,24 +36,36 @@ class FrameMaskCacheError(RuntimeError):
 
 
 def map_source_bbox_to_processed(
-    source_bbox_xyxy: Sequence[float], source_to_processed_affine: np.ndarray
+    source_bbox_xyxy: Sequence[float],
+    source_to_processed_affine: np.ndarray,
+    processed_shape_hw: tuple[int, int],
 ) -> tuple[float, float, float, float]:
-    """Map a source bbox through the canonical DA3 affine into grid coordinates."""
+    """Map and clip a source bbox into one DA3 processed grid."""
     x1, y1, x2, y2 = (float(value) for value in source_bbox_xyxy)
     affine = np.asarray(source_to_processed_affine, dtype=np.float64)
     if affine.shape != (2, 3):
         raise FrameMaskCacheError("source_to_processed_affine must have shape (2, 3)")
+    if (
+        not isinstance(processed_shape_hw, tuple)
+        or len(processed_shape_hw) != 2
+        or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in processed_shape_hw)
+    ):
+        raise FrameMaskCacheError("processed_shape_hw must contain two positive integers")
+    height, width = processed_shape_hw
     corners = np.asarray(
         [[x1, y1, 1.0], [x1, y2, 1.0], [x2, y1, 1.0], [x2, y2, 1.0]],
         dtype=np.float64,
     )
     processed = corners @ affine.T
-    return (
-        float(processed[:, 0].min()),
-        float(processed[:, 1].min()),
-        float(processed[:, 0].max()),
-        float(processed[:, 1].max()),
-    )
+    left = float(np.clip(processed[:, 0].min(), 0.0, float(width)))
+    top = float(np.clip(processed[:, 1].min(), 0.0, float(height)))
+    right = float(np.clip(processed[:, 0].max(), 0.0, float(width)))
+    bottom = float(np.clip(processed[:, 1].max(), 0.0, float(height)))
+    if right <= left:
+        left, right = (float(width - 1), float(width)) if left >= width else (left, min(float(width), left + 1.0))
+    if bottom <= top:
+        top, bottom = (float(height - 1), float(height)) if top >= height else (top, min(float(height), top + 1.0))
+    return left, top, right, bottom
 
 
 @dataclass(frozen=True)
@@ -193,7 +205,11 @@ def _validated_request(request: FrameMaskCacheRequest) -> _ValidatedRequest:
         source_bbox = _bounded_bbox(
             prompt.source_bbox_xyxy, source_size_wh, "source_bbox_xyxy"
         )
-        processed_bbox = _bbox(prompt.processed_bbox_xyxy, "processed_bbox_xyxy")
+        processed_bbox = _bounded_bbox(
+            prompt.processed_bbox_xyxy,
+            (processed_width, processed_height),
+            "processed_bbox_xyxy",
+        )
         object_ids.append(object_id)
         processed_bboxes.append(processed_bbox)
         manifest_detections.append(

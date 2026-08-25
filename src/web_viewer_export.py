@@ -601,10 +601,10 @@ def _estimate_scene_normals(points: np.ndarray, extrinsic: np.ndarray) -> np.nda
 
 
 def _processed_bbox(
-    source_bbox: list[float], affine: np.ndarray
+    source_bbox: list[float], affine: np.ndarray, processed_shape_hw: tuple[int, int]
 ) -> tuple[float, float, float, float]:
     """Map a source bbox into the DA3 processed pixel space."""
-    return map_source_bbox_to_processed(source_bbox, affine)
+    return map_source_bbox_to_processed(source_bbox, affine, processed_shape_hw)
 
 
 def _instance_labels_v2(
@@ -668,7 +668,7 @@ def _instance_labels_v2(
             ProcessedDetectionPrompt(
                 object_id=object_id,
                 source_bbox_xyxy=tuple(bbox),
-                processed_bbox_xyxy=_processed_bbox(bbox, affine),
+                processed_bbox_xyxy=_processed_bbox(bbox, affine, (height, width)),
             )
             for _label, bbox, object_id in sorted(instances, key=lambda item: item[2])
         )
