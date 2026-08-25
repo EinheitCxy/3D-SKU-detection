@@ -1,7 +1,10 @@
 import argparse
+import json
 import logging
+import subprocess
 import sys
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from functools import wraps
 from logging.handlers import RotatingFileHandler
@@ -16,6 +19,8 @@ import numpy as np
 # 项目路径
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_SAVE_ROOT = PROJECT_ROOT / "Output"
+CLASSIFIER_ROOT = PROJECT_ROOT / "modules" / "personalcare_classifier"
+CLASSIFIER_SCRIPT = CLASSIFIER_ROOT / "source" / "classify_dataset.py"
 
 
 def _resolve_save_root(value: str | None) -> Path:
@@ -178,6 +183,7 @@ class SKUDetectionMain:
         self.config_path: Optional[Path] = None
         # DA3 is the repository default for 3D matching.
         self.match_backend: str = "da3"
+        self.classifier_device: str = "cuda:0"
         logger.info("初始化3D SKU Detection主程序")
 
     def show_banner(self) -> None:
@@ -956,6 +962,7 @@ class SKUDetectionMain:
         dataset_path: str,
         algorithm: str = "point_tracking",
         backend: str | None = None,
+        detection_dir: str | Path | None = None,
     ) -> StepResult:
         """顺序去重：对 1..N（或指定上界）生成去重后的检测 JSON。
 
@@ -963,6 +970,7 @@ class SKUDetectionMain:
             dataset_path: 数据集路径
             algorithm: 算法类型 'point_tracking'/'3d_mapping'
             backend: 3D算法后端 'vggt'/'pi3'，仅在algorithm='3d_mapping'时生效
+            detection_dir: 已完成 personalcare 分类的检测目录；省略时使用原始输入
         """
         start = perf_counter()
         try:
@@ -976,7 +984,15 @@ class SKUDetectionMain:
             if not dataset_dir.exists():
                 raise ValueError(f"数据集路径不存在: {dataset_path}")
 
-            paths = resolve_dataset_paths(dataset_dir)
+            classified_detection_dir = (
+                Path(detection_dir) if detection_dir is not None else None
+            )
+            if (
+                classified_detection_dir is not None
+                and not classified_detection_dir.is_dir()
+            ):
+                raise ValueError(f"分类检测目录不存在: {classified_detection_dir}")
+            paths = resolve_dataset_paths(dataset_dir, classified_detection_dir)
             dataset_name = dataset_dir.name
 
             # 输出目录：Output/<dataset_name>/dedup_detections/
@@ -994,6 +1010,7 @@ class SKUDetectionMain:
                 output_subdir="dedup_detections",  # 指定子目录名
                 algorithm=algorithm,  # 传递算法类型
                 backend=backend,  # 传递后端类型
+                detections_dir=paths.detections_dir,
             )
 
             # 实际输出路径是 output_base/dataset_name/dedup_detections/
@@ -1021,6 +1038,79 @@ class SKUDetectionMain:
             )
             return {"success": False, "error": str(e), "duration_s": duration}
 
+    def run_personalcare_classification(self, dataset_path: str) -> StepResult:
+        """Run the isolated personalcare classifier and accept only a published result."""
+        start = perf_counter()
+        dataset = Path(dataset_path)
+        output_root = (
+            self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
+        )
+        command = [
+            "uv",
+            "run",
+            "--project",
+            str(CLASSIFIER_ROOT),
+            "python",
+            str(CLASSIFIER_SCRIPT),
+            "--dataset",
+            str(dataset),
+            "--output-root",
+            str(output_root),
+            "--device",
+            self.classifier_device,
+        ]
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as error:
+            duration = perf_counter() - start
+            logger.error("personalcare classification could not start: %s", error)
+            return {
+                "success": False,
+                "error": str(error),
+                "duration_s": duration,
+            }
+
+        duration = perf_counter() - start
+        stderr = completed.stderr.strip()
+        if completed.returncode != 0:
+            return {
+                "success": False,
+                "error": f"personalcare classifier exited {completed.returncode}: {stderr}",
+                "duration_s": duration,
+            }
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError as error:
+            return {
+                "success": False,
+                "error": f"personalcare classifier did not emit one JSON object: {error}; stderr: {stderr}",
+                "duration_s": duration,
+            }
+        if not isinstance(payload, dict) or payload.get("success") is not True:
+            return {
+                "success": False,
+                "error": f"personalcare classifier reported failure; stderr: {stderr}",
+                "duration_s": duration,
+            }
+        detection_dir = payload.get("detection_dir")
+        if not isinstance(detection_dir, str) or not Path(detection_dir).is_dir():
+            return {
+                "success": False,
+                "error": f"personalcare classifier did not publish detection_dir; stderr: {stderr}",
+                "duration_s": duration,
+            }
+        return {
+            "success": True,
+            "duration_s": duration,
+            "details": payload,
+            "detection_dir": detection_dir,
+        }
+
     def run_complete_pipeline(
         self,
         dataset_path: str,
@@ -1034,6 +1124,26 @@ class SKUDetectionMain:
         if not self.validate_dataset(dataset_path):
             return {"validation": False}
         summary["validation"] = True
+
+        classifier_executor = ThreadPoolExecutor(max_workers=1)
+        classifier_future: Future[StepResult] = classifier_executor.submit(
+            self.run_personalcare_classification, dataset_path
+        )
+
+        def join_classification() -> StepResult:
+            try:
+                result = classifier_future.result()
+            except Exception as error:
+                logger.error("personalcare classification crashed: %s", error)
+                return {"success": False, "error": str(error)}
+            finally:
+                classifier_executor.shutdown(wait=True)
+            if not isinstance(result, dict):
+                return {
+                    "success": False,
+                    "error": "personalcare classification returned an invalid result",
+                }
+            return result
 
         # 1. 3D重建（如果使用3D算法）
         if "3d" in algorithm:
@@ -1072,6 +1182,10 @@ class SKUDetectionMain:
 
                 if not summary["reconstruction"]:
                     logger.error("3D重建失败，无法继续3D匹配流程")
+                    classification = join_classification()
+                    summary["classification"] = bool(
+                        classification.get("success", False)
+                    )
                     return summary
         else:
             logger.info("步骤1: 跳过3D重建（使用 Point Tracking 算法）")
@@ -1096,9 +1210,24 @@ class SKUDetectionMain:
         )
         summary["improved_analysis"] = bool(analysis.get("success", False))
 
+        classification = join_classification()
+        summary["classification"] = bool(classification.get("success", False))
+        classified_detection_dir = classification.get("detection_dir")
+        if not summary["classification"] or not isinstance(
+            classified_detection_dir, str
+        ):
+            logger.error("personalcare 分类失败，停止去重与后续发布")
+            summary["dedup"] = False
+            summary["dedup_visualization"] = False
+            summary["accuracy_evaluation"] = False
+            return summary
+
         # 4. 顺序去重（默认包含以便一键产出去重JSON）
         dedup = self.run_dedup_sequence(
-            dataset_path, algorithm=algorithm, backend=match_backend
+            dataset_path,
+            algorithm=algorithm,
+            backend=match_backend,
+            detection_dir=classified_detection_dir,
         )
         summary["dedup"] = bool(dedup.get("success", False))
 
@@ -1369,6 +1498,12 @@ def main() -> None:
         help="计算设备 (cuda/cpu)",
     )
     parser.add_argument(
+        "--classifier-device",
+        type=str,
+        default="cuda:0",
+        help="personalcare 分类器设备（默认 cuda:0）",
+    )
+    parser.add_argument(
         "--save_json",
         action="store_true",
         default=bool(yaml_main.get("save_json", False)),
@@ -1494,6 +1629,7 @@ def main() -> None:
     app.save_root = save_root_path
     # 将命令行或配置中的匹配后端设置到应用实例（仅3D算法生效）
     app.match_backend = args.match_backend
+    app.classifier_device = args.classifier_device
     app.config_path = (
         Path(args.config).resolve()
         if args.config

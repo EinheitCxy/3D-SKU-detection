@@ -115,11 +115,17 @@ extract_results() {
   local DEDUP_DIR="$OUT_DIR/dedup_detections"
   local VIZ_DIR="$OUT_DIR/dedup_imgs_w_bboxes"
   local GM="$DEDUP_DIR/global_mapping.json"
+  local CLASSIFICATION_ROOT="$OUT_DIR/personalcare_classification"
+  local CLASSIFIED_DIR
   [ -f "$GM" ] || { echo "[ERROR] 未找到 $GM, pipeline 去重未成功" >&2; exit 1; }
+  [ -f "$CLASSIFICATION_ROOT/CURRENT" ] || { echo "[ERROR] 未找到分类发布指针: $CLASSIFICATION_ROOT/CURRENT" >&2; exit 1; }
   cd "$CORE_DIR"
   local n; n=$(run_python "$CORE_ENV" -c "import json; print(len(json.load(open('$GM'))))")
+  CLASSIFIED_DIR=$(run_python "$CORE_ENV" -c "from pathlib import Path; root = Path('$CLASSIFICATION_ROOT'); print(root / 'runs' / (root / 'CURRENT').read_text(encoding='utf-8').strip() / 'detections')")
+  [ -d "$CLASSIFIED_DIR" ] || { echo "[ERROR] 分类检测目录不存在: $CLASSIFIED_DIR" >&2; exit 1; }
   echo "  ============================================"
   echo "  去重后 SKU 数目 : $n   (global_id 个数)"
+  echo "  分类检测目录     : $CLASSIFIED_DIR"
   echo "  去重后带框图片  : $VIZ_DIR"
   echo "  去重结果 JSON    : $DEDUP_DIR/{global_mapping.json, global_skus.json, *.json}"
   echo "  ============================================"

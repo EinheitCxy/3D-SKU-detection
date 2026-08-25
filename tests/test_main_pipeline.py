@@ -11,11 +11,331 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import main
 from src import inference
+
+
+def _pipeline_fixture(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> tuple[main.SKUDetectionMain, Path]:
+    """Build a pipeline whose non-classification stages are deterministic."""
+    dataset = tmp_path / "dataset"
+    (dataset / "images").mkdir(parents=True)
+    (dataset / "detections_results").mkdir()
+    app = main.SKUDetectionMain()
+    app.save_root = tmp_path / "Output"
+    app.match_backend = "da3"
+    monkeypatch.setattr(app, "validate_dataset", lambda _path: True)
+    monkeypatch.setattr(
+        app, "run_reconstruction", lambda *_args, **_kwargs: {"success": True}
+    )
+    monkeypatch.setattr(
+        app,
+        "run_detection_visualization",
+        lambda *_args, **_kwargs: {"success": True},
+    )
+    monkeypatch.setattr(
+        app,
+        "run_improved_sku_analysis",
+        lambda *_args, **_kwargs: {"success": True},
+    )
+    monkeypatch.setattr(
+        app,
+        "run_accuracy_evaluation",
+        lambda *_args, **_kwargs: {"success": True},
+    )
+    return app, dataset
+
+
+def test_personalcare_classification_accepts_only_successful_json_with_existing_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A malformed, failed, or unpublished classifier stage cannot enter dedup."""
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    detection_dir = tmp_path / "classified"
+    detection_dir.mkdir()
+    app = main.SKUDetectionMain()
+    app.save_root = tmp_path / "Output"
+    app.classifier_device = "cuda:7"
+    captured: dict[str, object] = {}
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(
+                {
+                    "success": True,
+                    "detection_dir": str(detection_dir),
+                    "result_path": str(tmp_path / "result.json"),
+                }
+            ),
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = app.run_personalcare_classification(str(dataset))
+
+    assert result["success"] is True
+    assert result["detection_dir"] == str(detection_dir)
+    assert captured["command"] == [
+        "uv",
+        "run",
+        "--project",
+        str(main.CLASSIFIER_ROOT),
+        "python",
+        str(main.CLASSIFIER_SCRIPT),
+        "--dataset",
+        str(dataset),
+        "--output-root",
+        str(app.save_root),
+        "--device",
+        "cuda:7",
+    ]
+    assert captured["kwargs"] == {
+        "capture_output": True,
+        "text": True,
+        "check": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("returncode", "payload", "make_detection_dir"),
+    [
+        (1, {"success": True}, False),
+        (0, {"success": False}, False),
+        (0, {"success": True, "detection_dir": "/missing"}, False),
+    ],
+)
+def test_personalcare_classification_rejects_nonpublished_subprocess_results(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    returncode: int,
+    payload: dict[str, object],
+    make_detection_dir: bool,
+) -> None:
+    """Changing any subprocess success guard must block classified input."""
+    detection_dir = tmp_path / "classified"
+    if make_detection_dir:
+        detection_dir.mkdir()
+        payload["detection_dir"] = str(detection_dir)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=returncode,
+            stdout=json.dumps(payload),
+            stderr="classifier stderr",
+        ),
+    )
+
+    result = main.SKUDetectionMain().run_personalcare_classification(
+        str(tmp_path / "dataset")
+    )
+
+    assert result["success"] is False
+    assert "classifier stderr" in result["error"]
+
+
+def test_personalcare_classification_rejects_nonunique_json_stdout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Accepting an additional JSON value would make the subprocess boundary ambiguous."""
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0,
+            stdout='{"success": true}\n{"success": true}',
+            stderr="classifier stderr",
+        ),
+    )
+
+    result = main.SKUDetectionMain().run_personalcare_classification(
+        str(tmp_path / "dataset")
+    )
+
+    assert result["success"] is False
+    assert "one JSON object" in result["error"]
+
+
+def test_run_dedup_sequence_forwards_the_classified_directory_to_task3(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Dropping the explicit Task 3 argument would regress classified global output."""
+    from src import deduplicate_detections
+
+    dataset = tmp_path / "dataset"
+    classified = tmp_path / "classified"
+    dataset.mkdir()
+    classified.mkdir()
+    app = main.SKUDetectionMain()
+    app.save_root = tmp_path / "Output"
+    captured: dict[str, object] = {}
+
+    def fake_deduplicate(paths, **kwargs):
+        captured["paths"] = paths
+        captured["detections_dir"] = kwargs["detections_dir"]
+        return {}
+
+    monkeypatch.setattr(deduplicate_detections, "deduplicate_sequence", fake_deduplicate)
+
+    result = app.run_dedup_sequence(
+        str(dataset), algorithm="3d", backend="da3", detection_dir=classified
+    )
+
+    assert result["success"] is True
+    assert captured["paths"].detections_dir == classified
+    assert captured["detections_dir"] == classified
+
+
+def test_pipeline_waits_for_classification_after_matching_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A matching error must not leave the classifier process running in background."""
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    calls: list[str] = []
+
+    def classify(_dataset: str) -> dict[str, object]:
+        started.set()
+        assert release.wait(timeout=2)
+        calls.append("classification_done")
+        return {"success": True, "detection_dir": str(tmp_path / "classified")}
+
+    def matching(*_args, **_kwargs):
+        assert started.wait(timeout=2)
+        calls.append("matching_failed")
+        release.set()
+        return {"success": False}
+
+    monkeypatch.setattr(app, "run_personalcare_classification", classify)
+    monkeypatch.setattr(app, "run_sku_matching", matching)
+    monkeypatch.setattr(
+        app,
+        "run_dedup_sequence",
+        lambda *_args, **_kwargs: calls.append("dedup") or {"success": True},
+    )
+
+    summary = app.run_complete_pipeline(str(dataset), algorithm="3d")
+
+    assert summary["matching"] is False
+    assert summary["classification"] is True
+    assert calls.index("matching_failed") < calls.index("classification_done")
+    assert calls[-1] == "dedup"
+
+
+def test_pipeline_cli_defaults_classifier_device_to_cuda_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Removing the explicit device option would silently change CUDA ownership."""
+    captured: dict[str, object] = {}
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.default_dataset = ""
+            self.save_root = None
+            self.match_backend = ""
+            self.classifier_device = ""
+            self.config_path = None
+
+        def run_complete_pipeline(self, *_args, **_kwargs) -> None:
+            captured["classifier_device"] = self.classifier_device
+
+    monkeypatch.setattr(main, "SKUDetectionMain", FakeApp)
+    monkeypatch.setattr(main, "_configure_logging_to_save_root", lambda _path: None)
+    monkeypatch.setattr(
+        main.sys,
+        "argv",
+        ["main.py", "--mode", "pipeline"],
+    )
+
+    main.main()
+
+    assert captured["classifier_device"] == "cuda:0"
+
+
+def test_pipeline_joins_classification_only_before_dedup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Dedup must observe the completed classified copy, never the in-flight run."""
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    entered = threading.Event()
+    release = threading.Event()
+    classified = tmp_path / "classified"
+    calls: list[str] = []
+
+    def classify(_dataset: str) -> dict[str, object]:
+        entered.set()
+        assert release.wait(timeout=2)
+        calls.append("classification_done")
+        return {"success": True, "detection_dir": str(classified)}
+
+    def reconstruct(*_args, **_kwargs):
+        assert entered.wait(timeout=2)
+        return {"success": True}
+
+    def matching(*_args, **_kwargs):
+        release.set()
+        calls.append("matching_done")
+        return {"success": True}
+
+    monkeypatch.setattr(app, "run_personalcare_classification", classify)
+    monkeypatch.setattr(app, "run_reconstruction", reconstruct)
+    monkeypatch.setattr(app, "run_sku_matching", matching)
+    monkeypatch.setattr(
+        app,
+        "run_dedup_sequence",
+        lambda *_args, **kwargs: calls.append(f"dedup:{kwargs['detection_dir']}")
+        or {"success": True},
+    )
+
+    summary = app.run_complete_pipeline(str(dataset), algorithm="3d")
+
+    assert summary["classification"] is True
+    assert calls.index("classification_done") < calls.index(f"dedup:{classified}")
+    assert calls.index("matching_done") < calls.index(f"dedup:{classified}")
+
+
+def test_classification_failure_stops_before_dedup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A failed classifier retains core artifacts but blocks global publication."""
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        app,
+        "run_personalcare_classification",
+        lambda _path: {"success": False, "error": "model failed"},
+    )
+    monkeypatch.setattr(
+        app,
+        "run_sku_matching",
+        lambda *_args, **_kwargs: calls.append("matching") or {"success": True},
+    )
+    monkeypatch.setattr(
+        app,
+        "run_dedup_sequence",
+        lambda *_args, **_kwargs: calls.append("dedup") or {"success": True},
+    )
+
+    summary = app.run_complete_pipeline(str(dataset), algorithm="3d")
+
+    assert summary["reconstruction"] is True
+    assert summary["matching"] is True
+    assert summary["classification"] is False
+    assert summary["dedup"] is False
+    assert summary["dedup_visualization"] is False
+    assert summary["accuracy_evaluation"] is False
+    assert calls == ["matching"]
 
 
 def test_accuracy_evaluation_invokes_da3_report_for_the_current_save_root(
@@ -99,6 +419,11 @@ def test_da3_pipeline_reuses_only_metric_schema_v3_predictions_cache(
         app,
         "run_dedup_sequence",
         lambda *_args, **_kwargs: {"success": False},
+    )
+    monkeypatch.setattr(
+        app,
+        "run_personalcare_classification",
+        lambda _path: {"success": True, "detection_dir": str(tmp_path / "classified")},
     )
     monkeypatch.setattr(
         app,
@@ -343,6 +668,11 @@ def test_complete_pipeline_preserves_matching_failure_after_later_steps_succeed(
     )
     monkeypatch.setattr(
         app, "run_dedup_sequence", lambda *_args, **_kwargs: {"success": True}
+    )
+    monkeypatch.setattr(
+        app,
+        "run_personalcare_classification",
+        lambda _path: {"success": True, "detection_dir": str(tmp_path / "classified")},
     )
     monkeypatch.setattr(
         app, "run_accuracy_evaluation", lambda *_args, **_kwargs: {"success": True}
