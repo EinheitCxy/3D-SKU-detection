@@ -30,6 +30,13 @@ from utils.da3_cache_validation import (
 from utils.global_id_mapper import GlobalIDMapper
 from utils.global_object_index import build_global_object_index
 from utils.pointcloud_filter import PointCloudFilterConfig, filter_scene_points
+from utils.sam3_mask_cache import (
+    FrameMaskCacheError,
+    FrameMaskCacheRequest,
+    ProcessedDetectionPrompt,
+    SCHEMA as SAM3_MASK_CACHE_SCHEMA,
+    load_complete_frame_masks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -134,7 +141,7 @@ def export_web_viewer_bundle(
     output_path = Path(output_dir)
 
     manifest = {
-        "schema_version": "1.0.0",
+        "schema_version": "2.0.0",
         "coordinate_space": "da3_world_meters",
         "point_count": int(len(sampled["positions"])),
         "display_bounds": _robust_display_bounds(sampled["positions"]),
@@ -168,6 +175,11 @@ def export_web_viewer_bundle(
         "objects_path": "objects.json",
         "footprints_path": "footprints.json",
         "source": {
+            "sam3_mask": {
+                "schema": SAM3_MASK_CACHE_SCHEMA,
+                "coordinate_space": "da3_processed_pixels",
+                "producer": "sku_matching",
+            },
             "da3_cache": {
                 **cache["provenance"],
             },
@@ -181,7 +193,6 @@ def export_web_viewer_bundle(
                 "filter_config": asdict(actual_filter_config),
                 "exporter_source_sha256": _file_sha256(Path(__file__)),
                 "global_mapping_sha256": mapping_sha256_after,
-                "sam3_mask_entries": sampled["sam3_mask_entries"],
             },
         },
         "capabilities": {
@@ -225,7 +236,11 @@ def _validate_export_options(voxel_size_m: float, max_points: int) -> float:
 def _validate_object_index_for_export(objects: dict[str, Any]) -> None:
     """Reject mapping-derived objects that the strict browser contract would reject."""
     for global_id, entry in objects.items():
-        if not isinstance(global_id, str) or _GLOBAL_ID.fullmatch(global_id) is None or not isinstance(entry, dict):
+        if (
+            not isinstance(global_id, str)
+            or _GLOBAL_ID.fullmatch(global_id) is None
+            or not isinstance(entry, dict)
+        ):
             raise WebViewerExportError("object index global ID is invalid")
         instances = entry.get("instances")
         if not isinstance(instances, list):
@@ -234,12 +249,49 @@ def _validate_object_index_for_export(objects: dict[str, Any]) -> None:
         images: set[int] = set()
         object_ids: list[int] = []
         for instance in instances:
-            if not isinstance(instance, dict): raise WebViewerExportError("object index instance is invalid")
-            image_id, object_id, bbox, is_removed = instance.get("image_id"), instance.get("object_id"), instance.get("bbox"), instance.get("removed")
-            if isinstance(image_id, bool) or not isinstance(image_id, int) or abs(image_id) > 2**53 - 1 or isinstance(object_id, bool) or not isinstance(object_id, int) or abs(object_id) > 2**53 - 1 or not isinstance(is_removed, bool): raise WebViewerExportError("object index instance identity is invalid")
-            if not isinstance(bbox, list) or len(bbox) != 4 or any(isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) for value in bbox) or bbox[0] > bbox[2] or bbox[1] > bbox[3]: raise WebViewerExportError("object index instance bbox is invalid")
-            images.add(image_id); object_ids.append(object_id); removed += int(is_removed); active += int(not is_removed)
-        if entry.get("images") != sorted(images) or entry.get("objects") != sorted(object_ids) or entry.get("active_count") != active or entry.get("removed_count") != removed or entry.get("total_count") != len(instances): raise WebViewerExportError("object index counts or derived IDs are invalid")
+            if not isinstance(instance, dict):
+                raise WebViewerExportError("object index instance is invalid")
+            image_id, object_id, bbox, is_removed = (
+                instance.get("image_id"),
+                instance.get("object_id"),
+                instance.get("bbox"),
+                instance.get("removed"),
+            )
+            if (
+                isinstance(image_id, bool)
+                or not isinstance(image_id, int)
+                or abs(image_id) > 2**53 - 1
+                or isinstance(object_id, bool)
+                or not isinstance(object_id, int)
+                or abs(object_id) > 2**53 - 1
+                or not isinstance(is_removed, bool)
+            ):
+                raise WebViewerExportError("object index instance identity is invalid")
+            if (
+                not isinstance(bbox, list)
+                or len(bbox) != 4
+                or any(
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    for value in bbox
+                )
+                or bbox[0] > bbox[2]
+                or bbox[1] > bbox[3]
+            ):
+                raise WebViewerExportError("object index instance bbox is invalid")
+            images.add(image_id)
+            object_ids.append(object_id)
+            removed += int(is_removed)
+            active += int(not is_removed)
+        if (
+            entry.get("images") != sorted(images)
+            or entry.get("objects") != sorted(object_ids)
+            or entry.get("active_count") != active
+            or entry.get("removed_count") != removed
+            or entry.get("total_count") != len(instances)
+        ):
+            raise WebViewerExportError("object index counts or derived IDs are invalid")
 
 
 def _load_da3_cache(path: Path) -> dict[str, Any]:
@@ -419,17 +471,17 @@ def _sample_points(
     )
     valid_indices = np.flatnonzero(valid)
     valid_points = points[valid].astype(np.float64, copy=False)
-    labels, label_keys, sam3_mask_entries = _instance_labels(
-        cache, objects, valid_indices, points.shape[0], mask_cache_root
-    )
     # SAM3 labels are bundle metadata only. Every valid point follows the same
     # scene filter so a mask cannot silently override noise, ground, or sky cuts.
     keep_filter = filter_scene_points(valid_points, filter_config)
     filtered_points = valid_points[keep_filter]
+    labels, label_keys = _instance_labels_v2(
+        cache, objects, valid_indices[keep_filter], points.shape[0], mask_cache_root
+    )
     points_v = valid_points
     confidence_v = confidence[valid]
     colors_v = colors[valid]
-    labels_f = labels[keep_filter]
+    labels_f = labels
     points = points_v[keep_filter]
     confidence = confidence_v[keep_filter]
     colors = colors_v[keep_filter]
@@ -497,7 +549,6 @@ def _sample_points(
         ),
         "instance_labels": labels_sorted,
         "label_keys": label_keys,
-        "sam3_mask_entries": sam3_mask_entries,
         "valid_points": valid_points,
         "filtered_points": filtered_points,
         "level_rotation": level_rotation,
@@ -547,6 +598,122 @@ def _estimate_scene_normals(points: np.ndarray, extrinsic: np.ndarray) -> np.nda
     finite = np.isfinite(normals).all(axis=1)
     normals[~finite] = _NORMAL_FALLBACK
     return normals
+
+
+def _processed_bbox(
+    source_bbox: list[float], affine: np.ndarray
+) -> tuple[float, float, float, float]:
+    """Map a source bbox into the DA3 processed pixel space."""
+    x1, y1, x2, y2 = source_bbox
+    corners = np.asarray([[x1, y1], [x1, y2], [x2, y1], [x2, y2]], dtype=np.float64)
+    processed = corners @ affine[:, :2].T + affine[:, 2]
+    return (
+        float(processed[:, 0].min()),
+        float(processed[:, 1].min()),
+        float(processed[:, 0].max()),
+        float(processed[:, 1].max()),
+    )
+
+
+def _instance_labels_v2(
+    cache: dict[str, Any],
+    objects: dict[str, Any],
+    valid_indices: np.ndarray,
+    flat_count: int,
+    mask_cache_root: Path,
+) -> tuple[np.ndarray, list[tuple[str, int]]]:
+    """Label filtered DA3 points directly from complete processed-space v2 masks."""
+    frame_count, height, width, _ = cache["points"].shape
+    frame_for_image = {
+        int(image_id): frame for frame, image_id in enumerate(cache["image_ids"])
+    }
+    by_image: dict[int, list[tuple[int, list[float], int]]] = defaultdict(list)
+    label_keys: list[tuple[str, int]] = []
+    for global_id in sorted(objects, key=int):
+        for instance_index, instance in enumerate(objects[global_id]["instances"]):
+            bbox = instance["bbox"]
+            if (
+                not isinstance(bbox, list)
+                or len(bbox) != 4
+                or any(
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(value)
+                    for value in bbox
+                )
+                or bbox[2] <= bbox[0]
+                or bbox[3] <= bbox[1]
+            ):
+                raise WebViewerExportError(
+                    f"global mapping instance bbox is invalid for global ID {global_id} instance {instance_index}"
+                )
+            label_keys.append((global_id, instance_index))
+            by_image[int(instance["image_id"])].append(
+                (
+                    len(label_keys) - 1,
+                    [float(value) for value in bbox],
+                    int(instance["object_id"]),
+                )
+            )
+
+    grid = np.full(flat_count, -1, dtype=np.int32).reshape(frame_count, height, width)
+    inference_contract = {
+        "api": "self_exemplar",
+        "threshold": 0.5,
+        "image_size": 1008,
+        "max_batch_size": 32,
+        "max_dets_per_query": 1,
+        "clip_to_bbox": True,
+    }
+    for image_id, instances in by_image.items():
+        frame = frame_for_image.get(image_id)
+        if frame is None:
+            raise WebViewerExportError(
+                f"global mapping instance references image {image_id} absent from cache"
+            )
+        affine = cache["affine"][frame]
+        prompts = tuple(
+            ProcessedDetectionPrompt(
+                object_id=object_id,
+                source_bbox_xyxy=tuple(bbox),
+                processed_bbox_xyxy=_processed_bbox(bbox, affine),
+            )
+            for _label, bbox, object_id in instances
+        )
+        request = FrameMaskCacheRequest(
+            cache_root=mask_cache_root,
+            image_id=image_id,
+            image_path=Path(str(image_id)),
+            source_size_wh=tuple(
+                int(value) for value in cache["source_image_sizes"][frame]
+            ),
+            processed_shape_hw=(height, width),
+            source_to_processed_affine=affine,
+            detections=prompts,
+            inference_contract=inference_contract,
+        )
+        try:
+            result = load_complete_frame_masks(request)
+        except FrameMaskCacheError as error:
+            raise WebViewerExportError(
+                "canonical self-exemplar mask cache is incomplete; run SKU matching first"
+            ) from error
+        if result.schema != SAM3_MASK_CACHE_SCHEMA:
+            raise WebViewerExportError("canonical SAM3 mask cache schema is invalid")
+        frame_grid = grid[frame]
+        for label, _bbox, object_id in instances:
+            try:
+                covered = result.masks_by_object_id[object_id]
+            except KeyError as error:
+                raise WebViewerExportError(
+                    f"instance object {object_id} of image {image_id} absent from SAM3 mask cache"
+                ) from error
+            if covered.shape != (height, width) or covered.dtype != np.bool_:
+                raise WebViewerExportError(
+                    "canonical SAM3 mask shape or dtype is invalid"
+                )
+            frame_grid[covered & (frame_grid < 0)] = label
+    return grid.reshape(-1)[valid_indices], label_keys
 
 
 _SAM3_MASK_SCHEMA = "sam3_frame_mask_cache_v2_canonical_bbox_clip"
@@ -1138,10 +1305,16 @@ def _compute_world_to_view(
 def _robust_display_bounds(positions: np.ndarray) -> list[float]:
     """Compute final-position source-coordinate p01/p99 bounds for initial framing."""
     if positions.ndim != 2 or positions.shape[1] != 3 or len(positions) == 0:
-        raise WebViewerExportError("cannot export display_bounds without final positions")
+        raise WebViewerExportError(
+            "cannot export display_bounds without final positions"
+        )
     if not np.isfinite(positions).all():
-        raise WebViewerExportError("cannot export display_bounds from non-finite positions")
-    bounds = np.percentile(positions.astype(np.float64, copy=False), [1.0, 99.0], axis=0)
+        raise WebViewerExportError(
+            "cannot export display_bounds from non-finite positions"
+        )
+    bounds = np.percentile(
+        positions.astype(np.float64, copy=False), [1.0, 99.0], axis=0
+    )
     return [float(value) for value in (*bounds[0], *bounds[1])]
 
 
@@ -1207,7 +1380,7 @@ def _load_footprint(
         raise WebViewerExportError("formal footprint manifest run_id is invalid")
     status = report.get("status")
     if (
-        report.get("metric") != "da3_ground_footprint_union"
+        report.get("metric") != "da3_self_exemplar_ground_footprint_union"
         or report.get("unit") != "m2"
     ):
         raise WebViewerExportError("formal footprint report metric or unit is invalid")
@@ -1519,7 +1692,7 @@ def _publish_bundle(
         os.rename(temporary, generation)
         _atomic_replace_current(
             output_dir / "CURRENT",
-            {"complete": True, "run_id": run_id, "schema_version": "1.0.0"},
+            {"complete": True, "run_id": run_id, "schema_version": "2.0.0"},
         )
         return generation
     except BaseException:
