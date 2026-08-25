@@ -215,6 +215,17 @@ describe("loadViewerBundle", () => {
     }))).rejects.toThrow();
   });
 
+  it("rejects an object instance whose image ID is absent from the canonical DA3 cache", async () => {
+    await expect(loadViewerBundle(baseUrl, makeFetcher({
+      [`${baseUrl}runs/${current.run_id}/objects.json`]: {
+        "11": {
+          images: [8], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
+          instances: [{ image_id: 8, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg" }],
+        },
+      },
+    }))).rejects.toThrow(/image ID 8.*DA3 image IDs/i);
+  });
+
   it("rejects a manifest with a non-canonical SAM3 source", async () => {
     await expect(loadViewerBundle(baseUrl, makeFetcher({
       [`${baseUrl}runs/${current.run_id}/manifest.json`]: {

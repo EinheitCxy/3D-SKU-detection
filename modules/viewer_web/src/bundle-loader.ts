@@ -48,6 +48,7 @@ export async function loadViewerBundle(
     fetchBinary(`${generationUrl}normals.i8.bin`, fetcher),
   ]);
   const objects = validateObjectIndex(objectsValue, manifest.point_count);
+  assertObjectInstanceImageIds(objects, manifest.source.da3_cache.image_ids);
   const footprints = validateFootprints(footprintsValue);
   if (
     manifest.source.footprint.run_id !== footprints.run_id
@@ -59,6 +60,19 @@ export async function loadViewerBundle(
   const colors = decodeUint8(colorsBuffer, manifest.arrays.colors, manifest.point_count);
   const normals = decodeInt8(normalsBuffer, manifest.arrays.normals, manifest.point_count);
   return { current, manifest, objects, footprints, positions, colors, normals, generationUrl };
+}
+
+function assertObjectInstanceImageIds(objects: ObjectIndex, da3ImageIds: readonly number[]): void {
+  const canonicalImageIds = new Set(da3ImageIds);
+  for (const entry of Object.values(objects)) {
+    for (const instance of entry.instances) {
+      if (!canonicalImageIds.has(instance.image_id)) {
+        throw new Error(
+          `Invalid viewer bundle: object instance image ID ${instance.image_id} is absent from canonical DA3 image IDs`,
+        );
+      }
+    }
+  }
 }
 
 async function fetchJson(url: string, fetcher: typeof fetch, init?: RequestInit): Promise<unknown> {
