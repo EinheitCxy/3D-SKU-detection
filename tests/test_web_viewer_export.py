@@ -1302,99 +1302,6 @@ def test_instance_bbox_outside_source_image_fails_closed(exporter_inputs):
     assert not exporter_inputs["output_dir"].exists()
 
 
-@pytest.mark.skip(reason="replaced by v2 cache-contract mutations below")
-def test_same_shape_sam3_mask_tampering_fails_closed(exporter_inputs):
-    entry_dir = next((exporter_inputs["sam3_mask_cache_root"] / "entries").iterdir())
-    payload_path = entry_dir / "masks.npz"
-    with np.load(payload_path, allow_pickle=False) as loaded:
-        masks = loaded["masks"].copy()
-    masks[0, 0, 0] = ~masks[0, 0, 0]
-    np.savez_compressed(payload_path, masks=masks)
-    manifest_path = entry_dir / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["payload_sha256"] = _sha256(payload_path)
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(WebViewerExportError, match="per-mask"):
-        export_web_viewer_bundle(**exporter_inputs)
-
-
-@pytest.mark.skip(reason="replaced by v2 cache-contract mutations below")
-def test_sam3_mask_payload_digest_mismatch_fails_closed(exporter_inputs):
-    entry_dir = next((exporter_inputs["sam3_mask_cache_root"] / "entries").iterdir())
-    manifest_path = entry_dir / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["payload_sha256"] = "f" * 64
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(WebViewerExportError, match="payload SHA-256"):
-        export_web_viewer_bundle(**exporter_inputs)
-
-
-@pytest.mark.skip(reason="replaced by v2 cache-contract mutations below")
-def test_sam3_mask_key_payload_tampering_fails_closed(exporter_inputs):
-    entry_dir = next((exporter_inputs["sam3_mask_cache_root"] / "entries").iterdir())
-    manifest_path = entry_dir / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["key_payload"]["runtime_fingerprint"] = {"tampered": True}
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(
-        WebViewerExportError, match="key does not match canonical payload"
-    ):
-        export_web_viewer_bundle(**exporter_inputs)
-
-
-@pytest.mark.skip(reason="replaced by v2 cache-contract mutations below")
-def test_sam3_mask_entry_directory_tampering_fails_closed(exporter_inputs):
-    entry_dir = next((exporter_inputs["sam3_mask_cache_root"] / "entries").iterdir())
-    entry_dir.rename(entry_dir.with_name("f" * 64))
-
-    with pytest.raises(
-        WebViewerExportError, match="key does not match canonical payload"
-    ):
-        export_web_viewer_bundle(**exporter_inputs)
-
-
-@pytest.mark.skip(reason="replaced by v2 cache-contract mutations below")
-def test_sam3_mask_manifest_key_tampering_fails_closed(exporter_inputs):
-    entry_dir = next((exporter_inputs["sam3_mask_cache_root"] / "entries").iterdir())
-    manifest_path = entry_dir / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["key"] = "f" * 64
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(
-        WebViewerExportError, match="key does not match canonical payload"
-    ):
-        export_web_viewer_bundle(**exporter_inputs)
-
-
-@pytest.mark.skip(reason="replaced by v2 cache-contract mutations below")
-def test_sam3_mask_pixels_outside_canonical_bbox_fail_closed(exporter_inputs):
-    entry_dir = next((exporter_inputs["sam3_mask_cache_root"] / "entries").iterdir())
-    payload_path = entry_dir / "masks.npz"
-    with np.load(payload_path, allow_pickle=False) as loaded:
-        masks = loaded["masks"].copy()
-    masks[0] = False
-    masks[0, 0, 0] = True
-    np.savez_compressed(payload_path, masks=masks)
-    manifest_path = entry_dir / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["payload_sha256"] = _sha256(payload_path)
-    manifest["masks"] = [
-        {
-            "sha256": hashlib.sha256(mask.tobytes(order="C")).hexdigest(),
-            "true_pixel_count": int(mask.sum()),
-        }
-        for mask in masks
-    ]
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-
-    with pytest.raises(WebViewerExportError, match="outside its canonical bbox"):
-        export_web_viewer_bundle(**exporter_inputs)
-
-
 @pytest.mark.parametrize(
     "mutation",
     [
@@ -1785,7 +1692,7 @@ def test_viewer_web_cli_routes_exporter_arguments(monkeypatch, tmp_path, capsys)
         "footprint_root": dataset_output / "ground_stack_footprint",
         "output_dir": output_dir.resolve(),
         "source_images_dir": dataset / "images",
-        "sam3_mask_cache_root": dataset_output / "sam3_mask_cache" / "v1",
+        "sam3_mask_cache_root": dataset_output / "sam3_mask_cache" / "v2",
         "voxel_size_m": 0.125,
         "max_points": 123,
     }

@@ -1551,7 +1551,7 @@ def main() -> None:
             footprint_root=dataset_output / "ground_stack_footprint",
             output_dir=viewer_web_output,
             source_images_dir=dataset / "images",
-            sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v1",
+            sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
             voxel_size_m=float(args.viewer_web_voxel_size),
             max_points=int(args.viewer_web_max_points),
         )
