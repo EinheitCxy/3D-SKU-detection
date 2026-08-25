@@ -21,6 +21,7 @@ import json
 import logging
 import re
 import sys
+import tempfile
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -467,28 +468,113 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
             outputs[i] = dst
 
     logger.info(f"Sequence dedup finished for images {indices[0]}..{indices[-1]} (total {len(indices)})")
-    # 构建全局唯一ID映射（只针对去重后保留的对象）。任何合约或 I/O 错误都
-    # 必须上抛，避免调用方把没有 global publication 的去重结果当作成功。
-    mapping = build_global_mapping(matches_for_gid, survivors_by_image, objects_by_image, indices)
     mapping_path = out_dir / 'global_mapping.json'
-    with mapping_path.open('w', encoding='utf-8') as f:
-        json.dump(mapping, f, ensure_ascii=False, indent=2)
-    logger.info(f"Saved global mapping to: {mapping_path}")
-
-    # 生成带global_id的合并JSON（使用add_global_id_to_jsons函数）
-    json_strings = add_global_id_to_jsons(
-        detections_dir=paths.detections_dir,
-        global_mapping=mapping,
-        indices=indices
-    )
-
-    # 保存为global_skus.json
     global_skus_path = out_dir / 'global_skus.json'
-    with global_skus_path.open('w', encoding='utf-8') as f:
-        json.dump(json_strings, f, ensure_ascii=False, indent=2)
-    logger.info(f"Saved global SKUs with metadata to: {global_skus_path} ({len(json_strings)})")
+    publication_paths = (mapping_path, global_skus_path)
+    _remove_global_publication_files(publication_paths)
+    try:
+        # 所有内容先在内存中构建、校验；不得在得到完整 pair 前发布 direct 文件。
+        mapping = build_global_mapping(
+            matches_for_gid, survivors_by_image, objects_by_image, indices
+        )
+        _validate_global_mapping_for_publication(mapping)
+        json_strings = add_global_id_to_jsons(
+            detections_dir=paths.detections_dir,
+            global_mapping=mapping,
+            indices=indices,
+        )
+        global_skus = _parse_global_skus_for_publication(json_strings)
+        _publish_global_pair(
+            mapping_path=mapping_path,
+            mapping=mapping,
+            global_skus_path=global_skus_path,
+            global_skus=global_skus,
+        )
+    except BaseException:
+        _remove_global_publication_files(publication_paths)
+        raise
+    logger.info(f"Saved global mapping to: {mapping_path}")
+    logger.info(f"Saved global SKUs with metadata to: {global_skus_path} ({len(global_skus)})")
 
     return outputs
+
+
+def _validate_global_mapping_for_publication(mapping: Dict[str, List[Dict]]) -> None:
+    if not isinstance(mapping, dict):
+        raise ValueError("global mapping must be an object")
+    for global_id, entries in mapping.items():
+        if not isinstance(global_id, str) or not isinstance(entries, list):
+            raise ValueError("global mapping entries are invalid")
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise ValueError("global mapping observation is invalid")
+            validate_classification(entry.get("classification"))
+
+
+def _parse_global_skus_for_publication(json_strings: List[str]) -> List[str]:
+    if not isinstance(json_strings, list):
+        raise ValueError("global SKUs must be a list")
+    for item in json_strings:
+        if not isinstance(item, str):
+            raise ValueError("global SKU entry must be JSON text")
+        value = json.loads(item, parse_constant=_reject_nonfinite_json_constant)
+        if not isinstance(value, dict):
+            raise ValueError("global SKU entry must decode to an object")
+    return json_strings
+
+
+def _reject_nonfinite_json_constant(value: str) -> None:
+    raise ValueError(f"global SKU JSON constant is invalid: {value}")
+
+
+def _write_global_publication_temp(path: Path, payload: object) -> Path:
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with open(descriptor, "w", encoding="utf-8", closefd=True) as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2, allow_nan=False)
+        return temporary
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def _publish_global_pair(
+    *,
+    mapping_path: Path,
+    mapping: Dict[str, List[Dict]],
+    global_skus_path: Path,
+    global_skus: List[str],
+) -> None:
+    temporary_paths: List[Path] = []
+    try:
+        mapping_temporary = _write_global_publication_temp(mapping_path, mapping)
+        temporary_paths.append(mapping_temporary)
+        skus_temporary = _write_global_publication_temp(global_skus_path, global_skus)
+        temporary_paths.append(skus_temporary)
+        mapping_temporary.replace(mapping_path)
+        temporary_paths.remove(mapping_temporary)
+        skus_temporary.replace(global_skus_path)
+        temporary_paths.remove(skus_temporary)
+    except BaseException:
+        for temporary in temporary_paths:
+            temporary.unlink(missing_ok=True)
+        raise
+
+
+def _remove_global_publication_files(paths: Tuple[Path, Path]) -> None:
+    errors: List[OSError] = []
+    for path in paths:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError as error:
+            errors.append(error)
+    if errors:
+        raise errors[0]
 
 
 def build_global_mapping(

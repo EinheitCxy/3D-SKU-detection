@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+import src.deduplicate_detections as dedup_module
 from src.deduplicate_detections import (
     add_global_id_to_jsons,
     build_global_mapping,
@@ -216,6 +217,10 @@ def test_dedup_rejects_invalid_classification_without_publishing_global_artifact
         encoding="utf-8",
     )
     output_root = tmp_path / "Output"
+    publication_dir = output_root / dataset.name / "dedup_detections"
+    publication_dir.mkdir(parents=True)
+    (publication_dir / "global_mapping.json").write_text("stale", encoding="utf-8")
+    (publication_dir / "global_skus.json").write_text("stale", encoding="utf-8")
 
     with pytest.raises(ValueError, match="classification"):
         deduplicate_sequence(
@@ -224,6 +229,108 @@ def test_dedup_rejects_invalid_classification_without_publishing_global_artifact
             output_subdir="dedup_detections",
         )
 
-    publication_dir = output_root / dataset.name / "dedup_detections"
     assert not (publication_dir / "global_mapping.json").exists()
     assert not (publication_dir / "global_skus.json").exists()
+
+
+def _write_single_classified_detection(dataset, classification) -> None:
+    detections_dir = dataset / "detections_results"
+    detections_dir.mkdir(parents=True)
+    (detections_dir / "1.json").write_text(
+        json.dumps(
+            {
+                "skus": [
+                    {
+                        "classes": {},
+                        "objects": [
+                            {
+                                "position": [0.0, 0.0, 1.0, 1.0],
+                                "classification": classification,
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_dedup_cleans_both_global_files_when_second_publish_replace_fails(
+    tmp_path, monkeypatch
+) -> None:
+    dataset = tmp_path / "dataset"
+    _write_single_classified_detection(dataset, resolved("A", "产品A", 0.8))
+    output_root = tmp_path / "Output"
+    publication_dir = output_root / dataset.name / "dedup_detections"
+    original_replace = type(publication_dir).replace
+    replaces = 0
+
+    def fail_second_replace(path, target):
+        nonlocal replaces
+        replaces += 1
+        if replaces == 2:
+            raise OSError("second publish replace failed")
+        return original_replace(path, target)
+
+    monkeypatch.setattr(type(publication_dir), "replace", fail_second_replace)
+
+    with pytest.raises(OSError, match="second publish replace failed"):
+        deduplicate_sequence(
+            resolve_dataset_paths(dataset),
+            output_root=output_root,
+            output_subdir="dedup_detections",
+        )
+
+    assert not (publication_dir / "global_mapping.json").exists()
+    assert not (publication_dir / "global_skus.json").exists()
+    assert not list(publication_dir.glob(".*.tmp"))
+
+
+def test_dedup_cleans_both_global_files_when_second_temp_write_fails(
+    tmp_path, monkeypatch
+) -> None:
+    dataset = tmp_path / "dataset"
+    _write_single_classified_detection(dataset, resolved("A", "产品A", 0.8))
+    output_root = tmp_path / "Output"
+    publication_dir = output_root / dataset.name / "dedup_detections"
+    write_temp = dedup_module._write_global_publication_temp
+    writes = 0
+
+    def fail_second_write(path, payload):
+        nonlocal writes
+        writes += 1
+        if writes == 2:
+            raise OSError("second temporary write failed")
+        return write_temp(path, payload)
+
+    monkeypatch.setattr(dedup_module, "_write_global_publication_temp", fail_second_write)
+
+    with pytest.raises(OSError, match="second temporary write failed"):
+        deduplicate_sequence(
+            resolve_dataset_paths(dataset),
+            output_root=output_root,
+            output_subdir="dedup_detections",
+        )
+
+    assert not (publication_dir / "global_mapping.json").exists()
+    assert not (publication_dir / "global_skus.json").exists()
+    assert not list(publication_dir.glob(".*.tmp"))
+
+
+def test_dedup_publishes_a_complete_valid_global_pair(tmp_path) -> None:
+    dataset = tmp_path / "dataset"
+    _write_single_classified_detection(dataset, resolved("A", "产品A", 0.8))
+    output_root = tmp_path / "Output"
+
+    deduplicate_sequence(
+        resolve_dataset_paths(dataset),
+        output_root=output_root,
+        output_subdir="dedup_detections",
+    )
+
+    publication_dir = output_root / dataset.name / "dedup_detections"
+    mapping = json.loads((publication_dir / "global_mapping.json").read_text())
+    global_skus = json.loads((publication_dir / "global_skus.json").read_text())
+    assert mapping["1"][0]["classification"]["sku_id"] == "A"
+    assert json.loads(global_skus[0])["objects"][0]["classification"]["sku_id"] == "A"
