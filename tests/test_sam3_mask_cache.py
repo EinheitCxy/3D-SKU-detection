@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import multiprocessing
+import os
 import struct
 from pathlib import Path
 import zipfile
@@ -139,6 +140,80 @@ def test_hit_never_calls_compute(tmp_path: Path) -> None:
         req, lambda: (_ for _ in ()).throw(AssertionError("must not compute"))
     )
     assert result.cache_event == "hit"
+
+
+def test_read_only_load_missing_root_never_creates_cache_paths(tmp_path: Path) -> None:
+    req = request(tmp_path)
+
+    with pytest.raises(FrameMaskCacheError, match="cache root"):
+        load_complete_frame_masks(req)
+
+    assert not req.cache_root.exists()
+    assert not (req.cache_root.parent / "locks").exists()
+
+
+def test_read_only_load_of_published_entry_never_mkdirs(tmp_path: Path, monkeypatch) -> None:
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+
+    def forbidden_mkdir(*_args, **_kwargs):
+        raise AssertionError("read-only load must not create directories")
+
+    monkeypatch.setattr(Path, "mkdir", forbidden_mkdir)
+    loaded = load_complete_frame_masks(req)
+
+    np.testing.assert_array_equal(loaded.masks_by_object_id[7], np.eye(4, dtype=bool))
+
+
+def test_read_only_load_missing_lock_is_a_typed_error_without_writes(
+    tmp_path: Path,
+) -> None:
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+    (req.cache_root / "locks" / "7.lock").unlink()
+
+    with pytest.raises(FrameMaskCacheError, match="lock"):
+        load_complete_frame_masks(req)
+
+    assert not (req.cache_root / "locks" / "7.lock").exists()
+
+
+def test_read_only_load_succeeds_from_published_read_only_cache(
+    tmp_path: Path,
+) -> None:
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+    entry = req.cache_root / "entries" / "7"
+    lock = req.cache_root / "locks" / "7.lock"
+    os.chmod(req.cache_root, 0o555)
+    os.chmod(entry.parent, 0o555)
+    os.chmod(entry, 0o555)
+    os.chmod(lock, 0o444)
+    try:
+        loaded = load_complete_frame_masks(req)
+    finally:
+        os.chmod(req.cache_root, 0o755)
+        os.chmod(entry.parent, 0o755)
+        os.chmod(entry, 0o755)
+        os.chmod(lock, 0o644)
+
+    np.testing.assert_array_equal(loaded.masks_by_object_id[7], np.eye(4, dtype=bool))
+
+
+def test_read_only_lock_permission_error_is_typed(tmp_path: Path, monkeypatch) -> None:
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+    lock = req.cache_root / "locks" / "7.lock"
+    original_open = Path.open
+
+    def denied_open(path: Path, *args, **kwargs):
+        if path == lock:
+            raise PermissionError("denied")
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", denied_open)
+    with pytest.raises(FrameMaskCacheError, match="cannot read cache lock"):
+        load_complete_frame_masks(req)
 
 
 @pytest.mark.parametrize(

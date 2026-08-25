@@ -1,4 +1,4 @@
-"""Strict schema-v3 DA3 to bundle-v1 static web-viewer exporter."""
+"""Strict schema-v3 DA3 to bundle-v2 static web-viewer exporter."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ _THUMB_JPEG_QUALITY = 85
 
 
 class WebViewerExportError(ValueError):
-    """Raised when an input cannot satisfy the strict bundle-v1 contract."""
+    """Raised when an input cannot satisfy the strict bundle-v2 contract."""
 
 
 def export_web_viewer_bundle(
@@ -92,7 +92,7 @@ def export_web_viewer_bundle(
     max_points: int = 500_000,
     filter_config: PointCloudFilterConfig | None = None,
 ) -> dict[str, object]:
-    """Export verified formal artifacts and sampled DA3 points as bundle-v1."""
+    """Export verified formal artifacts and sampled DA3 points as bundle-v2."""
     voxel_size = _validate_export_options(voxel_size_m, max_points)
     actual_filter_config = filter_config or PointCloudFilterConfig()
     cache = _load_da3_cache(Path(da3_cache_path))

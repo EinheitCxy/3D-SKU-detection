@@ -210,15 +210,45 @@ def _lock_path(request: FrameMaskCacheRequest) -> Path:
 
 
 @contextlib.contextmanager
-def _frame_lock(request: FrameMaskCacheRequest, *, exclusive: bool) -> Iterator[None]:
+def _read_frame_lock(request: FrameMaskCacheRequest) -> Iterator[None]:
+    """Take an existing shared lock without changing cache state."""
+    cache_root = Path(request.cache_root)
+    try:
+        if not cache_root.is_dir():
+            raise FrameMaskCacheError("cache root is missing or is not a directory")
+        lock_path = _lock_path(request)
+        with lock_path.open("rb") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except FrameMaskCacheError:
+        raise
+    except FileNotFoundError as exc:
+        raise FrameMaskCacheError("cache lock is missing") from exc
+    except OSError as exc:
+        raise FrameMaskCacheError(f"cannot read cache lock: {exc}") from exc
+
+
+@contextlib.contextmanager
+def _producer_frame_lock(
+    request: FrameMaskCacheRequest, *, exclusive: bool
+) -> Iterator[None]:
+    """Take a producer lock, creating its parent and lock file when needed."""
     lock_path = _lock_path(request)
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+b") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
-        try:
-            yield
-        finally:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    try:
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        with lock_path.open("a+b") as handle:
+            fcntl.flock(
+                handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+            )
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    except OSError as exc:
+        raise FrameMaskCacheError(f"cannot acquire producer cache lock: {exc}") from exc
 
 
 def _canonical_clip(
@@ -330,7 +360,7 @@ def _load_entry(
 def load_complete_frame_masks(request: FrameMaskCacheRequest) -> FrameMaskCacheResult:
     """Read a complete, matching v2 frame entry without invoking inference."""
     validated = _validated_request(request)
-    with _frame_lock(request, exclusive=False):
+    with _read_frame_lock(request):
         return _load_entry(request, validated)
 
 
@@ -405,12 +435,12 @@ def load_or_compute_frame_masks(
 ) -> FrameMaskCacheResult:
     """Load a complete v2 frame or compute and atomically publish it once."""
     validated = _validated_request(request)
-    with _frame_lock(request, exclusive=False):
+    with _producer_frame_lock(request, exclusive=False):
         try:
             return _load_entry(request, validated)
         except FrameMaskCacheError:
             pass
-    with _frame_lock(request, exclusive=True):
+    with _producer_frame_lock(request, exclusive=True):
         try:
             return _load_entry(request, validated)
         except FrameMaskCacheError:
