@@ -137,6 +137,13 @@ describe("strict bundle contracts", () => {
     expect(validateManifest(validManifest)).toMatchObject({ schema_version: "2.0.0", point_count: 1 });
   });
 
+  it("rejects a manifest that does not advertise point picking", () => {
+    expect(() => validateManifest({
+      ...validManifest,
+      capabilities: { ...validManifest.capabilities, point_picking: false },
+    })).toThrow(/capabilities/);
+  });
+
   it("accepts only the canonical processed mask bundle v2 source", () => {
     expect(validateManifest(validManifest).source.sam3_mask).toEqual({
       schema: "sam3_self_exemplar_processed_mask_cache_v1",
@@ -255,12 +262,68 @@ describe("strict bundle contracts", () => {
 
   it.each([
     ["non-finite score", { candidates: [candidate("A", "产品A", Number.NaN, 1, 0.8)] }],
+    ["negative score", { candidates: [candidate("A", "产品A", -0.1, 1, 0.8)] }],
     ["primary mismatch", { primary_sku_id: "B" }],
     ["duplicate candidate", { candidates: [candidate("A", "产品A", 1, 1, 1), candidate("A", "产品A", 0.5, 1, 0.5)] }],
     ["invalid metadata", { metadata: { ...pendingMetadata(), status: "resolved" } }],
   ])("rejects %s", (_label, mutation) => {
     const valid = { status: "resolved", primary_sku_id: "A", candidates: [candidate("A", "产品A", 1, 1, 1)], metadata: pendingMetadata() };
     expect(() => validateObjectIndex({ "1": { ...validObjects["11"], instances: [{ ...validObjects["11"].instances[0], thumbnail: "thumbs/1_0.jpg" }], classification: { ...valid, ...mutation } } }, 12)).toThrow();
+  });
+
+  it("accepts an unavailable observation with an unavailable aggregate", () => {
+    const unavailable = { schema_version: "1.0.0", source: "personalcare", project_id: 51, status: "unavailable", reason: "invalid_bbox" };
+    const result = validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: unavailable }],
+      classification: { status: "unavailable", primary_sku_id: null, candidates: [], metadata: pendingMetadata() },
+    } }, 1);
+    expect(result["11"].instances[0].classification).toMatchObject({ status: "unavailable", reason: "invalid_bbox" });
+  });
+
+  it.each([
+    ["below zero", -0.01],
+    ["above one", 1.01],
+    ["NaN", Number.NaN],
+    ["Infinity", Number.POSITIVE_INFINITY],
+    ["boolean", true],
+  ])("rejects resolved observation confidence %s", (_label, confidence) => {
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: { ...resolvedObservation(), confidence } }],
+    } }, 1)).toThrow(/confidence/);
+  });
+
+  it("rejects observation identity, exact keys, and metadata violations", () => {
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: { ...resolvedObservation(), source: "other" } }],
+    } }, 1)).toThrow(/identity/);
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: { ...resolvedObservation(), project_id: true } }],
+    } }, 1)).toThrow(/project_id/);
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: { ...resolvedObservation(), project_id: 51.5 } }],
+    } }, 1)).toThrow(/project_id/);
+    const { confidence: _missingConfidence, ...withoutConfidence } = resolvedObservation();
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: withoutConfidence }],
+    } }, 1)).toThrow(/fields are invalid/);
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: { ...resolvedObservation(), extra: true } }],
+    } }, 1)).toThrow(/fields are invalid/);
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: { ...resolvedObservation(), metadata: { ...pendingMetadata(), extra: null } } }],
+    } }, 1)).toThrow(/metadata/);
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: { ...resolvedObservation(), metadata: { ...pendingMetadata(), status: "resolved" } } }],
+    } }, 1)).toThrow(/metadata/);
   });
 
   it("rejects candidates outside deterministic order", () => {

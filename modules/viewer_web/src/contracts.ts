@@ -456,7 +456,7 @@ function validateClassificationCandidate(value: unknown, label: string): Classif
   requireExactKeys(record, ["sku_id", "sku_name", "confidence_sum", "support_count", "max_confidence"], label);
   const skuId = asNonEmptyString(record.sku_id, `${label}.sku_id`);
   const skuName = asNonEmptyString(record.sku_name, `${label}.sku_name`);
-  if (!isFiniteNumber(record.confidence_sum)) throw contractError(`${label}.confidence_sum must be finite`);
+  if (!isFiniteNumber(record.confidence_sum) || record.confidence_sum < 0) throw contractError(`${label}.confidence_sum must be finite and non-negative`);
   const supportCount = asPositiveInteger(record.support_count, `${label}.support_count`);
   if (!isFiniteNumber(record.max_confidence) || record.max_confidence < 0 || record.max_confidence > 1) throw contractError(`${label}.max_confidence must be within [0, 1]`);
   return { sku_id: skuId, sku_name: skuName, confidence_sum: record.confidence_sum, support_count: supportCount, max_confidence: record.max_confidence };
