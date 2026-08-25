@@ -99,7 +99,7 @@ def dispatch_stage(
             footprint_root=dataset_output / "ground_stack_footprint",
             output_dir=viewer_output or save_root.parent / "viewer-data",
             source_images_dir=dataset / "images",
-            sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v1",
+            sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
             voxel_size_m=0.005,
             max_points=1_500_000,
         )

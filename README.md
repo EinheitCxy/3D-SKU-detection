@@ -74,7 +74,7 @@ matching 是唯一的 SAM3 producer。默认 `enable_sam3_mask_sampling: true` �
 
 `sam3_mask_cache/v1` 与 v2 不兼容：v1 从不被读取、迁移、复制或删除。v2 的 formal metric 是 `da3_self_exemplar_ground_footprint_union`，viewer bundle schema 是 `2.0.0`；它们与旧面积输出和 bundle `1.0.0` 不可数值比较，旧 bundle 必须按上述顺序重新生成。
 
-DA3 bbox 的 source→processed 映射固定为 `predictions.npz` 中每帧的 pixel-center affine：`x'=sx*x+(sx-1)/2`、`y'=sy*y+(sy-1)/2`，并裁剪到该 cache 的 processed grid。matching 不会由 `process_res` 合成 affine；缺少显式 cache affine/shape 会 fail closed。旧 scale-only 或含 raw out-of-grid bbox 的 v2 entries 均不能命中，须完整重跑 matching → footprint → export。
+DA3 bbox 的 source→processed 映射唯一权威是 `predictions.npz` 中每帧完整的 `source_to_processed_affine`（2×3）及其 processed grid。该 affine 可能同时编码 resize、pixel-center、patch rounding 与 crop offset；`x'=sx*x+(sx-1)/2`、`y'=sy*y+(sy-1)/2` 仅是没有额外 crop 的 simple-resize 例子，绝不能据此重算或替代 cache。matching 缺少显式 cache affine/shape 会 fail closed；旧 scale-only 或含 raw out-of-grid bbox 的 v2 entries 均不能命中，须完整重跑 matching → footprint → export。
 
 ## Viewer 与点云策略
 

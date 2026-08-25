@@ -198,7 +198,7 @@ def test_viewer_export_dispatch_uses_case_specific_output(tmp_path: Path) -> Non
     assert result == {"success": True, "point_count": 42}
     assert captured["output_dir"] == tmp_path / "warm" / "viewer-data"
     assert captured["sam3_mask_cache_root"] == (
-        tmp_path / "cold" / "output" / "floor_display2" / "sam3_mask_cache" / "v1"
+        tmp_path / "cold" / "output" / "floor_display2" / "sam3_mask_cache" / "v2"
     )
 
 

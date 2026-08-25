@@ -149,3 +149,16 @@ no affine/bbox mismatch, then rejected only on the existing support-plane
 compatibility gate. Viewer export succeeded with 456455 points and 436
 thumbnails at `/tmp/da3-pixel-center-r2/viewer/runs/30d9db8edeff47a19ea152ed8966e465/`.
 Because the core fd2 matching count did not change, fd6/fd12 were not rerun.
+
+## Final documentation and benchmark cleanup
+
+The operator documentation now states that the complete per-frame 2x3
+`source_to_processed_affine` stored in `predictions.npz` is the sole
+authority. It may include resize, pixel-centre, patch-rounding, and crop
+offset terms; the simple pixel-centre resize formula is illustrative only and
+must never be recomputed in place of the cache.
+
+`perf/stage_entry.py` is the active subprocess dispatcher used by
+`perf/benchmark.py` for the viewer-export stage. Its cache root is now the
+canonical `sam3_mask_cache/v2`; its regression test asserts that exact path,
+with no v1 fallback.
