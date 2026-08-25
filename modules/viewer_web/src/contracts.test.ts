@@ -282,6 +282,38 @@ describe("strict bundle contracts", () => {
   });
 
   it.each([
+    ["source other", { source: "other" }],
+    ["project_id float", { project_id: 51.5 }],
+    ["project_id boolean", { project_id: true }],
+    ["project_id other", { project_id: 52 }],
+    ["reason other", { reason: "other" }],
+    ["reason empty", { reason: "" }],
+    ["extra metadata key", { metadata: pendingMetadata() }],
+    ["extra sku_id key", { sku_id: "A" }],
+  ])("rejects unavailable observation %s", (_label, mutation) => {
+    const unavailable = { schema_version: "1.0.0", source: "personalcare", project_id: 51, status: "unavailable", reason: "invalid_bbox", ...mutation };
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: unavailable }],
+      classification: { status: "unavailable", primary_sku_id: null, candidates: [], metadata: pendingMetadata() },
+    } }, 1)).toThrow();
+  });
+
+  it.each([
+    ["missing reason", (({ reason: _reason, ...value }) => value)( { schema_version: "1.0.0", source: "personalcare", project_id: 51, status: "unavailable", reason: "invalid_bbox" })],
+    ["missing schema", (({ schema_version: _schema, ...value }) => value)( { schema_version: "1.0.0", source: "personalcare", project_id: 51, status: "unavailable", reason: "invalid_bbox" })],
+    ["missing source", (({ source: _source, ...value }) => value)( { schema_version: "1.0.0", source: "personalcare", project_id: 51, status: "unavailable", reason: "invalid_bbox" })],
+    ["missing project_id", (({ project_id: _projectId, ...value }) => value)( { schema_version: "1.0.0", source: "personalcare", project_id: 51, status: "unavailable", reason: "invalid_bbox" })],
+    ["missing status", (({ status: _status, ...value }) => value)( { schema_version: "1.0.0", source: "personalcare", project_id: 51, status: "unavailable", reason: "invalid_bbox" })],
+  ])("rejects unavailable observation %s", (_label, unavailable) => {
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      instances: [{ ...validObjects["11"].instances[0], classification: unavailable }],
+      classification: { status: "unavailable", primary_sku_id: null, candidates: [], metadata: pendingMetadata() },
+    } }, 1)).toThrow();
+  });
+
+  it.each([
     ["below zero", -0.01],
     ["above one", 1.01],
     ["NaN", Number.NaN],
