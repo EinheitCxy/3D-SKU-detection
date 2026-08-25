@@ -35,6 +35,7 @@ from utils.sam3_mask_cache import (
     ProcessedDetectionPrompt,
     SCHEMA as SAM3_MASK_CACHE_SCHEMA,
     load_complete_frame_masks,
+    map_source_bbox_to_processed,
 )
 
 logger = logging.getLogger(__name__)
@@ -603,15 +604,7 @@ def _processed_bbox(
     source_bbox: list[float], affine: np.ndarray
 ) -> tuple[float, float, float, float]:
     """Map a source bbox into the DA3 processed pixel space."""
-    x1, y1, x2, y2 = source_bbox
-    corners = np.asarray([[x1, y1], [x1, y2], [x2, y1], [x2, y2]], dtype=np.float64)
-    processed = corners @ affine[:, :2].T + affine[:, 2]
-    return (
-        float(processed[:, 0].min()),
-        float(processed[:, 1].min()),
-        float(processed[:, 0].max()),
-        float(processed[:, 1].max()),
-    )
+    return map_source_bbox_to_processed(source_bbox, affine)
 
 
 def _instance_labels_v2(
@@ -677,7 +670,7 @@ def _instance_labels_v2(
                 source_bbox_xyxy=tuple(bbox),
                 processed_bbox_xyxy=_processed_bbox(bbox, affine),
             )
-            for _label, bbox, object_id in instances
+            for _label, bbox, object_id in sorted(instances, key=lambda item: item[2])
         )
         request = FrameMaskCacheRequest(
             cache_root=mask_cache_root,

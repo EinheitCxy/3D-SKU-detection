@@ -78,7 +78,7 @@ batch_accuracy:
   base_dir: "imdata"  # 包含floor_display*目录的根目录，用于批量扫描所有数据集进行评估
 
 # 地堆 footprint 面积配置（--mode ground-stack-area）
-# 指标：da3_ground_footprint_union —— 每个 carton OBB 投影到支撑平面的多边形并集（m²）
-# 锚点无关（无标尺/校准参数）；要求 DA3 cache、global_mapping.json 与本地 SAM3 checkpoint。
+# 指标：da3_self_exemplar_ground_footprint_union —— matching 生成的 self-exemplar mask
+# 投影每个 carton OBB 到支撑平面后的多边形并集（m²）；要求 DA3 cache、global_mapping.json 与完整 v2 mask cache。
 ground_stack_footprint:
-  metric: "da3_ground_footprint_union"  # 并集面积，不是 bbox 面积算术和
+  metric: "da3_self_exemplar_ground_footprint_union"  # 并集面积，不是 bbox 面积算术和

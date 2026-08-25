@@ -399,6 +399,46 @@ def test_processed_masks_label_grid_without_inverse_affine(exporter_inputs):
     }
 
 
+def test_processed_mask_request_uses_original_object_order_not_global_id_order(
+    exporter_inputs, tmp_path: Path
+) -> None:
+    """Exporter must reproduce the producer's complete per-frame detection order."""
+    from src.web_viewer_export import _instance_labels_v2, _load_da3_cache
+
+    cache_root = tmp_path / "ordered" / "sam3_mask_cache" / "v2"
+    images_dir = cache_root.parents[1] / "images"
+    images_dir.mkdir(parents=True)
+    _write_source_image(images_dir / "7.JPG")
+    masks = np.zeros((2, 2, 2), dtype=bool)
+    masks[0, 0, 0] = True
+    masks[1, 1, 0] = True
+    _write_sam3_mask_entry(
+        cache_root,
+        _SOURCE_IMAGE_SHA256,
+        [(1, [0.0, 0.0, 2.0, 2.0]), (3, [1.0, 2.0, 3.0, 4.0])],
+        masks,
+    )
+    objects = {
+        "11": {
+            "instances": [{"image_id": 7, "object_id": 3, "bbox": [1.0, 2.0, 3.0, 4.0]}]
+        },
+        "12": {
+            "instances": [{"image_id": 7, "object_id": 1, "bbox": [0.0, 0.0, 2.0, 2.0]}]
+        },
+    }
+
+    labels, keys = _instance_labels_v2(
+        _load_da3_cache(exporter_inputs["da3_cache_path"]),
+        objects,
+        np.arange(4, dtype=np.int64),
+        4,
+        cache_root,
+    )
+
+    assert keys == [("11", 0), ("12", 0)]
+    assert labels.tolist() == [1, -1, 0, -1]
+
+
 def test_exporter_does_not_call_sam3(monkeypatch, exporter_inputs):
     monkeypatch.setattr(
         "utils.sam3_utils.sam3_masks_self_exemplar",

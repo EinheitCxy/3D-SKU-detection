@@ -12,7 +12,7 @@ import torch
 from PIL import Image
 
 from utils.config import SKUMatchingConfig, build_matching_config_from_yaml
-from utils.transforms import Pi3ImageTransform
+from utils.transforms import DA3ImageTransform, Pi3ImageTransform
 
 
 def _frame_objects() -> list[dict[str, object]]:
@@ -84,6 +84,35 @@ def test_self_exemplar_clip_uses_the_pre_change_v2_pixel_boundary_rule() -> None
         4,
         4,
     )
+
+
+def test_da3_processed_request_uses_pixel_center_affine_exactly(
+    tmp_path: Path,
+) -> None:
+    """The matching producer must publish the exact affine DA3 consumers request."""
+    from utils import sam3_utils
+    from utils.sam3_mask_cache import map_source_bbox_to_processed
+
+    image_path = tmp_path / "0.JPG"
+    Image.new("RGB", (4032, 3024)).save(image_path)
+    transform = DA3ImageTransform(4032, 3024, 504, 378)
+    source_bbox = [1143.0, 2198.0, 1322.0, 2612.0]
+
+    request = sam3_utils._processed_frame_request(
+        cache_root=tmp_path / "sam3_mask_cache" / "v2",
+        image_path=image_path,
+        image_id=0,
+        frame_detections=[{"position": source_bbox}],
+        transform=transform,
+    )
+
+    expected_affine = np.asarray(
+        [[0.125, 0.0, -0.4375], [0.0, 0.125, -0.4375]], dtype=np.float64
+    )
+    expected_bbox = (142.4375, 274.3125, 164.8125, 326.0625)
+    assert np.array_equal(request.source_to_processed_affine, expected_affine)
+    assert request.detections[0].processed_bbox_xyxy == expected_bbox
+    assert map_source_bbox_to_processed(source_bbox, expected_affine) == expected_bbox
 
 
 def test_matching_publishes_complete_frame_once_and_restores_rng(
@@ -271,7 +300,9 @@ def test_empty_and_filtered_reference_frames_publish_complete_v2_entries(
     ]
     cache_root = tmp_path / "sam3_mask_cache" / "v2"
     config = _config(cache_root)
-    config.output_dir = str(tmp_path / "Output" / "sample" / "output_3dmapping_da3" / "0")
+    config.output_dir = str(
+        tmp_path / "Output" / "sample" / "output_3dmapping_da3" / "0"
+    )
     cache_path = Path(config.output_dir).parent.parent / "da3_cache" / "predictions.npz"
     cache_path.parent.mkdir(parents=True)
     np.savez(

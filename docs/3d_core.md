@@ -52,6 +52,8 @@ v2 cache 的每个 payload 是 processed DA3 grid 上 `(object_count, height, wi
 
 `--mode ground-stack-area` 只读取 matching 已发布的 v2 cache、metric DA3 cache 与去重映射，不导入、加载或推理 SAM3，也不会因 cache miss 重算。它为每个 `global_id` 从全部有效观测重建 OBB，并在支撑平面上取 polygon union，得到 `da3_self_exemplar_ground_footprint_union`（m²）。缺少任何 canonical mask 或必要几何会发布 `rejected`/`null`，不会伪造部分结果。该 metric 是新 baseline，不能与旧 `da3_ground_footprint_union` 面积比较。
 
+matching producer 与所有 v2 consumer 都以 DA3 cache 的 pixel-center affine 映射 bbox：`x'=sx*x+(sx-1)/2`、`y'=sy*y+(sy-1)/2`。此前 scale-only matching 的 assignments、global IDs、footprint 与 bundle 不是同一 baseline，必须重跑完整顺序。
+
 cache 不再是 Web Viewer 的 protection mask。Viewer export 也只读 v2 processed masks，绝不加载或推理 SAM3；它在常规点云过滤之后传播实例标签。任何点都不会因带有 SAM3 标签而跳过点云去噪、地面或天空过滤。
 
 ## Web Viewer

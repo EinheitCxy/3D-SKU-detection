@@ -51,7 +51,9 @@ class Pi3ImageTransform(ImageTransformBase):
     警告：仅用于Pi3模型！不要与VGGT模型混用！
     """
 
-    def __init__(self, orig_width: int, orig_height: int, target_width: int, target_height: int):
+    def __init__(
+        self, orig_width: int, orig_height: int, target_width: int, target_height: int
+    ):
         """初始化Pi3变换参数
 
         Args:
@@ -66,8 +68,12 @@ class Pi3ImageTransform(ImageTransformBase):
         self.target_height = int(target_height)
 
         # 计算缩放比例
-        self.scale_x = self.target_width / self.orig_width if self.orig_width > 0 else 1.0
-        self.scale_y = self.target_height / self.orig_height if self.orig_height > 0 else 1.0
+        self.scale_x = (
+            self.target_width / self.orig_width if self.orig_width > 0 else 1.0
+        )
+        self.scale_y = (
+            self.target_height / self.orig_height if self.orig_height > 0 else 1.0
+        )
 
     def map_xy_to_final(self, x: float, y: float) -> Tuple[float, float]:
         """将原图坐标映射到Pi3 resize后的坐标"""
@@ -140,9 +146,42 @@ class Pi3ImageTransform(ImageTransformBase):
         }
 
 
+class DA3ImageTransform(Pi3ImageTransform):
+    """DA3 source-to-grid transform with the canonical pixel-centre affine."""
+
+    def __init__(
+        self,
+        orig_width: int,
+        orig_height: int,
+        target_width: int,
+        target_height: int,
+    ):
+        super().__init__(orig_width, orig_height, target_width, target_height)
+        self.source_to_processed_affine = np.asarray(
+            [
+                [self.scale_x, 0.0, (self.scale_x - 1.0) / 2.0],
+                [0.0, self.scale_y, (self.scale_y - 1.0) / 2.0],
+            ],
+            dtype=np.float64,
+        )
+
+    def map_xy_to_final(self, x: float, y: float) -> Tuple[float, float]:
+        affine = self.source_to_processed_affine
+        return (
+            float(affine[0, 0] * x + affine[0, 2]),
+            float(affine[1, 1] * y + affine[1, 2]),
+        )
+
+    def map_xy_to_original(self, x: float, y: float) -> Tuple[float, float]:
+        affine = self.source_to_processed_affine
+        return (
+            float((x - affine[0, 2]) / affine[0, 0]),
+            float((y - affine[1, 2]) / affine[1, 1]),
+        )
+
+
 def build_pi3_transforms(
-    image_paths: List[str],
-    pixel_limit: int = 255000
+    image_paths: List[str], pixel_limit: int = 255000
 ) -> List[Pi3ImageTransform]:
     """构建Pi3变换列表，复用Pi3的resize逻辑
 
@@ -199,9 +238,8 @@ def build_pi3_transforms(
 
 
 def build_da3_transforms(
-    image_paths: List[str],
-    process_res: int = 504
-) -> List[Pi3ImageTransform]:
+    image_paths: List[str], process_res: int = 504
+) -> List[DA3ImageTransform]:
     """构建 DA3 变换列表，目标尺寸用 DA3 upper_bound_resize 算法从 process_res 派生。
 
     与 da3_runner.py 的 model.inference(process_res=, process_res_method="upper_bound_resize")
@@ -230,7 +268,7 @@ def build_da3_transforms(
     for img_path in image_paths:
         # PIL 懒读取尺寸，不 convert("RGB")（Pi3ImageTransform 只用 w/h 数值）
         w, h = Image.open(img_path).size
-        t = Pi3ImageTransform(w, h, TARGET_W, TARGET_H)
+        t = DA3ImageTransform(w, h, TARGET_W, TARGET_H)
         try:
             t.image_id = int(Path(img_path).stem)
         except (ValueError, TypeError):
@@ -256,30 +294,32 @@ class VGGTImageTransform(ImageTransformBase):
         self.orig_width = int(orig_width)
         self.orig_height = int(orig_height)
         self.target_size = int(target_size)
-        
+
         # 步骤1：固定宽度为target_size，高度按比例调整并取整到14的倍数
         # 完全复制VGGT的计算逻辑：round(height * (new_width / width) / 14) * 14
         self.proc_width = self.target_size  # 固定518
-        self.proc_height = int(round(self.orig_height * (self.proc_width / self.orig_width) / 14) * 14)
-        
+        self.proc_height = int(
+            round(self.orig_height * (self.proc_width / self.orig_width) / 14) * 14
+        )
+
         # 计算缩放比例
         self.scale_x = self.proc_width / self.orig_width
         self.scale_y = self.proc_height / self.orig_height
-        
+
         # 步骤2：处理高度裁剪（如果proc_height > target_size）
         # 修复：不再使用负offset，而是直接记录裁剪起始位置
         self.crop_applied = False
         self.crop_start_y = 0
-        
+
         if self.proc_height > self.target_size:
             self.crop_applied = True
             self.crop_start_y = (self.proc_height - self.target_size) // 2
             self.final_height = self.target_size
         else:
             self.final_height = self.proc_height
-            
+
         self.final_width = self.proc_width
-        
+
         # 步骤3：初始化批量填充参数（会在apply_batch_padding中设置）
         self.batch_pad_left = 0
         self.batch_pad_top = 0
@@ -288,25 +328,25 @@ class VGGTImageTransform(ImageTransformBase):
 
     def apply_batch_padding(self, max_width: int, max_height: int) -> None:
         """应用批量填充，对齐到最大尺寸
-        
+
         【关键修正】: 根据VGGT源代码分析，在crop模式下，批处理填充是居中对齐的：
-        
+
         VGGT源代码（第210-213行）：
         h_padding = max_height - img.shape[1]
         w_padding = max_width - img.shape[2]
         pad_top = h_padding // 2
         pad_left = w_padding // 2
-        
+
         这是导致坐标错乱的根本原因！
         """
         # 计算填充量
         h_padding = max_height - self.final_height
         w_padding = max_width - self.final_width
-        
+
         # 居中填充（与VGGT源代码保持一致）
         self.batch_pad_left = w_padding // 2 if w_padding > 0 else 0
         self.batch_pad_top = h_padding // 2 if h_padding > 0 else 0
-            
+
         # 更新最终画布尺寸
         self.padded_width = max_width
         self.padded_height = max_height
@@ -329,8 +369,12 @@ class VGGTImageTransform(ImageTransformBase):
         y_cropped = self._clamp_coord(y_cropped, 0.0, self.final_height - 1)
 
         # 步骤3：填充
-        x_final = self._clamp_coord(x_cropped + self.batch_pad_left, 0.0, self.padded_width - 1)
-        y_final = self._clamp_coord(y_cropped + self.batch_pad_top, 0.0, self.padded_height - 1)
+        x_final = self._clamp_coord(
+            x_cropped + self.batch_pad_left, 0.0, self.padded_width - 1
+        )
+        y_final = self._clamp_coord(
+            y_cropped + self.batch_pad_top, 0.0, self.padded_height - 1
+        )
 
         return x_final, y_final
 
@@ -339,29 +383,29 @@ class VGGTImageTransform(ImageTransformBase):
         points: 形如 (..., 2) 的 numpy 数组或 torch 张量。返回同类型同形状。
         """
         is_torch = torch.is_tensor(points)
-        
+
         if is_torch:
             # PyTorch tensor处理
             result = torch.zeros_like(points)
             flat_points = points.view(-1, 2)
-            
+
             for i in range(flat_points.shape[0]):
                 x, y = flat_points[i, 0].item(), flat_points[i, 1].item()
                 xf, yf = self.map_xy_to_final(x, y)
                 result.view(-1, 2)[i, 0] = xf
                 result.view(-1, 2)[i, 1] = yf
-                
+
             return result
         else:
-            # NumPy数组处理  
+            # NumPy数组处理
             result = np.zeros_like(points)
             flat_points = points.reshape(-1, 2)
-            
+
             for i, (x, y) in enumerate(flat_points):
                 xf, yf = self.map_xy_to_final(x, y)
-                result.flat[i*2] = xf
-                result.flat[i*2+1] = yf
-                
+                result.flat[i * 2] = xf
+                result.flat[i * 2 + 1] = yf
+
             return result.reshape(points.shape)
 
     # 继承基类的 map_bbox_to_final
@@ -391,29 +435,29 @@ class VGGTImageTransform(ImageTransformBase):
     def map_points_to_original(self, points):
         """批量映射点坐标回原图空间"""
         is_torch = torch.is_tensor(points)
-        
+
         if is_torch:
             # PyTorch tensor处理
             result = torch.zeros_like(points)
             flat_points = points.view(-1, 2)
-            
+
             for i in range(flat_points.shape[0]):
                 x, y = flat_points[i, 0].item(), flat_points[i, 1].item()
                 xo, yo = self.map_xy_to_original(x, y)
                 result.view(-1, 2)[i, 0] = xo
                 result.view(-1, 2)[i, 1] = yo
-                
+
             return result
         else:
             # NumPy数组处理
             result = np.zeros_like(points)
             flat_points = points.reshape(-1, 2)
-            
+
             for i, (x, y) in enumerate(flat_points):
                 xo, yo = self.map_xy_to_original(x, y)
-                result.flat[i*2] = xo
-                result.flat[i*2+1] = yo
-                
+                result.flat[i * 2] = xo
+                result.flat[i * 2 + 1] = yo
+
             return result.reshape(points.shape)
 
     # 继承基类的 map_bbox_to_original
@@ -428,11 +472,13 @@ class VGGTImageTransform(ImageTransformBase):
             "scales": (self.scale_x, self.scale_y),
             "crop_applied": self.crop_applied,
             "crop_start_y": self.crop_start_y,
-            "batch_padding": (self.batch_pad_left, self.batch_pad_top)
+            "batch_padding": (self.batch_pad_left, self.batch_pad_top),
         }
 
 
-def build_vggt_transforms(image_paths: List[str], target_size: int = 518) -> List[VGGTImageTransform]:
+def build_vggt_transforms(
+    image_paths: List[str], target_size: int = 518
+) -> List[VGGTImageTransform]:
     """构建修复版本的VGGT变换列表，完全对齐load_and_preprocess_images("crop")的实现
 
     修复要点：
@@ -467,9 +513,7 @@ def build_vggt_transforms(image_paths: List[str], target_size: int = 518) -> Lis
 
 
 def build_transforms(
-    image_paths: List[str],
-    model_type: str = "vggt",
-    **kwargs
+    image_paths: List[str], model_type: str = "vggt", **kwargs
 ) -> List[ImageTransformBase]:
     """自动根据模型类型构建对应的Transform（统一入口）
 
@@ -505,12 +549,12 @@ def build_transforms(
         return build_da3_transforms(image_paths, process_res=process_res)
     else:
         raise ValueError(
-            f"不支持的模型类型: {model_type}。"
-            f"支持的类型: 'vggt', 'pi3', 'da3'"
+            f"不支持的模型类型: {model_type}。" f"支持的类型: 'vggt', 'pi3', 'da3'"
         )
 
 
 # ========== Lightweight adapters for transforms.json ==========
+
 
 class JSONTransformAdapter:
     """A lightweight adapter built from transforms.json minimal fields.
@@ -587,7 +631,9 @@ def build_transforms_from_json(
             sx, sy = fr["scales"][0], fr["scales"][1]
             crop_start_y = int(fr.get("crop_start_y", 0))
             pad_left, pad_top = fr.get("batch_padding", [0, 0])
-            by_img[img_id] = JSONTransformAdapter(sx, sy, crop_start_y, int(pad_left), int(pad_top), pw, ph)
+            by_img[img_id] = JSONTransformAdapter(
+                sx, sy, crop_start_y, int(pad_left), int(pad_top), pw, ph
+            )
         except (KeyError, ValueError, TypeError) as e:
             # Skip malformed frame entries (missing fields or invalid types)
             logger.debug(f"Skipping malformed frame entry: {e}")

@@ -313,12 +313,12 @@ The classifier extension later adds classification to `objects.json` under the s
 
 ### GPU matching equivalence
 
-For one locked dataset and seed, capture the current direct self-exemplar baseline before replacing the path, then compare v2 cold and warm:
+For one locked dataset and seed, capture the pixel-center direct self-exemplar baseline after replacing the path, then compare v2 cold and warm:
 
 - Mask count and per-object mask pixels byte-exact.
 - Sampled points byte-exact.
-- Correspondence JSON and matching summary byte-equivalent.
-- Matching assignments identical.
+- Correspondence JSON and matching summary byte-equivalent to the pixel-center direct baseline.
+- Matching assignments identical to the pixel-center direct baseline. The old scale-only assignments are intentionally non-comparable and may change.
 - Recall/Precision/F1 do not decline.
 
 If RNG state or assignments differ, implementation is not accepted until the cause is resolved. Cache serialization losslessness alone is insufficient.

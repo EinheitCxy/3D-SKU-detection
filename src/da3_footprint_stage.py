@@ -54,6 +54,7 @@ from utils.sam3_mask_cache import (
     ProcessedDetectionPrompt,
     SCHEMA as SAM3_MASK_CACHE_SCHEMA,
     load_complete_frame_masks,
+    map_source_bbox_to_processed,
 )
 
 _CACHE_FIELDS = {
@@ -646,14 +647,10 @@ def _masked_observations(
             }
         )
         all_masks = np.zeros((height, width), dtype=bool)
-        valid_grid = _valid_points(
-            point_clouds[frame_index], confidence[frame_index]
-        )
+        valid_grid = _valid_points(point_clouds[frame_index], confidence[frame_index])
         for item in frame_detections:
             object_id = int(item["object_id"])
-            processed_mask = np.asarray(
-                masks_by_object_id[object_id], dtype=bool
-            )
+            processed_mask = np.asarray(masks_by_object_id[object_id], dtype=bool)
             if processed_mask.shape != (height, width):
                 raise FootprintStageError(
                     "canonical self-exemplar mask cache is incomplete; "
@@ -678,9 +675,7 @@ def _masked_observations(
                 )
             )
             if not processed_mask.any():
-                diagnostic["rejection"] = (
-                    "processed self-exemplar mask is empty"
-                )
+                diagnostic["rejection"] = "processed self-exemplar mask is empty"
                 observations[global_id].append(np.empty((0, 3), dtype=float))
             else:
                 valid = valid_grid & processed_mask
@@ -711,15 +706,7 @@ def _masked_observations(
 def _map_bbox_affine(
     bbox_xyxy: list[float] | tuple[float, ...], affine: np.ndarray
 ) -> tuple[float, float, float, float]:
-    x1, y1, x2, y2 = (float(value) for value in bbox_xyxy)
-    first = affine @ np.asarray([x1, y1, 1.0], dtype=np.float64)
-    second = affine @ np.asarray([x2, y2, 1.0], dtype=np.float64)
-    return (
-        float(first[0]),
-        float(first[1]),
-        float(second[0]),
-        float(second[1]),
-    )
+    return map_source_bbox_to_processed(bbox_xyxy, affine)
 
 
 def _attach_shadow_evidence(

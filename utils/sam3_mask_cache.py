@@ -14,7 +14,7 @@ import zipfile
 from dataclasses import dataclass
 from numbers import Integral
 from pathlib import Path
-from typing import Callable, Iterator, Literal, Mapping
+from typing import Callable, Iterator, Literal, Mapping, Sequence
 
 import numpy as np
 
@@ -33,6 +33,27 @@ _INFERENCE_CONTRACT = {
 
 class FrameMaskCacheError(RuntimeError):
     """A frame cache entry is missing, malformed, or mismatched."""
+
+
+def map_source_bbox_to_processed(
+    source_bbox_xyxy: Sequence[float], source_to_processed_affine: np.ndarray
+) -> tuple[float, float, float, float]:
+    """Map a source bbox through the canonical DA3 affine into grid coordinates."""
+    x1, y1, x2, y2 = (float(value) for value in source_bbox_xyxy)
+    affine = np.asarray(source_to_processed_affine, dtype=np.float64)
+    if affine.shape != (2, 3):
+        raise FrameMaskCacheError("source_to_processed_affine must have shape (2, 3)")
+    corners = np.asarray(
+        [[x1, y1, 1.0], [x1, y2, 1.0], [x2, y1, 1.0], [x2, y2, 1.0]],
+        dtype=np.float64,
+    )
+    processed = corners @ affine.T
+    return (
+        float(processed[:, 0].min()),
+        float(processed[:, 1].min()),
+        float(processed[:, 0].max()),
+        float(processed[:, 1].max()),
+    )
 
 
 @dataclass(frozen=True)
@@ -240,9 +261,7 @@ def _producer_frame_lock(
     try:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with lock_path.open("a+b") as handle:
-            fcntl.flock(
-                handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
-            )
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
             try:
                 yield
             finally:

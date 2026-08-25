@@ -36,6 +36,7 @@ from .sam3_mask_cache import (
     FrameMaskCacheRequest,
     ProcessedDetectionPrompt,
     load_or_compute_frame_masks,
+    map_source_bbox_to_processed,
 )
 from .transforms import ImageTransformBase
 
@@ -51,7 +52,11 @@ _PREDICT_INST_CONTRACT_FINGERPRINT = hashlib.sha256(
             "builder": {"enable_inst_interactivity": True, "load_from_HF": False},
             "empty_mask_retry": "bbox_center_positive_point",
             "mask_postprocess": "best_iou_then_clip_to_bbox",
-            "predict": {"multimask_output": True, "normalize_coords": True, "return_logits": False},
+            "predict": {
+                "multimask_output": True,
+                "normalize_coords": True,
+                "return_logits": False,
+            },
             "processor": {"confidence_threshold": 0.0},
         },
         sort_keys=True,
@@ -87,7 +92,11 @@ def _sam3_autocast_context(model: Any, device: str) -> Any:
     if not device.startswith("cuda"):
         return torch.autocast(device_type=device, enabled=False)
 
-    params = [p for p in getattr(model, "parameters", lambda: [])() if isinstance(p, torch.Tensor)]
+    params = [
+        p
+        for p in getattr(model, "parameters", lambda: [])()
+        if isinstance(p, torch.Tensor)
+    ]
     if not params:
         return nullcontext()
 
@@ -102,7 +111,11 @@ def _sam3_autocast_context(model: Any, device: str) -> Any:
 
 def _coerce_sam3_batch_dtype(batch: Any, model: Any) -> Any:
     """Cast floating tensors in batch to the model's parameter dtype when needed."""
-    params = [p for p in getattr(model, "parameters", lambda: [])() if isinstance(p, torch.Tensor)]
+    params = [
+        p
+        for p in getattr(model, "parameters", lambda: [])()
+        if isinstance(p, torch.Tensor)
+    ]
     if not params:
         return batch
     target_dtype = params[0].dtype
@@ -131,17 +144,32 @@ def _infer_transform_output_size(
 
     target_w = getattr(transform, "target_width", None)
     target_h = getattr(transform, "target_height", None)
-    if isinstance(target_w, int) and isinstance(target_h, int) and target_w > 0 and target_h > 0:
+    if (
+        isinstance(target_w, int)
+        and isinstance(target_h, int)
+        and target_w > 0
+        and target_h > 0
+    ):
         return "pi3", (target_w, target_h)
 
     padded_w = getattr(transform, "padded_width", None)
     padded_h = getattr(transform, "padded_height", None)
-    if isinstance(padded_w, int) and isinstance(padded_h, int) and padded_w > 0 and padded_h > 0:
+    if (
+        isinstance(padded_w, int)
+        and isinstance(padded_h, int)
+        and padded_w > 0
+        and padded_h > 0
+    ):
         return "vggt", (padded_w, padded_h)
 
     final_w = getattr(transform, "final_width", None)
     final_h = getattr(transform, "final_height", None)
-    if isinstance(final_w, int) and isinstance(final_h, int) and final_w > 0 and final_h > 0:
+    if (
+        isinstance(final_w, int)
+        and isinstance(final_h, int)
+        and final_w > 0
+        and final_h > 0
+    ):
         return "vggt", (final_w, final_h)
 
     return None, None
@@ -214,7 +242,9 @@ def checkpoint_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _build_sam3_model_and_processor(checkpoint_path: str, device: str) -> Tuple[object, object]:
+def _build_sam3_model_and_processor(
+    checkpoint_path: str, device: str
+) -> Tuple[object, object]:
     """Build one predict_inst model/processor pair from local SAM3 source."""
     _ensure_sam3_in_path()
 
@@ -291,7 +321,10 @@ def _build_sam3_batch_transform(
     return ComposeAPI(
         transforms=[
             RandomResizeAPI(
-                sizes=fallback, max_size=fallback, square=True, consistent_transform=False
+                sizes=fallback,
+                max_size=fallback,
+                square=True,
+                consistent_transform=False,
             ),
             ToTensorAPI(),
             NormalizeAPI(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),
@@ -354,7 +387,9 @@ def _get_sam3_batch_components(
     model.eval()
 
     # Transform aligned to backend geometry when possible.
-    transform = _build_sam3_batch_transform(fallback_size=fallback_size, skip_resize=skip_resize)
+    transform = _build_sam3_batch_transform(
+        fallback_size=fallback_size, skip_resize=skip_resize
+    )
 
     # Postprocessor for extracting masks
     postprocessor = PostProcessImage(
@@ -374,6 +409,7 @@ def _get_sam3_batch_components(
 # ============================================================================
 # Batch Inference API Helper Functions
 # ============================================================================
+
 
 def _create_empty_datapoint() -> Any:
     """Create an empty Datapoint for batch inference.
@@ -433,7 +469,13 @@ def _prepare_sam3_input_image(
     # VGGT: resize -> crop -> pad (match transform fields).
     proc_w = getattr(transform, "proc_width", None)
     proc_h = getattr(transform, "proc_height", None)
-    if backend == "vggt" and isinstance(proc_w, int) and isinstance(proc_h, int) and proc_w > 0 and proc_h > 0:
+    if (
+        backend == "vggt"
+        and isinstance(proc_w, int)
+        and isinstance(proc_h, int)
+        and proc_w > 0
+        and proc_h > 0
+    ):
         resized = img.resize((proc_w, proc_h), Image.Resampling.BICUBIC)
 
         crop_applied = bool(getattr(transform, "crop_applied", False))
@@ -464,7 +506,9 @@ def _prepare_sam3_input_image(
     return img, False
 
 
-def map_mask_to_final_space(mask: np.ndarray, transform: ImageTransformBase) -> np.ndarray:
+def map_mask_to_final_space(
+    mask: np.ndarray, transform: ImageTransformBase
+) -> np.ndarray:
     """把原图坐标系的mask映射到 transform 定义的 final 空间。
 
     - Pi3: 原图 -> resize到 (target_height, target_width)
@@ -477,13 +521,23 @@ def map_mask_to_final_space(mask: np.ndarray, transform: ImageTransformBase) -> 
     # ---- Pi3：只做resize ----
     target_w = getattr(transform, "target_width", None)
     target_h = getattr(transform, "target_height", None)
-    if isinstance(target_w, int) and isinstance(target_h, int) and target_w > 0 and target_h > 0:
+    if (
+        isinstance(target_w, int)
+        and isinstance(target_h, int)
+        and target_w > 0
+        and target_h > 0
+    ):
         return _resize_mask_nearest(mask_bool, width=target_w, height=target_h)
 
     # ---- VGGT：resize -> crop -> pad ----
     proc_w = getattr(transform, "proc_width", None)
     proc_h = getattr(transform, "proc_height", None)
-    if isinstance(proc_w, int) and isinstance(proc_h, int) and proc_w > 0 and proc_h > 0:
+    if (
+        isinstance(proc_w, int)
+        and isinstance(proc_h, int)
+        and proc_w > 0
+        and proc_h > 0
+    ):
         resized = _resize_mask_nearest(mask_bool, width=proc_w, height=proc_h)
 
         crop_applied = bool(getattr(transform, "crop_applied", False))
@@ -500,8 +554,12 @@ def map_mask_to_final_space(mask: np.ndarray, transform: ImageTransformBase) -> 
 
         pad_left = int(getattr(transform, "batch_pad_left", 0))
         pad_top = int(getattr(transform, "batch_pad_top", 0))
-        padded_w = int(getattr(transform, "padded_width", cropped.shape[1] + max(0, pad_left)))
-        padded_h = int(getattr(transform, "padded_height", cropped.shape[0] + max(0, pad_top)))
+        padded_w = int(
+            getattr(transform, "padded_width", cropped.shape[1] + max(0, pad_left))
+        )
+        padded_h = int(
+            getattr(transform, "padded_height", cropped.shape[0] + max(0, pad_top))
+        )
         padded_w = max(1, padded_w)
         padded_h = max(1, padded_h)
 
@@ -514,7 +572,9 @@ def map_mask_to_final_space(mask: np.ndarray, transform: ImageTransformBase) -> 
             out[y0:y1, x0:x1] = cropped[: (y1 - y0), : (x1 - x0)]
         return out
 
-    logger.warning("map_mask_to_final_space: unsupported transform; returning original mask.")
+    logger.warning(
+        "map_mask_to_final_space: unsupported transform; returning original mask."
+    )
     return mask_bool
 
 
@@ -840,7 +900,9 @@ def sam3_masks_from_bboxes_predict_inst(
                 )
             out.append(mask2c)
         except Exception as e:
-            logger.error("SAM3 mask fallback (center-point) failed for bbox=%s: %s", bbox, e)
+            logger.error(
+                "SAM3 mask fallback (center-point) failed for bbox=%s: %s", bbox, e
+            )
             raise RuntimeError(f"SAM3 failed to generate mask for bbox {bbox}") from e
 
     return out
@@ -849,6 +911,7 @@ def sam3_masks_from_bboxes_predict_inst(
 # ============================================================================
 # Batch Inference API - Full Visual Exemplar Support
 # ============================================================================
+
 
 def sam3_masks_from_bboxes_batch_api(
     image_path: str,
@@ -992,7 +1055,9 @@ def sam3_masks_from_bboxes_batch_api(
             logger.info(f"Using batch API with text-only prompt: '{text_prompt}'")
             query_id = _add_text_prompt(datapoint, text_prompt)
         else:
-            logger.warning("No exemplars and no text prompt provided, results may be empty")
+            logger.warning(
+                "No exemplars and no text prompt provided, results may be empty"
+            )
             return []
 
     # Apply transforms
@@ -1019,7 +1084,9 @@ def sam3_masks_from_bboxes_batch_api(
 
     # Extract masks from results
     if query_id not in processed_results:
-        logger.warning(f"Query ID {query_id} not found in results, returning empty masks")
+        logger.warning(
+            f"Query ID {query_id} not found in results, returning empty masks"
+        )
         return []
 
     result = processed_results[query_id]
@@ -1035,7 +1102,9 @@ def sam3_masks_from_bboxes_batch_api(
         masks_np = masks_tensor.squeeze(1).cpu().numpy().astype(bool)
     else:
         # Handle list of tensors
-        masks_np = np.stack([m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor], axis=0)
+        masks_np = np.stack(
+            [m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor], axis=0
+        )
 
     # Convert to list of masks
     out_masks: List[np.ndarray] = []
@@ -1159,7 +1228,7 @@ def sample_points_from_mask(
     distances = np.sqrt(dx_norm**2 + dy_norm**2)
 
     # 计算高斯权重
-    weights = np.exp(-distances**2 / (2 * gaussian_sigma**2))
+    weights = np.exp(-(distances**2) / (2 * gaussian_sigma**2))
 
     # 截断距离过大的点
     truncate_distance = gaussian_sigma * gaussian_truncate
@@ -1189,7 +1258,9 @@ def sample_points_from_mask(
     return pts
 
 
-def map_points_to_final_space(transform: ImageTransformBase, points_xy: np.ndarray) -> np.ndarray:
+def map_points_to_final_space(
+    transform: ImageTransformBase, points_xy: np.ndarray
+) -> np.ndarray:
     fn = getattr(transform, "map_points_to_final", None)
     if callable(fn):
         return fn(points_xy).astype(np.float32)
@@ -1265,7 +1336,9 @@ def sample_3d_points_from_mask(
 
     wp = wp[valid]
     if wp.shape[0] > int(config.max_3d_points_per_bbox):
-        idx = torch.randperm(wp.shape[0], device=wp.device)[: int(config.max_3d_points_per_bbox)]
+        idx = torch.randperm(wp.shape[0], device=wp.device)[
+            : int(config.max_3d_points_per_bbox)
+        ]
         wp = wp[idx]
     return wp
 
@@ -1329,14 +1402,20 @@ def sam3_masks_self_exemplar(
 
         # 强制垃圾回收和清空缓存
         import gc
+
         gc.collect()
         torch.cuda.empty_cache()
         torch.cuda.synchronize()  # 等待所有CUDA操作完成
 
         mem_allocated = torch.cuda.memory_allocated() / 1024**3
         mem_reserved = torch.cuda.memory_reserved() / 1024**3
-        mem_free = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()) / 1024**3
-        logger.info(f"GPU memory before SAM3: allocated={mem_allocated:.2f}GB, reserved={mem_reserved:.2f}GB, free={mem_free:.2f}GB")
+        mem_free = (
+            torch.cuda.get_device_properties(0).total_memory
+            - torch.cuda.memory_allocated()
+        ) / 1024**3
+        logger.info(
+            f"GPU memory before SAM3: allocated={mem_allocated:.2f}GB, reserved={mem_reserved:.2f}GB, free={mem_free:.2f}GB"
+        )
 
     # Load batch inference components
     model, transform, postprocessor = _get_sam3_batch_components(
@@ -1367,7 +1446,9 @@ def sam3_masks_self_exemplar(
     num_batches = (num_bboxes + max_batch_size - 1) // max_batch_size  # 向上取整
 
     if num_batches > 1:
-        logger.info(f"Processing {num_bboxes} bboxes in {num_batches} batches (max_batch_size={max_batch_size})")
+        logger.info(
+            f"Processing {num_bboxes} bboxes in {num_batches} batches (max_batch_size={max_batch_size})"
+        )
     else:
         logger.info(f"Processing {num_bboxes} bboxes in single batch")
 
@@ -1380,7 +1461,9 @@ def sam3_masks_self_exemplar(
         end_idx = min((batch_idx + 1) * max_batch_size, num_bboxes)
         batch_bboxes = bboxes_xyxy[start_idx:end_idx]
 
-        logger.info(f"Batch {batch_idx + 1}/{num_batches}: processing bboxes [{start_idx}:{end_idx}] ({len(batch_bboxes)} bboxes)")
+        logger.info(
+            f"Batch {batch_idx + 1}/{num_batches}: processing bboxes [{start_idx}:{end_idx}] ({len(batch_bboxes)} bboxes)"
+        )
 
         # 为当前批次创建datapoint
         datapoint = _create_empty_datapoint()
@@ -1419,30 +1502,41 @@ def sam3_masks_self_exemplar(
         processed_results = postprocessor.process_results(output, batch.find_metadatas)
 
         # 提取当前批次的结果
-        batch_result_masks: List[np.ndarray] = [np.zeros((h, w), dtype=bool) for _ in batch_bboxes]
+        batch_result_masks: List[np.ndarray] = [
+            np.zeros((h, w), dtype=bool) for _ in batch_bboxes
+        ]
 
         for query_id, local_idx in query_id_to_local_idx.items():
             bbox = batch_bboxes[local_idx]
 
             if query_id not in processed_results:
-                logger.warning(f"Query ID {query_id} not found for batch {batch_idx}, bbox {local_idx}")
+                logger.warning(
+                    f"Query ID {query_id} not found for batch {batch_idx}, bbox {local_idx}"
+                )
                 continue
 
             result = processed_results[query_id]
             masks_tensor = result.get("masks")
 
             if masks_tensor is None or len(masks_tensor) == 0:
-                logger.warning(f"No masks returned for batch {batch_idx}, bbox {local_idx}")
+                logger.warning(
+                    f"No masks returned for batch {batch_idx}, bbox {local_idx}"
+                )
                 continue
 
             # Convert masks to numpy (max_dets_per_img=1 确保只返回1个最佳mask)
             if isinstance(masks_tensor, torch.Tensor):
                 masks_np = masks_tensor.squeeze(1).cpu().numpy().astype(bool)
             else:
-                masks_np = np.stack([m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor], axis=0)
+                masks_np = np.stack(
+                    [m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor],
+                    axis=0,
+                )
 
             # 取第一个mask (postprocessor已经按score排序，只保留Top-1)
-            best_mask = masks_np[0] if len(masks_np) > 0 else np.zeros((h, w), dtype=bool)
+            best_mask = (
+                masks_np[0] if len(masks_np) > 0 else np.zeros((h, w), dtype=bool)
+            )
 
             # Ensure mask is correct size
             if best_mask.shape != (h, w):
@@ -1457,8 +1551,13 @@ def sam3_masks_self_exemplar(
         all_result_masks.extend(batch_result_masks)
 
         # 批次间清理GPU缓存（仅清理临时tensors，不清理模型）
-        if device.startswith("cuda") and torch.cuda.is_available() and batch_idx < num_batches - 1:
+        if (
+            device.startswith("cuda")
+            and torch.cuda.is_available()
+            and batch_idx < num_batches - 1
+        ):
             import gc
+
             # 显式删除所有批次临时变量（从大到小的顺序）
             # 1. processed_results 包含GPU tensor，必须先删除
             del processed_results
@@ -1481,14 +1580,22 @@ def sam3_masks_self_exemplar(
 
             # 记录清理后的显存状态
             mem_allocated = torch.cuda.memory_allocated() / 1024**3
-            mem_free = (torch.cuda.get_device_properties(0).total_memory - torch.cuda.memory_allocated()) / 1024**3
-            logger.debug(f"Cleared GPU cache after batch {batch_idx + 1}: allocated={mem_allocated:.2f}GB, free={mem_free:.2f}GB")
+            mem_free = (
+                torch.cuda.get_device_properties(0).total_memory
+                - torch.cuda.memory_allocated()
+            ) / 1024**3
+            logger.debug(
+                f"Cleared GPU cache after batch {batch_idx + 1}: allocated={mem_allocated:.2f}GB, free={mem_free:.2f}GB"
+            )
 
-    logger.info(f"Self-exemplar segmentation complete: {len(all_result_masks)} masks for {num_bboxes} bboxes ({num_batches} batches)")
+    logger.info(
+        f"Self-exemplar segmentation complete: {len(all_result_masks)} masks for {num_bboxes} bboxes ({num_batches} batches)"
+    )
 
     # SAM3推理完成后，立即清理GPU显存
     if device.startswith("cuda") and torch.cuda.is_available():
         import gc
+
         gc.collect()
         torch.cuda.empty_cache()
         logger.info("GPU cache cleared after SAM3 inference")
@@ -1547,13 +1654,23 @@ def _processed_frame_request(
         if source_image.size != (source_width, source_height):
             raise ValueError("SAM3 cache transform source size does not match image")
 
+    affine = getattr(transform, "source_to_processed_affine", None)
+    if affine is None:
+        affine = np.asarray(
+            [[scale_x, 0.0, 0.0], [0.0, scale_y, 0.0]], dtype=np.float64
+        )
+    else:
+        affine = np.asarray(affine, dtype=np.float64)
+    if affine.shape != (2, 3) or not np.isfinite(affine).all():
+        raise ValueError("SAM3 cache transform affine must be finite with shape (2, 3)")
+
     prompts: list[ProcessedDetectionPrompt] = []
     for object_id, detection in enumerate(frame_detections):
         position = detection.get("position")
         if not isinstance(position, (list, tuple)) or len(position) != 4:
             raise ValueError(f"frame detection {object_id} has no valid position")
         source_bbox = tuple(float(value) for value in position)
-        processed_bbox = tuple(float(value) for value in transform.map_bbox_to_final(list(source_bbox)))
+        processed_bbox = map_source_bbox_to_processed(source_bbox, affine)
         prompts.append(
             ProcessedDetectionPrompt(
                 object_id=object_id,
@@ -1568,9 +1685,7 @@ def _processed_frame_request(
         image_path=image_path,
         source_size_wh=(source_width, source_height),
         processed_shape_hw=(processed_height, processed_width),
-        source_to_processed_affine=np.asarray(
-            [[scale_x, 0.0, 0.0], [0.0, scale_y, 0.0]], dtype=np.float64
-        ),
+        source_to_processed_affine=affine,
         detections=tuple(prompts),
         inference_contract={
             "api": "self_exemplar",
