@@ -123,6 +123,7 @@ extract_results() {
   local n; n=$(run_python "$CORE_ENV" -c "import json; print(len(json.load(open('$GM'))))")
   CLASSIFIED_DIR=$(run_python "$CORE_ENV" - "$CLASSIFICATION_ROOT" <<'PYEOF'
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -135,6 +136,7 @@ if (
     not isinstance(current, dict)
     or set(current) != {"run_id", "complete"}
     or not isinstance(current["run_id"], str)
+    or re.fullmatch(r"[1-9][0-9]*-[1-9][0-9]*", current["run_id"]) is None
     or current["complete"] is not True
 ):
     sys.exit("[ERROR] 分类发布指针不是完整 run")

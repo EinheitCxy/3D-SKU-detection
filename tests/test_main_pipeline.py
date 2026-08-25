@@ -217,6 +217,60 @@ def test_personalcare_classification_rejects_unbound_publication_payloads(
     assert result["success"] is False
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda payload, run_dir, _publication_root: (run_dir / "result.json").write_text(
+            json.dumps({**payload, "frame_count": True}), encoding="utf-8"
+        ),
+        lambda payload, run_dir, _publication_root: (run_dir / "result.json").write_text(
+            json.dumps({**payload, "extra": "forbidden"}), encoding="utf-8"
+        ),
+        lambda _payload, _run_dir, publication_root: (publication_root / "CURRENT").write_text(
+            json.dumps({"run_id": "123456789-4321", "complete": 1}),
+            encoding="utf-8",
+        ),
+        lambda _payload, _run_dir, publication_root: (publication_root / "CURRENT").write_text(
+            json.dumps(
+                {"run_id": "123456789-4321", "complete": True, "extra": 1}
+            ),
+            encoding="utf-8",
+        ),
+    ],
+)
+def test_personalcare_classification_rejects_type_confused_publication_records(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mutation
+) -> None:
+    """Task2 disk records must satisfy the same exact typed contract as stdout."""
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    output_root = tmp_path / "Output"
+    payload, _detection_dir, _result_path = _published_classifier_payload(
+        dataset, output_root
+    )
+    run_dir = (
+        output_root
+        / dataset.name
+        / "personalcare_classification"
+        / "runs"
+        / "123456789-4321"
+    )
+    mutation(payload, run_dir, run_dir.parents[1])
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout=json.dumps(payload), stderr="classifier stderr"
+        ),
+    )
+    app = main.SKUDetectionMain()
+    app.save_root = output_root
+
+    result = app.run_personalcare_classification(str(dataset))
+
+    assert result["success"] is False
+
+
 def test_personalcare_classification_rejects_nonunique_json_stdout(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -357,6 +411,31 @@ def test_pipeline_exception_waits_for_classifier_shutdown(
         app.run_complete_pipeline(str(dataset), algorithm="3d")
 
     assert finished.is_set()
+    assert shutdown_waits == [True]
+
+
+def test_pipeline_submit_exception_still_shuts_down_executor(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Submitting the classifier is inside the executor lifetime boundary."""
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    shutdown_waits: list[bool] = []
+
+    class SubmitRaisesExecutor:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def submit(self, *_args, **_kwargs):
+            raise RuntimeError("submit failed")
+
+        def shutdown(self, *, wait: bool) -> None:
+            shutdown_waits.append(wait)
+
+    monkeypatch.setattr(main, "ThreadPoolExecutor", SubmitRaisesExecutor)
+
+    with pytest.raises(RuntimeError, match="submit failed"):
+        app.run_complete_pipeline(str(dataset), algorithm="3d")
+
     assert shutdown_waits == [True]
 
 

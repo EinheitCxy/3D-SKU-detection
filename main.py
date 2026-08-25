@@ -22,6 +22,57 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_SAVE_ROOT = PROJECT_ROOT / "Output"
 CLASSIFIER_ROOT = PROJECT_ROOT / "modules" / "personalcare_classifier"
 CLASSIFIER_SCRIPT = CLASSIFIER_ROOT / "source" / "classify_dataset.py"
+_CLASSIFIER_PAYLOAD_FIELDS = frozenset(
+    {
+        "success",
+        "run_id",
+        "detection_dir",
+        "result_path",
+        "frame_count",
+        "object_count",
+        "unavailable_count",
+    }
+)
+_CLASSIFIER_RUN_ID_RE = re.compile(r"[1-9][0-9]*-[1-9][0-9]*")
+
+
+def _is_valid_classifier_payload(payload: object) -> bool:
+    if not isinstance(payload, dict) or set(payload) != _CLASSIFIER_PAYLOAD_FIELDS:
+        return False
+    if (
+        payload["success"] is not True
+        or not isinstance(payload["run_id"], str)
+        or _CLASSIFIER_RUN_ID_RE.fullmatch(payload["run_id"]) is None
+        or not isinstance(payload["detection_dir"], str)
+        or not isinstance(payload["result_path"], str)
+    ):
+        return False
+    return all(
+        not isinstance(payload[field], bool)
+        and isinstance(payload[field], int)
+        and payload[field] >= 0
+        for field in ("frame_count", "object_count", "unavailable_count")
+    )
+
+
+def _same_typed_classifier_payload(
+    left: dict[str, object], right: dict[str, object]
+) -> bool:
+    return all(
+        type(left[field]) is type(right[field]) and left[field] == right[field]
+        for field in _CLASSIFIER_PAYLOAD_FIELDS
+    )
+
+
+def _is_complete_classifier_current(current: object, run_id: str) -> bool:
+    return (
+        isinstance(current, dict)
+        and set(current) == {"run_id", "complete"}
+        and isinstance(current["run_id"], str)
+        and _CLASSIFIER_RUN_ID_RE.fullmatch(current["run_id"]) is not None
+        and current["run_id"] == run_id
+        and current["complete"] is True
+    )
 
 
 def _resolve_save_root(value: str | None) -> Path:
@@ -1092,41 +1143,14 @@ class SKUDetectionMain:
                 "error": f"personalcare classifier did not emit one JSON object: {error}; stderr: {stderr}",
                 "duration_s": duration,
             }
-        required_fields = {
-            "success",
-            "run_id",
-            "detection_dir",
-            "result_path",
-            "frame_count",
-            "object_count",
-            "unavailable_count",
-        }
-        if not isinstance(payload, dict) or set(payload) != required_fields:
+        if not _is_valid_classifier_payload(payload):
             return {
                 "success": False,
                 "error": f"personalcare classifier emitted an invalid payload; stderr: {stderr}",
                 "duration_s": duration,
             }
         run_id = payload["run_id"]
-        count_fields = ("frame_count", "object_count", "unavailable_count")
-        if (
-            payload["success"] is not True
-            or not isinstance(run_id, str)
-            or re.fullmatch(r"[1-9][0-9]*-[1-9][0-9]*", run_id) is None
-            or not isinstance(payload["detection_dir"], str)
-            or not isinstance(payload["result_path"], str)
-            or any(
-                isinstance(payload[field], bool)
-                or not isinstance(payload[field], int)
-                or payload[field] < 0
-                for field in count_fields
-            )
-        ):
-            return {
-                "success": False,
-                "error": f"personalcare classifier emitted an invalid payload; stderr: {stderr}",
-                "duration_s": duration,
-            }
+        assert isinstance(run_id, str)
         run_dir = (
             output_root
             / dataset.name
@@ -1159,9 +1183,9 @@ class SKUDetectionMain:
                 "duration_s": duration,
             }
         if (
-            published_payload != payload
-            or not isinstance(current_payload, dict)
-            or current_payload != {"run_id": run_id, "complete": True}
+            not _is_valid_classifier_payload(published_payload)
+            or not _same_typed_classifier_payload(published_payload, payload)
+            or not _is_complete_classifier_current(current_payload, run_id)
         ):
             return {
                 "success": False,
@@ -1189,16 +1213,18 @@ class SKUDetectionMain:
             return {"validation": False}
         summary["validation"] = True
 
-        classifier_executor = ThreadPoolExecutor(max_workers=1)
-        classifier_future: Future[StepResult] = classifier_executor.submit(
-            self.run_personalcare_classification, dataset_path
-        )
-
+        classifier_future: Future[StepResult] | None = None
         classification_result: StepResult | None = None
 
         def join_classification() -> StepResult:
             nonlocal classification_result
             if classification_result is not None:
+                return classification_result
+            if classifier_future is None:
+                classification_result = {
+                    "success": False,
+                    "error": "personalcare classification was not submitted",
+                }
                 return classification_result
             try:
                 result = classifier_future.result()
@@ -1215,7 +1241,11 @@ class SKUDetectionMain:
             classification_result = result
             return classification_result
 
+        classifier_executor = ThreadPoolExecutor(max_workers=1)
         try:
+            classifier_future = classifier_executor.submit(
+                self.run_personalcare_classification, dataset_path
+            )
             # 1. 3D重建（如果使用3D算法）
             if "3d" in algorithm:
                 match_backend = (
