@@ -43,9 +43,10 @@ DA3 仍通过 `Depth-Anything-3/.venv/bin/python` 的隔离 subprocess 运行；
 ```bash
 # DA3 重建、完整 batch-all-refs 3D matching 和去重；默认输出 Output/。
 # matching 是唯一会运行 SAM3 self-exemplar 并发布 v2 processed-mask cache 的阶段。
-uv run python main.py --mode pipeline \
+CUDA_VISIBLE_DEVICES=2 uv run python main.py --mode pipeline \
   --dataset imdata/floor_display2 --algorithm 3d \
-  --recon_backend da3 --match_backend da3
+  --recon_backend da3 --match_backend da3 \
+  --classifier-device cuda:0
 
 # 必须先完成完整 batch-all-refs matching，才可运行正式 footprint。
 # 默认 batch_all_refs=true；不要用单个 reference 的 cache 代替完整 cache。
@@ -66,6 +67,8 @@ bash modules/video_to_dedup/quickstart.sh <video> <fps> <gpu>
 
 `--save_root` 可以覆盖输出目录；相对值始终相对仓库根解析。默认 bundle 位于 `modules/viewer_web/public/data/`，自定义 bundle 必须在前端启动前挂载或 serve 到浏览器的 `/data/`。
 
+上例的 `CUDA_VISIBLE_DEVICES=2` 把物理 GPU 2 映射为进程内的 `cuda:0`；`--classifier-device` 必须是一个显式可用的 CUDA device。分类器不接受 CPU 或替代模型 fallback。若不使用 GPU mask，可直接传入实际可见设备号，例如 `--classifier-device cuda:2`。
+
 ## Canonical SAM3 processed-mask workflow
 
 matching 是唯一的 SAM3 producer。默认 `enable_sam3_mask_sampling: true` 时，它只使用 self-exemplar，并为每个 detection frame 一次性发布完整的 `sam3_mask_cache/v2` processed-space bool mask；payload 用 little-endian `np.packbits` 无损保存。`enable_sam3_mask_sampling: false` 仅保留既有 bbox sampling，且不会发布 cache，因此 footprint 与 viewer export 会 fail closed，提示先运行 matching。
@@ -84,7 +87,21 @@ Viewer **不使用 SAM3 protection mask**。SAM3 cache 仍作为 ground-footprin
 
 ## Personalcare classification in viewer objects
 
-pipeline 的 personalcare 分类阶段发布 enriched detections 后，dedup 必须显式读取该目录。`global_mapping.json` 的每个 observation 都保存严格的 `classification` 原始记录（包括 `removed: true` 的 observation）；viewer `objects.json` 则为每个 global ID 聚合所有 observation。候选按 `confidence_sum`、`support_count`、`max_confidence`、SKU ID 和名称确定性排序，保留所有冲突候选，但仅首位 primary 用于计数。bundle 仍是 schema `2.0.0`，并严格校验 resolved、conflict 与 unavailable classification；分类不会改变 SAM3 processed masks、point ranges、点云过滤或 formal metric。
+pipeline 在 dataset validation 后立即启动独立的 personalcare 分类 subprocess，并让它与可复用/新建的 DA3 reconstruction 和 matching 重叠。分类进程每个 dataset 仅加载一次原始 MobileNetV3 模型，按原始 object 顺序批量分类；原始 `detections_results/` 永不改写。matching 完成后 pipeline 才 join 分类结果；两者都成功才执行 dedup，因此 dedup 显式读取本次已发布的 enriched detections。
+
+分类产物在 `<save_root>/<dataset>/personalcare_classification/CURRENT -> runs/<time_ns>-<pid>/`：run 内有 `detections/<frame>.json` 和 `result.json`。有效 object 同时保留 raw `classes.cls`/`confidences.cls` 与规范化 `classification`；无效 bbox 保留原始数据并以 `status: unavailable`、`reason: invalid_bbox` 发布。此发布只用完整 run 的原子 `CURRENT` 指针，不产生分类 hash、signature、encryption、feature vector 或内容指纹。
+
+`global_mapping.json` 的每个 observation（含 `removed: true`）都保存该 classification。viewer `objects.json` 按 `(sku_id, sku_name)` 聚合，并按 `confidence_sum`、`support_count`、`max_confidence`、SKU ID、名称确定性排序。conflict 的所有 candidates 都在选中对象详情中显示；但 Total 与 SKU facet 只统计首位 primary，所以每个 global ID 最多贡献一个 SKU 计数。UI 不显示任一 confidence 值（机器 JSON 为排序与审计保留它们）。厂商/品牌/品类为禁用的“主数据待接入”，POSM/价签/空缺位为禁用的“检测能力待接入”；V1 不根据名称推断这些字段。分类不会改变 SAM3 processed masks、point ranges、点云过滤或 formal metric。
+
+分类器可单独运行（`--output-root` 是分类产物根，不会修改输入 detections）：
+
+```bash
+CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
+  modules/personalcare_classifier/source/classify_dataset.py \
+  --dataset imdata/floor_display6 \
+  --output-root /tmp/personalcare-classifier-smoke \
+  --device cuda:0
+```
 
 ## Ground footprint
 

@@ -29,4 +29,10 @@ uv run --project modules/personalcare_classifier python \
 
 每个 enriched JSON 保留完整原始 payload，并为有效对象添加 `classes.cls`、`confidences.cls` 和规范化的 `classification`。临时 run 完整写入并校验后才重命名并替换 `CURRENT`，因此失败不会替换已有已完成 run。不会发布深度 feature、HTTP/BSON 服务或模型副本。
 
+该 CLI 同样是根 `main.py --mode pipeline` 的唯一分类实现。pipeline 在 dataset validation 后启动它，并与 DA3 reconstruction/matching 重叠；等 matching 和此 CLI 都成功后，才把 stdout 返回的 `detection_dir` 显式交给 dedup。原始 `detections_results/` 从不被写入。输出没有 hash、签名、加密、内容指纹或分类 cache；run ID 只是 `<time_ns>-<pid>` 的发布代号。
+
+GPU 必须显式选择。若要使用物理 GPU 2，请用 `CUDA_VISIBLE_DEVICES=2` 并传入进程内 `--device cuda:0`；不设置 mask 时传入实际可见 index。CUDA/模型失败为失败结果，绝不转用 CPU 或替代权重。
+
+分类记录的 confidence 仅供下游确定性聚合与审计：同一 global ID 的 candidate 按 aggregate confidence、support count、max confidence 和 SKU 字段排序。所有 conflict candidate 会传递给 Viewer，但每个 global ID 只以 primary candidate 计入 Total/SKU facet，Viewer UI 不显示 confidence。
+
 原始 `sku-classifier-personalcare-20250510-recovery/` 目录的属主为 `nobody`，因此其重复副本无法由当前用户安全删除；完成确认后请由拥有权限的用户清理该原目录，而不要删除本模块内的 canonical source。

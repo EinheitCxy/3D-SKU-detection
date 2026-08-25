@@ -25,9 +25,10 @@
 
 ```bash
 uv sync --extra dev
-uv run python main.py --mode pipeline \
+CUDA_VISIBLE_DEVICES=2 uv run python main.py --mode pipeline \
   --dataset imdata/floor_display2 --algorithm 3d \
-  --recon_backend da3 --match_backend da3
+  --recon_backend da3 --match_backend da3 \
+  --classifier-device cuda:0
 ```
 
 运行输出按数据集隔离：
@@ -37,12 +38,27 @@ Output/<dataset>/
 ├── da3_cache/predictions.npz
 ├── output_3dmapping_da3/
 ├── dedup_detections/global_mapping.json
+├── personalcare_classification/CURRENT -> runs/<time_ns>-<pid>/
+│   ├── detections/<frame>.json
+│   └── result.json
 ├── sam3_mask_cache/v2/
 │   ├── entries/<image_id>/{manifest.json,masks.npz}
 │   ├── locks/
 │   └── corrupt/
 └── ground_stack_footprint/CURRENT -> runs/<run_id>/
 ```
+
+`CUDA_VISIBLE_DEVICES=2` 时，进程内 `cuda:0` 就是物理 GPU 2；没有该 mask 时请将 `--classifier-device` 改为实际可见 CUDA index。分类器必须使用显式 CUDA device，模型/CUDA 故障即为该阶段失败，绝不回退 CPU 或替代模型。
+
+## Personalcare classification and publication
+
+`--mode pipeline` 在 input validation 后立即提交一个独立 classifier subprocess，并与 DA3 reconstruction/cache reuse 和 matching 并行。每个 dataset run 只加载一次原始 classifier 模型；分类按 object 原顺序以 batch（最多 32 个有效 crop）运行。原始 `<dataset>/detections_results/` 是不可变输入，classifier 仅向上述 `personalcare_classification/runs/` 写 enriched copy；完整 frame/object count 校验后才原子替换 `CURRENT`。
+
+每个有效 object 保留 raw `classes.cls` 和 `confidences.cls`，并加上规范化 `classification`（SKU ID、名称、confidence、`master_data_pending` metadata）。无效 bbox 保留原 object，发布 `status: unavailable` 与 `reason: invalid_bbox`，不合成替代 crop。此 V1 不生成 classification hash、signature、encryption、feature payload 或 content fingerprint。
+
+matching 完成后 orchestrator 才 join classifier future；matching 与 classifier 都成功后，dedup 才显式接收本 run 的 enriched detection directory。若分类失败，已有 reconstruction/matching artifact 可以留作诊断，但 dedup、global mapping、footprint 与 viewer publication 不会继续。
+
+`global_mapping.json` 的每个 observation（包括 removed observation）保留 classification。`objects.json` 对同一 global ID 的 `(sku_id, sku_name)` candidates 按总 confidence、支持数、最大 confidence、SKU ID 和名称排序。resolved 有一个 candidate，conflict 保留全部 candidates，unavailable 没有 candidate；首项 primary 是 Total/SKU facet 的唯一计数来源，避免一个物理对象重复计数。机器 bundle 保留聚合数值以强制确定性排序，但 Viewer 不渲染任何 confidence。
 
 ## Footprint 与 SAM3 cache
 
@@ -68,6 +84,8 @@ exporter 只消费已发布的 DA3、去重、matching v2 cache 和 footprint �
 
 默认 `/data/` 由 `modules/viewer_web/public/data/` 提供。自定义 `--viewer-web-output` 不会自动被 Vite 服务，必须由部署层挂载到 `/data/`。
 
+Viewer 左侧的 SKU facet 同时过滤列表和场景，且只用 primary candidate；右侧对象详情仍显示 conflict 的全部排序 candidate。它复用原有 magenta selection，既不创建 SKU 颜色也不复制 point geometry。厂商、品牌、品类为禁用的“主数据待接入”；POSM、价签、空缺位为禁用的“检测能力待接入”。
+
 ## 性能基线
 
 完整 fd2–4 cold/warm 结果在 [perf/runs/20260824T032553Z/FINAL_REPORT.md](../perf/runs/20260824T032553Z/FINAL_REPORT.md)：GPU 1 的冷启动均值 752.03 s、warm 均值 309.65 s；footprint/SAM3 是主要瓶颈。GPU 2（24 GiB）出现容量 OOM，因此不混入均值。
@@ -77,6 +95,10 @@ exporter 只消费已发布的 DA3、去重、matching v2 cache 和 footprint �
 ```bash
 uv run --offline pytest tests/test_root_layout.py tests/test_da3_3d_reconstructor.py \
   tests/test_web_viewer_export.py tests/test_da3_import_isolation.py -q
+(CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
+  modules/personalcare_classifier/source/classify_dataset.py \
+  --dataset imdata/floor_display6 --output-root /tmp/personalcare-classifier-smoke \
+  --device cuda:0)
 (cd modules/viewer_web && npm test -- --run && npm run build)
 bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/*.sh
 ```

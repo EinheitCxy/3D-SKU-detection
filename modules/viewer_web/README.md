@@ -8,9 +8,10 @@
 
 ```bash
 # 1. 先完成全量 batch-all-refs matching（matching 是唯一 SAM3 producer）
-uv run python main.py --mode pipeline \
+CUDA_VISIBLE_DEVICES=2 uv run python main.py --mode pipeline \
   --dataset imdata/floor_display2 --algorithm 3d \
-  --recon_backend da3 --match_backend da3
+  --recon_backend da3 --match_backend da3 \
+  --classifier-device cuda:0
 
 # 2. 再生成 formal footprint（只读 v2 masks；不运行 SAM3）
 uv run python main.py --mode ground-stack-area \
@@ -43,6 +44,10 @@ Viewer 不使用 SAM3 protection mask。exporter 从 matching 的 v2 processed-s
 ## SKU 浏览与点选
 
 左侧显示 `Total`/`Visible`，SKU facet 只按每个 global ID 的 primary candidate 计数；`显示所有` 可清除 SKU facet，搜索框仍按 global ID 过滤。厂商、品牌、品类显示 `主数据待接入`，POSM、价签、空缺位显示 `检测能力待接入`，这些占位项不可用。右侧选中详情按发布顺序显示所有 `sku_id · sku_name` candidate，不显示 confidence。
+
+pipeline 自动运行 personalcare classifier，输出位于 `<save_root>/<dataset>/personalcare_classification/CURRENT -> runs/<time_ns>-<pid>/`。原始 detections 不会被改写；发布的 enriched detections 会在 classifier 与 matching 都成功后才交给 dedup。global mapping 的每个 observation（含 removed）保留 classification，`objects.json` 聚合全部候选并以 primary candidate 作为唯一计数归属。该 V1 不增加 classification hash、签名、加密或内容指纹。
+
+上面示例用 `CUDA_VISIBLE_DEVICES=2` 将物理 GPU 2 映射成 `--classifier-device cuda:0`；CUDA 出错不会回退 CPU 或其他模型。若没有 GPU mask，传实际可见 CUDA index。
 
 点云和 footprint 共用一个 global-ID pick handler。点云通过按 `point_index_range` 排序的二分查找解析归属；footprint 优先，隐藏 ID 不会被选中。过滤只更新一个运行时 `Uint8` visibility attribute 并同步 footprint `visible`，不会复制点云 geometry；shader 会丢弃隐藏点，选中点继续使用现有 magenta 高亮。
 
