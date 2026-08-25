@@ -467,28 +467,26 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
             outputs[i] = dst
 
     logger.info(f"Sequence dedup finished for images {indices[0]}..{indices[-1]} (total {len(indices)})")
-    # 构建全局唯一ID映射（只针对去重后保留的对象）
-    try:
-        mapping = build_global_mapping(matches_for_gid, survivors_by_image, objects_by_image, indices)
-        mapping_path = out_dir / 'global_mapping.json'
-        with mapping_path.open('w', encoding='utf-8') as f:
-            json.dump(mapping, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved global mapping to: {mapping_path}")
+    # 构建全局唯一ID映射（只针对去重后保留的对象）。任何合约或 I/O 错误都
+    # 必须上抛，避免调用方把没有 global publication 的去重结果当作成功。
+    mapping = build_global_mapping(matches_for_gid, survivors_by_image, objects_by_image, indices)
+    mapping_path = out_dir / 'global_mapping.json'
+    with mapping_path.open('w', encoding='utf-8') as f:
+        json.dump(mapping, f, ensure_ascii=False, indent=2)
+    logger.info(f"Saved global mapping to: {mapping_path}")
 
-        # 生成带global_id的合并JSON（使用add_global_id_to_jsons函数）
-        json_strings = add_global_id_to_jsons(
-            detections_dir=paths.detections_dir,
-            global_mapping=mapping,
-            indices=indices
-        )
+    # 生成带global_id的合并JSON（使用add_global_id_to_jsons函数）
+    json_strings = add_global_id_to_jsons(
+        detections_dir=paths.detections_dir,
+        global_mapping=mapping,
+        indices=indices
+    )
 
-        # 保存为global_skus.json
-        global_skus_path = out_dir / 'global_skus.json'
-        with global_skus_path.open('w', encoding='utf-8') as f:
-            json.dump(json_strings, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved global SKUs with metadata to: {global_skus_path} ({len(json_strings)} images)")
-    except (ValueError, json.JSONEncodeError, FileNotFoundError, PermissionError) as e:
-        logger.warning(f"Failed to build/save global mapping or global_id JSONs: {e}")
+    # 保存为global_skus.json
+    global_skus_path = out_dir / 'global_skus.json'
+    with global_skus_path.open('w', encoding='utf-8') as f:
+        json.dump(json_strings, f, ensure_ascii=False, indent=2)
+    logger.info(f"Saved global SKUs with metadata to: {global_skus_path} ({len(json_strings)})")
 
     return outputs
 

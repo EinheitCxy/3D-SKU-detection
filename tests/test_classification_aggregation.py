@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from src.deduplicate_detections import (
     add_global_id_to_jsons,
     build_global_mapping,
+    deduplicate_sequence,
     resolve_dataset_paths,
 )
 from utils.classification_aggregation import aggregate_classifications
@@ -151,3 +154,76 @@ def test_dataset_paths_can_explicitly_use_classified_detection_directory(tmp_pat
 def test_global_id_publication_requires_an_explicit_detection_directory() -> None:
     with pytest.raises(ValueError, match="detections_dir"):
         add_global_id_to_jsons(global_mapping={}, indices=[])
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda _: None,
+        lambda value: {key: item for key, item in value.items() if key != "sku_name"},
+        lambda value: {**value, "status": "illegal"},
+        lambda value: {**value, "confidence": float("inf")},
+        lambda value: {**value, "confidence": float("-inf")},
+        lambda value: {**value, "confidence": -0.01},
+        lambda value: {**value, "confidence": 1.01},
+        lambda value: {**value, "confidence": True},
+        lambda value: {**value, "project_id": True},
+        lambda value: {
+            "schema_version": "1.0.0",
+            "source": "personalcare",
+            "project_id": 51,
+            "status": "unavailable",
+        },
+        lambda value: {
+            "schema_version": "1.0.0",
+            "source": "personalcare",
+            "project_id": 51,
+            "status": "unavailable",
+            "reason": 1,
+        },
+        lambda value: {
+            "schema_version": "1.0.0",
+            "source": "personalcare",
+            "project_id": 51,
+            "status": "unavailable",
+            "reason": "",
+        },
+    ],
+)
+def test_dedup_rejects_invalid_classification_without_publishing_global_artifacts(
+    tmp_path, mutate
+) -> None:
+    dataset = tmp_path / "dataset"
+    detections_dir = dataset / "detections_results"
+    detections_dir.mkdir(parents=True)
+    classification = mutate(resolved("A", "产品A", 0.8))
+    (detections_dir / "1.json").write_text(
+        json.dumps(
+            {
+                "skus": [
+                    {
+                        "classes": {},
+                        "objects": [
+                            {
+                                "position": [0.0, 0.0, 1.0, 1.0],
+                                "classification": classification,
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_root = tmp_path / "Output"
+
+    with pytest.raises(ValueError, match="classification"):
+        deduplicate_sequence(
+            resolve_dataset_paths(dataset),
+            output_root=output_root,
+            output_subdir="dedup_detections",
+        )
+
+    publication_dir = output_root / dataset.name / "dedup_detections"
+    assert not (publication_dir / "global_mapping.json").exists()
+    assert not (publication_dir / "global_skus.json").exists()
