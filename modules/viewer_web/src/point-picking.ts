@@ -66,6 +66,16 @@ export function resolvePickGlobalId(
   return candidate !== null && visibleIds.has(candidate) ? candidate : null;
 }
 
+export function firstVisibleFootprintGlobalId(
+  hitGlobalIds: readonly (string | null | undefined)[],
+  visibleIds: ReadonlySet<string>,
+): string | null {
+  for (const globalId of hitGlobalIds) {
+    if (globalId !== null && globalId !== undefined && visibleIds.has(globalId)) return globalId;
+  }
+  return null;
+}
+
 export function buildVisibilityDelta(
   objects: ObjectIndex,
   previousIds: ReadonlySet<string>,
