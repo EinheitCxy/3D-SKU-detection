@@ -1,3 +1,4 @@
+import dataclasses
 import json
 from pathlib import Path
 
@@ -99,22 +100,24 @@ def _observation(
     *,
     object_id: int = 0,
     valid_mask: np.ndarray | None = None,
-    source_mask: np.ndarray | None = None,
-    source_to_processed_affine: np.ndarray | None = None,
 ) -> EvidenceObservation:
     return EvidenceObservation(
         global_id="1",
         image_id=image_id,
         object_id=object_id,
-        source_mask=(mask.copy() if source_mask is None else source_mask),
-        source_to_processed_affine=(
-            np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
-            if source_to_processed_affine is None
-            else source_to_processed_affine
-        ),
         processed_mask=mask,
         valid_mask=np.ones_like(mask, dtype=bool) if valid_mask is None else valid_mask,
     )
+
+
+def test_evidence_observation_is_processed_space_only() -> None:
+    assert {field.name for field in dataclasses.fields(EvidenceObservation)} == {
+        "global_id",
+        "image_id",
+        "object_id",
+        "processed_mask",
+        "valid_mask",
+    }
 
 
 def _formal_only_geometry_fields(height: int, width: int) -> dict[str, np.ndarray]:
@@ -153,18 +156,10 @@ def test_missing_camera_fields_returns_unavailable_without_raise(tmp_path):
     assert evidence["mask_robustness"]["status"] == "available"
 
 
-def test_source_space_one_pixel_robustness_precedes_nonunit_affine_warp(tmp_path):
-    """Catches eroding the enlarged processed mask instead of the source mask."""
-    source_mask = np.zeros((12, 20), dtype=np.uint8)
-    source_mask[2:10, 3:17] = 1
-    affine = np.array([[3.0, 0.0, 1.0], [0.0, 3.0, 1.0]], dtype=np.float64)
+def test_processed_space_one_pixel_robustness_uses_processed_mask(tmp_path):
     processed_shape = (36, 60)
-    processed_mask = cv2.warpAffine(
-        source_mask,
-        affine.astype(np.float32),
-        (processed_shape[1], processed_shape[0]),
-        flags=cv2.INTER_NEAREST,
-    ).astype(bool)
+    processed_mask = np.zeros(processed_shape, dtype=np.uint8)
+    processed_mask[6:30, 10:50] = 1
     cache_path = _write_npz(
         tmp_path / "formal_geometry_only.npz",
         _formal_only_geometry_fields(*processed_shape),
@@ -173,73 +168,49 @@ def test_source_space_one_pixel_robustness_precedes_nonunit_affine_warp(tmp_path
     evidence = build_shadow_evidence(
         cache_path,
         cache_frame_ids=np.array([5], dtype=np.int32),
-        observations=(
-            _observation(
-                5,
-                processed_mask,
-                source_mask=source_mask.astype(bool),
-                source_to_processed_affine=affine,
-            ),
-        ),
+        observations=(_observation(5, processed_mask.astype(bool)),),
         formal_snapshot=_snapshot(box(0.0, 0.0, 0.59, 0.35)),
     )
 
     kernel = np.ones((3, 3), dtype=np.uint8)
-    source_eroded = cv2.erode(source_mask, kernel, iterations=1)
-    expected_processed = cv2.warpAffine(
-        source_eroded,
-        affine.astype(np.float32),
-        (processed_shape[1], processed_shape[0]),
-        flags=cv2.INTER_NEAREST,
-    ).astype(bool)
-    wrong_processed = cv2.erode(
+    expected_processed = cv2.erode(
         processed_mask.astype(np.uint8), kernel, iterations=1
     ).astype(bool)
     eroded = evidence["mask_robustness"]["variants"]["eroded"]
 
     assert evidence["status"] == "unavailable_missing_camera_fields"
     assert evidence["mask_robustness"]["status"] == "available"
+    assert evidence["mask_robustness"]["operation"] == {
+        "coordinate_space": "da3_processed_pixels",
+        "variants": ["original", "eroded", "dilated"],
+        "kernel": [3, 3],
+        "iterations": 1,
+    }
     assert eroded["mask_counts"][0] == {
         "image_id": 5,
         "object_id": 0,
-        "source_mask_pixel_count": int(source_eroded.sum()),
         "processed_mask_pixel_count": int(expected_processed.sum()),
     }
-    assert expected_processed.sum() != wrong_processed.sum()
     assert eroded["status"] == "accepted"
     json.dumps(evidence, allow_nan=False)
 
 
-def test_thin_source_mask_erosion_reports_rejection_transition_without_partial_geometry(
+def test_thin_processed_mask_erosion_reports_rejection_transition_without_partial_geometry(
     tmp_path,
 ):
     """Catches substituting partial polygons when a perturbation loses one ID."""
-    source_mask = np.zeros((5, 30), dtype=np.uint8)
-    source_mask[2:3, 1:29] = 1
-    affine = np.array([[4.0, 0.0, 1.5], [0.0, 4.0, 1.5]], dtype=np.float64)
     processed_shape = (20, 120)
-    processed_mask = cv2.warpAffine(
-        source_mask,
-        affine.astype(np.float32),
-        (processed_shape[1], processed_shape[0]),
-        flags=cv2.INTER_NEAREST,
-    ).astype(bool)
+    processed_mask = np.zeros(processed_shape, dtype=bool)
+    processed_mask[10:11, 4:116] = True
     cache_path = _write_npz(
-        tmp_path / "thin_source_mask.npz",
+        tmp_path / "thin_processed_mask.npz",
         _formal_only_geometry_fields(*processed_shape),
     )
 
     evidence = build_shadow_evidence(
         cache_path,
         cache_frame_ids=np.array([11], dtype=np.int32),
-        observations=(
-            _observation(
-                11,
-                processed_mask,
-                source_mask=source_mask.astype(bool),
-                source_to_processed_affine=affine,
-            ),
-        ),
+        observations=(_observation(11, processed_mask),),
         formal_snapshot=_snapshot(box(0.0, 0.0, 1.19, 0.19)),
     )
 
@@ -255,7 +226,7 @@ def test_thin_source_mask_erosion_reports_rejection_transition_without_partial_g
 
 
 def test_camera_absence_does_not_disable_available_mask_robustness(tmp_path):
-    source_mask = np.ones((20, 20), dtype=bool)
+    processed_mask = np.ones((20, 20), dtype=bool)
     cache_path = _write_npz(
         tmp_path / "no_camera_but_geometry.npz",
         _formal_only_geometry_fields(20, 20),
@@ -264,7 +235,7 @@ def test_camera_absence_does_not_disable_available_mask_robustness(tmp_path):
     evidence = build_shadow_evidence(
         cache_path,
         cache_frame_ids=np.array([4], dtype=np.int32),
-        observations=(_observation(4, source_mask),),
+        observations=(_observation(4, processed_mask),),
         formal_snapshot=_snapshot(box(0.0, 0.0, 0.19, 0.19)),
     )
 
@@ -276,7 +247,7 @@ def test_camera_absence_does_not_disable_available_mask_robustness(tmp_path):
 
 
 def test_absent_formal_plane_keeps_all_shadow_geometry_unavailable(tmp_path):
-    source_mask = np.ones((20, 20), dtype=bool)
+    processed_mask = np.ones((20, 20), dtype=bool)
     cache_path = _write_npz(
         tmp_path / "no_formal_plane.npz", _formal_only_geometry_fields(20, 20)
     )
@@ -292,7 +263,7 @@ def test_absent_formal_plane_keeps_all_shadow_geometry_unavailable(tmp_path):
     evidence = build_shadow_evidence(
         cache_path,
         cache_frame_ids=np.array([4], dtype=np.int32),
-        observations=(_observation(4, source_mask),),
+        observations=(_observation(4, processed_mask),),
         formal_snapshot=snapshot,
     )
 
@@ -423,7 +394,7 @@ def test_valid_evidence_is_json_serializable_and_reports_reconstruction_residual
 def test_pairwise_sampling_uses_first_512_qualified_flattened_indices(tmp_path):
     fields = _identity_camera_arrays(2, 24, 24, focal_length=100.0)
     cache_path = _write_npz(tmp_path / "sample_cap.npz", fields)
-    source_mask = np.ones((24, 24), dtype=bool)
+    processed_mask = np.ones((24, 24), dtype=bool)
     target_mask = np.zeros((24, 24), dtype=bool)
     target_mask.reshape(-1)[:512] = True
 
@@ -431,7 +402,7 @@ def test_pairwise_sampling_uses_first_512_qualified_flattened_indices(tmp_path):
         cache_path,
         cache_frame_ids=np.array([0, 1], dtype=np.int32),
         observations=(
-            _observation(0, source_mask),
+            _observation(0, processed_mask),
             _observation(1, target_mask),
         ),
         formal_snapshot=_snapshot(box(0.0, 0.0, 0.23, 0.23)),

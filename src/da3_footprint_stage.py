@@ -10,7 +10,6 @@ import logging
 import os
 import re
 import shutil
-import sys
 import tempfile
 import time
 import uuid
@@ -23,7 +22,6 @@ import matplotlib
 matplotlib.use("Agg")
 import numpy as np
 import shapely
-import torch
 from matplotlib import pyplot as plt
 from PIL import Image
 from shapely import set_precision
@@ -40,7 +38,6 @@ from utils.footprint_evidence import (
     EvidenceObservation,
     FormalSnapshot,
     build_shadow_evidence,
-    warp_source_mask_nearest,
 )
 from utils.ground_stack_footprint import (
     FootprintError,
@@ -52,15 +49,11 @@ from utils.ground_stack_footprint import (
     voxel_balance_projected,
 )
 from utils.sam3_mask_cache import (
-    DetectionPrompt,
     FrameMaskCacheRequest,
-    FrameMaskCacheResult,
-    load_or_compute_frame_masks,
-)
-from utils.sam3_utils import (
-    checkpoint_sha256,
-    normalize_device,
-    sam3_masks_from_bboxes_predict_inst,
+    FrameMaskCacheError,
+    ProcessedDetectionPrompt,
+    SCHEMA as SAM3_MASK_CACHE_SCHEMA,
+    load_complete_frame_masks,
 )
 
 _CACHE_FIELDS = {
@@ -79,25 +72,15 @@ _CACHE_FIELDS = {
     "scale_factor",
 }
 _MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
-_SAM3_CHECKPOINT = str(
-    Path(__file__).resolve().parents[1] / "sam3" / "checkpoints" / "sam3.pt"
-)  # 相对仓库根解析，不依赖 CWD（与 sam3_utils._ensure_sam3_in_path 一致）
-_SAM3_DEVICE = "cuda"
 _PATCH_SIZE = 14
 _PREPROCESS_METHOD = "upper_bound_resize"
-_PREDICT_INST_CONTRACT = {
-    "api": "predict_inst",
-    "builder": {"enable_inst_interactivity": True, "load_from_HF": False},
-    "empty_mask_retry": "bbox_center_positive_point",
-    "mask_postprocess": "best_iou_then_clip_to_bbox",
-    "predict": {
-        "multimask_output": True,
-        "normalize_coords": True,
-        "return_logits": False,
-    },
-    "processor": {"confidence_threshold": 0.0},
-    "prompts": {"positive_exemplar": None, "text_prompt": None},
-    "source_mask": {"coordinate_space": "source_pixels", "dtype": "bool"},
+_SELF_EXEMPLAR_INFERENCE_CONTRACT = {
+    "api": "self_exemplar",
+    "threshold": 0.5,
+    "image_size": 1008,
+    "max_batch_size": 32,
+    "max_dets_per_query": 1,
+    "clip_to_bbox": True,
 }
 _GENERATION_ARTIFACTS = {
     "measurement_report": "measurement_report.json",
@@ -119,13 +102,24 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
     output_dir = Path(save_root) / dataset.name / "ground_stack_footprint"
     output_dir.mkdir(parents=True, exist_ok=True)
     report: dict[str, Any] = {
-        "metric": "da3_ground_footprint_union",
+        "schema_version": "2.0.0",
+        "metric": "da3_self_exemplar_ground_footprint_union",
         "unit": "m2",
         "status": "rejected",
         "value_m2": None,
         "global_mapping_sha256": None,
         "cache": {},
-        "sam3_mask_cache": {"cache_root": "sam3_mask_cache/v1", "frames": []},
+        "mask_contract": {
+            "source": "sam3_self_exemplar",
+            "coordinate_space": "da3_processed_pixels",
+            "cache_schema": SAM3_MASK_CACHE_SCHEMA,
+        },
+        "sam3_mask_cache": {
+            "cache_root": "sam3_mask_cache/v2",
+            "schema": SAM3_MASK_CACHE_SCHEMA,
+            "producer": "sku_matching",
+            "frames": [],
+        },
         "plane": {"candidates": [], "selected": None},
         "per_global_id": {},
         "union": {},
@@ -133,7 +127,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             "clock": "time.monotonic",
             "stages_seconds": {
                 "validation_and_io": None,
-                "sam3_source_masks": None,
+                "load_self_exemplar_masks": None,
                 "select_support_plane": None,
                 "per_id_obb_union": None,
                 "shadow_evidence": None,
@@ -165,12 +159,8 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         detections = _load_detections(detection_paths)
         global_mapping, global_mapping_sha256 = _load_mapping(mapping_path, detections)
         report["global_mapping_sha256"] = global_mapping_sha256
-        sam3_checkpoint = Path(_SAM3_CHECKPOINT)
-        sam3_checkpoint_sha256 = checkpoint_sha256(sam3_checkpoint)
-        sam3_code_fingerprint = _sam3_code_fingerprint()
-        sam3_runtime_fingerprint = _sam3_runtime_fingerprint(_SAM3_DEVICE)
         stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
-        active_stage = "sam3_source_masks"
+        active_stage = "load_self_exemplar_masks"
         active_stage_started_at = time.monotonic()
         (
             masked_observations,
@@ -183,17 +173,9 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             detections,
             global_mapping,
             report["per_global_id"],
-            Path(save_root) / dataset.name / "sam3_mask_cache" / "v1",
-            sam3_checkpoint,
-            sam3_checkpoint_sha256,
-            sam3_code_fingerprint,
-            sam3_runtime_fingerprint,
+            Path(save_root) / dataset.name / "sam3_mask_cache" / "v2",
             report["sam3_mask_cache"]["frames"],
         )
-        if checkpoint_sha256(sam3_checkpoint) != sam3_checkpoint_sha256:
-            raise FootprintStageError(
-                "SAM3 checkpoint changed during mask cache access"
-            )
         all_object_points = [
             points
             for observations in masked_observations.values()
@@ -594,10 +576,6 @@ def _masked_observations(
     mapping_by_id: dict[str, list[dict[str, Any]]],
     per_global_id: dict[str, Any],
     mask_cache_root: Path,
-    sam3_checkpoint: Path,
-    sam3_checkpoint_sha256: str,
-    sam3_code_fingerprint: dict[str, object],
-    sam3_runtime_fingerprint: dict[str, object],
     mask_cache_frames: list[dict[str, object]],
 ) -> tuple[
     dict[str, list[np.ndarray]],
@@ -622,99 +600,101 @@ def _masked_observations(
     for image_id, frame_detections in detections.items():
         frame_index = frame_for_id[image_id]
         height, width = point_clouds.shape[1:3]
-        with Image.open(image_paths[image_id]) as image:
-            source_image_hw = (image.height, image.width)
+        affine = np.asarray(
+            cache["source_to_processed_affine"][frame_index], dtype=np.float64
+        )
+        source_size_wh = tuple(
+            int(value) for value in cache["source_image_sizes"][frame_index]
+        )
+        prompts = tuple(
+            ProcessedDetectionPrompt(
+                object_id=int(item["object_id"]),
+                source_bbox_xyxy=tuple(float(value) for value in item["bbox"]),
+                processed_bbox_xyxy=_map_bbox_affine(item["bbox"], affine),
+            )
+            for item in frame_detections
+        )
         request = FrameMaskCacheRequest(
             cache_root=mask_cache_root,
             image_id=image_id,
             image_path=image_paths[image_id],
-            detections=tuple(
-                DetectionPrompt.from_bbox(item["object_id"], item["bbox"])
-                for item in frame_detections
-            ),
-            checkpoint_path=sam3_checkpoint,
-            checkpoint_sha256=sam3_checkpoint_sha256,
-            code_fingerprint=sam3_code_fingerprint,
-            runtime_fingerprint=sam3_runtime_fingerprint,
-            inference_contract=_PREDICT_INST_CONTRACT,
-            output_shape_hw=source_image_hw,
+            source_size_wh=source_size_wh,
+            processed_shape_hw=(height, width),
+            source_to_processed_affine=affine,
+            detections=prompts,
+            inference_contract=_SELF_EXEMPLAR_INFERENCE_CONTRACT,
         )
         try:
-            cache_result = load_or_compute_frame_masks(
-                request,
-                compute_masks=lambda: _compute_verified_sam3_masks(
-                    image_paths[image_id],
-                    frame_detections,
-                    sam3_checkpoint,
-                    sam3_checkpoint_sha256,
-                ),
-            )
-        except RuntimeError as error:
+            cache_result = load_complete_frame_masks(request)
+        except FrameMaskCacheError as error:
             raise FootprintStageError(
-                f"SAM3 failed for image {image_id}: {error}"
+                "canonical self-exemplar mask cache is incomplete; "
+                "run SKU matching first"
             ) from error
-        mask_cache_frames.append(_mask_cache_report_entry(image_id, cache_result))
-        masks = cache_result.masks
-        if len(masks) != len(frame_detections):
+        masks_by_object_id = cache_result.masks_by_object_id
+        expected_object_ids = {int(item["object_id"]) for item in frame_detections}
+        if set(masks_by_object_id) != expected_object_ids:
             raise FootprintStageError(
-                f"SAM3 did not return one mask per detection for image {image_id}"
+                "canonical self-exemplar mask cache is incomplete; "
+                "run SKU matching first"
             )
+        mask_cache_frames.append(
+            {
+                "image_id": image_id,
+                "cache_event": cache_result.cache_event,
+                "schema": cache_result.schema,
+            }
+        )
         all_masks = np.zeros((height, width), dtype=bool)
-        for item, mask in zip(frame_detections, masks):
-            source_mask = np.asarray(mask, dtype=bool)
-            with Image.open(image_paths[image_id]) as image:
-                if source_mask.shape != (image.height, image.width):
-                    raise FootprintStageError(
-                        f"SAM3 mask source dimensions mismatch for image {image_id}"
-                    )
-            source_to_processed_affine = cache["source_to_processed_affine"][
-                frame_index
-            ]
-            warped = warp_source_mask_nearest(
-                source_mask,
-                source_to_processed_affine,
-                (height, width),
+        valid_grid = _valid_points(
+            point_clouds[frame_index], confidence[frame_index]
+        )
+        for item in frame_detections:
+            object_id = int(item["object_id"])
+            processed_mask = np.asarray(
+                masks_by_object_id[object_id], dtype=bool
             )
+            if processed_mask.shape != (height, width):
+                raise FootprintStageError(
+                    "canonical self-exemplar mask cache is incomplete; "
+                    "run SKU matching first"
+                )
             global_id = lookup[(image_id, item["object_id"])]
             diagnostic = {
                 "image_id": image_id,
-                "object_id": item["object_id"],
+                "object_id": object_id,
                 "valid_point_count": 0,
             }
             per_global_id.setdefault(global_id, {"observations": []})[
                 "observations"
             ].append(diagnostic)
-            valid_grid = _valid_points(
-                point_clouds[frame_index], confidence[frame_index]
-            )
             evidence_observations.append(
                 EvidenceObservation(
                     global_id=global_id,
                     image_id=image_id,
-                    object_id=item["object_id"],
-                    source_mask=source_mask.copy(),
-                    source_to_processed_affine=source_to_processed_affine.copy(),
-                    processed_mask=warped.copy(),
+                    object_id=object_id,
+                    processed_mask=processed_mask.copy(),
                     valid_mask=valid_grid.copy(),
                 )
             )
-            if not warped.any():
-                diagnostic["rejection"] = "warped SAM3 mask is empty"
+            if not processed_mask.any():
+                diagnostic["rejection"] = (
+                    "processed self-exemplar mask is empty"
+                )
                 observations[global_id].append(np.empty((0, 3), dtype=float))
             else:
-                valid = valid_grid & warped
+                valid = valid_grid & processed_mask
                 points = point_clouds[frame_index][valid]
                 diagnostic["valid_point_count"] = int(len(points))
                 if len(points) < 32:
                     diagnostic["rejection"] = "mask has fewer than 32 valid DA3 points"
                 observations[global_id].append(points)
             all_masks |= cv2.dilate(
-                warped.astype(np.uint8), np.ones((5, 5), dtype=np.uint8), iterations=1
+                processed_mask.astype(np.uint8),
+                np.ones((5, 5), dtype=np.uint8),
+                iterations=1,
             ).astype(bool)
-        valid_background = (
-            _valid_points(point_clouds[frame_index], confidence[frame_index])
-            & ~all_masks
-        )
+        valid_background = valid_grid & ~all_masks
         frame_background = point_clouds[frame_index][valid_background]
         background_points.append(frame_background)
         background_frames.append(
@@ -725,6 +705,20 @@ def _masked_observations(
         np.concatenate(background_points),
         np.concatenate(background_frames),
         tuple(evidence_observations),
+    )
+
+
+def _map_bbox_affine(
+    bbox_xyxy: list[float] | tuple[float, ...], affine: np.ndarray
+) -> tuple[float, float, float, float]:
+    x1, y1, x2, y2 = (float(value) for value in bbox_xyxy)
+    first = affine @ np.asarray([x1, y1, 1.0], dtype=np.float64)
+    second = affine @ np.asarray([x2, y2, 1.0], dtype=np.float64)
+    return (
+        float(first[0]),
+        float(first[1]),
+        float(second[0]),
+        float(second[1]),
     )
 
 
@@ -757,92 +751,6 @@ def _valid_points(points: np.ndarray, confidence: np.ndarray) -> np.ndarray:
         & np.isfinite(confidence)
         & (confidence >= 1.0)
     )
-
-
-def _compute_verified_sam3_masks(
-    image_path: Path,
-    frame_detections: list[dict[str, Any]],
-    checkpoint: Path,
-    expected_checkpoint_sha256: str,
-) -> list[np.ndarray]:
-    if checkpoint_sha256(checkpoint) != expected_checkpoint_sha256:
-        raise RuntimeError("SAM3 checkpoint digest changed before mask production")
-    masks = sam3_masks_from_bboxes_predict_inst(
-        str(image_path),
-        [item["bbox"] for item in frame_detections],
-        str(checkpoint),
-        _SAM3_DEVICE,
-    )
-    if checkpoint_sha256(checkpoint) != expected_checkpoint_sha256:
-        raise RuntimeError("SAM3 checkpoint changed during mask production")
-    return masks
-
-
-def _mask_cache_report_entry(
-    image_id: int, result: FrameMaskCacheResult
-) -> dict[str, object]:
-    return {
-        "image_id": image_id,
-        "key": result.key,
-        "cache_events": list(result.events),
-        "payload_sha256": result.payload_sha256,
-        "checkpoint_sha256": result.checkpoint_sha256,
-        "code_fingerprint": dict(result.code_fingerprint),
-        "invalid_reason": result.invalid_reason,
-    }
-
-
-def _sam3_code_fingerprint() -> dict[str, object]:
-    project_root = Path(__file__).resolve().parents[1]
-    paths = (
-        project_root / "src" / "da3_footprint_stage.py",
-        project_root / "utils" / "sam3_mask_cache.py",
-        project_root / "utils" / "sam3_utils.py",
-    )
-    return {
-        "algorithm": "sha256",
-        "files": {
-            path.relative_to(project_root).as_posix(): _sha256(path)
-            for path in sorted(paths, key=lambda candidate: candidate.as_posix())
-        },
-    }
-
-
-def _sam3_runtime_fingerprint(device: str) -> dict[str, object]:
-    try:
-        normalized_device = normalize_device(device)
-    except RuntimeError as error:
-        raise FootprintStageError(
-            f"SAM3 runtime device is unavailable: {error}"
-        ) from error
-    sam3_init = Path(__file__).resolve().parents[1] / "sam3" / "sam3" / "__init__.py"
-    version_match = re.search(
-        r'^__version__\s*=\s*["\']([^"\']+)["\']',
-        sam3_init.read_text(encoding="utf-8"),
-        flags=re.MULTILINE,
-    )
-    if version_match is None:
-        raise FootprintStageError("SAM3 package version is missing")
-    return {
-        "python": sys.version,
-        "numpy": np.__version__,
-        "torch": str(torch.__version__),
-        "sam3": {
-            "source": "local",
-            "version": version_match.group(1),
-            "init_sha256": _sha256(sam3_init),
-        },
-        "cuda": torch.version.cuda,
-        "cudnn": torch.backends.cudnn.version(),
-        "device": normalized_device,
-        "float32_matmul_precision": torch.get_float32_matmul_precision(),
-        "tf32": {
-            "cuda_matmul": bool(torch.backends.cuda.matmul.allow_tf32),
-            "cudnn": bool(torch.backends.cudnn.allow_tf32),
-        },
-        "autocast": {"enabled": False, "dtype": None},
-        "deterministic_algorithms": bool(torch.are_deterministic_algorithms_enabled()),
-    }
 
 
 def _write_artifacts(

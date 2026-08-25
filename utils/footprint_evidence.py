@@ -42,13 +42,11 @@ _CAMERA_FIELDS = (
 
 @dataclass(frozen=True)
 class EvidenceObservation:
-    """One source/processed mask pair used only for shadow evidence."""
+    """One processed-grid mask used only for shadow evidence."""
 
     global_id: str
     image_id: int
     object_id: int
-    source_mask: np.ndarray
-    source_to_processed_affine: np.ndarray
     processed_mask: np.ndarray
     valid_mask: np.ndarray
 
@@ -161,30 +159,6 @@ def build_shadow_evidence(
     return result
 
 
-def warp_source_mask_nearest(
-    source_mask: np.ndarray,
-    source_to_processed_affine: np.ndarray,
-    output_shape_hw: tuple[int, int],
-) -> np.ndarray:
-    """Warp one source-pixel boolean mask with the formal nearest-CV2 contract."""
-    mask = np.asarray(source_mask)
-    affine = np.asarray(source_to_processed_affine, dtype=np.float64)
-    height, width = output_shape_hw
-    if mask.ndim != 2:
-        raise ValueError("source mask must be two-dimensional")
-    if affine.shape != (2, 3) or not np.isfinite(affine).all():
-        raise ValueError("source-to-processed affine must be finite shape (2, 3)")
-    if height <= 0 or width <= 0:
-        raise ValueError("processed output shape must be positive")
-    warped = cv2.warpAffine(
-        mask.astype(np.uint8),
-        affine.astype(np.float32),
-        (int(width), int(height)),
-        flags=cv2.INTER_NEAREST,
-    )
-    return warped.astype(bool)
-
-
 def _load_formal_geometry_cache(
     cache_path: Path, cache_frame_ids: np.ndarray
 ) -> _GeometryCache:
@@ -276,10 +250,10 @@ def _build_mask_robustness(
     return {
         "status": "available",
         "operation": {
-            "coordinate_space": "source_pixels",
+            "coordinate_space": "da3_processed_pixels",
+            "variants": ["original", "eroded", "dilated"],
             "kernel": [3, 3],
             "iterations": 1,
-            "warp": "cv2.INTER_NEAREST",
         },
         "variants": variants,
         "area_interval_m2": interval,
@@ -294,10 +268,12 @@ def _rejection_transition(formal_status: str, variant_status: str) -> str:
     return f"unchanged_{variant_status}"
 
 
-def _variant_source_mask(source_mask: np.ndarray, variant: str) -> np.ndarray:
-    mask = np.asarray(source_mask)
+def _variant_processed_mask(processed_mask: np.ndarray, variant: str) -> np.ndarray:
+    mask = np.asarray(processed_mask)
     if mask.ndim != 2:
-        raise EvidenceComputationError("evidence source mask must be two-dimensional")
+        raise EvidenceComputationError(
+            "evidence processed mask must be two-dimensional"
+        )
     mask_u8 = mask.astype(np.uint8)
     kernel = np.ones((3, 3), dtype=np.uint8)
     if variant == "original":
@@ -330,23 +306,13 @@ def _fixed_plane_variant_area(
             raise EvidenceComputationError(
                 f"evidence observation image {image_id} is absent from cache"
             )
-        source_mask = _variant_source_mask(observation.source_mask, variant)
-        processed_mask = warp_source_mask_nearest(
-            source_mask,
-            observation.source_to_processed_affine,
-            processed_shape,
+        processed_mask = _variant_processed_mask(
+            observation.processed_mask, variant
         )
-        recorded_processed = np.asarray(observation.processed_mask, dtype=bool)
         valid_mask = np.asarray(observation.valid_mask, dtype=bool)
-        if recorded_processed.shape != processed_shape or valid_mask.shape != processed_shape:
+        if processed_mask.shape != processed_shape or valid_mask.shape != processed_shape:
             raise EvidenceComputationError(
                 "evidence processed and valid masks must match the geometry grid"
-            )
-        if variant == "original" and not np.array_equal(
-            processed_mask, recorded_processed
-        ):
-            raise EvidenceComputationError(
-                "source mask affine warp does not match the frozen processed mask"
             )
         frame_index = frame_for_id[image_id]
         qualified = (
@@ -365,7 +331,6 @@ def _fixed_plane_variant_area(
             {
                 "image_id": image_id,
                 "object_id": int(observation.object_id),
-                "source_mask_pixel_count": int(np.count_nonzero(source_mask)),
                 "processed_mask_pixel_count": int(np.count_nonzero(processed_mask)),
             }
         )
@@ -624,22 +589,9 @@ def _prepare_observations(
             raise ValueError(f"evidence observation image {image_id} is absent from cache")
         processed_mask = np.asarray(observation.processed_mask, dtype=bool)
         valid_mask = np.asarray(observation.valid_mask, dtype=bool)
-        source_mask = np.asarray(observation.source_mask, dtype=bool)
-        affine = np.asarray(observation.source_to_processed_affine, dtype=np.float64)
         if processed_mask.shape != expected_shape or valid_mask.shape != expected_shape:
             raise ValueError(
                 "evidence observation masks must match the processed camera grid"
-            )
-        if source_mask.ndim != 2 or affine.shape != (2, 3) or not np.isfinite(affine).all():
-            raise ValueError(
-                "evidence source mask and source-to-processed affine are invalid"
-            )
-        if not np.array_equal(
-            warp_source_mask_nearest(source_mask, affine, expected_shape),
-            processed_mask,
-        ):
-            raise ValueError(
-                "evidence source mask affine warp does not match processed mask"
             )
         frame_index = frame_for_id[image_id]
         qualified = (
@@ -796,9 +748,6 @@ def _observation_report(
     return {
         "image_id": int(item.observation.image_id),
         "object_id": int(item.observation.object_id),
-        "source_mask_pixel_count": int(
-            np.count_nonzero(item.observation.source_mask)
-        ),
         "processed_mask_pixel_count": int(np.count_nonzero(item.processed_mask)),
         "valid_point_count": int(len(points)),
         "confidence": _value_summary(masked_confidence),

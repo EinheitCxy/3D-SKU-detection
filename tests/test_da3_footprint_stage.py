@@ -1,6 +1,7 @@
 import hashlib
 import json
 import multiprocessing
+import shutil
 import sys
 from pathlib import Path
 
@@ -15,15 +16,11 @@ from src.da3_runner import (
     _validate_model_id,
 )
 from utils import footprint_evidence as evidence_module
-from utils import sam3_mask_cache
-
-
-@pytest.fixture(autouse=True)
-def _verified_sam3_checkpoint(monkeypatch, tmp_path):
-    checkpoint = tmp_path / "sam3.pt"
-    checkpoint.write_bytes(b"task-4-verified-sam3-checkpoint")
-    monkeypatch.setattr(stage, "_SAM3_CHECKPOINT", str(checkpoint))
-    monkeypatch.setattr(stage, "_SAM3_DEVICE", "cpu")
+from utils.sam3_mask_cache import (
+    FrameMaskCacheRequest,
+    ProcessedDetectionPrompt,
+    load_or_compute_frame_masks,
+)
 
 
 def test_ground_stack_area_cli_calls_da3_footprint_stage(monkeypatch, tmp_path):
@@ -146,7 +143,9 @@ def _put_carton(
     )
 
 
-def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
+def make_metric_fixture(
+    tmp_path: Path, mask_factory=None
+) -> tuple[Path, Path, list[Path]]:
     dataset = tmp_path / "metric_dataset"
     images = dataset / "images"
     detections = dataset / "detections_results"
@@ -212,6 +211,11 @@ def make_metric_fixture(tmp_path: Path) -> tuple[Path, Path, list[Path]]:
     mapping_path = output / "dedup_detections" / "global_mapping.json"
     mapping_path.write_text(json.dumps(mapping))
     input_paths.extend([output / "da3_cache" / "predictions.npz", mapping_path])
+    _publish_v2_masks(
+        dataset,
+        save_root,
+        exact_bbox_masks if mask_factory is None else mask_factory,
+    )
     return dataset, save_root, input_paths
 
 
@@ -237,9 +241,68 @@ def masks_with_one_empty(
     return masks
 
 
+def _publish_v2_masks(dataset: Path, save_root: Path, mask_factory) -> None:
+    output = save_root / dataset.name
+    with np.load(output / "da3_cache" / "predictions.npz", allow_pickle=False) as loaded:
+        image_ids = loaded["image_ids"].copy()
+        source_sizes = loaded["source_image_sizes"].copy()
+        affines = loaded["source_to_processed_affine"].copy()
+        processed_shape = tuple(int(value) for value in loaded["world_points"].shape[1:3])
+    cache_root = output / "sam3_mask_cache" / "v2"
+    for frame_index, raw_image_id in enumerate(image_ids):
+        image_id = int(raw_image_id)
+        image_path = dataset / "images" / f"{image_id}.png"
+        payload = json.loads(
+            (dataset / "detections_results" / f"{image_id}.json").read_text()
+        )
+        objects = payload["objects"]
+        affine = np.asarray(affines[frame_index], dtype=np.float64)
+        prompts: list[ProcessedDetectionPrompt] = []
+        for object_id, item in enumerate(objects):
+            x1, y1, x2, y2 = (float(value) for value in item["position"])
+            first = affine @ np.asarray([x1, y1, 1.0])
+            second = affine @ np.asarray([x2, y2, 1.0])
+            prompts.append(
+                ProcessedDetectionPrompt(
+                    object_id=object_id,
+                    source_bbox_xyxy=(x1, y1, x2, y2),
+                    processed_bbox_xyxy=(
+                        float(first[0]),
+                        float(first[1]),
+                        float(second[0]),
+                        float(second[1]),
+                    ),
+                )
+            )
+        request = FrameMaskCacheRequest(
+            cache_root=cache_root,
+            image_id=image_id,
+            image_path=image_path,
+            source_size_wh=tuple(int(value) for value in source_sizes[frame_index]),
+            processed_shape_hw=processed_shape,
+            source_to_processed_affine=affine,
+            detections=tuple(prompts),
+            inference_contract={
+                "api": "self_exemplar",
+                "threshold": 0.5,
+                "image_size": 1008,
+                "max_batch_size": 32,
+                "max_dets_per_query": 1,
+                "clip_to_bbox": True,
+            },
+        )
+        masks = mask_factory(str(image_path), [item["position"] for item in objects])
+        load_or_compute_frame_masks(
+            request,
+            lambda masks=masks: {
+                object_id: np.asarray(mask, dtype=bool)
+                for object_id, mask in enumerate(masks)
+            },
+        )
+
+
 def _run_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
     result = stage.run_da3_footprint(str(dataset), save_root)
     return json.loads(Path(result["report_path"]).read_text())
 
@@ -300,11 +363,10 @@ def _run_evidence_fixture(
     masks=exact_bbox_masks,
     camera: str | None = None,
 ) -> tuple[dict[str, object], dict[str, object]]:
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    dataset, save_root, _ = make_metric_fixture(tmp_path, mask_factory=masks)
     cache_path = save_root / dataset.name / "da3_cache" / "predictions.npz"
     if camera is not None:
         _add_camera_fields(cache_path, bad_contract=camera == "bad")
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", masks)
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
     return result, report
@@ -467,19 +529,20 @@ def _install_publication_boundary_probe(
     monkeypatch.setattr(Path, "write_text", fail_target_write)
 
 
-def _raise_if_sam3_called(*_args: object, **_kwargs: object) -> list[np.ndarray]:
-    raise AssertionError("a valid persistent mask-cache hit must not invoke SAM3")
-
-
 def test_stage_fuses_global_id_views_and_uses_polygon_union(monkeypatch, tmp_path):
     dataset, save_root, input_paths = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
     before = {path: path.read_bytes() for path in input_paths}
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
-    assert report["metric"] == "da3_ground_footprint_union"
+    assert report["schema_version"] == "2.0.0"
+    assert report["metric"] == "da3_self_exemplar_ground_footprint_union"
+    assert report["mask_contract"] == {
+        "source": "sam3_self_exemplar",
+        "coordinate_space": "da3_processed_pixels",
+        "cache_schema": "sam3_self_exemplar_processed_mask_cache_v1",
+    }
     assert report["status"] == "accepted"
     assert report["value_m2"] == pytest.approx(1.5, abs=0.03)
     assert report["per_global_id"]["1"]["observations_used"] == 2
@@ -510,7 +573,6 @@ def test_stage_records_digest_of_exact_raw_mapping_bytes(monkeypatch, tmp_path):
     mapping_path.write_bytes(
         b'{\n  "1": [\n    {"image_id": 0, "object_id": 0, "bbox": [16,24,80,104]},\n    {"image_id": 1, "object_id": 0, "bbox": [18,22,82,102]}\n  ],\n  "2": [ {"image_id": 2, "object_id": 0, "bbox": [62,24,126,104]} ]\n}\n'
     )
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -519,9 +581,8 @@ def test_stage_records_digest_of_exact_raw_mapping_bytes(monkeypatch, tmp_path):
 
 
 def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_path):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(
-        stage, "sam3_masks_from_bboxes_predict_inst", masks_with_one_empty
+    dataset, save_root, _ = make_metric_fixture(
+        tmp_path, mask_factory=masks_with_one_empty
     )
 
     result = stage.run_da3_footprint(str(dataset), save_root)
@@ -553,7 +614,6 @@ def test_no_formal_plane_keeps_unavailable_shadow_schema_and_rejected_artifacts(
     _put_carton(world_points, 2, [62, 24, 126, 104], (0.5, 1.5), 0.80)
     fields["world_points"] = world_points
     np.savez_compressed(cache_path, **fields)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     first_result = stage.run_da3_footprint(str(dataset), save_root)
     first_report = json.loads(Path(first_result["report_path"]).read_text())
@@ -634,7 +694,6 @@ def test_stage_reports_valid_shadow_evidence_without_changing_formal_area(
     assert with_camera["evidence"]["status"] == "available"
     assert without_camera["evidence"]["status"] == ("unavailable_missing_camera_fields")
     observation = with_camera["evidence"]["per_global_id"]["1"]["observations"][0]
-    assert observation["source_mask_pixel_count"] == 64 * 80
     assert observation["processed_mask_pixel_count"] == 64 * 80
     with_projection = _published_projection(with_camera_result)
     without_projection = _published_projection(without_camera_result)
@@ -668,10 +727,10 @@ def test_mask_robustness_failure_does_not_change_formal_projection_or_artifacts(
     )
     baseline_projection = _published_projection(baseline_result)
 
-    def fail_source_erosion(*_args: object, **_kwargs: object) -> np.ndarray:
-        raise RuntimeError("injected source morphology failure")
+    def fail_processed_erosion(*_args: object, **_kwargs: object) -> np.ndarray:
+        raise RuntimeError("injected processed morphology failure")
 
-    monkeypatch.setattr(evidence_module.cv2, "erode", fail_source_erosion)
+    monkeypatch.setattr(evidence_module.cv2, "erode", fail_processed_erosion)
     observed_result, observed = _run_evidence_fixture(
         tmp_path / "robustness-failure", monkeypatch, camera="valid"
     )
@@ -684,7 +743,7 @@ def test_mask_robustness_failure_does_not_change_formal_projection_or_artifacts(
     assert robustness["variants"]["eroded"]["status"] == "rejected"
     assert robustness["variants"]["eroded"]["value_m2"] is None
     assert (
-        "injected source morphology failure"
+        "injected processed morphology failure"
         in robustness["variants"]["eroded"]["reason"]
     )
     assert "polygons" not in robustness["variants"]["eroded"]
@@ -706,7 +765,8 @@ def test_duplicate_observation_does_not_increase_distinct_image_count(
     mapping["1"].append({"image_id": 0, "object_id": 1, "bbox": duplicate_bbox})
     mapping_path.write_text(json.dumps(mapping))
     _add_camera_fields(save_root / dataset.name / "da3_cache" / "predictions.npz")
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
+    shutil.rmtree(save_root / dataset.name / "sam3_mask_cache" / "v2")
+    _publish_v2_masks(dataset, save_root, exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -721,13 +781,6 @@ def test_duplicate_observation_does_not_increase_distinct_image_count(
 
 
 def test_wrong_mask_is_the_highest_leave_one_out_influence(monkeypatch, tmp_path):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-    mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
-    mapping = json.loads(mapping_path.read_text())
-    mapping["1"].extend(mapping.pop("2"))
-    mapping_path.write_text(json.dumps(mapping))
-    _add_camera_fields(save_root / dataset.name / "da3_cache" / "predictions.npz")
-
     def masks_with_wrong_third_view(
         image_path: str, bboxes: list[list[float]], *args: object
     ) -> list[np.ndarray]:
@@ -738,9 +791,15 @@ def test_wrong_mask_is_the_highest_leave_one_out_influence(monkeypatch, tmp_path
             masks[0][y1:y2, (x1 + x2) // 2 : x2] = True
         return masks
 
-    monkeypatch.setattr(
-        stage, "sam3_masks_from_bboxes_predict_inst", masks_with_wrong_third_view
+    dataset, save_root, _ = make_metric_fixture(
+        tmp_path, mask_factory=masks_with_wrong_third_view
     )
+    mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
+    mapping = json.loads(mapping_path.read_text())
+    mapping["1"].extend(mapping.pop("2"))
+    mapping_path.write_text(json.dumps(mapping))
+    _add_camera_fields(save_root / dataset.name / "da3_cache" / "predictions.npz")
+
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
@@ -789,103 +848,32 @@ def test_evidence_input_mutation_cannot_change_published_formal_artifacts(
     assert np.array_equal(observed_projection[2], baseline_projection[2])
 
 
-def test_stage_second_run_uses_cached_masks_and_keeps_area(monkeypatch, tmp_path):
+def _rejecting_sam3_producer(*_args: object, **_kwargs: object) -> object:
+    raise AssertionError("footprint must not invoke a SAM3 producer")
+
+
+def test_stage_consumes_v2_masks_without_sam3_producer(monkeypatch, tmp_path):
+    from utils import sam3_utils
+
+    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", _rejecting_sam3_producer)
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
-    first_result = stage.run_da3_footprint(str(dataset), save_root)
-    first = json.loads(Path(first_result["report_path"]).read_text())
-    first_projection = _published_projection(first_result)
-    monkeypatch.setattr(
-        stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called
-    )
-    second_result = stage.run_da3_footprint(str(dataset), save_root)
-    second = json.loads(Path(second_result["report_path"]).read_text())
-    second_projection = _published_projection(second_result)
-
-    assert first_projection[:2] == second_projection[:2]
-    assert np.array_equal(first_projection[2], second_projection[2])
-    assert [frame["cache_events"] for frame in first["sam3_mask_cache"]["frames"]] == [
-        ["miss", "written"],
-        ["miss", "written"],
-        ["miss", "written"],
-    ]
-    assert [frame["cache_events"] for frame in second["sam3_mask_cache"]["frames"]] == [
-        ["hit"],
-        ["hit"],
-        ["hit"],
-    ]
-    assert {
-        frame["checkpoint_sha256"] for frame in second["sam3_mask_cache"]["frames"]
-    } == {_sha256(Path(stage._SAM3_CHECKPOINT))}
-
-
-def test_hit_only_stage_hashes_checkpoint_only_at_entry_and_exit(monkeypatch, tmp_path):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
-    stage.run_da3_footprint(str(dataset), save_root)
-    expected_digest = _sha256(Path(stage._SAM3_CHECKPOINT))
-    checksum_calls: list[Path] = []
-
-    def counted_checkpoint_sha256(path: Path) -> str:
-        checksum_calls.append(path)
-        return expected_digest
-
-    monkeypatch.setattr(stage, "checkpoint_sha256", counted_checkpoint_sha256)
-    monkeypatch.setattr(
-        stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called
-    )
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
-    assert checksum_calls == [
-        Path(stage._SAM3_CHECKPOINT),
-        Path(stage._SAM3_CHECKPOINT),
-    ]
     assert result["success"] is True
-    assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
-        ["hit"],
-        ["hit"],
-        ["hit"],
+    assert [frame["cache_event"] for frame in report["sam3_mask_cache"]["frames"]] == [
+        "hit",
+        "hit",
+        "hit",
     ]
+    assert "sam3_source_masks" not in report["performance"]["stages_seconds"]
+    assert report["performance"]["stages_seconds"]["load_self_exemplar_masks"] >= 0.0
 
 
-def test_exit_checkpoint_mismatch_rejects_after_recording_all_hit_events(
-    monkeypatch, tmp_path
-):
+def test_missing_v2_cache_rejects_with_canonical_message(tmp_path):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
-    stage.run_da3_footprint(str(dataset), save_root)
-    expected_digest = _sha256(Path(stage._SAM3_CHECKPOINT))
-    digests = iter((expected_digest, "f" * 64))
-
-    monkeypatch.setattr(stage, "checkpoint_sha256", lambda _path: next(digests))
-    monkeypatch.setattr(
-        stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called
-    )
-    result = stage.run_da3_footprint(str(dataset), save_root)
-    report = json.loads(Path(result["report_path"]).read_text())
-
-    assert result["success"] is False
-    assert report["status"] == "rejected"
-    assert report["value_m2"] is None
-    assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
-        ["hit"],
-        ["hit"],
-        ["hit"],
-    ]
-    assert "checkpoint changed" in report["rejection_reason"]
-
-
-def test_cached_empty_mask_rejects_full_total(monkeypatch, tmp_path):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(
-        stage, "sam3_masks_from_bboxes_predict_inst", masks_with_one_empty
-    )
-    stage.run_da3_footprint(str(dataset), save_root)
-    monkeypatch.setattr(
-        stage, "sam3_masks_from_bboxes_predict_inst", _raise_if_sam3_called
-    )
+    shutil.rmtree(save_root / dataset.name / "sam3_mask_cache" / "v2")
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -893,167 +881,71 @@ def test_cached_empty_mask_rejects_full_total(monkeypatch, tmp_path):
     assert result["success"] is False
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
-    assert "empty" in report["per_global_id"]["2"]["observations"][0]["rejection"]
-    assert all(
-        frame["cache_events"] == ["hit"]
-        for frame in report["sam3_mask_cache"]["frames"]
+    assert report["rejection_reason"] == (
+        "canonical self-exemplar mask cache is incomplete; run SKU matching first"
     )
-
-
-def test_cache_write_failure_uses_complete_fresh_masks_and_records_event(
-    monkeypatch, tmp_path
-):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-
-    def fresh_masks_with_failed_write(request, compute_masks):
-        del compute_masks
-        masks = exact_bbox_masks(
-            str(request.image_path),
-            [list(prompt.bbox_xyxy()) for prompt in request.detections],
-        )
-        return stage.FrameMaskCacheResult(
-            masks=tuple(masks),
-            key="1" * 64,
-            events=("miss", "cache_write_failed"),
-            payload_sha256=None,
-            checkpoint_sha256=request.checkpoint_sha256,
-            code_fingerprint=request.code_fingerprint,
-            invalid_reason="injected cache write failure",
-        )
-
-    monkeypatch.setattr(
-        stage, "load_or_compute_frame_masks", fresh_masks_with_failed_write
-    )
-    result = stage.run_da3_footprint(str(dataset), save_root)
-    report = json.loads(Path(result["report_path"]).read_text())
-
-    assert result["success"] is True
-    assert report["status"] == "accepted"
-    assert report["value_m2"] == pytest.approx(1.5, abs=0.03)
-    assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
-        ["miss", "cache_write_failed"],
-        ["miss", "cache_write_failed"],
-        ["miss", "cache_write_failed"],
-    ]
-
-
-def test_stage_entries_cache_initialization_failure_uses_fresh_masks(
-    monkeypatch, tmp_path
-):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
-    original_mkdir = sam3_mask_cache.Path.mkdir
-    entries = save_root / dataset.name / "sam3_mask_cache" / "v1" / "entries"
-
-    def fail_entries_mkdir(path: Path, *args: object, **kwargs: object) -> None:
-        if path == entries:
-            raise OSError("injected entries initialization failure")
-        original_mkdir(path, *args, **kwargs)
-
-    monkeypatch.setattr(sam3_mask_cache.Path, "mkdir", fail_entries_mkdir)
-    result = stage.run_da3_footprint(str(dataset), save_root)
-    report = json.loads(Path(result["report_path"]).read_text())
-
-    assert result["success"] is True
-    assert report["status"] == "accepted"
-    assert report["value_m2"] == pytest.approx(1.5, abs=0.03)
-    assert [frame["cache_events"] for frame in report["sam3_mask_cache"]["frames"]] == [
-        ["miss", "cache_write_failed"],
-        ["miss", "cache_write_failed"],
-        ["miss", "cache_write_failed"],
-    ]
 
 
 @pytest.mark.parametrize(
-    ("masks", "expected_status"),
-    [(exact_bbox_masks, "accepted"), (masks_with_one_empty, "rejected")],
-    ids=["accepted", "rejected"],
+    "mutation",
+    [
+        "missing_frame",
+        "missing_object",
+        "duplicate_object",
+        "bbox_mismatch",
+        "processed_shape_mismatch",
+        "affine_mismatch",
+        "wrong_schema",
+    ],
 )
-def test_stage_timing_and_cache_events_are_additive_and_json_safe(
-    monkeypatch, tmp_path, masks, expected_status
+def test_v2_cache_contract_mismatch_rejects_without_sam3_producer(
+    monkeypatch, tmp_path, mutation
 ):
+    from utils import sam3_utils
+
+    calls = 0
+
+    def forbidden_producer(*_args: object, **_kwargs: object) -> object:
+        nonlocal calls
+        calls += 1
+        raise AssertionError("footprint must not invoke a SAM3 producer")
+
+    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", forbidden_producer)
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", masks)
+    cache_root = save_root / dataset.name / "sam3_mask_cache" / "v2"
+    entry = cache_root / "entries" / "0"
+    if mutation == "missing_frame":
+        shutil.rmtree(entry)
+    else:
+        manifest_path = entry / "manifest.json"
+        manifest = json.loads(manifest_path.read_text())
+        if mutation == "missing_object":
+            manifest["detections"] = []
+            manifest["payload"]["mask_count"] = 0
+        elif mutation == "duplicate_object":
+            manifest["detections"].append(manifest["detections"][0].copy())
+        elif mutation == "bbox_mismatch":
+            manifest["detections"][0]["source_bbox_xyxy"][0] += 1.0
+        elif mutation == "processed_shape_mismatch":
+            manifest["processed_shape_hw"] = [125, 126]
+        elif mutation == "affine_mismatch":
+            manifest["source_to_processed_affine"][0][2] = 0.5
+        elif mutation == "wrong_schema":
+            manifest["schema"] = "wrong-schema"
+        manifest_path.write_text(json.dumps(manifest))
 
-    result = stage.run_da3_footprint(str(dataset), save_root)
-    report = json.loads(Path(result["report_path"]).read_text())
-
-    expected_stages = {
-        "validation_and_io",
-        "sam3_source_masks",
-        "select_support_plane",
-        "per_id_obb_union",
-        "shadow_evidence",
-        "artifact_creation",
-    }
-    stages = report["performance"]["stages_seconds"]
-    assert report["status"] == expected_status
-    assert set(stages) == expected_stages
-    assert all(value is None or value >= 0.0 for value in stages.values())
-    assert all(stages[name] is not None for name in expected_stages)
-    assert report["performance"]["total_seconds_pre_publication"] >= sum(
-        value for value in stages.values() if value is not None
-    )
-    assert all(
-        frame["cache_events"] == ["miss", "written"]
-        for frame in report["sam3_mask_cache"]["frames"]
-    )
-    assert all("events" not in frame for frame in report["sam3_mask_cache"]["frames"])
-    json.dumps(report, allow_nan=False)
-
-
-def test_rejection_before_sam3_leaves_unentered_performance_stages_null(
-    monkeypatch, tmp_path
-):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-    (save_root / dataset.name / "dedup_detections" / "global_mapping.json").write_text(
-        json.dumps({"1": []})
-    )
-    monkeypatch.setattr(
-        stage,
-        "sam3_masks_from_bboxes_predict_inst",
-        lambda *_args: (_ for _ in ()).throw(AssertionError("SAM3 must not run")),
-    )
-
-    result = stage.run_da3_footprint(str(dataset), save_root)
-    report = json.loads(Path(result["report_path"]).read_text())
-    stages = report["performance"]["stages_seconds"]
-
-    assert report["status"] == "rejected"
-    assert stages["validation_and_io"] >= 0.0
-    assert stages["sam3_source_masks"] is None
-    assert stages["select_support_plane"] is None
-    assert stages["per_id_obb_union"] is None
-    assert stages["shadow_evidence"] >= 0.0
-    assert stages["artifact_creation"] >= 0.0
-    json.dumps(report, allow_nan=False)
-
-
-def test_cached_masks_are_not_requested_until_complete_inputs_are_validated(
-    monkeypatch, tmp_path
-):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-    mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
-    mapping_path.write_text(
-        json.dumps({"1": [{"image_id": 0, "object_id": 0, "bbox": [16, 24, 80, 104]}]})
-    )
-
-    def fail_cache_request(*_args: object, **_kwargs: object) -> object:
-        raise AssertionError(
-            "mask cache must not run before complete mapping validation"
-        )
-
-    monkeypatch.setattr(stage, "load_or_compute_frame_masks", fail_cache_request)
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
     assert result["success"] is False
-    assert "mapping" in report["rejection_reason"]
+    assert report["rejection_reason"] == (
+        "canonical self-exemplar mask cache is incomplete; run SKU matching first"
+    )
+    assert calls == 0
 
 
 def test_current_points_to_complete_single_artifact_generation(monkeypatch, tmp_path):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     generation = Path(result["report_path"]).parent
@@ -1119,7 +1011,6 @@ def test_unlocked_current_resolver_rejects_another_expected_run(tmp_path):
 
 def test_failed_first_generation_write_never_creates_current(monkeypatch, tmp_path):
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     def fail_generation_write(*_args: object, **_kwargs: object) -> Path:
         raise OSError("injected generation write failure")
@@ -1302,7 +1193,6 @@ def test_stage_rejects_cache_or_mapping_contract(monkeypatch, tmp_path, mutation
                 {"1": [{"image_id": 0, "object_id": 0, "bbox": [16, 24, 80, 104]}]}
             )
         )
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -1340,7 +1230,6 @@ def test_stage_rejects_current_numeric_image_and_detection_absent_from_cache(
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     _write_image(dataset / "images" / "3.png")
     (dataset / "detections_results" / "3.json").write_text(json.dumps({"objects": []}))
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -1348,27 +1237,6 @@ def test_stage_rejects_current_numeric_image_and_detection_absent_from_cache(
     assert result["success"] is False
     assert report["value_m2"] is None
     assert "numeric source image ids" in report["rejection_reason"]
-
-
-def test_stage_converts_sam_runtime_error_to_rejected_report(monkeypatch, tmp_path):
-    dataset, save_root, _ = make_metric_fixture(tmp_path)
-
-    def sam_failure(*_: object) -> list[np.ndarray]:
-        raise RuntimeError("SAM GPU failure")
-
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", sam_failure)
-    result = stage.run_da3_footprint(str(dataset), save_root)
-    report = json.loads(Path(result["report_path"]).read_text())
-
-    assert result["success"] is False
-    assert report["status"] == "rejected"
-    assert report["value_m2"] is None
-    assert "SAM3 failed" in report["rejection_reason"]
-    geojson = json.loads(
-        (Path(result["report_path"]).parent / "footprints.geojson").read_text()
-    )
-    assert geojson["measurement_complete"] is False
-    assert geojson["features"] == []
 
 
 def test_nonempty_mask_without_valid_da3_points_rejects_total(monkeypatch, tmp_path):
@@ -1380,7 +1248,6 @@ def test_nonempty_mask_without_valid_da3_points_rejects_total(monkeypatch, tmp_p
     world_points[2, 24:104, 62:126] = 0.0
     fields["world_points"] = world_points
     np.savez_compressed(cache_path, **fields)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -1434,7 +1301,6 @@ def test_stage_rejects_unverified_affine_or_preprocess_provenance(
     if mutation in {"singular_affine", "reflection_affine", "translated_affine"}:
         fields["source_to_processed_affine"] = affine
     np.savez_compressed(cache_path, **fields)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -1461,7 +1327,6 @@ def test_stage_rejects_non_numeric_affine_or_non_integer_source_sizes(
     else:
         fields["source_image_sizes"] = np.full((3, 2), "126", dtype="<U4")
     np.savez_compressed(cache_path, **fields)
-    monkeypatch.setattr(stage, "sam3_masks_from_bboxes_predict_inst", exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
