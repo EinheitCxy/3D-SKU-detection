@@ -536,6 +536,46 @@ def test_crc_corrupt_payload_is_quarantined_and_recomputed(tmp_path: Path) -> No
     )
 
 
+def test_compressed_payload_member_is_rejected_with_typed_error(tmp_path: Path) -> None:
+    """The cache contract requires direct ZIP_STORED access to packed_masks.npy."""
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+    payload_path = req.cache_root / "entries" / "7" / "masks.npz"
+    with np.load(payload_path, allow_pickle=False) as payload:
+        packed = payload["packed_masks"].copy()
+    np.savez_compressed(payload_path, packed_masks=packed)
+
+    with zipfile.ZipFile(payload_path) as archive:
+        assert archive.getinfo("packed_masks.npy").compress_type == zipfile.ZIP_DEFLATED
+    with pytest.raises(FrameMaskCacheError, match="ZIP_STORED"):
+        load_complete_frame_masks(req)
+
+
+def test_compressed_payload_is_quarantined_and_recomputed(tmp_path: Path) -> None:
+    """A compressed cache entry is never reused and is atomically regenerated."""
+    req = request(tmp_path)
+    load_or_compute_frame_masks(req, lambda: {7: np.eye(4, dtype=bool)})
+    payload_path = req.cache_root / "entries" / "7" / "masks.npz"
+    with np.load(payload_path, allow_pickle=False) as payload:
+        packed = payload["packed_masks"].copy()
+    np.savez_compressed(payload_path, packed_masks=packed)
+    calls: list[int] = []
+
+    def compute() -> dict[int, np.ndarray]:
+        calls.append(1)
+        return {7: np.ones((4, 4), dtype=bool)}
+
+    result = load_or_compute_frame_masks(req, compute)
+
+    assert result.cache_event == "miss"
+    assert calls == [1]
+    assert len(list((req.cache_root / "corrupt").iterdir())) == 1
+    np.testing.assert_array_equal(
+        load_complete_frame_masks(req).masks_by_object_id[7],
+        np.ones((4, 4), dtype=bool),
+    )
+
+
 def _concurrent_worker(
     cache_root: str, image_path: str, counter_path: str, barrier: object, queue: object
 ) -> None:

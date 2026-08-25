@@ -353,6 +353,27 @@ class SKUDetectionMain:
 
                 # 构建参数列表（list of (system_ref_idx, filename_idx)）
                 tasks = [(i, fn_idx) for i, fn_idx in enumerate(valid_indices)]
+                failed_references: list[dict[str, object]] = []
+
+                def record_failure(
+                    task: tuple[int, int],
+                    result: StepResult | None = None,
+                    error: Exception | None = None,
+                ) -> None:
+                    reference_idx, image_index = task
+                    if error is not None:
+                        message = str(error)
+                    else:
+                        message = str(
+                            result.get("error", "matching returned success=False")
+                        )
+                    failed_references.append(
+                        {
+                            "reference_idx": reference_idx,
+                            "image_index": image_index,
+                            "error": message,
+                        }
+                    )
 
                 if parallel_refs > 1:
                     # 并行处理：适合 pi3/da3 缓存后端（3D 数据只读，线程安全）
@@ -385,16 +406,19 @@ class SKUDetectionMain:
                         for fut in as_completed(futures):
                             t = futures[fut]
                             try:
-                                fut.result()
+                                result = fut.result()
+                                if not result.get("success", False):
+                                    record_failure(t, result=result)
                             except Exception as exc:
-                                logger.warning(f"参考图片 {t[1]} 处理失败: {exc}")
+                                logger.error(f"参考图片 {t[1]} 处理失败: {exc}")
+                                record_failure(t, error=exc)
                 else:
                     # 串行处理（默认）
                     for i, filename_idx in tasks:
                         logger.debug(
                             f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {i}"
                         )
-                        self._run_single_matching(
+                        result = self._run_single_matching(
                             dataset_path,
                             algorithm,
                             i,
@@ -405,13 +429,30 @@ class SKUDetectionMain:
                             match_overrides,
                             enable_profiling=enable_profiling,
                         )
+                        if not result.get("success", False):
+                            record_failure((i, filename_idx), result=result)
 
                 duration = perf_counter() - start
                 _StageTimer.record("batch_all_refs_total", duration)
+                failed_references.sort(key=lambda item: int(item["reference_idx"]))
+                if failed_references:
+                    logger.error(
+                        f"匹配失败 - 耗时 {duration:.2f}s，{len(failed_references)}/"
+                        f"{len(valid_indices)} 个参考图片失败"
+                    )
+                    return {
+                        "success": False,
+                        "duration_s": duration,
+                        "failed_references": failed_references,
+                    }
                 logger.info(
                     f"匹配完成 - 耗时 {duration:.2f}s，处理 {len(valid_indices)} 个参考图片"
                 )
-                return {"success": True, "duration_s": duration}
+                return {
+                    "success": True,
+                    "duration_s": duration,
+                    "failed_references": failed_references,
+                }
             else:
                 # 单个参考图片处理
                 return self._run_single_matching(

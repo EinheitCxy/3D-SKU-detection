@@ -358,6 +358,16 @@ def _load_entry(
             "cache manifest does not match the requested v2 contract"
         )
     try:
+        with zipfile.ZipFile(payload_path) as archive:
+            members = archive.infolist()
+            if len(members) != 1 or members[0].filename != "packed_masks.npy":
+                raise FrameMaskCacheError(
+                    "cache payload keys do not match the v2 contract"
+                )
+            if members[0].compress_type != zipfile.ZIP_STORED:
+                raise FrameMaskCacheError(
+                    "cache payload packed_masks.npy must use ZIP_STORED"
+                )
         with np.load(payload_path, allow_pickle=False) as payload:
             if payload.files != ["packed_masks"]:
                 raise FrameMaskCacheError(

@@ -197,6 +197,128 @@ def test_parallel_refs_keep_explicit_reference_argv_serialized(
     ]
 
 
+def test_batch_matching_serial_failure_is_returned_with_reference_identity(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A failed per-reference StepResult must make the serial batch fail."""
+    dataset = tmp_path / "datasets" / "sample"
+    detections = dataset / "detections_results"
+    detections.mkdir(parents=True)
+    app = main.SKUDetectionMain()
+    calls: list[int] = []
+
+    monkeypatch.setattr(
+        "utils.data_utils.load_detections",
+        lambda *_args, **_kwargs: [(17, {}), (23, {})],
+    )
+
+    def fake_single(*_args, **_kwargs):
+        reference_idx = _args[2]
+        calls.append(reference_idx)
+        if reference_idx == 0:
+            return {"success": False, "error": "reference mask failed"}
+        return {"success": True}
+
+    monkeypatch.setattr(app, "_run_single_matching", fake_single)
+
+    result = app.run_sku_matching(str(dataset), batch_all_refs=True, parallel_refs=1)
+
+    assert calls == [0, 1]
+    assert result["success"] is False
+    assert result["failed_references"] == [
+        {
+            "reference_idx": 0,
+            "image_index": 17,
+            "error": "reference mask failed",
+        }
+    ]
+
+
+def test_parallel_batch_matching_collects_step_failures_and_future_exceptions(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Parallel scheduling reports every failed reference without cancelling peers."""
+    dataset = tmp_path / "datasets" / "sample"
+    detections = dataset / "detections_results"
+    detections.mkdir(parents=True)
+    app = main.SKUDetectionMain()
+    completed: list[int] = []
+
+    monkeypatch.setattr(
+        "utils.data_utils.load_detections",
+        lambda *_args, **_kwargs: [(17, {}), (23, {}), (31, {})],
+    )
+
+    def fake_single(*_args, **_kwargs):
+        reference_idx = _args[2]
+        if reference_idx == 0:
+            return {"success": False, "error": "reference mask failed"}
+        if reference_idx == 1:
+            raise RuntimeError("worker exploded")
+        completed.append(reference_idx)
+        return {"success": True}
+
+    monkeypatch.setattr(app, "_run_single_matching", fake_single)
+
+    result = app.run_sku_matching(str(dataset), batch_all_refs=True, parallel_refs=2)
+
+    assert completed == [2]
+    assert result["success"] is False
+    assert result["failed_references"] == [
+        {
+            "reference_idx": 0,
+            "image_index": 17,
+            "error": "reference mask failed",
+        },
+        {
+            "reference_idx": 1,
+            "image_index": 23,
+            "error": "worker exploded",
+        },
+    ]
+
+
+def test_complete_pipeline_preserves_matching_failure_after_later_steps_succeed(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Later successful stages cannot overwrite a failed matching summary."""
+    dataset = tmp_path / "datasets" / "sample"
+    (dataset / "images").mkdir(parents=True)
+    (dataset / "detections_results").mkdir()
+    app = main.SKUDetectionMain()
+
+    monkeypatch.setattr(app, "validate_dataset", lambda _path: True)
+    monkeypatch.setattr(
+        app, "run_detection_visualization", lambda *_args, **_kwargs: {"success": True}
+    )
+    monkeypatch.setattr(
+        app,
+        "run_sku_matching",
+        lambda *_args, **_kwargs: {
+            "success": False,
+            "failed_references": [
+                {"reference_idx": 0, "image_index": 0, "error": "failed"}
+            ],
+        },
+    )
+    monkeypatch.setattr(
+        app, "run_improved_sku_analysis", lambda *_args, **_kwargs: {"success": True}
+    )
+    monkeypatch.setattr(
+        app, "run_dedup_sequence", lambda *_args, **_kwargs: {"success": True}
+    )
+    monkeypatch.setattr(
+        app, "run_accuracy_evaluation", lambda *_args, **_kwargs: {"success": True}
+    )
+
+    summary = app.run_complete_pipeline(str(dataset), algorithm="point_tracking")
+
+    assert summary["matching"] is False
+    assert summary["improved_analysis"] is True
+    assert summary["dedup"] is True
+    assert summary["accuracy_evaluation"] is True
+
+
 def test_root_parallel_refs_publish_real_complete_frame_cache(
     monkeypatch, tmp_path: Path
 ) -> None:
