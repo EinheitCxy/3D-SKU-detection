@@ -121,7 +121,26 @@ extract_results() {
   [ -f "$CLASSIFICATION_ROOT/CURRENT" ] || { echo "[ERROR] 未找到分类发布指针: $CLASSIFICATION_ROOT/CURRENT" >&2; exit 1; }
   cd "$CORE_DIR"
   local n; n=$(run_python "$CORE_ENV" -c "import json; print(len(json.load(open('$GM'))))")
-  CLASSIFIED_DIR=$(run_python "$CORE_ENV" -c "from pathlib import Path; root = Path('$CLASSIFICATION_ROOT'); print(root / 'runs' / (root / 'CURRENT').read_text(encoding='utf-8').strip() / 'detections')")
+  CLASSIFIED_DIR=$(run_python "$CORE_ENV" - "$CLASSIFICATION_ROOT" <<'PYEOF'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+try:
+    current = json.loads((root / "CURRENT").read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError) as error:
+    sys.exit(f"[ERROR] 分类发布指针无效: {error}")
+if (
+    not isinstance(current, dict)
+    or set(current) != {"run_id", "complete"}
+    or not isinstance(current["run_id"], str)
+    or current["complete"] is not True
+):
+    sys.exit("[ERROR] 分类发布指针不是完整 run")
+print(root / "runs" / current["run_id"] / "detections")
+PYEOF
+)
   [ -d "$CLASSIFIED_DIR" ] || { echo "[ERROR] 分类检测目录不存在: $CLASSIFIED_DIR" >&2; exit 1; }
   echo "  ============================================"
   echo "  去重后 SKU 数目 : $n   (global_id 个数)"

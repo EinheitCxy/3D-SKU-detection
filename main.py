@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import re
 import subprocess
 import sys
 import threading
@@ -1091,24 +1092,87 @@ class SKUDetectionMain:
                 "error": f"personalcare classifier did not emit one JSON object: {error}; stderr: {stderr}",
                 "duration_s": duration,
             }
-        if not isinstance(payload, dict) or payload.get("success") is not True:
+        required_fields = {
+            "success",
+            "run_id",
+            "detection_dir",
+            "result_path",
+            "frame_count",
+            "object_count",
+            "unavailable_count",
+        }
+        if not isinstance(payload, dict) or set(payload) != required_fields:
             return {
                 "success": False,
-                "error": f"personalcare classifier reported failure; stderr: {stderr}",
+                "error": f"personalcare classifier emitted an invalid payload; stderr: {stderr}",
                 "duration_s": duration,
             }
-        detection_dir = payload.get("detection_dir")
-        if not isinstance(detection_dir, str) or not Path(detection_dir).is_dir():
+        run_id = payload["run_id"]
+        count_fields = ("frame_count", "object_count", "unavailable_count")
+        if (
+            payload["success"] is not True
+            or not isinstance(run_id, str)
+            or re.fullmatch(r"[1-9][0-9]*-[1-9][0-9]*", run_id) is None
+            or not isinstance(payload["detection_dir"], str)
+            or not isinstance(payload["result_path"], str)
+            or any(
+                isinstance(payload[field], bool)
+                or not isinstance(payload[field], int)
+                or payload[field] < 0
+                for field in count_fields
+            )
+        ):
             return {
                 "success": False,
-                "error": f"personalcare classifier did not publish detection_dir; stderr: {stderr}",
+                "error": f"personalcare classifier emitted an invalid payload; stderr: {stderr}",
+                "duration_s": duration,
+            }
+        run_dir = (
+            output_root
+            / dataset.name
+            / "personalcare_classification"
+            / "runs"
+            / run_id
+        ).resolve()
+        detection_dir = Path(payload["detection_dir"])
+        result_path = Path(payload["result_path"])
+        if (
+            detection_dir.resolve() != run_dir / "detections"
+            or not detection_dir.is_dir()
+            or result_path.resolve() != run_dir / "result.json"
+            or not result_path.is_file()
+        ):
+            return {
+                "success": False,
+                "error": f"personalcare classifier published unexpected paths; stderr: {stderr}",
+                "duration_s": duration,
+            }
+        try:
+            published_payload = json.loads(result_path.read_text(encoding="utf-8"))
+            current_payload = json.loads(
+                (run_dir.parents[1] / "CURRENT").read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as error:
+            return {
+                "success": False,
+                "error": f"personalcare classifier publication is unreadable: {error}; stderr: {stderr}",
+                "duration_s": duration,
+            }
+        if (
+            published_payload != payload
+            or not isinstance(current_payload, dict)
+            or current_payload != {"run_id": run_id, "complete": True}
+        ):
+            return {
+                "success": False,
+                "error": f"personalcare classifier publication does not match stdout; stderr: {stderr}",
                 "duration_s": duration,
             }
         return {
             "success": True,
             "duration_s": duration,
             "details": payload,
-            "detection_dir": detection_dir,
+            "detection_dir": str(detection_dir),
         }
 
     def run_complete_pipeline(
@@ -1130,143 +1194,160 @@ class SKUDetectionMain:
             self.run_personalcare_classification, dataset_path
         )
 
+        classification_result: StepResult | None = None
+
         def join_classification() -> StepResult:
+            nonlocal classification_result
+            if classification_result is not None:
+                return classification_result
             try:
                 result = classifier_future.result()
             except Exception as error:
                 logger.error("personalcare classification crashed: %s", error)
-                return {"success": False, "error": str(error)}
-            finally:
-                classifier_executor.shutdown(wait=True)
+                classification_result = {"success": False, "error": str(error)}
+                return classification_result
             if not isinstance(result, dict):
-                return {
+                classification_result = {
                     "success": False,
                     "error": "personalcare classification returned an invalid result",
                 }
-            return result
+                return classification_result
+            classification_result = result
+            return classification_result
 
-        # 1. 3D重建（如果使用3D算法）
-        if "3d" in algorithm:
-            match_backend = (
-                self.match_backend if hasattr(self, "match_backend") else "vggt"
-            )
-            # DA3 的 canonical 产物是 schema-v3 metric predictions.npz；其他后端用 GLB。
-            dataset = Path(dataset_path)
-            output_dir = (
-                (self.save_root / dataset.name)
-                if self.save_root is not None
-                else dataset
-            )
-            cache_dir = output_dir / f"{match_backend}_cache"
-            if match_backend == "da3":
-                expected_result = cache_dir / "predictions.npz"
-                reusable = _is_reusable_da3_cache(expected_result)
-            else:
-                base_output = Path("reconstruction.glb")
-                if match_backend not in base_output.stem:
-                    filename = f"{base_output.stem}_{match_backend}{base_output.suffix}"
-                    expected_result = cache_dir / filename
-                else:
-                    expected_result = cache_dir / base_output
-                reusable = expected_result.exists()
-
-            if reusable:
-                logger.info(f"步骤1: 检测到可复用3D重建结果 {expected_result}，跳过3D重建")
-                summary["reconstruction"] = True
-            else:
-                logger.info(f"步骤1: 3D重建 (backend: {match_backend})")
-                recon = self.run_reconstruction(
-                    dataset_path, backend=match_backend, model_path=model_path
+        try:
+            # 1. 3D重建（如果使用3D算法）
+            if "3d" in algorithm:
+                match_backend = (
+                    self.match_backend if hasattr(self, "match_backend") else "vggt"
                 )
-                summary["reconstruction"] = bool(recon.get("success", False))
+            # DA3 的 canonical 产物是 schema-v3 metric predictions.npz；其他后端用 GLB。
+                dataset = Path(dataset_path)
+                output_dir = (
+                    (self.save_root / dataset.name)
+                    if self.save_root is not None
+                    else dataset
+                )
+                cache_dir = output_dir / f"{match_backend}_cache"
+                if match_backend == "da3":
+                    expected_result = cache_dir / "predictions.npz"
+                    reusable = _is_reusable_da3_cache(expected_result)
+                else:
+                    base_output = Path("reconstruction.glb")
+                    if match_backend not in base_output.stem:
+                        filename = f"{base_output.stem}_{match_backend}{base_output.suffix}"
+                        expected_result = cache_dir / filename
+                    else:
+                        expected_result = cache_dir / base_output
+                    reusable = expected_result.exists()
 
-                if not summary["reconstruction"]:
-                    logger.error("3D重建失败，无法继续3D匹配流程")
-                    classification = join_classification()
-                    summary["classification"] = bool(
-                        classification.get("success", False)
+                if reusable:
+                    logger.info(f"步骤1: 检测到可复用3D重建结果 {expected_result}，跳过3D重建")
+                    summary["reconstruction"] = True
+                else:
+                    logger.info(f"步骤1: 3D重建 (backend: {match_backend})")
+                    recon = self.run_reconstruction(
+                        dataset_path, backend=match_backend, model_path=model_path
                     )
-                    return summary
-        else:
-            logger.info("步骤1: 跳过3D重建（使用 Point Tracking 算法）")
-            summary["reconstruction"] = True  # 标记为成功（不需要）
+                    summary["reconstruction"] = bool(recon.get("success", False))
+
+                    if not summary["reconstruction"]:
+                        logger.error("3D重建失败，无法继续3D匹配流程")
+                        classification = join_classification()
+                        summary["classification"] = bool(
+                            classification.get("success", False)
+                        )
+                        return summary
+            else:
+                logger.info("步骤1: 跳过3D重建（使用 Point Tracking 算法）")
+                summary["reconstruction"] = True  # 标记为成功（不需要）
 
         # 2. 原始检测框可视化
-        logger.info("步骤2: 原始检测框可视化")
-        viz = self.run_detection_visualization(dataset_path)
-        summary["visualization"] = bool(viz.get("success", False))
+            logger.info("步骤2: 原始检测框可视化")
+            viz = self.run_detection_visualization(dataset_path)
+            summary["visualization"] = bool(viz.get("success", False))
 
         # 3. SKU匹配推理
-        logger.info(f"步骤3: SKU匹配推理 (algorithm: {algorithm})")
-        match_backend = self.match_backend if "3d" in algorithm else "vggt"
-        match = self.run_sku_matching(
-            dataset_path, algorithm, batch_all_refs=True, backend=match_backend
-        )
-        summary["matching"] = bool(match.get("success", False))
+            logger.info(f"步骤3: SKU匹配推理 (algorithm: {algorithm})")
+            match_backend = self.match_backend if "3d" in algorithm else "vggt"
+            match = self.run_sku_matching(
+                dataset_path, algorithm, batch_all_refs=True, backend=match_backend
+            )
+            summary["matching"] = bool(match.get("success", False))
+            if not summary["matching"]:
+                classification = join_classification()
+                summary["classification"] = bool(classification.get("success", False))
+                summary["improved_analysis"] = False
+                summary["dedup"] = False
+                summary["dedup_visualization"] = False
+                summary["accuracy_evaluation"] = False
+                return summary
 
         # 3. SKU计数分析
-        analysis = self.run_improved_sku_analysis(
-            dataset_path, algorithm=algorithm, backend=match_backend
-        )
-        summary["improved_analysis"] = bool(analysis.get("success", False))
+            analysis = self.run_improved_sku_analysis(
+                dataset_path, algorithm=algorithm, backend=match_backend
+            )
+            summary["improved_analysis"] = bool(analysis.get("success", False))
 
-        classification = join_classification()
-        summary["classification"] = bool(classification.get("success", False))
-        classified_detection_dir = classification.get("detection_dir")
-        if not summary["classification"] or not isinstance(
-            classified_detection_dir, str
-        ):
-            logger.error("personalcare 分类失败，停止去重与后续发布")
-            summary["dedup"] = False
-            summary["dedup_visualization"] = False
-            summary["accuracy_evaluation"] = False
-            return summary
+            classification = join_classification()
+            summary["classification"] = bool(classification.get("success", False))
+            classified_detection_dir = classification.get("detection_dir")
+            if not summary["classification"] or not isinstance(
+                classified_detection_dir, str
+            ):
+                logger.error("personalcare 分类失败，停止去重与后续发布")
+                summary["dedup"] = False
+                summary["dedup_visualization"] = False
+                summary["accuracy_evaluation"] = False
+                return summary
 
         # 4. 顺序去重（默认包含以便一键产出去重JSON）
-        dedup = self.run_dedup_sequence(
-            dataset_path,
-            algorithm=algorithm,
-            backend=match_backend,
-            detection_dir=classified_detection_dir,
-        )
-        summary["dedup"] = bool(dedup.get("success", False))
+            dedup = self.run_dedup_sequence(
+                dataset_path,
+                algorithm=algorithm,
+                backend=match_backend,
+                detection_dir=classified_detection_dir,
+            )
+            summary["dedup"] = bool(dedup.get("success", False))
 
         # 5. 去重后的检测框可视化
-        if summary["dedup"]:
-            dataset = Path(dataset_path)
-            dataset_name = dataset.name
-            output_base = (
-                self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
-            )
-            # deduplicate_sequence 输出到 output_base/dataset_name/dedup_detections/
-            dedup_detection_dir = output_base / dataset_name / "dedup_detections"
-
-            if dedup_detection_dir.exists() and any(dedup_detection_dir.glob("*.json")):
-                logger.info("开始可视化去重后的检测框...")
-                dedup_viz = self.run_detection_visualization(
-                    dataset_path,
-                    detection_dir=str(dedup_detection_dir),
-                    output_suffix="dedup_imgs_w_bboxes",
+            if summary["dedup"]:
+                dataset = Path(dataset_path)
+                dataset_name = dataset.name
+                output_base = (
+                    self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
                 )
-                summary["dedup_visualization"] = bool(dedup_viz.get("success", False))
+            # deduplicate_sequence 输出到 output_base/dataset_name/dedup_detections/
+                dedup_detection_dir = output_base / dataset_name / "dedup_detections"
+
+                if dedup_detection_dir.exists() and any(dedup_detection_dir.glob("*.json")):
+                    logger.info("开始可视化去重后的检测框...")
+                    dedup_viz = self.run_detection_visualization(
+                        dataset_path,
+                        detection_dir=str(dedup_detection_dir),
+                        output_suffix="dedup_imgs_w_bboxes",
+                    )
+                    summary["dedup_visualization"] = bool(dedup_viz.get("success", False))
+                else:
+                    logger.warning(f"去重检测目录为空或不存在: {dedup_detection_dir}")
+                    summary["dedup_visualization"] = False
             else:
-                logger.warning(f"去重检测目录为空或不存在: {dedup_detection_dir}")
                 summary["dedup_visualization"] = False
-        else:
-            summary["dedup_visualization"] = False
 
         # 6. 准确性评估 (可选)
-        acc = self.run_accuracy_evaluation(
-            dataset_path, backend=match_backend if "3d" in algorithm else "pt"
-        )
-        summary["accuracy_evaluation"] = bool(acc.get("success", False))
+            acc = self.run_accuracy_evaluation(
+                dataset_path, backend=match_backend if "3d" in algorithm else "pt"
+            )
+            summary["accuracy_evaluation"] = bool(acc.get("success", False))
 
-        logger.info("=== 流水线执行结果 ===")
-        for step, ok in summary.items():
-            status = "成功" if ok else "失败"
-            logger.info(f"{step:20s}: {status}")
+            logger.info("=== 流水线执行结果 ===")
+            for step, ok in summary.items():
+                status = "成功" if ok else "失败"
+                logger.info(f"{step:20s}: {status}")
 
-        return summary
+            return summary
+        finally:
+            classifier_executor.shutdown(wait=True)
 
     def run_concise_pipeline(
         self, dataset_path: str, algorithm: str = "point_tracking"

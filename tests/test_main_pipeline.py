@@ -51,17 +51,47 @@ def _pipeline_fixture(
     return app, dataset
 
 
+def _published_classifier_payload(
+    dataset: Path, output_root: Path, *, run_id: str = "123456789-4321"
+) -> tuple[dict[str, object], Path, Path]:
+    run_dir = (
+        output_root
+        / dataset.name
+        / "personalcare_classification"
+        / "runs"
+        / run_id
+    )
+    detection_dir = run_dir / "detections"
+    detection_dir.mkdir(parents=True)
+    result_path = run_dir / "result.json"
+    payload: dict[str, object] = {
+        "success": True,
+        "run_id": run_id,
+        "detection_dir": str(detection_dir),
+        "result_path": str(result_path),
+        "frame_count": 1,
+        "object_count": 2,
+        "unavailable_count": 0,
+    }
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+    (run_dir.parents[1] / "CURRENT").write_text(
+        json.dumps({"run_id": run_id, "complete": True}), encoding="utf-8"
+    )
+    return payload, detection_dir, result_path
+
+
 def test_personalcare_classification_accepts_only_successful_json_with_existing_output(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """A malformed, failed, or unpublished classifier stage cannot enter dedup."""
     dataset = tmp_path / "dataset"
     dataset.mkdir()
-    detection_dir = tmp_path / "classified"
-    detection_dir.mkdir()
     app = main.SKUDetectionMain()
     app.save_root = tmp_path / "Output"
     app.classifier_device = "cuda:7"
+    payload, detection_dir, result_path = _published_classifier_payload(
+        dataset, app.save_root
+    )
     captured: dict[str, object] = {}
 
     def fake_run(command, **kwargs):
@@ -69,13 +99,7 @@ def test_personalcare_classification_accepts_only_successful_json_with_existing_
         captured["kwargs"] = kwargs
         return SimpleNamespace(
             returncode=0,
-            stdout=json.dumps(
-                {
-                    "success": True,
-                    "detection_dir": str(detection_dir),
-                    "result_path": str(tmp_path / "result.json"),
-                }
-            ),
+            stdout=json.dumps(payload),
             stderr="",
         )
 
@@ -85,6 +109,7 @@ def test_personalcare_classification_accepts_only_successful_json_with_existing_
 
     assert result["success"] is True
     assert result["detection_dir"] == str(detection_dir)
+    assert payload["result_path"] == str(result_path)
     assert captured["command"] == [
         "uv",
         "run",
@@ -144,6 +169,54 @@ def test_personalcare_classification_rejects_nonpublished_subprocess_results(
     assert "classifier stderr" in result["error"]
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda payload, _run_dir, _publication_root: payload.update(run_id="invalid"),
+        lambda payload, run_dir, _publication_root: payload.update(
+            detection_dir=str(run_dir.parent / "unrelated"),
+        ),
+        lambda payload, _run_dir, _publication_root: payload.update(extra="forbidden"),
+        lambda payload, _run_dir, _publication_root: payload.update(frame_count=True),
+        lambda payload, _run_dir, _publication_root: payload.pop("object_count"),
+        lambda payload, run_dir, _publication_root: (run_dir / "result.json").write_text(
+            json.dumps({**payload, "object_count": 99}), encoding="utf-8"
+        ),
+        lambda _payload, _run_dir, publication_root: (publication_root / "CURRENT").write_text(
+            json.dumps({"run_id": "123456789-4321", "complete": False}),
+            encoding="utf-8",
+        ),
+    ],
+)
+def test_personalcare_classification_rejects_unbound_publication_payloads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mutation
+) -> None:
+    """Any stale, incomplete, or mismatched Task2 publication must be rejected."""
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    output_root = tmp_path / "Output"
+    payload, _detection_dir, _result_path = _published_classifier_payload(
+        dataset, output_root
+    )
+    run_dir = output_root / dataset.name / "personalcare_classification" / "runs" / payload["run_id"]
+    publication_root = run_dir.parents[1]
+    (run_dir.parent / "unrelated").mkdir()
+    mutation(payload, run_dir, publication_root)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout=json.dumps(payload), stderr="classifier stderr"
+        ),
+    )
+    app = main.SKUDetectionMain()
+    app.save_root = output_root
+
+    result = app.run_personalcare_classification(str(dataset))
+
+    assert result["success"] is False
+
+
 def test_personalcare_classification_rejects_nonunique_json_stdout(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -196,10 +269,10 @@ def test_run_dedup_sequence_forwards_the_classified_directory_to_task3(
     assert captured["detections_dir"] == classified
 
 
-def test_pipeline_waits_for_classification_after_matching_failure(
+def test_matching_failure_joins_classification_and_stops_publication(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A matching error must not leave the classifier process running in background."""
+    """A matching failure must preserve classification evidence but stop later stages."""
     app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
     started = threading.Event()
     release = threading.Event()
@@ -221,16 +294,70 @@ def test_pipeline_waits_for_classification_after_matching_failure(
     monkeypatch.setattr(app, "run_sku_matching", matching)
     monkeypatch.setattr(
         app,
+        "run_improved_sku_analysis",
+        lambda *_args, **_kwargs: calls.append("analysis") or {"success": True},
+    )
+    monkeypatch.setattr(
+        app,
         "run_dedup_sequence",
         lambda *_args, **_kwargs: calls.append("dedup") or {"success": True},
+    )
+    monkeypatch.setattr(
+        app,
+        "run_accuracy_evaluation",
+        lambda *_args, **_kwargs: calls.append("accuracy") or {"success": True},
     )
 
     summary = app.run_complete_pipeline(str(dataset), algorithm="3d")
 
     assert summary["matching"] is False
     assert summary["classification"] is True
+    assert summary["improved_analysis"] is False
+    assert summary["dedup"] is False
+    assert summary["dedup_visualization"] is False
+    assert summary["accuracy_evaluation"] is False
     assert calls.index("matching_failed") < calls.index("classification_done")
-    assert calls[-1] == "dedup"
+    assert calls == ["matching_failed", "classification_done"]
+
+
+def test_pipeline_exception_waits_for_classifier_shutdown(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An exception before join must still wait for the classifier executor."""
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    finished = threading.Event()
+    shutdown_waits: list[bool] = []
+    real_executor = main.ThreadPoolExecutor
+
+    class TrackingExecutor:
+        def __init__(self, *args, **kwargs) -> None:
+            self._executor = real_executor(*args, **kwargs)
+
+        def submit(self, *args, **kwargs):
+            return self._executor.submit(*args, **kwargs)
+
+        def shutdown(self, *, wait: bool) -> None:
+            shutdown_waits.append(wait)
+            self._executor.shutdown(wait=wait)
+
+    def classify(_dataset: str) -> dict[str, object]:
+        time.sleep(0.05)
+        finished.set()
+        return {"success": True, "detection_dir": str(tmp_path / "classified")}
+
+    monkeypatch.setattr(main, "ThreadPoolExecutor", TrackingExecutor)
+    monkeypatch.setattr(app, "run_personalcare_classification", classify)
+    monkeypatch.setattr(
+        app,
+        "run_detection_visualization",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("viz failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="viz failed"):
+        app.run_complete_pipeline(str(dataset), algorithm="3d")
+
+    assert finished.is_set()
+    assert shutdown_waits == [True]
 
 
 def test_pipeline_cli_defaults_classifier_device_to_cuda_zero(
@@ -640,10 +767,10 @@ def test_parallel_batch_matching_collects_step_failures_and_future_exceptions(
     ]
 
 
-def test_complete_pipeline_preserves_matching_failure_after_later_steps_succeed(
+def test_complete_pipeline_matching_failure_stops_later_publication(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """Later successful stages cannot overwrite a failed matching summary."""
+    """A matching failure is terminal after classifier join."""
     dataset = tmp_path / "datasets" / "sample"
     (dataset / "images").mkdir(parents=True)
     (dataset / "detections_results").mkdir()
@@ -681,9 +808,11 @@ def test_complete_pipeline_preserves_matching_failure_after_later_steps_succeed(
     summary = app.run_complete_pipeline(str(dataset), algorithm="point_tracking")
 
     assert summary["matching"] is False
-    assert summary["improved_analysis"] is True
-    assert summary["dedup"] is True
-    assert summary["accuracy_evaluation"] is True
+    assert summary["classification"] is True
+    assert summary["improved_analysis"] is False
+    assert summary["dedup"] is False
+    assert summary["dedup_visualization"] is False
+    assert summary["accuracy_evaluation"] is False
 
 
 def test_root_parallel_refs_publish_real_complete_frame_cache(
