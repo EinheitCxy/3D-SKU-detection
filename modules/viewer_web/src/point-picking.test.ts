@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyVisibilityUpdates, buildPointRangeLookup, buildVisibilityDelta, firstVisibleFootprintGlobalId, globalIdForPointIndex, resolvePickGlobalId, syncVisibleTargets, visiblePointRanges } from "./point-picking";
+import { applyVisibilityUpdates, buildPointRangeLookup, buildVisibilityDelta, firstVisibleFootprintGlobalId, firstVisiblePointGlobalId, globalIdForPointIndex, resolvePickGlobalId, syncVisibleTargets, visiblePointRanges } from "./point-picking";
 import type { ObjectIndex } from "./contracts";
 
 function objectIndexWithRanges(rangesById: Record<string, readonly (readonly [number, number])[]>): ObjectIndex {
@@ -51,6 +51,12 @@ describe("point picking", () => {
   it("chooses the first visible footprint after hidden nearer hits", () => {
     expect(firstVisibleFootprintGlobalId(["2", "1"], new Set(["1"]))).toBe("1");
     expect(firstVisibleFootprintGlobalId(["2", null, undefined], new Set(["1"]))).toBeNull();
+  });
+
+  it("falls through hidden nearer point hits to the first visible owner", () => {
+    const lookup = buildPointRangeLookup(objectIndexWithRanges({ "1": [[0, 3]], "2": [[3, 6]] }));
+    expect(firstVisiblePointGlobalId([0, 3], lookup, new Set(["2"]))).toBe("2");
+    expect(firstVisiblePointGlobalId([0], lookup, new Set(["2"]))).toBeNull();
   });
 });
 

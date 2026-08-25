@@ -248,8 +248,18 @@ describe("strict bundle contracts", () => {
   });
 
   it("accepts conflict candidates in pre-ranked order", () => {
+    const first = validObjects["11"].instances[0];
     const entry = {
       ...validObjects["11"],
+      images: [7, 8, 9],
+      objects: [3, 4, 5],
+      active_count: 3,
+      total_count: 3,
+      instances: [
+        { ...first, thumbnail: "thumbs/1_0.jpg", classification: { ...resolvedObservation(), confidence: 0.6 } },
+        { ...first, image_id: 8, object_id: 4, point_index_range: [1, 2] as const, thumbnail: "thumbs/1_1.jpg", classification: { ...resolvedObservation(), sku_id: "B", sku_name: "产品B", confidence: 0.9 } },
+        { ...first, image_id: 9, object_id: 5, point_index_range: [2, 3] as const, thumbnail: "thumbs/1_2.jpg", classification: { ...resolvedObservation(), confidence: 0.5 } },
+      ],
       classification: {
         status: "conflict" as const,
         primary_sku_id: "A",
@@ -257,7 +267,32 @@ describe("strict bundle contracts", () => {
         metadata: pendingMetadata(),
       },
     };
-    expect(validateObjectIndex({ "1": { ...entry, instances: [{ ...entry.instances[0], thumbnail: "thumbs/1_0.jpg" }] } }, 12)["1"].classification.candidates.map((item) => item.sku_id)).toEqual(["A", "B"]);
+    expect(validateObjectIndex({ "1": entry }, 3)["1"].classification.candidates.map((item) => item.sku_id)).toEqual(["A", "B"]);
+  });
+
+  it.each([
+    ["candidate sum", candidate("A", "产品A", 0.8, 1, 0.9)],
+    ["candidate support", candidate("A", "产品A", 0.9, 2, 0.9)],
+    ["candidate max", candidate("A", "产品A", 0.9, 1, 0.8)],
+    ["impossible candidate sum", candidate("A", "产品A", 1.1, 1, 0.9)],
+  ])("rejects aggregate tampering of %s against resolved observations", (_label, candidateMutation) => {
+    expect(() => validateObjectIndex({ "11": {
+      ...validObjects["11"],
+      classification: { ...resolvedAggregate(), candidates: [candidateMutation] },
+    } }, 1)).toThrow(/classification/);
+  });
+
+  it("rejects a validly shaped aggregate whose candidate order contradicts observations", () => {
+    const entry = {
+      ...validObjects["11"],
+      classification: {
+        status: "conflict" as const,
+        primary_sku_id: "B",
+        candidates: [candidate("B", "产品B", 0.8, 1, 0.8), candidate("A", "产品A", 0.9, 1, 0.9)],
+        metadata: pendingMetadata(),
+      },
+    };
+    expect(() => validateObjectIndex({ "1": { ...entry, instances: [{ ...entry.instances[0], thumbnail: "thumbs/1_0.jpg" }] } }, 1)).toThrow(/classification/);
   });
 
   it.each([

@@ -31,7 +31,7 @@ import type { ViewerBundle } from "./bundle-loader";
 import { POINTS_LAYER, createViewerPipeline, type ViewerPipeline } from "./edl";
 import { createFootprintObjects } from "./footprints";
 import { focusedCameraPosition } from "./focus";
-import { applyVisibilityUpdates, buildPointRangeLookup, buildVisibilityDelta, firstVisibleFootprintGlobalId, resolvePickGlobalId, syncVisibleTargets } from "./point-picking";
+import { applyVisibilityUpdates, buildPointRangeLookup, buildVisibilityDelta, firstVisibleFootprintGlobalId, firstVisiblePointGlobalId, syncVisibleTargets } from "./point-picking";
 import { cachedSelectionBox } from "./selection-bounds";
 import { applySelectionColors, mergePointRanges, queueSelectionAttributeUpdates, type PointRange } from "./selection-colors";
 
@@ -217,9 +217,14 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       footprintHits.map((hit) => typeof hit.object.userData.globalId === "string" ? hit.object.userData.globalId : null),
       visibleGlobalIds,
     );
-    const pointHit = footprintGlobalId === null ? raycaster.intersectObject(points, false)[0] : undefined;
-    const pointIndex = pointHit?.index ?? null;
-    const globalId = resolvePickGlobalId(footprintGlobalId, pointIndex, pointRangeLookup, visibleGlobalIds);
+    const pointGlobalId = footprintGlobalId === null
+      ? firstVisiblePointGlobalId(
+        raycaster.intersectObject(points, false).flatMap((hit) => hit.index === undefined ? [] : [hit.index]),
+        pointRangeLookup,
+        visibleGlobalIds,
+      )
+      : null;
+    const globalId = footprintGlobalId ?? pointGlobalId;
     if (globalId !== null) pickHandler?.(globalId);
   };
   renderer.domElement.addEventListener("pointerdown", onPointerDown);

@@ -76,6 +76,18 @@ export function firstVisibleFootprintGlobalId(
   return null;
 }
 
+export function firstVisiblePointGlobalId(
+  hitPointIndices: readonly number[],
+  lookup: readonly PointOwnerRange[],
+  visibleIds: ReadonlySet<string>,
+): string | null {
+  for (const pointIndex of hitPointIndices) {
+    const globalId = globalIdForPointIndex(lookup, pointIndex);
+    if (globalId !== null && visibleIds.has(globalId)) return globalId;
+  }
+  return null;
+}
+
 export function buildVisibilityDelta(
   objects: ObjectIndex,
   previousIds: ReadonlySet<string>,

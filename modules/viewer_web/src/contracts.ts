@@ -150,6 +150,8 @@ export interface ObjectIndexEntry {
   readonly classification: ClassificationAggregate;
 }
 
+const AGGREGATE_SUM_TOLERANCE = 1e-12;
+
 export type ObjectIndex = Readonly<Record<string, ObjectIndexEntry>>;
 
 export interface SupportPlane {
@@ -319,6 +321,11 @@ export function validateObjectIndex(value: unknown, pointCount: number): ObjectI
     const derivedObjects = instances.map((instance) => instance.object_id).sort((left, right) => left - right);
     if (!sameNumberArray(images, derivedImages)) throw contractError(`objects[${globalId}].images does not match instances`);
     if (!sameNumberArray(objects, derivedObjects)) throw contractError(`objects[${globalId}].objects does not match instances`);
+    assertClassificationAggregateMatchesInstances(
+      classification,
+      instances,
+      `objects[${globalId}].classification`,
+    );
     for (const instance of instances) if (instance.point_index_range[1] > instance.point_index_range[0]) nonEmptyRanges.push(instance.point_index_range);
     result[globalId] = { images, objects, active_count: activeCount, removed_count: removedCount, total_count: totalCount, instances, classification };
   }
@@ -458,8 +465,100 @@ function validateClassificationCandidate(value: unknown, label: string): Classif
   const skuName = asNonEmptyString(record.sku_name, `${label}.sku_name`);
   if (!isFiniteNumber(record.confidence_sum) || record.confidence_sum < 0) throw contractError(`${label}.confidence_sum must be finite and non-negative`);
   const supportCount = asPositiveInteger(record.support_count, `${label}.support_count`);
+  if (record.confidence_sum > supportCount) throw contractError(`${label}.confidence_sum cannot exceed support_count`);
   if (!isFiniteNumber(record.max_confidence) || record.max_confidence < 0 || record.max_confidence > 1) throw contractError(`${label}.max_confidence must be within [0, 1]`);
   return { sku_id: skuId, sku_name: skuName, confidence_sum: record.confidence_sum, support_count: supportCount, max_confidence: record.max_confidence };
+}
+
+function assertClassificationAggregateMatchesInstances(
+  aggregate: ClassificationAggregate,
+  instances: readonly ObjectInstance[],
+  label: string,
+): void {
+  const groups = new Map<string, {
+    skuId: string;
+    skuName: string;
+    confidences: number[];
+    metadata: ProductMetadata;
+  }>();
+  for (const instance of instances) {
+    const observation = instance.classification;
+    if (observation.status === "unavailable") continue;
+    const key = `${observation.sku_id}\u0000${observation.sku_name}`;
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, {
+        skuId: observation.sku_id,
+        skuName: observation.sku_name,
+        confidences: [observation.confidence],
+        metadata: observation.metadata,
+      });
+    } else {
+      group.confidences.push(observation.confidence);
+    }
+  }
+  const candidates = [...groups.values()].map((group) => {
+    const confidences = [...group.confidences].sort((left, right) => left - right);
+    return {
+      sku_id: group.skuId,
+      sku_name: group.skuName,
+      confidence_sum: compensatedSum(confidences),
+      support_count: confidences.length,
+      max_confidence: confidences[confidences.length - 1],
+      metadata: group.metadata,
+    };
+  });
+  candidates.sort(compareCandidates);
+  const expected = candidates.length === 0
+    ? { status: "unavailable" as const, primary_sku_id: null, candidates: [], metadata: pendingProductMetadata() }
+    : {
+      status: candidates.length === 1 ? "resolved" as const : "conflict" as const,
+      primary_sku_id: candidates[0].sku_id,
+      candidates,
+      metadata: candidates[0].metadata,
+    };
+  if (aggregate.status !== expected.status || aggregate.primary_sku_id !== expected.primary_sku_id || !sameProductMetadata(aggregate.metadata, expected.metadata) || aggregate.candidates.length !== expected.candidates.length) {
+    throw contractError(`${label} does not match resolved instance observations`);
+  }
+  for (let index = 0; index < expected.candidates.length; index += 1) {
+    const actual = aggregate.candidates[index];
+    const expectedCandidate = expected.candidates[index];
+    if (actual.sku_id !== expectedCandidate.sku_id
+      || actual.sku_name !== expectedCandidate.sku_name
+      || actual.support_count !== expectedCandidate.support_count
+      || actual.max_confidence !== expectedCandidate.max_confidence
+      || !sameAggregateSum(actual.confidence_sum, expectedCandidate.confidence_sum)) {
+      throw contractError(`${label} does not match resolved instance observations`);
+    }
+  }
+}
+
+function compensatedSum(values: readonly number[]): number {
+  let sum = 0;
+  let correction = 0;
+  for (const value of values) {
+    const adjusted = value - correction;
+    const next = sum + adjusted;
+    correction = (next - sum) - adjusted;
+    sum = next;
+  }
+  return sum;
+}
+
+function sameAggregateSum(left: number, right: number): boolean {
+  return Math.abs(left - right) <= AGGREGATE_SUM_TOLERANCE * Math.max(1, Math.abs(left), Math.abs(right));
+}
+
+function pendingProductMetadata(): ProductMetadata {
+  return { status: "master_data_pending", manufacturer: null, brand: null, category: null, object_kind: null };
+}
+
+function sameProductMetadata(left: ProductMetadata, right: ProductMetadata): boolean {
+  return left.status === right.status
+    && left.manufacturer === right.manufacturer
+    && left.brand === right.brand
+    && left.category === right.category
+    && left.object_kind === right.object_kind;
 }
 
 function compareCandidates(left: ClassificationCandidate, right: ClassificationCandidate): number {

@@ -4,6 +4,7 @@ import argparse
 import json
 import math
 import os
+import shutil
 import sys
 import time
 from dataclasses import dataclass
@@ -72,63 +73,67 @@ def classify_dataset(
     temporary_detections = temporary_run / "detections"
     runs_dir.mkdir(parents=True, exist_ok=True)
     temporary_run.mkdir()
-    temporary_detections.mkdir()
+    try:
+        temporary_detections.mkdir()
 
-    object_count = 0
-    unavailable_count = 0
-    for frame_id, image_path, detection_path in frame_paths:
-        image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
-        if image is None:
-            raise ValueError(f"unable to read image: {image_path}")
-        payload = json.loads(detection_path.read_text(encoding="utf-8"))
-        references = _object_references(payload)
-        object_count += len(references)
-        valid_crops: list[np.ndarray] = []
-        valid_references: list[_ObjectReference] = []
-        for reference in references:
-            crop = _valid_crop(image, reference.object_data.get("position"))
-            if crop is None:
-                reference.object_data["classification"] = _unavailable_classification(
-                    predictor.project_id
+        object_count = 0
+        unavailable_count = 0
+        for frame_id, image_path, detection_path in frame_paths:
+            image = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError(f"unable to read image: {image_path}")
+            payload = json.loads(detection_path.read_text(encoding="utf-8"))
+            references = _object_references(payload)
+            object_count += len(references)
+            valid_crops: list[np.ndarray] = []
+            valid_references: list[_ObjectReference] = []
+            for reference in references:
+                crop = _valid_crop(image, reference.object_data.get("position"))
+                if crop is None:
+                    reference.object_data["classification"] = _unavailable_classification(
+                        predictor.project_id
+                    )
+                    unavailable_count += 1
+                    continue
+                valid_crops.append(crop)
+                valid_references.append(reference)
+
+            predictions: list[tuple[str, float]] = []
+            for start in range(0, len(valid_crops), 32):
+                predictions.extend(predictor.predict(valid_crops[start : start + 32]))
+            if len(predictions) != len(valid_references):
+                raise ValueError("predictor returned a different number of predictions")
+            for reference, (label, confidence) in zip(valid_references, predictions):
+                _attach_raw_classification(reference, label, confidence)
+                reference.object_data["classification"] = resolved_classification(
+                    predictor.project_id, label, confidence
                 )
-                unavailable_count += 1
-                continue
-            valid_crops.append(crop)
-            valid_references.append(reference)
-
-        predictions: list[tuple[str, float]] = []
-        for start in range(0, len(valid_crops), 32):
-            predictions.extend(predictor.predict(valid_crops[start : start + 32]))
-        if len(predictions) != len(valid_references):
-            raise ValueError("predictor returned a different number of predictions")
-        for reference, (label, confidence) in zip(valid_references, predictions):
-            _attach_raw_classification(reference, label, confidence)
-            reference.object_data["classification"] = resolved_classification(
-                predictor.project_id, label, confidence
+            (temporary_detections / f"{frame_id}.json").write_text(
+                json.dumps(payload, ensure_ascii=False), encoding="utf-8"
             )
-        (temporary_detections / f"{frame_id}.json").write_text(
-            json.dumps(payload, ensure_ascii=False), encoding="utf-8"
-        )
 
-    frame_ids = [frame_id for frame_id, _, _ in frame_paths]
-    frame_count = len(frame_ids)
-    _validate_output_counts(
-        temporary_detections, frame_ids, frame_count, object_count, unavailable_count
-    )
-    result = ClassificationRunResult(
-        run_id=run_id,
-        detection_dir=detection_dir,
-        result_path=result_path,
-        frame_count=frame_count,
-        object_count=object_count,
-        unavailable_count=unavailable_count,
-    )
-    (temporary_run / "result.json").write_text(
-        json.dumps(result.to_cli_payload(), ensure_ascii=False), encoding="utf-8"
-    )
-    temporary_run.rename(run_dir)
-    _replace_current(publication_root / "CURRENT", run_id)
-    return result
+        frame_ids = [frame_id for frame_id, _, _ in frame_paths]
+        frame_count = len(frame_ids)
+        _validate_output_counts(
+            temporary_detections, frame_ids, frame_count, object_count, unavailable_count
+        )
+        result = ClassificationRunResult(
+            run_id=run_id,
+            detection_dir=detection_dir,
+            result_path=result_path,
+            frame_count=frame_count,
+            object_count=object_count,
+            unavailable_count=unavailable_count,
+        )
+        (temporary_run / "result.json").write_text(
+            json.dumps(result.to_cli_payload(), ensure_ascii=False), encoding="utf-8"
+        )
+        temporary_run.rename(run_dir)
+        _replace_current(publication_root / "CURRENT", run_id)
+        return result
+    finally:
+        if temporary_run.exists():
+            shutil.rmtree(temporary_run)
 
 
 def _matching_frame_paths(dataset: Path) -> list[tuple[int, Path, Path]]:

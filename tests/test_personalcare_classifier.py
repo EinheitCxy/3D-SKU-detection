@@ -228,3 +228,49 @@ def test_corrupted_staging_unavailable_count_does_not_replace_current(
     with pytest.raises(ValueError, match="published unavailable count"):
         classify_dataset(dataset, tmp_path / "Output", "cuda:0", PredictorThatMustNotRun())
     assert json.loads(current.read_text(encoding="utf-8"))["run_id"] == "old"
+
+
+@pytest.mark.parametrize("failure", ["predict", "validate"])
+def test_failed_classification_removes_temporary_run_and_preserves_current(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    dataset = make_dataset(tmp_path, positions=[[0, 0, 10, 10]])
+    publication_root = tmp_path / "Output" / dataset.name / "personalcare_classification"
+    current = publication_root / "CURRENT"
+    current.parent.mkdir(parents=True)
+    current.write_text('{"run_id":"old","complete":true}', encoding="utf-8")
+
+    class FailingPredictor:
+        project_id = 51
+
+        def predict(self, crops: list[np.ndarray]) -> list[tuple[str, float]]:
+            if failure == "predict":
+                raise RuntimeError("predict failed")
+            return [("430085^产品A", 0.9)] * len(crops)
+
+    if failure == "validate":
+        def fail_validation(*_args: object, **_kwargs: object) -> None:
+            raise ValueError("validation failed")
+
+        monkeypatch.setattr(classifier_runner, "_validate_output_counts", fail_validation)
+
+    with pytest.raises((RuntimeError, ValueError), match="failed"):
+        classify_dataset(dataset, tmp_path / "Output", "cuda:0", FailingPredictor())
+
+    assert json.loads(current.read_text(encoding="utf-8"))["run_id"] == "old"
+    assert not list((publication_root / "runs").glob(".*.tmp"))
+
+
+def test_classifier_runtime_excludes_legacy_http_bson_service_files() -> None:
+    runtime_root = Path(__file__).parents[1] / "modules" / "personalcare_classifier"
+    source_root = runtime_root / "source"
+    assert not any((source_root / path).exists() for path in [
+        "main.py",
+        "requirements.txt",
+        "enc_model.py",
+        "static",
+    ])
+    forbidden = ("fastapi", "uvicorn", "bson", "/api")
+    for path in [runtime_root / "pyproject.toml", runtime_root / "README.md", *source_root.glob("*.py")]:
+        content = path.read_text(encoding="utf-8").lower()
+        assert not any(token in content for token in forbidden), path

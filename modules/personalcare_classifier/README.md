@@ -27,7 +27,7 @@ uv run --project modules/personalcare_classifier python \
 └── CURRENT
 ```
 
-每个 enriched JSON 保留完整原始 payload，并为有效对象添加 `classes.cls`、`confidences.cls` 和规范化的 `classification`。临时 run 完整写入并校验后才重命名并替换 `CURRENT`，因此失败不会替换已有已完成 run。不会发布深度 feature、HTTP/BSON 服务或模型副本。
+每个 enriched JSON 保留完整原始 payload，并为有效对象添加 `classes.cls`、`confidences.cls` 和规范化的 `classification`。临时 run 完整写入并校验后才重命名并替换 `CURRENT`，因此失败不会替换已有已完成 run。不会发布深度 feature、网络服务或模型副本。
 
 该 CLI 同样是根 `main.py --mode pipeline` 的唯一分类实现。pipeline 在 dataset validation 后异步启动它；它可与 DA3 reconstruction 或 matching 并行，但实际时间重叠取决于 cache、可视化与运行 receipt。本次 fd6 cache-reuse receipt 中分类在 matching 开始前已完成。等 matching 和此 CLI 都成功后，才把 stdout 返回的 `detection_dir` 显式交给 dedup。原始 `detections_results/` 从不被写入。输出没有 hash、签名、加密、内容指纹或分类 cache；run ID 只是 `<time_ns>-<pid>` 的发布代号。
 
