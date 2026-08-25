@@ -37,17 +37,22 @@ Output/<dataset>/
 ├── da3_cache/predictions.npz
 ├── output_3dmapping_da3/
 ├── dedup_detections/global_mapping.json
-├── sam3_mask_cache/v1/
+├── sam3_mask_cache/v2/
+│   ├── entries/<image_id>/{manifest.json,masks.npz}
+│   ├── locks/
+│   └── corrupt/
 └── ground_stack_footprint/CURRENT -> runs/<run_id>/
 ```
 
 ## Footprint 与 SAM3 cache
 
-`--mode ground-stack-area` 需要 metric DA3 cache、去重映射与可用 SAM3 checkpoint。每个 `global_id` 从全部有效观测重建 OBB，并在支撑平面上取 polygon union，得到 `da3_ground_footprint_union`（m²）。缺少任意必要几何会发布 `rejected`/`null`，不会伪造部分结果。
+运行顺序是 canonical contract：先让 matching 完成 **全部** `batch_all_refs` references，再运行 `--mode ground-stack-area`，最后运行 `--mode viewer-web`。matching 是唯一的 SAM3 producer；它在默认 `enable_sam3_mask_sampling: true` 下以 self-exemplar 生成每个 frame 的完整 processed-space masks。master gate 为 false 时 matching 走既有 bbox sampling 且不发布 cache，两个 consumer 必须 fail closed。
 
-`sam3_mask_cache/v1` 是不可变分割 bundle cache；key 包含输入图、bbox、checkpoint 与运行/代码指纹。cache 失效或损坏会重算并记录事件；它从不退回为 bbox mask。
+v2 cache 的每个 payload 是 processed DA3 grid 上 `(object_count, height, width)` bool masks，以 little-endian `np.packbits` 无损打包到 `masks.npz`；manifest 以 `object_id` 绑定 mask，而非依赖数组位置。partial、mismatched 或 corrupt frame 不能命中。`sam3_mask_cache/v1` 与 v2 不兼容，v1 从不读取、迁移、复制、fallback 或自动删除。
 
-cache 不再是 Web Viewer 的 protection mask。Viewer export 不会因为某点带有 SAM3 标签而跳过点云去噪、地面或天空过滤；常规过滤对所有点一致。SAM3 仍用于 footprint 输入、实例关联和审计 provenance。
+`--mode ground-stack-area` 只读取 matching 已发布的 v2 cache、metric DA3 cache 与去重映射，不导入、加载或推理 SAM3，也不会因 cache miss 重算。它为每个 `global_id` 从全部有效观测重建 OBB，并在支撑平面上取 polygon union，得到 `da3_self_exemplar_ground_footprint_union`（m²）。缺少任何 canonical mask 或必要几何会发布 `rejected`/`null`，不会伪造部分结果。该 metric 是新 baseline，不能与旧 `da3_ground_footprint_union` 面积比较。
+
+cache 不再是 Web Viewer 的 protection mask。Viewer export 也只读 v2 processed masks，绝不加载或推理 SAM3；它在常规点云过滤之后传播实例标签。任何点都不会因带有 SAM3 标签而跳过点云去噪、地面或天空过滤。
 
 ## Web Viewer
 
@@ -57,7 +62,7 @@ uv run python main.py --mode viewer-web \
 npm --prefix modules/viewer_web run dev
 ```
 
-exporter 只消费已发布的 DA3、去重和 footprint 产物，写入 `CURRENT -> runs/<run_id>/` bundle。前端严格校验 manifest、provenance、二进制数组长度、`world_to_view`、缩略图和 footprint 状态；契约不满足时 fail closed 并提示重新导出。
+exporter 只消费已发布的 DA3、去重、matching v2 cache 和 footprint 产物，写入 `CURRENT -> runs/<run_id>/` schema `2.0.0` bundle。前端严格校验 manifest、provenance、二进制数组长度、`world_to_view`、缩略图和 footprint 状态；bundle `1.0.0` 与旧 metric 被拒绝，必须按 matching → footprint → export 的顺序重新生成。
 
 默认 `/data/` 由 `modules/viewer_web/public/data/` 提供。自定义 `--viewer-web-output` 不会自动被 Vite 服务，必须由部署层挂载到 `/data/`。
 

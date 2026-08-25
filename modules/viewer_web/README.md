@@ -1,12 +1,22 @@
 # Web Viewer
 
-这是静态 TypeScript/Three.js Viewer。它不运行 DA3、SAM3 或 Python pipeline；它只严格加载 Python 已发布的 bundle。
+这是静态 TypeScript/Three.js Viewer。它不运行 DA3、SAM3 或 Python pipeline；它只严格加载 Python 已发布的 schema `2.0.0` bundle。
 
 ## 导出与启动
 
 从仓库根执行：
 
 ```bash
+# 1. 先完成全量 batch-all-refs matching（matching 是唯一 SAM3 producer）
+uv run python main.py --mode pipeline \
+  --dataset imdata/floor_display2 --algorithm 3d \
+  --recon_backend da3 --match_backend da3
+
+# 2. 再生成 formal footprint（只读 v2 masks；不运行 SAM3）
+uv run python main.py --mode ground-stack-area \
+  --dataset imdata/floor_display2
+
+# 3. 最后导出 Viewer bundle（只读 v2 masks；不运行 SAM3）
 uv run python main.py --mode viewer-web \
   --dataset imdata/floor_display2
 npm --prefix modules/viewer_web run dev
@@ -18,14 +28,17 @@ npm --prefix modules/viewer_web run dev
 
 - `Output/<dataset>/da3_cache/predictions.npz`
 - `Output/<dataset>/dedup_detections/global_mapping.json`
+- `Output/<dataset>/sam3_mask_cache/v2/`（matching 已完整发布的 processed-space self-exemplar masks）
 - `Output/<dataset>/ground_stack_footprint/CURRENT`
 - `<dataset>/images/`
 
-bundle 使用不可变 `CURRENT -> runs/<run_id>/`。loader 对 manifest、provenance、二进制数组长度、坐标变换、缩略图与 footprint status 严格校验；历史或不完整 bundle 会明确失败而不会推测补全。
+matching 的 master gate `enable_sam3_mask_sampling` 默认 true；此时 only self-exemplar，mask 用 little-endian `np.packbits` 无损保存。gate 为 false 时没有 canonical cache，因此 footprint/export 必须 fail closed。Viewer exporter 不会在 cache miss 时加载或推理 SAM3。
+
+bundle 使用不可变 `CURRENT -> runs/<run_id>/`，schema 固定为 `2.0.0`，formal metric 固定为 `da3_self_exemplar_ground_footprint_union`。loader 对 manifest、provenance、二进制数组长度、坐标变换、缩略图与 footprint status 严格校验；旧 schema `1.0.0`、旧面积结果、`sam3_mask_cache/v1` 均不兼容，既不读、迁移、复制也不删除，必须从完整 matching 重新按上述顺序生成。
 
 ## 点云过滤
 
-Viewer 不使用 SAM3 protection mask。SAM3 cache 仍可作为 footprint 与实例审计输入，但它不会让某些点绕过离群、地面或天空过滤；同一过滤规则适用于所有展示点。
+Viewer 不使用 SAM3 protection mask。exporter 从 matching 的 v2 processed-space masks 直接赋实例标签，但不会让任何点绕过离群、地面或天空过滤；同一过滤规则适用于所有展示点。
 
 ## 验证
 

@@ -41,16 +41,19 @@ DA3 仍通过 `Depth-Anything-3/.venv/bin/python` 的隔离 subprocess 运行；
 ## 常用命令
 
 ```bash
-# DA3 重建、3D 匹配和去重；默认输出 Output/
+# DA3 重建、完整 batch-all-refs 3D matching 和去重；默认输出 Output/。
+# matching 是唯一会运行 SAM3 self-exemplar 并发布 v2 processed-mask cache 的阶段。
 uv run python main.py --mode pipeline \
   --dataset imdata/floor_display2 --algorithm 3d \
   --recon_backend da3 --match_backend da3
 
-# 单独运行正式 footprint 计量（要求已有 DA3 cache 与 global_mapping）
+# 必须先完成完整 batch-all-refs matching，才可运行正式 footprint。
+# 默认 batch_all_refs=true；不要用单个 reference 的 cache 代替完整 cache。
+# 正式 footprint 只读取 matching 已发布的 v2 cache；不会加载/推理 SAM3。
 uv run python main.py --mode ground-stack-area \
   --dataset imdata/floor_display2
 
-# 导出静态 Web bundle（要求已有 DA3 cache、去重、footprint 和源图）
+# 导出静态 Web bundle（必须在 footprint 之后；同样只读取 v2 cache，不运行 SAM3）
 uv run python main.py --mode viewer-web \
   --dataset imdata/floor_display2
 
@@ -63,15 +66,23 @@ bash modules/video_to_dedup/quickstart.sh <video> <fps> <gpu>
 
 `--save_root` 可以覆盖输出目录；相对值始终相对仓库根解析。默认 bundle 位于 `modules/viewer_web/public/data/`，自定义 bundle 必须在前端启动前挂载或 serve 到浏览器的 `/data/`。
 
+## Canonical SAM3 processed-mask workflow
+
+matching 是唯一的 SAM3 producer。默认 `enable_sam3_mask_sampling: true` 时，它只使用 self-exemplar，并为每个 detection frame 一次性发布完整的 `sam3_mask_cache/v2` processed-space bool mask；payload 用 little-endian `np.packbits` 无损保存。`enable_sam3_mask_sampling: false` 仅保留既有 bbox sampling，且不会发布 cache，因此 footprint 与 viewer export 会 fail closed，提示先运行 matching。
+
+运行顺序是硬约束：先完成 **完整 batch-all-refs matching**，再运行 `ground-stack-area`，最后运行 `viewer-web`。footprint 与 export 是只读 consumer：二者均不导入、加载或推理 SAM3，cache miss 也不会补算。
+
+`sam3_mask_cache/v1` 与 v2 不兼容：v1 从不被读取、迁移、复制或删除。v2 的 formal metric 是 `da3_self_exemplar_ground_footprint_union`，viewer bundle schema 是 `2.0.0`；它们与旧面积输出和 bundle `1.0.0` 不可数值比较，旧 bundle 必须按上述顺序重新生成。
+
 ## Viewer 与点云策略
 
-Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。导出器验证 DA3 cache、去重映射、footprint generation 与源图，然后写入 manifest、二进制点云、缩略图和正式 footprint。
+Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。导出器验证 DA3 cache、去重映射、v2 footprint generation、processed-mask cache 与源图，然后写入 schema `2.0.0` manifest、二进制点云、缩略图和正式 footprint。
 
 Viewer **不使用 SAM3 protection mask**。SAM3 cache 仍作为 ground-footprint 和可审计实例信息的输入，但不会绕过点云的常规噪声、地面或天空过滤；所有展示点遵循同一过滤策略。这样不会因高置信门控而静默丢失 SKU 点，也不会把 cache mask 变成永久保留区。
 
 ## Ground footprint
 
-`ground-stack-area` 将每个去重 `global_id` 的多视图 metric 点云投影到推断支撑平面，以 OBB polygon union 计算 `da3_ground_footprint_union`（m²）。它不是包装表面积、正面面积、SAM3 mask 面积或 bbox 面积。任何对象缺少足够几何时整次结果为 `rejected` 与 `value_m2: null`，不会发布部分总量。
+`ground-stack-area` 从 matching 发布的 processed-space self-exemplar masks 为每个去重 `global_id` 取多视图 metric 点云，投影到推断支撑平面后以 OBB polygon union 计算 `da3_self_exemplar_ground_footprint_union`（m²）。它不是包装表面积、正面面积、SAM3 mask 面积或 bbox 面积。任何对象缺少足够几何时整次结果为 `rejected` 与 `value_m2: null`，不会发布部分总量；本指标是新 baseline，不可与旧 `da3_ground_footprint_union` 面积直接比较。
 
 ## 验证
 
