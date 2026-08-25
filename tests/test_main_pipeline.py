@@ -195,3 +195,149 @@ def test_parallel_refs_keep_explicit_reference_argv_serialized(
         (0, str(output_root / dataset.name / "output_3dmapping_da3" / "0")),
         (1, str(output_root / dataset.name / "output_3dmapping_da3" / "1")),
     ]
+
+
+def test_root_parallel_refs_publish_real_complete_frame_cache(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The root scheduler serializes real producer/cache calls for every frame."""
+    from PIL import Image
+
+    from utils.data_utils import extract_bboxes_from_detections, load_detections
+    from utils.sam3_mask_cache import FrameMaskCacheError, load_complete_frame_masks
+    from utils import sam3_utils
+    from utils.transforms import Pi3ImageTransform
+
+    dataset = tmp_path / "datasets" / "sample"
+    images = dataset / "images"
+    detections_dir = dataset / "detections_results"
+    images.mkdir(parents=True)
+    detections_dir.mkdir()
+    frames = [
+        {"objects": [{"position": [0.0, 0.0, 4.0, 4.0]}]},
+        {"objects": [{"position": [4.0, 0.0, 5.0, 1.0]}]},
+        {"objects": []},
+    ]
+    for frame_id, frame in enumerate(frames):
+        Image.new("RGB", (8, 6)).save(images / f"{frame_id}.JPG")
+        (detections_dir / f"{frame_id}.json").write_text(json.dumps(frame))
+    config_path = tmp_path / "matching.yaml"
+    config_path.write_text(
+        "inference:\n"
+        "  enable_sam3_mask_sampling: true\n"
+        "  sam3_checkpoint_path: unused-by-test.pt\n"
+    )
+
+    active = 0
+    max_active = 0
+    guard = threading.Lock()
+    records: list[tuple[int, str, list[str]]] = []
+    producer_calls: list[list[list[float]]] = []
+
+    def fake_self_exemplar(*, bboxes_xyxy, **_kwargs):
+        producer_calls.append(bboxes_xyxy)
+        return [np.ones((3, 4), dtype=bool) for _ in bboxes_xyxy]
+
+    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", fake_self_exemplar)
+
+    class FakeSystem:
+        def __init__(self, config):
+            self.config = config
+
+        def process_images(
+            self, image_folder, detection_dir, reference_image_idx, max_images
+        ):
+            nonlocal active, max_active
+            image_paths = [str(images / f"{frame_id}.JPG") for frame_id in range(3)]
+            detections = load_detections(detection_dir)
+            transforms = []
+            for frame_id in range(3):
+                transform = Pi3ImageTransform(8, 6, 4, 3)
+                transform.image_id = frame_id
+                transforms.append(transform)
+            events: list[str] = []
+            with guard:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.03)
+            try:
+                for frame_id, frame in enumerate(detections):
+                    request = sam3_utils._processed_frame_request(
+                        cache_root=Path(self.config.sam3_mask_cache_root),
+                        image_path=Path(image_paths[frame_id]),
+                        image_id=frame_id,
+                        frame_detections=frame["objects"],
+                        transform=transforms[frame_id],
+                    )
+                    try:
+                        load_complete_frame_masks(request)
+                        events.append("hit")
+                    except FrameMaskCacheError:
+                        events.append("miss")
+                    ref_bboxes = extract_bboxes_from_detections(
+                        detections, frame_id, self.config
+                    )
+                    sam3_utils.get_self_exemplar_masks_for_reference(
+                        self.config,
+                        image_path=Path(image_paths[frame_id]),
+                        image_id=frame_id,
+                        frame_detections=frame["objects"],
+                        matching_object_ids=[
+                            int(bbox["object_id"]) for bbox in ref_bboxes
+                        ],
+                        transform=transforms[frame_id],
+                    )
+                records.append(
+                    (reference_image_idx, self.config.output_dir, events)
+                )
+                return {}
+            finally:
+                with guard:
+                    active -= 1
+
+        def cleanup(self):
+            return None
+
+    monkeypatch.setattr(inference, "SKUMatchingSystem", FakeSystem)
+    global_argv = ["pytest-sentinel"]
+    monkeypatch.setattr(main.sys, "argv", global_argv)
+    app = main.SKUDetectionMain()
+    output_root = tmp_path / "runtime-output"
+    app.save_root = output_root
+    app.config_path = config_path
+
+    result = app.run_sku_matching(
+        str(dataset),
+        algorithm="3d",
+        max_images=3,
+        device="cpu",
+        batch_all_refs=True,
+        backend="da3",
+        parallel_refs=2,
+    )
+
+    assert result["success"] is True
+    assert main.sys.argv is global_argv
+    assert max_active == 1
+    assert sorted((reference_idx, output_dir) for reference_idx, output_dir, _ in records) == [
+        (0, str(output_root / dataset.name / "output_3dmapping_da3" / "0")),
+        (1, str(output_root / dataset.name / "output_3dmapping_da3" / "1")),
+        (2, str(output_root / dataset.name / "output_3dmapping_da3" / "2")),
+    ]
+    event_sequences = [events for _reference_idx, _output_dir, events in records]
+    assert event_sequences.count(["miss", "miss", "miss"]) == 1
+    assert event_sequences.count(["hit", "hit", "hit"]) == 2
+    assert len(producer_calls) == 2
+    for frame_id, frame in enumerate(frames):
+        transform = Pi3ImageTransform(8, 6, 4, 3)
+        transform.image_id = frame_id
+        request = sam3_utils._processed_frame_request(
+            cache_root=output_root / dataset.name / "sam3_mask_cache" / "v2",
+            image_path=images / f"{frame_id}.JPG",
+            image_id=frame_id,
+            frame_detections=frame["objects"],
+            transform=transform,
+        )
+        assert set(load_complete_frame_masks(request).masks_by_object_id) == set(
+            range(len(frame["objects"]))
+        )

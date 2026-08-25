@@ -323,7 +323,6 @@ class SKUDetectionMain:
 
         _set_prof_enabled(enable_profiling)
         start = perf_counter()
-        original_argv = sys.argv.copy()
         try:
             logger.info("开始SKU匹配推理")
             if batch_all_refs:
@@ -455,7 +454,6 @@ class SKUDetectionMain:
                 _dump_prof(str(_prof_path))
                 _log_prof(logger)
                 logger.info(f"[PROF] dumped to {_prof_path}")
-            sys.argv = original_argv
 
     @_serialize_matching_inference
     def _run_single_matching(
