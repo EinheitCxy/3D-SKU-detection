@@ -234,6 +234,43 @@ def test_batch_matching_serial_failure_is_returned_with_reference_identity(
     ]
 
 
+def test_serial_batch_matching_collects_exception_and_continues_references(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A direct serial exception fails that reference without aborting the batch."""
+    dataset = tmp_path / "datasets" / "sample"
+    detections = dataset / "detections_results"
+    detections.mkdir(parents=True)
+    app = main.SKUDetectionMain()
+    completed: list[int] = []
+
+    monkeypatch.setattr(
+        "utils.data_utils.load_detections",
+        lambda *_args, **_kwargs: [(17, {}), (23, {}), (31, {})],
+    )
+
+    def fake_single(*_args, **_kwargs):
+        reference_idx = _args[2]
+        if reference_idx == 1:
+            raise RuntimeError("serial worker exploded")
+        completed.append(reference_idx)
+        return {"success": True}
+
+    monkeypatch.setattr(app, "_run_single_matching", fake_single)
+
+    result = app.run_sku_matching(str(dataset), batch_all_refs=True, parallel_refs=1)
+
+    assert completed == [0, 2]
+    assert result["success"] is False
+    assert result["failed_references"] == [
+        {
+            "reference_idx": 1,
+            "image_index": 23,
+            "error": "serial worker exploded",
+        }
+    ]
+
+
 def test_parallel_batch_matching_collects_step_failures_and_future_exceptions(
     monkeypatch, tmp_path: Path
 ) -> None:

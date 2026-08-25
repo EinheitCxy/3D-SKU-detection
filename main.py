@@ -418,17 +418,22 @@ class SKUDetectionMain:
                         logger.debug(
                             f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {i}"
                         )
-                        result = self._run_single_matching(
-                            dataset_path,
-                            algorithm,
-                            i,
-                            max_images,
-                            device,
-                            save_json,
-                            backend,
-                            match_overrides,
-                            enable_profiling=enable_profiling,
-                        )
+                        try:
+                            result = self._run_single_matching(
+                                dataset_path,
+                                algorithm,
+                                i,
+                                max_images,
+                                device,
+                                save_json,
+                                backend,
+                                match_overrides,
+                                enable_profiling=enable_profiling,
+                            )
+                        except Exception as exc:
+                            logger.error(f"参考图片 {filename_idx} 处理失败: {exc}")
+                            record_failure((i, filename_idx), error=exc)
+                            continue
                         if not result.get("success", False):
                             record_failure((i, filename_idx), result=result)
 
