@@ -87,7 +87,7 @@ Viewer **不使用 SAM3 protection mask**。SAM3 cache 仍作为 ground-footprin
 
 ## Personalcare classification in viewer objects
 
-pipeline 在 dataset validation 后立即启动独立的 personalcare 分类 subprocess，并让它与可复用/新建的 DA3 reconstruction 和 matching 重叠。分类进程每个 dataset 仅加载一次原始 MobileNetV3 模型，按原始 object 顺序批量分类；原始 `detections_results/` 永不改写。matching 完成后 pipeline 才 join 分类结果；两者都成功才执行 dedup，因此 dedup 显式读取本次已发布的 enriched detections。
+pipeline 在 dataset validation 后立即异步提交独立的 personalcare 分类 subprocess；它可与 DA3 reconstruction 或 matching 并行。分类进程每个 dataset 仅加载一次原始 MobileNetV3 模型，按原始 object 顺序批量分类；原始 `detections_results/` 永不改写。实际是否存在 classifier/matching 的时间重叠取决于 cache、可视化与运行 receipt：本次 fd6 cache-reuse receipt 中分类在 matching 开始前已完成。matching 完成后 pipeline 才 join 分类结果；两者都成功才执行 dedup，因此 dedup 显式读取本次已发布的 enriched detections。
 
 分类产物在 `<save_root>/<dataset>/personalcare_classification/CURRENT -> runs/<time_ns>-<pid>/`：run 内有 `detections/<frame>.json` 和 `result.json`。有效 object 同时保留 raw `classes.cls`/`confidences.cls` 与规范化 `classification`；无效 bbox 保留原始数据并以 `status: unavailable`、`reason: invalid_bbox` 发布。此发布只用完整 run 的原子 `CURRENT` 指针，不产生分类 hash、signature、encryption、feature vector 或内容指纹。
 
@@ -110,9 +110,13 @@ CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
 ## 验证
 
 ```bash
-uv run --offline pytest -q
+PYTHONPATH=. VIRTUAL_ENV=/home/xingyu/3D_Recognization/.venv \
+UV_CACHE_DIR=/tmp/3d-recognition-uv-cache \
+uv run --active --no-project python -m pytest -q tests
 (cd modules/viewer_web && npm test -- --run && npm run build)
 bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/*.sh
 ```
+
+上面的 Python 命令是已验证的 owned gate。仓库根的裸 `uv run --offline pytest -q` 会收集未跟踪 nested checkout、`frame_sampler` 的 BSON client 与 legacy SAM3 tests，不能当作成功门。
 
 个人护理分类器的精简使用说明见 [modules/personalcare_classifier/README.md](modules/personalcare_classifier/README.md)。

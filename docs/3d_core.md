@@ -52,7 +52,7 @@ Output/<dataset>/
 
 ## Personalcare classification and publication
 
-`--mode pipeline` 在 input validation 后立即提交一个独立 classifier subprocess，并与 DA3 reconstruction/cache reuse 和 matching 并行。每个 dataset run 只加载一次原始 classifier 模型；分类按 object 原顺序以 batch（最多 32 个有效 crop）运行。原始 `<dataset>/detections_results/` 是不可变输入，classifier 仅向上述 `personalcare_classification/runs/` 写 enriched copy；完整 frame/object count 校验后才原子替换 `CURRENT`。
+`--mode pipeline` 在 input validation 后立即异步提交一个独立 classifier subprocess；它可与 DA3 reconstruction 或 matching 并行。每个 dataset run 只加载一次原始 classifier 模型；分类按 object 原顺序以 batch（最多 32 个有效 crop）运行。实际时间重叠取决于 cache、可视化与运行 receipt：本次 fd6 cache-reuse receipt 中分类在 matching 开始前已完成。原始 `<dataset>/detections_results/` 是不可变输入，classifier 仅向上述 `personalcare_classification/runs/` 写 enriched copy；完整 frame/object count 校验后才原子替换 `CURRENT`。
 
 每个有效 object 保留 raw `classes.cls` 和 `confidences.cls`，并加上规范化 `classification`（SKU ID、名称、confidence、`master_data_pending` metadata）。无效 bbox 保留原 object，发布 `status: unavailable` 与 `reason: invalid_bbox`，不合成替代 crop。此 V1 不生成 classification hash、signature、encryption、feature payload 或 content fingerprint。
 
@@ -93,8 +93,9 @@ Viewer 左侧的 SKU facet 同时过滤列表和场景，且只用 primary candi
 ## 回归验证
 
 ```bash
-uv run --offline pytest tests/test_root_layout.py tests/test_da3_3d_reconstructor.py \
-  tests/test_web_viewer_export.py tests/test_da3_import_isolation.py -q
+PYTHONPATH=. VIRTUAL_ENV=/home/xingyu/3D_Recognization/.venv \
+UV_CACHE_DIR=/tmp/3d-recognition-uv-cache \
+uv run --active --no-project python -m pytest -q tests
 (CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
   modules/personalcare_classifier/source/classify_dataset.py \
   --dataset imdata/floor_display6 --output-root /tmp/personalcare-classifier-smoke \
@@ -102,3 +103,5 @@ uv run --offline pytest tests/test_root_layout.py tests/test_da3_3d_reconstructo
 (cd modules/viewer_web && npm test -- --run && npm run build)
 bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/*.sh
 ```
+
+该 Python 命令是已验证的 owned gate。仓库根的裸 `uv run --offline pytest -q` 会因未跟踪 nested checkout、`frame_sampler` BSON client 与 legacy SAM3 tests 的 collection 污染而失败，不能表示项目测试结果。
