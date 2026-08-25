@@ -14,6 +14,11 @@ const validSource = {
     source_image_sha256: ["0".repeat(64)],
   },
   footprint: { run_id: "a".repeat(32), status: "accepted" },
+  sam3_mask: {
+    schema: "sam3_self_exemplar_processed_mask_cache_v1",
+    coordinate_space: "da3_processed_pixels",
+    producer: "sku_matching",
+  },
   export: {
     voxel_size_m: 0.01,
     max_points: 10,
@@ -33,12 +38,11 @@ const validSource = {
     },
     exporter_source_sha256: "1".repeat(64),
     global_mapping_sha256: "2".repeat(64),
-    sam3_mask_entries: [{ image_id: 7, key: "3".repeat(64), payload_sha256: "4".repeat(64) }],
   },
 } as const;
 
 const validManifest = {
-  schema_version: "1.0.0",
+  schema_version: "2.0.0",
   coordinate_space: "da3_world_meters",
   point_count: 1,
   display_bounds: [1, 2, 3, 1, 2, 3],
@@ -68,7 +72,7 @@ const validObjects = {
 
 const square = [[0, 0], [1, 0], [1, 1], [0, 0]];
 const validFootprints = {
-  metric: "da3_ground_footprint_union",
+  metric: "da3_self_exemplar_ground_footprint_union",
   unit: "m2",
   status: "accepted",
   value_m2: 1,
@@ -99,7 +103,31 @@ const validFootprints = {
 
 describe("strict bundle contracts", () => {
   it("accepts the exact manifest schema and array layout", () => {
-    expect(validateManifest(validManifest)).toMatchObject({ schema_version: "1.0.0", point_count: 1 });
+    expect(validateManifest(validManifest)).toMatchObject({ schema_version: "2.0.0", point_count: 1 });
+  });
+
+  it("accepts only the canonical processed mask bundle v2 source", () => {
+    expect(validateManifest(validManifest).source.sam3_mask).toEqual({
+      schema: "sam3_self_exemplar_processed_mask_cache_v1",
+      coordinate_space: "da3_processed_pixels",
+      producer: "sku_matching",
+    });
+  });
+
+  it("rejects v1 with rerun guidance", () => {
+    expect(() => validateManifest({ ...validManifest, schema_version: "1.0.0" }))
+      .toThrow(/rerun matching, footprint, and viewer export/i);
+  });
+
+  it("rejects non-canonical SAM3 source fields", () => {
+    expect(() => validateManifest({
+      ...validManifest,
+      source: { ...validSource, sam3_mask: { ...validSource.sam3_mask, producer: "other" } },
+    })).toThrow();
+    expect(() => validateManifest({
+      ...validManifest,
+      source: { ...validSource, sam3_mask: { ...validSource.sam3_mask, cache_schema: "legacy" } },
+    })).toThrow();
   });
 
   it("fails closed with a re-export hint when world_to_view is missing", () => {
@@ -165,12 +193,12 @@ describe("strict bundle contracts", () => {
     expect(() => validateManifest({ ...validManifest, source: { ...validSource, footprint: { run_id: "A".repeat(32), status: "accepted" } } })).toThrow();
   });
 
-  it("requires exact filter, exporter, mapping, and used-SAM3 provenance", () => {
-    expect(validateManifest(validManifest).source.export.sam3_mask_entries).toHaveLength(1);
+  it("requires exact filter, exporter, mapping, and SAM3 provenance", () => {
+    expect(validateManifest(validManifest).source.sam3_mask.schema).toBe("sam3_self_exemplar_processed_mask_cache_v1");
     const { global_mapping_sha256: _missing, ...withoutMappingDigest } = validSource.export;
     expect(() => validateManifest({ ...validManifest, source: { ...validSource, export: withoutMappingDigest } })).toThrow();
     expect(() => validateManifest({ ...validManifest, source: { ...validSource, export: { ...validSource.export, exporter_source_sha256: "not-a-digest" } } })).toThrow();
-    expect(() => validateManifest({ ...validManifest, source: { ...validSource, export: { ...validSource.export, sam3_mask_entries: [{ ...validSource.export.sam3_mask_entries[0], image_id: 7.5 }] } } })).toThrow();
+    expect(() => validateManifest({ ...validManifest, source: { ...validSource, sam3_mask: { ...validSource.sam3_mask, coordinate_space: "source_pixels" } } })).toThrow();
   });
 
   it("rejects a global object index with missing fields or inconsistent counts", () => {
@@ -232,6 +260,7 @@ describe("strict bundle contracts", () => {
 
   it("enforces accepted and rejected footprint value/geometry relations", () => {
     expect(validateFootprints(validFootprints).value_m2).toBe(1);
+    expect(() => validateFootprints({ ...validFootprints, metric: "da3_ground_footprint_union" })).toThrow();
     expect(() => validateFootprints({ ...validFootprints, rejection_reason: "unexpected" })).toThrow();
     expect(() => validateFootprints({ ...validFootprints, per_global_id: {}, union: validFootprints.union })).toThrow();
     expect(() => validateFootprints({ ...validFootprints, union: { ...validFootprints.union, properties: { ...validFootprints.union.properties, area_m2: 0.5 } } })).toThrow();

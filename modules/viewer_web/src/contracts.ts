@@ -1,7 +1,7 @@
 export type ReadonlyRecord = Readonly<Record<string, unknown>>;
 
 export interface CurrentPointer {
-  readonly schema_version: "1.0.0";
+  readonly schema_version: "2.0.0";
   readonly run_id: string;
   readonly complete: true;
 }
@@ -14,7 +14,7 @@ export interface ArrayDescriptor {
 }
 
 export interface Manifest {
-  readonly schema_version: "1.0.0";
+  readonly schema_version: "2.0.0";
   readonly coordinate_space: "da3_world_meters";
   readonly point_count: number;
   readonly display_bounds: readonly [number, number, number, number, number, number];
@@ -58,7 +58,6 @@ export interface ExportSource {
   readonly filter_config: PointCloudFilterSource;
   readonly exporter_source_sha256: string;
   readonly global_mapping_sha256: string;
-  readonly sam3_mask_entries: readonly Sam3MaskEntrySource[];
 }
 
 export interface PointCloudFilterSource {
@@ -76,13 +75,14 @@ export interface PointCloudFilterSource {
   readonly min_points: number;
 }
 
-export interface Sam3MaskEntrySource {
-  readonly image_id: number;
-  readonly key: string;
-  readonly payload_sha256: string;
+export interface Sam3MaskSource {
+  readonly schema: "sam3_self_exemplar_processed_mask_cache_v1";
+  readonly coordinate_space: "da3_processed_pixels";
+  readonly producer: "sku_matching";
 }
 
 export interface ManifestSource {
+  readonly sam3_mask: Sam3MaskSource;
   readonly da3_cache: Da3CacheSource;
   readonly footprint: FootprintSource;
   readonly export: ExportSource;
@@ -137,7 +137,7 @@ export interface UnionProperties {
 }
 
 export interface FootprintBundle {
-  readonly metric: "da3_ground_footprint_union";
+  readonly metric: "da3_self_exemplar_ground_footprint_union";
   readonly unit: "m2";
   readonly status: "accepted" | "rejected";
   readonly value_m2: number | null;
@@ -155,11 +155,14 @@ const THUMBNAIL_PATH = /^thumbs\/(0|[1-9][0-9]*)_[0-9]+\.jpg$/;
 export function validateCurrent(value: unknown): CurrentPointer {
   const record = asRecord(value, "CURRENT");
   requireExactKeys(record, ["schema_version", "run_id", "complete"], "CURRENT");
-  if (record.schema_version !== "1.0.0") throw contractError("CURRENT schema_version must be 1.0.0");
+  if (record.schema_version === "1.0.0") {
+    throw contractError("bundle schema 1.0.0 is obsolete; rerun matching, footprint, and viewer export");
+  }
+  if (record.schema_version !== "2.0.0") throw contractError("CURRENT schema_version must be 2.0.0");
   if (record.complete !== true) throw contractError("CURRENT complete must be true");
   const runId = asString(record.run_id, "CURRENT run_id");
   if (!RUN_ID.test(runId)) throw contractError("CURRENT run_id must be 32 lowercase hex characters");
-  return { schema_version: "1.0.0", run_id: runId, complete: true };
+  return { schema_version: "2.0.0", run_id: runId, complete: true };
 }
 
 export function validateManifest(value: unknown): Manifest {
@@ -171,7 +174,10 @@ export function validateManifest(value: unknown): Manifest {
     "schema_version", "coordinate_space", "point_count", "display_bounds", "arrays", "world_to_view",
     "coordinate_convention", "objects_path", "footprints_path", "source", "capabilities",
   ], "manifest");
-  if (record.schema_version !== "1.0.0") throw contractError("manifest schema_version must be 1.0.0");
+  if (record.schema_version === "1.0.0") {
+    throw contractError("bundle schema 1.0.0 is obsolete; rerun matching, footprint, and viewer export");
+  }
+  if (record.schema_version !== "2.0.0") throw contractError("manifest schema_version must be 2.0.0");
   if (record.coordinate_space !== "da3_world_meters") throw contractError("manifest coordinate_space is invalid");
   const pointCount = asSafeInteger(record.point_count, "manifest point_count");
   if (pointCount < 0) throw contractError("manifest point_count must be non-negative");
@@ -199,7 +205,7 @@ export function validateManifest(value: unknown): Manifest {
     normals: validateArrayDescriptor(arraysRecord.normals, "normals", "normals.i8.bin", "int8", pointCount),
   };
   return {
-    schema_version: "1.0.0",
+    schema_version: "2.0.0",
     coordinate_space: "da3_world_meters",
     point_count: pointCount,
     display_bounds: displayBounds,
@@ -279,7 +285,7 @@ export function validateObjectIndex(value: unknown, pointCount: number): ObjectI
 export function validateFootprints(value: unknown): FootprintBundle {
   const record = asRecord(value, "footprints");
   requireExactKeys(record, ["metric", "unit", "status", "value_m2", "rejection_reason", "run_id", "support_plane", "per_global_id", "union"], "footprints");
-  if (record.metric !== "da3_ground_footprint_union" || record.unit !== "m2") throw contractError("footprint metric or unit is invalid");
+  if (record.metric !== "da3_self_exemplar_ground_footprint_union" || record.unit !== "m2") throw contractError("footprint metric or unit is invalid");
   if (record.status !== "accepted" && record.status !== "rejected") throw contractError("footprint status is invalid");
   const status = record.status;
   const runId = asString(record.run_id, "footprints run_id");
@@ -300,12 +306,12 @@ export function validateFootprints(value: unknown): FootprintBundle {
     if (record.union === null) throw contractError("accepted footprint must contain union geometry");
     const union = validateGeometry(record.union, "union", "union");
     if (union.properties.area_m2 !== measurementValue) throw contractError("footprint union area must equal value_m2");
-    return { metric: "da3_ground_footprint_union", unit: "m2", status, value_m2: measurementValue, rejection_reason: rejectionReason, run_id: runId, support_plane: supportPlane, per_global_id: perGlobalId, union };
+    return { metric: "da3_self_exemplar_ground_footprint_union", unit: "m2", status, value_m2: measurementValue, rejection_reason: rejectionReason, run_id: runId, support_plane: supportPlane, per_global_id: perGlobalId, union };
   }
   if (measurementValue !== null) throw contractError("rejected footprint value_m2 must be null");
   if (rejectionReason === null || rejectionReason.trim().length === 0) throw contractError("rejected footprint rejection_reason must be non-empty");
   if (record.support_plane !== null || record.union !== null || Object.keys(perGlobalIdRecord).length !== 0) throw contractError("rejected footprint must not contain geometry");
-  return { metric: "da3_ground_footprint_union", unit: "m2", status, value_m2: null, rejection_reason: rejectionReason, run_id: runId, support_plane: null, per_global_id: {}, union: null };
+  return { metric: "da3_self_exemplar_ground_footprint_union", unit: "m2", status, value_m2: null, rejection_reason: rejectionReason, run_id: runId, support_plane: null, per_global_id: {}, union: null };
 }
 
 function validateArrayDescriptor(value: unknown, name: string, path: string, dtype: ArrayDescriptor["dtype"], pointCount: number): ArrayDescriptor {
@@ -416,7 +422,16 @@ function sameNumberArray(left: readonly number[], right: readonly number[]): boo
 
 function validateManifestSource(value: unknown): ManifestSource {
   const source = asRecord(value, "manifest source");
-  requireExactKeys(source, ["da3_cache", "footprint", "export"], "manifest source");
+  requireExactKeys(source, ["sam3_mask", "da3_cache", "footprint", "export"], "manifest source");
+  const sam3Mask = asRecord(source.sam3_mask, "manifest source sam3_mask");
+  requireExactKeys(sam3Mask, ["schema", "coordinate_space", "producer"], "manifest source sam3_mask");
+  if (
+    sam3Mask.schema !== "sam3_self_exemplar_processed_mask_cache_v1"
+    || sam3Mask.coordinate_space !== "da3_processed_pixels"
+    || sam3Mask.producer !== "sku_matching"
+  ) {
+    throw contractError("manifest source sam3_mask contract is invalid");
+  }
   const da3Cache = asRecord(source.da3_cache, "manifest source da3_cache");
   requireExactKeys(da3Cache, [
     "schema_version", "source_model", "affine_convention", "preprocess_resolution", "preprocess_method",
@@ -440,17 +455,18 @@ function validateManifestSource(value: unknown): ManifestSource {
   if (!RUN_ID.test(footprintRunId) || (footprint.status !== "accepted" && footprint.status !== "rejected")) throw contractError("manifest source footprint is invalid");
 
   const exportSource = asRecord(source.export, "manifest source export");
-  requireExactKeys(exportSource, ["voxel_size_m", "max_points", "filter_config", "exporter_source_sha256", "global_mapping_sha256", "sam3_mask_entries"], "manifest source export");
+  requireExactKeys(exportSource, ["voxel_size_m", "max_points", "filter_config", "exporter_source_sha256", "global_mapping_sha256"], "manifest source export");
   if (!isFiniteNumber(exportSource.voxel_size_m) || exportSource.voxel_size_m <= 0) throw contractError("manifest source voxel_size_m is invalid");
   const maxPoints = asPositiveInteger(exportSource.max_points, "manifest source max_points");
   const filterConfig = validatePointCloudFilterSource(exportSource.filter_config);
   const exporterSourceSha256 = asSha256(exportSource.exporter_source_sha256, "manifest source exporter_source_sha256");
   const globalMappingSha256 = asSha256(exportSource.global_mapping_sha256, "manifest source global_mapping_sha256");
-  const sam3MaskEntries = validateSam3MaskEntries(exportSource.sam3_mask_entries);
-  if (sam3MaskEntries.some((entry) => !imageIds.includes(entry.image_id))) {
-    throw contractError("manifest source sam3_mask_entries image IDs must come from da3_cache");
-  }
   return {
+    sam3_mask: {
+      schema: "sam3_self_exemplar_processed_mask_cache_v1",
+      coordinate_space: "da3_processed_pixels",
+      producer: "sku_matching",
+    },
     da3_cache: {
       schema_version: 2,
       source_model: sourceModel,
@@ -469,7 +485,6 @@ function validateManifestSource(value: unknown): ManifestSource {
       filter_config: filterConfig,
       exporter_source_sha256: exporterSourceSha256,
       global_mapping_sha256: globalMappingSha256,
-      sam3_mask_entries: sam3MaskEntries,
     },
   };
 }
@@ -501,22 +516,6 @@ function validatePointCloudFilterSource(value: unknown): PointCloudFilterSource 
     min_remaining_ratio: minRemainingRatio,
     min_points: minPoints,
   };
-}
-
-function validateSam3MaskEntries(value: unknown): readonly Sam3MaskEntrySource[] {
-  const entries = asArray(value, "manifest source sam3_mask_entries");
-  const result = entries.map((entry, index) => {
-    const record = asRecord(entry, `manifest source sam3_mask_entries[${index}]`);
-    requireExactKeys(record, ["image_id", "key", "payload_sha256"], `manifest source sam3_mask_entries[${index}]`);
-    return {
-      image_id: asSafeInteger(record.image_id, `manifest source sam3_mask_entries[${index}].image_id`),
-      key: asSha256(record.key, `manifest source sam3_mask_entries[${index}].key`),
-      payload_sha256: asSha256(record.payload_sha256, `manifest source sam3_mask_entries[${index}].payload_sha256`),
-    };
-  });
-  if (result.some((entry) => entry.image_id < -2147483648 || entry.image_id > 2147483647)) throw contractError("manifest source sam3_mask_entries image_id must be int32");
-  if (new Set(result.map((entry) => entry.image_id)).size !== result.length || result.some((entry, index) => index > 0 && entry.image_id <= result[index - 1].image_id)) throw contractError("manifest source sam3_mask_entries must have unique ascending image IDs");
-  return result;
 }
 
 function asSha256(value: unknown, label: string): string {

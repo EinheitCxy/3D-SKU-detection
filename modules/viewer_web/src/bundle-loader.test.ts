@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { assertLittleEndian, isLittleEndian, loadViewerBundle } from "./bundle-loader";
 
 const baseUrl = "https://example.test/data/";
-const current = { schema_version: "1.0.0", run_id: "a".repeat(32), complete: true };
+const current = { schema_version: "2.0.0", run_id: "a".repeat(32), complete: true };
 const source = {
   da3_cache: {
     schema_version: 2,
@@ -16,15 +16,19 @@ const source = {
     source_image_sha256: ["0".repeat(64)],
   },
   footprint: { run_id: "a".repeat(32), status: "accepted" },
+  sam3_mask: {
+    schema: "sam3_self_exemplar_processed_mask_cache_v1",
+    coordinate_space: "da3_processed_pixels",
+    producer: "sku_matching",
+  },
   export: {
     voxel_size_m: 0.01, max_points: 10,
     filter_config: { enabled: true, sor_nb_neighbors: 20, sor_std_ratio: 2, keep_main_clusters: true, cluster_eps_scale: 5, cluster_min_points: 10, min_cluster_ratio: 0.01, remove_ground: true, ground_dist_scale: 3, ground_min_inlier_ratio: 0.08, min_remaining_ratio: 0.2, min_points: 1000 },
     exporter_source_sha256: "1".repeat(64), global_mapping_sha256: "2".repeat(64),
-    sam3_mask_entries: [{ image_id: 7, key: "3".repeat(64), payload_sha256: "4".repeat(64) }],
   },
 };
 const manifest = {
-  schema_version: "1.0.0",
+  schema_version: "2.0.0",
   coordinate_space: "da3_world_meters",
   point_count: 1,
   display_bounds: [1, 2, 3, 1, 2, 3],
@@ -48,7 +52,7 @@ const objects = {
 };
 const square = [[0, 0], [1, 0], [1, 1], [0, 0]];
 const footprints = {
-  metric: "da3_ground_footprint_union", unit: "m2", status: "accepted", value_m2: 1,
+  metric: "da3_self_exemplar_ground_footprint_union", unit: "m2", status: "accepted", value_m2: 1,
   rejection_reason: null, run_id: "a".repeat(32),
   support_plane: { point: [0, 0, 0], u_axis: [1, 0, 0], v_axis: [0, 1, 0], normal: [0, 0, 1] },
   per_global_id: {
@@ -211,57 +215,19 @@ describe("loadViewerBundle", () => {
     }))).rejects.toThrow();
   });
 
-  it("rejects an empty used-SAM3 entry set for object instances", async () => {
+  it("rejects a manifest with a non-canonical SAM3 source", async () => {
     await expect(loadViewerBundle(baseUrl, makeFetcher({
       [`${baseUrl}runs/${current.run_id}/manifest.json`]: {
         ...manifest,
-        source: { ...source, export: { ...source.export, sam3_mask_entries: [] } },
+        source: { ...source, sam3_mask: { ...source.sam3_mask, coordinate_space: "source_pixels" } },
       },
-    }))).rejects.toThrow(/SAM3.*image ID/i);
+    }))).rejects.toThrow();
   });
 
-  it("rejects objects whose image ID is missing from used-SAM3 entries", async () => {
-    const sourceWithTwoFrames = {
-      ...source,
-      da3_cache: {
-        ...source.da3_cache,
-        frame_count: 2,
-        image_ids: [7, 8],
-        source_image_sha256: ["0".repeat(64), "5".repeat(64)],
-      },
-    };
+  it("rejects v1 with explicit rerun guidance", async () => {
     await expect(loadViewerBundle(baseUrl, makeFetcher({
-      [`${baseUrl}runs/${current.run_id}/manifest.json`]: { ...manifest, source: sourceWithTwoFrames },
-      [`${baseUrl}runs/${current.run_id}/objects.json`]: {
-        ...objects,
-        "12": {
-          images: [8], objects: [4], active_count: 1, removed_count: 0, total_count: 1,
-          instances: [{ image_id: 8, object_id: 4, bbox: [1, 2, 3, 4], removed: false, point_index_range: [1, 1], thumbnail: "thumbs/12_0.jpg" }],
-        },
-      },
-    }))).rejects.toThrow(/SAM3.*image ID/i);
-  });
-
-  it("rejects a used-SAM3 entry whose image ID has no object instance", async () => {
-    const sourceWithExtraEntry = {
-      ...source,
-      da3_cache: {
-        ...source.da3_cache,
-        frame_count: 2,
-        image_ids: [7, 8],
-        source_image_sha256: ["0".repeat(64), "5".repeat(64)],
-      },
-      export: {
-        ...source.export,
-        sam3_mask_entries: [
-          ...source.export.sam3_mask_entries,
-          { image_id: 8, key: "6".repeat(64), payload_sha256: "7".repeat(64) },
-        ],
-      },
-    };
-    await expect(loadViewerBundle(baseUrl, makeFetcher({
-      [`${baseUrl}runs/${current.run_id}/manifest.json`]: { ...manifest, source: sourceWithExtraEntry },
-    }))).rejects.toThrow(/SAM3.*image ID/i);
+      [`${baseUrl}CURRENT`]: { ...current, schema_version: "1.0.0" },
+    }))).rejects.toThrow(/rerun matching, footprint, and viewer export/i);
   });
 
   it("fails closed when the manifest lacks world_to_view or instance ranges exceed point_count", async () => {

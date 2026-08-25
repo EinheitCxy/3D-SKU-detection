@@ -8,10 +8,10 @@ const square = [[0, 0], [1, 0], [1, 1], [0, 0]] as const;
 
 function makeBundle(): ViewerBundle {
   return {
-    current: { schema_version: "1.0.0", run_id: runId, complete: true },
+    current: { schema_version: "2.0.0", run_id: runId, complete: true },
     generationUrl: `https://example.test/data/runs/${runId}/`,
     manifest: {
-      schema_version: "1.0.0", coordinate_space: "da3_world_meters", point_count: 0,
+      schema_version: "2.0.0", coordinate_space: "da3_world_meters", point_count: 0,
       display_bounds: [0, 0, 0, 0, 0, 0],
       arrays: {
         positions: { path: "positions.f32.bin", dtype: "float32", components: 3, byte_length: 0 },
@@ -28,11 +28,15 @@ function makeBundle(): ViewerBundle {
           processed_size: [2, 2], image_ids: [7], source_image_sha256: ["0".repeat(64)],
         },
         footprint: { run_id: runId, status: "accepted" },
+        sam3_mask: {
+          schema: "sam3_self_exemplar_processed_mask_cache_v1",
+          coordinate_space: "da3_processed_pixels",
+          producer: "sku_matching",
+        },
         export: {
           voxel_size_m: 0.01, max_points: 10,
           filter_config: { enabled: true, sor_nb_neighbors: 20, sor_std_ratio: 2, keep_main_clusters: true, cluster_eps_scale: 5, cluster_min_points: 10, min_cluster_ratio: 0.01, remove_ground: true, ground_dist_scale: 3, ground_min_inlier_ratio: 0.08, min_remaining_ratio: 0.2, min_points: 1000 },
           exporter_source_sha256: "1".repeat(64), global_mapping_sha256: "2".repeat(64),
-          sam3_mask_entries: [{ image_id: 7, key: "3".repeat(64), payload_sha256: "4".repeat(64) }],
         },
       },
       capabilities: { point_picking: false, footprint_picking: true, formal_ground_footprint: true },
@@ -51,7 +55,7 @@ function makeBundle(): ViewerBundle {
       },
     },
     footprints: {
-      metric: "da3_ground_footprint_union", unit: "m2", status: "accepted", value_m2: 3.5,
+      metric: "da3_self_exemplar_ground_footprint_union", unit: "m2", status: "accepted", value_m2: 3.5,
       rejection_reason: null, run_id: runId,
       support_plane: { point: [0, 0, 0], u_axis: [1, 0, 0], v_axis: [0, 1, 0], normal: [0, 0, 1] },
       per_global_id: {

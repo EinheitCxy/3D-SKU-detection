@@ -48,10 +48,6 @@ export async function loadViewerBundle(
     fetchBinary(`${generationUrl}normals.i8.bin`, fetcher),
   ]);
   const objects = validateObjectIndex(objectsValue, manifest.point_count);
-  assertSam3InstanceImageIds(
-    objects,
-    manifest.source.export.sam3_mask_entries.map((entry) => entry.image_id),
-  );
   const footprints = validateFootprints(footprintsValue);
   if (
     manifest.source.footprint.run_id !== footprints.run_id
@@ -63,23 +59,6 @@ export async function loadViewerBundle(
   const colors = decodeUint8(colorsBuffer, manifest.arrays.colors, manifest.point_count);
   const normals = decodeInt8(normalsBuffer, manifest.arrays.normals, manifest.point_count);
   return { current, manifest, objects, footprints, positions, colors, normals, generationUrl };
-}
-
-function assertSam3InstanceImageIds(objects: ObjectIndex, sam3ImageIds: readonly number[]): void {
-  const instanceImageIds = [...new Set(
-    Object.values(objects).flatMap((entry) => entry.instances.map((instance) => instance.image_id)),
-  )].sort((left, right) => left - right);
-  const entryImageIds = [...new Set(sam3ImageIds)].sort((left, right) => left - right);
-  if (
-    instanceImageIds.length === 0
-    || entryImageIds.length === 0
-    || instanceImageIds.length !== entryImageIds.length
-    || instanceImageIds.some((imageId, index) => imageId !== entryImageIds[index])
-  ) {
-    throw new Error(
-      "Invalid viewer bundle: object instance image IDs must exactly match manifest source SAM3 entry image IDs",
-    );
-  }
 }
 
 async function fetchJson(url: string, fetcher: typeof fetch, init?: RequestInit): Promise<unknown> {
