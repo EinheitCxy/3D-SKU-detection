@@ -60,11 +60,13 @@ def test_direct_dedup_cli_uses_the_root_da3_output_contract() -> None:
     assert "imdata0911" not in source
 
 
-def test_sam3_stage_and_loader_resolve_assets_from_the_root_layout() -> None:
+def test_footprint_is_a_v2_read_only_sam3_cache_consumer() -> None:
     from src import da3_footprint_stage
     from utils import sam3_utils
 
-    assert Path(da3_footprint_stage._SAM3_CHECKPOINT) == (
-        REPOSITORY_ROOT / "sam3" / "checkpoints" / "sam3.pt"
+    assert not hasattr(da3_footprint_stage, "_SAM3_CHECKPOINT")
+    assert not hasattr(da3_footprint_stage, "sam3_utils")
+    assert da3_footprint_stage.load_complete_frame_masks.__module__ == (
+        "utils.sam3_mask_cache"
     )
     assert sam3_utils._ensure_sam3_in_path() == REPOSITORY_ROOT / "sam3"
