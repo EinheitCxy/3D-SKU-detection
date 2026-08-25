@@ -5,6 +5,9 @@ import { dataCandidates } from "./data-candidates";
 
 const runId = "a".repeat(32);
 const square = [[0, 0], [1, 0], [1, 1], [0, 0]] as const;
+const pendingMetadata = { status: "master_data_pending" as const, manufacturer: null, brand: null, category: null, object_kind: null };
+const observation = { schema_version: "1.0.0" as const, source: "personalcare" as const, project_id: 51, status: "resolved" as const, sku_id: "A", sku_name: "产品A", confidence: 0.9, metadata: pendingMetadata };
+const aggregate = (candidates = [{ sku_id: "A", sku_name: "产品A", confidence_sum: 0.9, support_count: 1, max_confidence: 0.9 }]) => ({ status: candidates.length > 1 ? "conflict" as const : "resolved" as const, primary_sku_id: candidates[0]?.sku_id ?? null, candidates, metadata: pendingMetadata });
 
 function makeBundle(): ViewerBundle {
   return {
@@ -39,19 +42,24 @@ function makeBundle(): ViewerBundle {
           exporter_source_sha256: "1".repeat(64), global_mapping_sha256: "2".repeat(64),
         },
       },
-      capabilities: { point_picking: false, footprint_picking: true, formal_ground_footprint: true },
+      capabilities: { point_picking: true, footprint_picking: true, formal_ground_footprint: true },
     },
     objects: {
       "2": {
         images: [7], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
-        instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 0], thumbnail: "thumbs/2_0.jpg" }],
+        instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 0], thumbnail: "thumbs/2_0.jpg", classification: observation }],
+        classification: aggregate(),
       },
       "11": {
         images: [8, 9], objects: [4, 5], active_count: 1, removed_count: 1, total_count: 2,
         instances: [
-          { image_id: 8, object_id: 4, bbox: [10, 20, 30, 40], removed: false, point_index_range: [0, 2], thumbnail: "thumbs/11_0.jpg" },
-          { image_id: 9, object_id: 5, bbox: [11, 21, 31, 41], removed: true, point_index_range: [2, 2], thumbnail: "thumbs/11_1.jpg" },
+          { image_id: 8, object_id: 4, bbox: [10, 20, 30, 40], removed: false, point_index_range: [0, 2], thumbnail: "thumbs/11_0.jpg", classification: observation },
+          { image_id: 9, object_id: 5, bbox: [11, 21, 31, 41], removed: true, point_index_range: [2, 2], thumbnail: "thumbs/11_1.jpg", classification: observation },
         ],
+        classification: aggregate([
+          { sku_id: "A", sku_name: "产品A", confidence_sum: 1.1, support_count: 2, max_confidence: 0.7 },
+          { sku_id: "B", sku_name: "产品B", confidence_sum: 0.9, support_count: 1, max_confidence: 0.9 },
+        ]),
       },
     },
     footprints: {
@@ -95,6 +103,15 @@ describe("presentation", () => {
     expect(buildEvidenceView(bundle, "2")).toMatchObject({
       globalId: "2", footprint: { available: false, areaM2: null, observationsUsed: null },
     });
+  });
+
+  it("exposes ordered SKU candidates without confidence fields", () => {
+    const view = buildEvidenceView(makeBundle(), "11");
+    expect(view?.skuCandidates).toEqual([
+      { skuId: "A", skuName: "产品A" },
+      { skuId: "B", skuName: "产品B" },
+    ]);
+    expect(JSON.stringify(view?.skuCandidates)).not.toMatch(/confidence|0\\.[0-9]+|%/);
   });
 
   it("maps every instance to an absolute thumbnail URL next to the generation", () => {

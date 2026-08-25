@@ -29,7 +29,7 @@ export interface Manifest {
   readonly footprints_path: "footprints.json";
   readonly source: ManifestSource;
   readonly capabilities: Readonly<{
-    readonly point_picking: false;
+    readonly point_picking: true;
     readonly footprint_picking: true;
     readonly formal_ground_footprint: true;
   }>;
@@ -95,6 +95,49 @@ export interface ObjectInstance {
   readonly removed: boolean;
   readonly point_index_range: readonly [number, number];
   readonly thumbnail: string;
+  readonly classification: ObjectClassificationObservation;
+}
+
+export interface ProductMetadata {
+  readonly status: "master_data_pending";
+  readonly manufacturer: null;
+  readonly brand: null;
+  readonly category: null;
+  readonly object_kind: null;
+}
+
+export type ObjectClassificationObservation =
+  | Readonly<{
+      readonly schema_version: "1.0.0";
+      readonly source: "personalcare";
+      readonly project_id: number;
+      readonly status: "resolved";
+      readonly sku_id: string;
+      readonly sku_name: string;
+      readonly confidence: number;
+      readonly metadata: ProductMetadata;
+    }>
+  | Readonly<{
+      readonly schema_version: "1.0.0";
+      readonly source: "personalcare";
+      readonly project_id: number;
+      readonly status: "unavailable";
+      readonly reason: "invalid_bbox";
+    }>;
+
+export interface ClassificationCandidate {
+  readonly sku_id: string;
+  readonly sku_name: string;
+  readonly confidence_sum: number;
+  readonly support_count: number;
+  readonly max_confidence: number;
+}
+
+export interface ClassificationAggregate {
+  readonly status: "resolved" | "conflict" | "unavailable";
+  readonly primary_sku_id: string | null;
+  readonly candidates: readonly ClassificationCandidate[];
+  readonly metadata: ProductMetadata;
 }
 
 export interface ObjectIndexEntry {
@@ -104,6 +147,7 @@ export interface ObjectIndexEntry {
   readonly removed_count: number;
   readonly total_count: number;
   readonly instances: readonly ObjectInstance[];
+  readonly classification: ClassificationAggregate;
 }
 
 export type ObjectIndex = Readonly<Record<string, ObjectIndexEntry>>;
@@ -191,7 +235,7 @@ export function validateManifest(value: unknown): Manifest {
   const source = validateManifestSource(record.source);
   const capabilities = asRecord(record.capabilities, "manifest capabilities");
   requireExactKeys(capabilities, ["point_picking", "footprint_picking", "formal_ground_footprint"], "manifest capabilities");
-  if (capabilities.point_picking !== false || capabilities.footprint_picking !== true || capabilities.formal_ground_footprint !== true) {
+  if (capabilities.point_picking !== true || capabilities.footprint_picking !== true || capabilities.formal_ground_footprint !== true) {
     throw contractError("manifest capabilities are invalid");
   }
   const arraysRecord = asRecord(record.arrays, "manifest arrays");
@@ -215,7 +259,7 @@ export function validateManifest(value: unknown): Manifest {
     objects_path: "objects.json",
     footprints_path: "footprints.json",
     source,
-    capabilities: { point_picking: false, footprint_picking: true, formal_ground_footprint: true },
+    capabilities: { point_picking: true, footprint_picking: true, formal_ground_footprint: true },
   };
 }
 
@@ -258,7 +302,7 @@ export function validateObjectIndex(value: unknown, pointCount: number): ObjectI
   for (const [globalId, rawEntry] of Object.entries(record)) {
     if (!GLOBAL_ID.test(globalId)) throw contractError(`objects global ID key is invalid: ${globalId}`);
     const entry = asRecord(rawEntry, `objects[${globalId}]`);
-    requireExactKeys(entry, ["images", "objects", "active_count", "removed_count", "total_count", "instances"], `objects[${globalId}]`);
+    requireExactKeys(entry, ["images", "objects", "active_count", "removed_count", "total_count", "instances", "classification"], `objects[${globalId}]`);
     const images = validateIntegerArray(entry.images, `objects[${globalId}].images`, true);
     const objects = validateIntegerArray(entry.objects, `objects[${globalId}].objects`, false);
     const activeCount = asNonNegativeInteger(entry.active_count, `objects[${globalId}].active_count`);
@@ -267,6 +311,7 @@ export function validateObjectIndex(value: unknown, pointCount: number): ObjectI
     if (activeCount + removedCount !== totalCount) throw contractError(`objects[${globalId}] counts do not add up`);
     const rawInstances = asArray(entry.instances, `objects[${globalId}].instances`);
     const instances = rawInstances.map((instance, index) => validateInstance(instance, `objects[${globalId}].instances[${index}]`, pointCount, `thumbs/${globalId}_${index}.jpg`));
+    const classification = validateClassificationAggregate(entry.classification, `objects[${globalId}].classification`);
     if (instances.length !== totalCount) throw contractError(`objects[${globalId}] total_count does not match instances`);
     if (instances.filter((instance) => instance.removed).length !== removedCount) throw contractError(`objects[${globalId}] removed_count does not match instances`);
     if (instances.filter((instance) => !instance.removed).length !== activeCount) throw contractError(`objects[${globalId}] active_count does not match instances`);
@@ -275,7 +320,7 @@ export function validateObjectIndex(value: unknown, pointCount: number): ObjectI
     if (!sameNumberArray(images, derivedImages)) throw contractError(`objects[${globalId}].images does not match instances`);
     if (!sameNumberArray(objects, derivedObjects)) throw contractError(`objects[${globalId}].objects does not match instances`);
     for (const instance of instances) if (instance.point_index_range[1] > instance.point_index_range[0]) nonEmptyRanges.push(instance.point_index_range);
-    result[globalId] = { images, objects, active_count: activeCount, removed_count: removedCount, total_count: totalCount, instances };
+    result[globalId] = { images, objects, active_count: activeCount, removed_count: removedCount, total_count: totalCount, instances, classification };
   }
   nonEmptyRanges.sort((left, right) => left[0] - right[0]);
   for (let index = 1; index < nonEmptyRanges.length; index += 1) if (nonEmptyRanges[index][0] < nonEmptyRanges[index - 1][1]) throw contractError("objects point_index_range values overlap");
@@ -329,7 +374,7 @@ function validateInstance(value: unknown, label: string, pointCount: number, exp
   if (!("thumbnail" in record)) {
     throw contractError(`bundle 缺 instance thumbnail，请用最新导出器重新导出`);
   }
-  requireExactKeys(record, ["image_id", "object_id", "bbox", "removed", "point_index_range", "thumbnail"], label);
+  requireExactKeys(record, ["image_id", "object_id", "bbox", "removed", "point_index_range", "thumbnail", "classification"], label);
   const imageId = asSafeInteger(record.image_id, `${label}.image_id`);
   const objectId = asSafeInteger(record.object_id, `${label}.object_id`);
   const rawBbox = asArray(record.bbox, `${label}.bbox`);
@@ -343,7 +388,90 @@ function validateInstance(value: unknown, label: string, pointCount: number, exp
   if (start < 0 || end < start || end > pointCount) throw contractError(`${label}.point_index_range is out of bounds`);
   const thumbnail = asString(record.thumbnail, `${label}.thumbnail`);
   if (!THUMBNAIL_PATH.test(thumbnail) || thumbnail !== expectedThumbnail) throw contractError(`${label}.thumbnail must match its global-ID instance identity`);
-  return { image_id: imageId, object_id: objectId, bbox: [rawBbox[0] as number, rawBbox[1] as number, rawBbox[2] as number, rawBbox[3] as number], removed: record.removed, point_index_range: [start, end], thumbnail };
+  const classification = validateClassificationObservation(record.classification, `${label}.classification`);
+  return { image_id: imageId, object_id: objectId, bbox: [rawBbox[0] as number, rawBbox[1] as number, rawBbox[2] as number, rawBbox[3] as number], removed: record.removed, point_index_range: [start, end], thumbnail, classification };
+}
+
+function validateProductMetadata(value: unknown, label: string): ProductMetadata {
+  const record = asRecord(value, label);
+  requireExactKeys(record, ["status", "manufacturer", "brand", "category", "object_kind"], label);
+  if (record.status !== "master_data_pending" || record.manufacturer !== null || record.brand !== null || record.category !== null || record.object_kind !== null) {
+    throw contractError(`${label} is invalid`);
+  }
+  return { status: "master_data_pending", manufacturer: null, brand: null, category: null, object_kind: null };
+}
+
+function validateClassificationObservation(value: unknown, label: string): ObjectClassificationObservation {
+  const record = asRecord(value, label);
+  if (record.status === "resolved") {
+    requireExactKeys(record, ["schema_version", "source", "project_id", "status", "sku_id", "sku_name", "confidence", "metadata"], label);
+    if (record.schema_version !== "1.0.0" || record.source !== "personalcare") throw contractError(`${label} identity is invalid`);
+    const projectId = asSafeInteger(record.project_id, `${label}.project_id`);
+    if (projectId !== 51) throw contractError(`${label}.project_id must be 51`);
+    const skuId = asNonEmptyString(record.sku_id, `${label}.sku_id`);
+    const skuName = asNonEmptyString(record.sku_name, `${label}.sku_name`);
+    const confidence = record.confidence;
+    if (!isFiniteNumber(confidence) || confidence < 0 || confidence > 1) throw contractError(`${label}.confidence must be within [0, 1]`);
+    const metadata = validateProductMetadata(record.metadata, `${label}.metadata`);
+    return { schema_version: "1.0.0", source: "personalcare", project_id: projectId, status: "resolved", sku_id: skuId, sku_name: skuName, confidence, metadata };
+  }
+  if (record.status === "unavailable") {
+    requireExactKeys(record, ["schema_version", "source", "project_id", "status", "reason"], label);
+    if (record.schema_version !== "1.0.0" || record.source !== "personalcare" || record.reason !== "invalid_bbox") throw contractError(`${label} is invalid`);
+    const projectId = asSafeInteger(record.project_id, `${label}.project_id`);
+    if (projectId !== 51) throw contractError(`${label}.project_id must be 51`);
+    return { schema_version: "1.0.0", source: "personalcare", project_id: projectId, status: "unavailable", reason: "invalid_bbox" };
+  }
+  throw contractError(`${label}.status is invalid`);
+}
+
+function validateClassificationAggregate(value: unknown, label: string): ClassificationAggregate {
+  const record = asRecord(value, label);
+  requireExactKeys(record, ["status", "primary_sku_id", "candidates", "metadata"], label);
+  if (record.status !== "resolved" && record.status !== "conflict" && record.status !== "unavailable") throw contractError(`${label}.status is invalid`);
+  const rawCandidates = asArray(record.candidates, `${label}.candidates`);
+  const candidates = rawCandidates.map((candidate, index) => validateClassificationCandidate(candidate, `${label}.candidates[${index}]`));
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    const key = `${candidate.sku_id}\u0000${candidate.sku_name}`;
+    if (seen.has(key)) throw contractError(`${label}.candidates must be unique`);
+    seen.add(key);
+  }
+  for (let index = 1; index < candidates.length; index += 1) {
+    if (compareCandidates(candidates[index - 1], candidates[index]) > 0) throw contractError(`${label}.candidates order is invalid`);
+  }
+  const primary = record.primary_sku_id === null ? null : asNonEmptyString(record.primary_sku_id, `${label}.primary_sku_id`);
+  if (record.status === "unavailable") {
+    if (primary !== null || candidates.length !== 0) throw contractError(`${label} unavailable status requires null primary and no candidates`);
+  } else {
+    const validCardinality = record.status === "resolved" ? candidates.length === 1 : candidates.length >= 2;
+    if (!validCardinality || primary === null || candidates[0].sku_id !== primary) throw contractError(`${label} status, primary, and candidates are inconsistent`);
+  }
+  const metadata = validateProductMetadata(record.metadata, `${label}.metadata`);
+  return { status: record.status, primary_sku_id: primary, candidates, metadata };
+}
+
+function validateClassificationCandidate(value: unknown, label: string): ClassificationCandidate {
+  const record = asRecord(value, label);
+  requireExactKeys(record, ["sku_id", "sku_name", "confidence_sum", "support_count", "max_confidence"], label);
+  const skuId = asNonEmptyString(record.sku_id, `${label}.sku_id`);
+  const skuName = asNonEmptyString(record.sku_name, `${label}.sku_name`);
+  if (!isFiniteNumber(record.confidence_sum)) throw contractError(`${label}.confidence_sum must be finite`);
+  const supportCount = asPositiveInteger(record.support_count, `${label}.support_count`);
+  if (!isFiniteNumber(record.max_confidence) || record.max_confidence < 0 || record.max_confidence > 1) throw contractError(`${label}.max_confidence must be within [0, 1]`);
+  return { sku_id: skuId, sku_name: skuName, confidence_sum: record.confidence_sum, support_count: supportCount, max_confidence: record.max_confidence };
+}
+
+function compareCandidates(left: ClassificationCandidate, right: ClassificationCandidate): number {
+  return right.confidence_sum - left.confidence_sum
+    || right.support_count - left.support_count
+    || right.max_confidence - left.max_confidence
+    || compareStrings(left.sku_id, right.sku_id)
+    || compareStrings(left.sku_name, right.sku_name);
+}
+
+function compareStrings(left: string, right: string): number {
+  return left === right ? 0 : left < right ? -1 : 1;
 }
 
 function validateSupportPlane(value: unknown): SupportPlane {
@@ -554,6 +682,12 @@ function asArray(value: unknown, label: string): readonly unknown[] {
 function asString(value: unknown, label: string): string {
   if (typeof value !== "string") throw contractError(`${label} must be a string`);
   return value;
+}
+
+function asNonEmptyString(value: unknown, label: string): string {
+  const string = asString(value, label);
+  if (string.trim().length === 0) throw contractError(`${label} must be non-empty`);
+  return string;
 }
 
 function asSafeInteger(value: unknown, label: string): number {

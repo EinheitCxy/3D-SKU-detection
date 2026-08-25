@@ -42,12 +42,16 @@ const manifest = {
   objects_path: "objects.json",
   footprints_path: "footprints.json",
   source,
-  capabilities: { point_picking: false, footprint_picking: true, formal_ground_footprint: true },
+  capabilities: { point_picking: true, footprint_picking: true, formal_ground_footprint: true },
 };
+const pendingMetadata = { status: "master_data_pending", manufacturer: null, brand: null, category: null, object_kind: null };
+const classificationObservation = { schema_version: "1.0.0", source: "personalcare", project_id: 51, status: "resolved", sku_id: "A", sku_name: "产品A", confidence: 0.9, metadata: pendingMetadata };
+const classificationAggregate = { status: "resolved", primary_sku_id: "A", candidates: [{ sku_id: "A", sku_name: "产品A", confidence_sum: 0.9, support_count: 1, max_confidence: 0.9 }], metadata: pendingMetadata };
 const objects = {
   "11": {
     images: [7], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
-    instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg" }],
+    instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg", classification: classificationObservation }],
+    classification: classificationAggregate,
   },
 };
 const square = [[0, 0], [1, 0], [1, 1], [0, 0]];
@@ -125,7 +129,8 @@ describe("loadViewerBundle", () => {
       [`${baseUrl}runs/${current.run_id}/objects.json`]: {
         "11": {
           images: [7], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
-          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1] }],
+          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], classification: classificationObservation }],
+          classification: classificationAggregate,
         },
       },
     }))).rejects.toThrow(/缺 instance thumbnail.*重新导出/);
@@ -149,7 +154,8 @@ describe("loadViewerBundle", () => {
       [`${baseUrl}runs/${current.run_id}/objects.json`]: {
         "11": {
           images: [7], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
-          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/../../secrets.jpg" }],
+          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/../../secrets.jpg", classification: classificationObservation }],
+          classification: classificationAggregate,
         },
       },
     }))).rejects.toThrow(/thumbnail/);
@@ -209,7 +215,8 @@ describe("loadViewerBundle", () => {
       [`${baseUrl}runs/${current.run_id}/objects.json`]: {
         "11": {
           images: [999], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
-          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg" }],
+          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg", classification: classificationObservation }],
+          classification: classificationAggregate,
         },
       },
     }))).rejects.toThrow();
@@ -220,7 +227,8 @@ describe("loadViewerBundle", () => {
       [`${baseUrl}runs/${current.run_id}/objects.json`]: {
         "11": {
           images: [8], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
-          instances: [{ image_id: 8, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg" }],
+          instances: [{ image_id: 8, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg", classification: classificationObservation }],
+          classification: classificationAggregate,
         },
       },
     }))).rejects.toThrow(/image ID 8.*DA3 image IDs/i);
@@ -252,7 +260,8 @@ describe("loadViewerBundle", () => {
       [`${baseUrl}runs/${current.run_id}/objects.json`]: {
         "11": {
           images: [7], objects: [3], active_count: 1, removed_count: 0, total_count: 1,
-          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 2], thumbnail: "thumbs/11_0.jpg" }],
+          instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 2], thumbnail: "thumbs/11_0.jpg", classification: classificationObservation }],
+          classification: classificationAggregate,
         },
       },
     }))).rejects.toThrow(/out of bounds/i);

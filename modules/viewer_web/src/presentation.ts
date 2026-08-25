@@ -17,6 +17,10 @@ export interface EvidenceInstanceView {
 export interface EvidenceView {
   readonly globalId: string;
   readonly object: ObjectIndexEntry;
+  readonly skuCandidates: readonly {
+    readonly skuId: string;
+    readonly skuName: string;
+  }[];
   readonly footprint: EvidenceFootprintView;
   readonly instances: readonly EvidenceInstanceView[];
   /** False when every instance range is empty: observations exist, no 3D points. */
@@ -55,6 +59,7 @@ export function buildEvidenceView(bundle: ViewerBundle, globalId: string): Evide
   return {
     globalId,
     object,
+    skuCandidates: object.classification.candidates.map((candidate) => ({ skuId: candidate.sku_id, skuName: candidate.sku_name })),
     footprint: hasFootprint
       ? { available: true, areaM2: properties.area_m2, observationsUsed: properties.observations_used }
       : { available: false, areaM2: null, observationsUsed: null },

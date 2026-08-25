@@ -56,8 +56,38 @@ const validManifest = {
   objects_path: "objects.json",
   footprints_path: "footprints.json",
   source: validSource,
-  capabilities: { point_picking: false, footprint_picking: true, formal_ground_footprint: true },
+  capabilities: { point_picking: true, footprint_picking: true, formal_ground_footprint: true },
 } as const;
+
+const pendingMetadata = () => ({
+  status: "master_data_pending" as const,
+  manufacturer: null,
+  brand: null,
+  category: null,
+  object_kind: null,
+});
+
+const candidate = (sku_id: string, sku_name: string, confidence_sum: number, support_count: number, max_confidence: number) => ({
+  sku_id, sku_name, confidence_sum, support_count, max_confidence,
+});
+
+const resolvedObservation = () => ({
+  schema_version: "1.0.0" as const,
+  source: "personalcare" as const,
+  project_id: 51,
+  status: "resolved" as const,
+  sku_id: "A",
+  sku_name: "产品A",
+  confidence: 0.9,
+  metadata: pendingMetadata(),
+});
+
+const resolvedAggregate = () => ({
+  status: "resolved" as const,
+  primary_sku_id: "A",
+  candidates: [candidate("A", "产品A", 0.9, 1, 0.9)],
+  metadata: pendingMetadata(),
+});
 
 const validObjects = {
   "11": {
@@ -66,7 +96,8 @@ const validObjects = {
     active_count: 1,
     removed_count: 0,
     total_count: 1,
-    instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg" }],
+    instances: [{ image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg", classification: resolvedObservation() }],
+    classification: resolvedAggregate(),
   },
 } as const;
 
@@ -209,11 +240,65 @@ describe("strict bundle contracts", () => {
     expect(() => validateObjectIndex({ "11": { ...validObjects["11"], instances: [{ ...validObjects["11"].instances[0], point_index_range: [1, 0] }] } }, 1)).toThrow();
   });
 
+  it("accepts conflict candidates in pre-ranked order", () => {
+    const entry = {
+      ...validObjects["11"],
+      classification: {
+        status: "conflict" as const,
+        primary_sku_id: "A",
+        candidates: [candidate("A", "产品A", 1.1, 2, 0.6), candidate("B", "产品B", 0.9, 1, 0.9)],
+        metadata: pendingMetadata(),
+      },
+    };
+    expect(validateObjectIndex({ "1": { ...entry, instances: [{ ...entry.instances[0], thumbnail: "thumbs/1_0.jpg" }] } }, 12)["1"].classification.candidates.map((item) => item.sku_id)).toEqual(["A", "B"]);
+  });
+
+  it.each([
+    ["non-finite score", { candidates: [candidate("A", "产品A", Number.NaN, 1, 0.8)] }],
+    ["primary mismatch", { primary_sku_id: "B" }],
+    ["duplicate candidate", { candidates: [candidate("A", "产品A", 1, 1, 1), candidate("A", "产品A", 0.5, 1, 0.5)] }],
+    ["invalid metadata", { metadata: { ...pendingMetadata(), status: "resolved" } }],
+  ])("rejects %s", (_label, mutation) => {
+    const valid = { status: "resolved", primary_sku_id: "A", candidates: [candidate("A", "产品A", 1, 1, 1)], metadata: pendingMetadata() };
+    expect(() => validateObjectIndex({ "1": { ...validObjects["11"], instances: [{ ...validObjects["11"].instances[0], thumbnail: "thumbs/1_0.jpg" }], classification: { ...valid, ...mutation } } }, 12)).toThrow();
+  });
+
+  it("rejects candidates outside deterministic order", () => {
+    const classification = {
+      status: "conflict",
+      primary_sku_id: "B",
+      candidates: [candidate("B", "产品B", 0.5, 1, 0.5), candidate("A", "产品A", 1.0, 1, 1.0)],
+      metadata: pendingMetadata(),
+    };
+    expect(() => validateObjectIndex({ "1": { ...validObjects["11"], instances: [{ ...validObjects["11"].instances[0], thumbnail: "thumbs/1_0.jpg" }], classification } }, 12)).toThrow(/order/);
+  });
+
+  it("enforces resolved and unavailable candidate cardinality", () => {
+    const instance = { ...validObjects["11"].instances[0], thumbnail: "thumbs/1_0.jpg" };
+    expect(() => validateObjectIndex({ "1": {
+      ...validObjects["11"],
+      instances: [instance],
+      classification: { ...resolvedAggregate(), candidates: [candidate("A", "产品A", 1, 1, 1), candidate("B", "产品B", 0.5, 1, 0.5)] },
+    } }, 12)).toThrow();
+    expect(() => validateObjectIndex({ "1": {
+      ...validObjects["11"],
+      instances: [instance],
+      classification: { status: "unavailable", primary_sku_id: null, candidates: [candidate("A", "产品A", 1, 1, 1)], metadata: pendingMetadata() },
+    } }, 12)).toThrow();
+  });
+
+  it("requires object and instance classification keys", () => {
+    const { classification: _classification, ...withoutEntryClassification } = validObjects["11"];
+    expect(() => validateObjectIndex({ "11": withoutEntryClassification }, 1)).toThrow();
+    const { classification: _instanceClassification, ...withoutInstanceClassification } = validObjects["11"].instances[0];
+    expect(() => validateObjectIndex({ "11": { ...validObjects["11"], instances: [withoutInstanceClassification] } }, 1)).toThrow();
+  });
+
   it("binds thumbnails to their global-ID instance identity and forbids overlapping ranges", () => {
     expect(() => validateObjectIndex({ "11": { ...validObjects["11"], instances: [{ ...validObjects["11"].instances[0], thumbnail: "thumbs/12_0.jpg" }] } }, 1)).toThrow(/thumbnail/);
     expect(() => validateObjectIndex({
       ...validObjects,
-      "12": { images: [8], objects: [4], active_count: 1, removed_count: 0, total_count: 1, instances: [{ image_id: 8, object_id: 4, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/12_0.jpg" }] },
+      "12": { images: [8], objects: [4], active_count: 1, removed_count: 0, total_count: 1, instances: [{ image_id: 8, object_id: 4, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/12_0.jpg", classification: resolvedObservation() }], classification: resolvedAggregate() },
     }, 1)).toThrow(/overlap/);
   });
 
@@ -248,9 +333,10 @@ describe("strict bundle contracts", () => {
         removed_count: 0,
         total_count: 2,
         instances: [
-          { image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg" },
-          { image_id: 8, object_id: 3, bbox: [5, 6, 7, 8], removed: false, point_index_range: [1, 2], thumbnail: "thumbs/11_1.jpg" },
+          { image_id: 7, object_id: 3, bbox: [1, 2, 3, 4], removed: false, point_index_range: [0, 1], thumbnail: "thumbs/11_0.jpg", classification: resolvedObservation() },
+          { image_id: 8, object_id: 3, bbox: [5, 6, 7, 8], removed: false, point_index_range: [1, 2], thumbnail: "thumbs/11_1.jpg", classification: resolvedObservation() },
         ],
+        classification: { ...resolvedAggregate(), candidates: [candidate("A", "产品A", 1.8, 2, 0.9)] },
       },
     };
     expect(validateObjectIndex(derived, 2)["11"]).toMatchObject({ images: [7, 8], objects: [3, 3] });
