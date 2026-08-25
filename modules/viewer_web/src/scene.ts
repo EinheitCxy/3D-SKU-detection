@@ -31,9 +31,9 @@ import type { ViewerBundle } from "./bundle-loader";
 import { POINTS_LAYER, createViewerPipeline, type ViewerPipeline } from "./edl";
 import { createFootprintObjects } from "./footprints";
 import { focusedCameraPosition } from "./focus";
-import { buildPointRangeLookup, resolvePickGlobalId } from "./point-picking";
+import { applyVisibilityUpdates, buildPointRangeLookup, buildVisibilityDelta, resolvePickGlobalId, syncVisibleTargets } from "./point-picking";
 import { cachedSelectionBox } from "./selection-bounds";
-import { applySelectionColors, queueSelectionAttributeUpdates, type PointRange } from "./selection-colors";
+import { applySelectionColors, mergePointRanges, queueSelectionAttributeUpdates, type PointRange } from "./selection-colors";
 
 const FOOTPRINT_CLICK_THRESHOLD_PX = 6;
 const MIN_POINT_SIZE = 0.004;
@@ -164,6 +164,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   let pickHandler: ((globalId: string) => void) | null = null;
   const pointRangeLookup = buildPointRangeLookup(bundle.objects);
   let visibleGlobalIds = new Set(Object.keys(bundle.objects));
+  let previousVisibleGlobalIds = new Set(visibleGlobalIds);
   let primaryPointerPress: FootprintPointerPress | null = null;
   let focusAnimation: FocusAnimation | null = null;
   let animationFrame = 0;
@@ -212,9 +213,10 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
     const footprintHit = raycaster.intersectObjects(footprints.pickMeshes, false)[0];
-    const footprintGlobalId = typeof footprintHit?.object.userData.globalId === "string"
+    const hitGlobalId = typeof footprintHit?.object.userData.globalId === "string"
       ? footprintHit.object.userData.globalId
       : null;
+    const footprintGlobalId = hitGlobalId !== null && visibleGlobalIds.has(hitGlobalId) ? hitGlobalId : null;
     const pointHit = footprintGlobalId === null ? raycaster.intersectObject(points, false)[0] : undefined;
     const pointIndex = pointHit?.index ?? null;
     const globalId = resolvePickGlobalId(footprintGlobalId, pointIndex, pointRangeLookup, visibleGlobalIds);
@@ -291,19 +293,12 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     },
     setVisibleGlobalIds(ids) {
       const next = new Set(ids);
-      const changed: PointRange[] = [];
+      const delta = buildVisibilityDelta(bundle.objects, previousVisibleGlobalIds, next);
       const visibility = pointVisibilityAttribute.array as Uint8Array;
-      for (const range of pointRangeLookup) {
-        const value = next.has(range.globalId) ? 1 : 0;
-        let differs = false;
-        for (let index = range.start; index < range.end; index += 1) {
-          if (visibility[index] !== value) differs = true;
-          visibility[index] = value;
-        }
-        if (differs) changed.push([range.start, range.end]);
-      }
-      queueVisibilityAttributeUpdates(pointVisibilityAttribute, changed);
-      for (const [globalId, target] of footprints.focusTargets) target.visible = next.has(globalId);
+      const changedRanges = applyVisibilityUpdates(visibility, delta.ranges);
+      queueVisibilityAttributeUpdates(pointVisibilityAttribute, changedRanges);
+      syncVisibleTargets(footprints.focusTargets, delta.changedIds, next);
+      previousVisibleGlobalIds = next;
       visibleGlobalIds = next;
     },
     setFootprintOpacity(opacity) {
@@ -560,7 +555,8 @@ function clamp(value: number, min: number, max: number): number {
 
 function queueVisibilityAttributeUpdates(attribute: Uint8BufferAttribute, changed: readonly PointRange[]): void {
   if (changed.length === 0) return;
+  const pending = attribute.updateRanges.map(({ start, count }) => [start, start + count] as PointRange);
   attribute.clearUpdateRanges();
-  for (const [start, end] of changed) attribute.addUpdateRange(start, end - start);
+  for (const [start, end] of mergePointRanges([...pending, ...changed])) attribute.addUpdateRange(start, end - start);
   attribute.needsUpdate = true;
 }

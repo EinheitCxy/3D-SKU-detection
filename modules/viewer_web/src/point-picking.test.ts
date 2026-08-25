@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildPointRangeLookup, globalIdForPointIndex, resolvePickGlobalId, visiblePointRanges } from "./point-picking";
-import type { ObjectIndex, ObjectIndexEntry } from "./contracts";
+import { applyVisibilityUpdates, buildPointRangeLookup, buildVisibilityDelta, globalIdForPointIndex, resolvePickGlobalId, syncVisibleTargets, visiblePointRanges } from "./point-picking";
+import type { ObjectIndex } from "./contracts";
 
 function objectIndexWithRanges(rangesById: Record<string, readonly (readonly [number, number])[]>): ObjectIndex {
   return Object.fromEntries(Object.entries(rangesById).map(([globalId, ranges]) => [globalId, {
@@ -41,5 +41,39 @@ describe("point picking", () => {
     expect(resolvePickGlobalId("2", 1, lookup, new Set(["1", "2"]))).toBe("2");
     expect(resolvePickGlobalId(null, 1, lookup, new Set(["1", "2"]))).toBe("1");
     expect(resolvePickGlobalId(null, 1, lookup, new Set(["2"]))).toBeNull();
+  });
+
+  it("falls through a hidden footprint hit to a visible point hit", () => {
+    const lookup = buildPointRangeLookup(objectIndexWithRanges({ "1": [[0, 3]], "2": [[3, 6]] }));
+    expect(resolvePickGlobalId("2", 1, lookup, new Set(["1"]))).toBe("1");
+  });
+});
+
+describe("visibility deltas", () => {
+  it("changes only symmetric-difference IDs and merges adjacent ranges", () => {
+    const objects = objectIndexWithRanges({ "1": [[0, 3]], "2": [[3, 6]], "3": [[6, 8]] });
+    const delta = buildVisibilityDelta(objects, new Set(["1", "2"]), new Set(["2", "3"]));
+    expect(delta.changedIds).toEqual(["1", "3"]);
+    expect(delta.ranges).toEqual([
+      { start: 0, end: 3, value: 0 },
+      { start: 6, end: 8, value: 1 },
+    ]);
+  });
+
+  it("mutates only requested bytes and returns GPU dirty ranges", () => {
+    const bytes = Uint8Array.from([1, 1, 1, 1, 1, 1]);
+    const dirty = applyVisibilityUpdates(bytes, [{ start: 1, end: 5, value: 0 }]);
+    expect([...bytes]).toEqual([1, 0, 0, 0, 0, 1]);
+    expect(dirty).toEqual([[1, 5]]);
+  });
+
+  it("syncs footprint targets only for changed IDs", () => {
+    const targets = new Map([
+      ["1", { visible: true }],
+      ["2", { visible: false }],
+    ]);
+    syncVisibleTargets(targets, ["1"], new Set());
+    expect(targets.get("1")?.visible).toBe(false);
+    expect(targets.get("2")?.visible).toBe(false);
   });
 });
