@@ -82,6 +82,10 @@ Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。导出器验证 
 
 Viewer **不使用 SAM3 protection mask**。SAM3 cache 仍作为 ground-footprint 和可审计实例信息的输入，但不会绕过点云的常规噪声、地面或天空过滤；所有展示点遵循同一过滤策略。这样不会因高置信门控而静默丢失 SKU 点，也不会把 cache mask 变成永久保留区。
 
+## Personalcare classification in viewer objects
+
+pipeline 的 personalcare 分类阶段发布 enriched detections 后，dedup 必须显式读取该目录。`global_mapping.json` 的每个 observation 都保存严格的 `classification` 原始记录（包括 `removed: true` 的 observation）；viewer `objects.json` 则为每个 global ID 聚合所有 observation。候选按 `confidence_sum`、`support_count`、`max_confidence`、SKU ID 和名称确定性排序，保留所有冲突候选，但仅首位 primary 用于计数。bundle 仍是 schema `2.0.0`，并严格校验 resolved、conflict 与 unavailable classification；分类不会改变 SAM3 processed masks、point ranges、点云过滤或 formal metric。
+
 ## Ground footprint
 
 `ground-stack-area` 从 matching 发布的 processed-space self-exemplar masks 为每个去重 `global_id` 取多视图 metric 点云，投影到推断支撑平面后以 OBB polygon union 计算 `da3_self_exemplar_ground_footprint_union`（m²）。它不是包装表面积、正面面积、SAM3 mask 面积或 bbox 面积。任何对象缺少足够几何时整次结果为 `rejected` 与 `value_m2: null`，不会发布部分总量；本指标是新 baseline，不可与旧 `da3_ground_footprint_union` 面积直接比较。

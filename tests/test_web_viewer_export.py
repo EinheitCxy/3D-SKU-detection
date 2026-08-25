@@ -13,7 +13,11 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import main as main_module
-from src.web_viewer_export import WebViewerExportError, export_web_viewer_bundle
+from src.web_viewer_export import (
+    WebViewerExportError,
+    _validate_object_index_for_export,
+    export_web_viewer_bundle,
+)
 from utils.sam3_mask_cache import (
     FrameMaskCacheRequest,
     ProcessedDetectionPrompt,
@@ -29,6 +33,107 @@ _BUNDLE_FILES = {
     "objects.json",
     "footprints.json",
 }
+
+
+def _resolved_classification() -> dict[str, object]:
+    return {
+        "schema_version": "1.0.0",
+        "source": "personalcare",
+        "project_id": 51,
+        "status": "resolved",
+        "sku_id": "430085",
+        "sku_name": "产品A",
+        "confidence": 0.75,
+        "metadata": {
+            "status": "master_data_pending",
+            "manufacturer": None,
+            "brand": None,
+            "category": None,
+            "object_kind": None,
+        },
+    }
+
+
+def _valid_classified_object_index() -> dict[str, object]:
+    return {
+        "1": {
+            "images": [7, 8],
+            "objects": [3, 4],
+            "active_count": 1,
+            "removed_count": 1,
+            "total_count": 2,
+            "instances": [
+                {
+                    "image_id": 7,
+                    "object_id": 3,
+                    "bbox": [1.0, 2.0, 3.0, 4.0],
+                    "removed": False,
+                    "classification": _resolved_classification(),
+                },
+                {
+                    "image_id": 8,
+                    "object_id": 4,
+                    "bbox": [1.0, 2.0, 3.0, 4.0],
+                    "removed": True,
+                    "classification": {
+                        **_resolved_classification(),
+                        "sku_id": "428987",
+                        "sku_name": "产品B",
+                        "confidence": 0.9,
+                    },
+                },
+            ],
+            "classification": {
+                "status": "conflict",
+                "primary_sku_id": "428987",
+                "candidates": [
+                    {
+                        "sku_id": "428987",
+                        "sku_name": "产品B",
+                        "confidence_sum": 0.9,
+                        "support_count": 1,
+                        "max_confidence": 0.9,
+                    },
+                    {
+                        "sku_id": "430085",
+                        "sku_name": "产品A",
+                        "confidence_sum": 0.75,
+                        "support_count": 1,
+                        "max_confidence": 0.75,
+                    },
+                ],
+                "metadata": {
+                    "status": "master_data_pending",
+                    "manufacturer": None,
+                    "brand": None,
+                    "category": None,
+                    "object_kind": None,
+                },
+            },
+        }
+    }
+
+
+@pytest.mark.parametrize(
+    ("case", "mutate"),
+    [
+        ("missing_primary", lambda value: value.pop("primary_sku_id")),
+        ("unsorted_candidates", lambda value: value["candidates"].reverse()),
+        (
+            "duplicate_candidate",
+            lambda value: value["candidates"].append(
+                json.loads(json.dumps(value["candidates"][0]))
+            ),
+        ),
+        ("invalid_metadata", lambda value: value["metadata"].update(status="resolved")),
+    ],
+)
+def test_export_rejects_invalid_classification(case, mutate) -> None:
+    objects = _valid_classified_object_index()
+    mutate(objects["1"]["classification"])
+
+    with pytest.raises(WebViewerExportError, match="classification"):
+        _validate_object_index_for_export(objects)
 
 
 def _make_source_image_bytes() -> bytes:
@@ -168,6 +273,7 @@ def _write_mapping(path: Path) -> None:
                         "object_id": 3,
                         "bbox": [1.0, 2.0, 3.0, 4.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ]
             }
@@ -494,6 +600,7 @@ def test_instance_point_range_covers_only_bounded_grid_points(exporter_inputs):
                         "object_id": 3,
                         "bbox": [0.0, 0.0, 2.0, 2.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ]
             }
@@ -537,6 +644,7 @@ def test_instance_referencing_unknown_image_fails_closed(exporter_inputs):
                         "object_id": 3,
                         "bbox": [0.0, 0.0, 2.0, 2.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ]
             }
@@ -560,7 +668,17 @@ def test_malformed_mapping_object_bbox_fails_before_bundle_publication(
     mapping_path = exporter_inputs["global_mapping_path"]
     mapping_path.write_text(
         json.dumps(
-            {"11": [{"image_id": 7, "object_id": 3, "bbox": bbox, "removed": False}]}
+                {
+                    "11": [
+                        {
+                            "image_id": 7,
+                            "object_id": 3,
+                            "bbox": bbox,
+                            "removed": False,
+                            "classification": _resolved_classification(),
+                        }
+                    ]
+                }
         ),
         encoding="utf-8",
     )
@@ -584,6 +702,7 @@ def test_mapping_ids_outside_javascript_safe_integer_fail_before_bundle_publicat
         "object_id": 3,
         "bbox": [1.0, 2.0, 3.0, 4.0],
         "removed": False,
+        "classification": _resolved_classification(),
     }
     instance[field] = 2**53
     mapping_path.write_text(json.dumps({"11": [instance]}), encoding="utf-8")
@@ -758,6 +877,7 @@ def test_normals_follow_final_representatives_through_nonidentity_label_sort(
                         "object_id": 3,
                         "bbox": [2.0, 0.0, 3.0, 1.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ],
                 "12": [
@@ -766,6 +886,7 @@ def test_normals_follow_final_representatives_through_nonidentity_label_sort(
                         "object_id": 4,
                         "bbox": [0.0, 0.0, 4.0, 1.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ],
             }
@@ -1021,12 +1142,14 @@ def test_voxel_sampling_keeps_highest_confidence_point_regardless_of_sam3_label(
                         "object_id": 3,
                         "bbox": [0.0, 0.0, 1.0, 1.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     },
                     {
                         "image_id": 7,
                         "object_id": 4,
                         "bbox": [1.0, 0.0, 2.0, 1.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     },
                 ]
             }
@@ -1072,6 +1195,7 @@ def test_labeled_points_do_not_bypass_max_points_sampling(exporter_inputs):
                         "object_id": 3,
                         "bbox": [0.0, 0.0, 2.0, 2.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ]
             }
@@ -1237,12 +1361,14 @@ def test_thumbnails_exported_for_active_and_removed_instances(exporter_inputs):
                         "object_id": 3,
                         "bbox": [0.0, 0.0, 2.0, 2.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     },
                     {
                         "image_id": 7,
                         "object_id": 4,
                         "bbox": [2.0, 2.0, 4.0, 4.0],
                         "removed": True,
+                    "classification": _resolved_classification(),
                     },
                 ]
             }
@@ -1324,6 +1450,7 @@ def test_instance_bbox_outside_source_image_fails_closed(exporter_inputs):
                         "object_id": 3,
                         "bbox": [0.0, 0.0, 99.0, 99.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ]
             }
@@ -1401,6 +1528,7 @@ def test_processed_mask_overlap_is_owned_by_first_stable_instance(exporter_input
                         "object_id": 3,
                         "bbox": [0, 0, 4, 4],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ],
                 "12": [
@@ -1409,6 +1537,7 @@ def test_processed_mask_overlap_is_owned_by_first_stable_instance(exporter_input
                         "object_id": 4,
                         "bbox": [0, 0, 4, 4],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ],
             }
@@ -1482,6 +1611,7 @@ def test_scene_filter_removes_mask_labeled_and_background_outliers_equally(
                         "object_id": 3,
                         "bbox": [60.0, 60.0, 64.0, 64.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ]
             }
@@ -1594,6 +1724,7 @@ def test_sky_cut_removes_points_above_subject_top(exporter_inputs):
                         "object_id": 3,
                         "bbox": [2.0, 2.0, 4.0, 4.0],
                         "removed": False,
+                    "classification": _resolved_classification(),
                     }
                 ]
             }

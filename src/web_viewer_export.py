@@ -26,6 +26,10 @@ from utils.da3_cache_validation import (
     unicode_scalar,
     validate_affine_linear_parts,
 )
+from utils.classification_aggregation import (
+    aggregate_classifications,
+    validate_classification,
+)
 from utils.global_id_mapper import GlobalIDMapper
 from utils.global_object_index import build_global_object_index
 from utils.pointcloud_filter import PointCloudFilterConfig, filter_scene_points
@@ -196,7 +200,7 @@ def export_web_viewer_bundle(
             },
         },
         "capabilities": {
-            "point_picking": False,
+            "point_picking": True,
             "footprint_picking": True,
             "formal_ground_footprint": True,
         },
@@ -235,11 +239,21 @@ def _validate_export_options(voxel_size_m: float, max_points: int) -> float:
 
 def _validate_object_index_for_export(objects: dict[str, Any]) -> None:
     """Reject mapping-derived objects that the strict browser contract would reject."""
+    expected_entry_keys = {
+        "images",
+        "objects",
+        "active_count",
+        "removed_count",
+        "total_count",
+        "instances",
+        "classification",
+    }
     for global_id, entry in objects.items():
         if (
             not isinstance(global_id, str)
             or _GLOBAL_ID.fullmatch(global_id) is None
             or not isinstance(entry, dict)
+            or set(entry) != expected_entry_keys
         ):
             raise WebViewerExportError("object index global ID is invalid")
         instances = entry.get("instances")
@@ -248,8 +262,15 @@ def _validate_object_index_for_export(objects: dict[str, Any]) -> None:
         active = removed = 0
         images: set[int] = set()
         object_ids: list[int] = []
+        classifications: list[dict[str, Any]] = []
         for instance in instances:
-            if not isinstance(instance, dict):
+            if not isinstance(instance, dict) or set(instance) != {
+                "image_id",
+                "object_id",
+                "bbox",
+                "removed",
+                "classification",
+            }:
                 raise WebViewerExportError("object index instance is invalid")
             image_id, object_id, bbox, is_removed = (
                 instance.get("image_id"),
@@ -284,6 +305,12 @@ def _validate_object_index_for_export(objects: dict[str, Any]) -> None:
             object_ids.append(object_id)
             removed += int(is_removed)
             active += int(not is_removed)
+            try:
+                classifications.append(validate_classification(instance["classification"]))
+            except ValueError as error:
+                raise WebViewerExportError(
+                    f"object index instance classification is invalid: {error}"
+                ) from error
         if (
             entry.get("images") != sorted(images)
             or entry.get("objects") != sorted(object_ids)
@@ -292,6 +319,97 @@ def _validate_object_index_for_export(objects: dict[str, Any]) -> None:
             or entry.get("total_count") != len(instances)
         ):
             raise WebViewerExportError("object index counts or derived IDs are invalid")
+        _validate_aggregate_classification(
+            entry["classification"], aggregate_classifications(classifications)
+        )
+
+
+def _validate_aggregate_classification(
+    classification: Any, expected: dict[str, Any]
+) -> None:
+    if not isinstance(classification, dict) or set(classification) != {
+        "status",
+        "primary_sku_id",
+        "candidates",
+        "metadata",
+    }:
+        raise WebViewerExportError("object index classification schema is invalid")
+    if classification["metadata"] != {
+        "status": "master_data_pending",
+        "manufacturer": None,
+        "brand": None,
+        "category": None,
+        "object_kind": None,
+    }:
+        raise WebViewerExportError("object index classification metadata is invalid")
+    status = classification["status"]
+    candidates = classification["candidates"]
+    if status not in {"unavailable", "resolved", "conflict"} or not isinstance(
+        candidates, list
+    ):
+        raise WebViewerExportError("object index classification status is invalid")
+    if status == "unavailable":
+        if classification["primary_sku_id"] is not None or candidates:
+            raise WebViewerExportError("object index classification unavailable is invalid")
+    elif (
+        not isinstance(classification["primary_sku_id"], str)
+        or not classification["primary_sku_id"]
+        or len(candidates) != (1 if status == "resolved" else len(candidates))
+        or (status == "conflict" and len(candidates) < 2)
+    ):
+        raise WebViewerExportError("object index classification primary is invalid")
+
+    seen: set[tuple[str, str]] = set()
+    previous_key: tuple[float, int, float, str, str] | None = None
+    for candidate in candidates:
+        if not isinstance(candidate, dict) or set(candidate) != {
+            "sku_id",
+            "sku_name",
+            "confidence_sum",
+            "support_count",
+            "max_confidence",
+        }:
+            raise WebViewerExportError("object index classification candidate is invalid")
+        sku_id, sku_name = candidate["sku_id"], candidate["sku_name"]
+        confidence_sum = candidate["confidence_sum"]
+        support_count = candidate["support_count"]
+        max_confidence = candidate["max_confidence"]
+        if (
+            not isinstance(sku_id, str)
+            or not sku_id
+            or not isinstance(sku_name, str)
+            or not sku_name
+            or isinstance(confidence_sum, bool)
+            or not isinstance(confidence_sum, (int, float))
+            or not math.isfinite(confidence_sum)
+            or isinstance(support_count, bool)
+            or not isinstance(support_count, int)
+            or support_count < 1
+            or isinstance(max_confidence, bool)
+            or not isinstance(max_confidence, (int, float))
+            or not math.isfinite(max_confidence)
+            or not 0.0 <= max_confidence <= 1.0
+            or not 0.0 <= confidence_sum <= support_count
+        ):
+            raise WebViewerExportError("object index classification candidate values are invalid")
+        candidate_key = (sku_id, sku_name)
+        if candidate_key in seen:
+            raise WebViewerExportError("object index classification candidates are duplicated")
+        seen.add(candidate_key)
+        sort_key = (
+            -float(confidence_sum),
+            -support_count,
+            -float(max_confidence),
+            sku_id,
+            sku_name,
+        )
+        if previous_key is not None and sort_key < previous_key:
+            raise WebViewerExportError("object index classification candidates are unsorted")
+        previous_key = sort_key
+    if candidates and classification["primary_sku_id"] != candidates[0]["sku_id"]:
+        raise WebViewerExportError("object index classification primary is invalid")
+    if classification != expected:
+        raise WebViewerExportError("object index classification does not match instances")
 
 
 def _load_da3_cache(path: Path) -> dict[str, Any]:

@@ -8,8 +8,11 @@ Global ID Mapper - 全局ID数据管理工具类
 
 import json
 import logging
+from copy import deepcopy
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
+
+from utils.classification_aggregation import validate_classification
 
 logger = logging.getLogger(__name__)
 
@@ -17,11 +20,19 @@ logger = logging.getLogger(__name__)
 class InstanceInfo:
     """表示单个物体实例的信息"""
 
-    def __init__(self, image_id: int, object_id: int, bbox: List[float], removed: bool):
+    def __init__(
+        self,
+        image_id: int,
+        object_id: int,
+        bbox: List[float],
+        removed: bool,
+        classification: Dict[str, Any],
+    ):
         self.image_id = image_id
         self.object_id = object_id
         self.bbox = bbox  # [x1, y1, x2, y2]
         self.removed = removed
+        self.classification = validate_classification(classification)
 
     def __repr__(self) -> str:
         status = "removed" if self.removed else "active"
@@ -33,7 +44,8 @@ class InstanceInfo:
             "image_id": self.image_id,
             "object_id": self.object_id,
             "bbox": self.bbox,
-            "removed": self.removed
+            "removed": self.removed,
+            "classification": deepcopy(self.classification),
         }
 
 
@@ -96,7 +108,8 @@ class GlobalIDMapper:
                     image_id=inst_dict['image_id'],
                     object_id=inst_dict['object_id'],
                     bbox=inst_dict['bbox'],
-                    removed=inst_dict.get('removed', False)
+                    removed=inst_dict.get('removed', False),
+                    classification=inst_dict.get('classification'),
                 ))
             self.data[global_id_str] = instances
 

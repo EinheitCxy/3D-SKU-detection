@@ -21,6 +21,7 @@ import json
 import logging
 import re
 import sys
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Tuple, Set
@@ -29,6 +30,7 @@ from typing import Dict, List, Tuple, Set
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from utils.detection_objects import flatten_detection_objects
+from utils.classification_aggregation import validate_classification
 
 
 logger = logging.getLogger(__name__)
@@ -40,8 +42,10 @@ class DatasetPaths:
     detections_dir: Path
 
 
-def resolve_dataset_paths(dataset_dir: Path) -> DatasetPaths:
-    detections_dir = dataset_dir / 'detections_results'
+def resolve_dataset_paths(
+    dataset_dir: Path, detections_dir: Path | None = None
+) -> DatasetPaths:
+    detections_dir = detections_dir or dataset_dir / 'detections_results'
     return DatasetPaths(dataset_dir=dataset_dir, detections_dir=detections_dir)
 
 
@@ -306,7 +310,8 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
                          max_image: int | None = None, same_names: bool = False,
                          dedup_mode: str = 'any', min_hit_ratio: float = 0.4,
                          output_subdir: str = None, algorithm: str = 'point_tracking',
-                         backend: str | None = None) -> Dict[int, Path]:
+                         backend: str | None = None,
+                         detections_dir: Path | None = None) -> Dict[int, Path]:
     """对 1..N 序列依次去重：
     - 第1张保留原样
     - 第i张(i>1)去除在 1..i-1 中已出现过（有匹配）的 ref_id 在第i张对应的 target_id。
@@ -325,6 +330,9 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
     """
     if output_root is None:
         raise ValueError("output_root 不能为空，请指定匹配结果所在的输出根目录")
+
+    if detections_dir is not None:
+        paths = resolve_dataset_paths(paths.dataset_dir, detections_dir)
 
     dataset_name = paths.dataset_dir.name
     match_base = output_root / dataset_name
@@ -662,6 +670,9 @@ def build_global_mapping(
                 'object_id': obj_idx,
                 'bbox': obj.get('position'),
                 'removed': is_removed,
+                'classification': deepcopy(
+                    validate_classification(obj.get('classification'))
+                ),
             }
             mapping.setdefault(key, []).append(entry)
 
@@ -669,9 +680,10 @@ def build_global_mapping(
 
 
 def add_global_id_to_jsons(
-    detections_dir: Path,
+    *,
+    detections_dir: Path | None = None,
     global_mapping: Dict[str, List[Dict]],
-    indices: List[int]
+    indices: List[int],
 ) -> List[str]:
     """为检测结果JSON添加global_id和is_deduplicated字段（保留所有原始检出框）。
 
@@ -684,6 +696,9 @@ def add_global_id_to_jsons(
         JSON字符串列表，每个元素对应一张图片的检测结果
     """
     import copy
+
+    if detections_dir is None:
+        raise ValueError("detections_dir is required for global ID publication")
 
     json_strings: List[str] = []
 

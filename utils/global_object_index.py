@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from utils.classification_aggregation import aggregate_classifications
 from utils.global_id_mapper import GlobalIDMapper
 
 
@@ -24,5 +25,8 @@ def build_global_object_index(mapper: GlobalIDMapper) -> Dict[str, Any]:
             "removed_count": len(instances) - len(active),
             "total_count": len(instances),
             "instances": [inst.to_dict() for inst in instances],
+            "classification": aggregate_classifications(
+                [inst.classification for inst in instances]
+            ),
         }
     return index
