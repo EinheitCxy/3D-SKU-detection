@@ -243,11 +243,15 @@ def masks_with_one_empty(
 
 def _publish_v2_masks(dataset: Path, save_root: Path, mask_factory) -> None:
     output = save_root / dataset.name
-    with np.load(output / "da3_cache" / "predictions.npz", allow_pickle=False) as loaded:
+    with np.load(
+        output / "da3_cache" / "predictions.npz", allow_pickle=False
+    ) as loaded:
         image_ids = loaded["image_ids"].copy()
         source_sizes = loaded["source_image_sizes"].copy()
         affines = loaded["source_to_processed_affine"].copy()
-        processed_shape = tuple(int(value) for value in loaded["world_points"].shape[1:3])
+        processed_shape = tuple(
+            int(value) for value in loaded["world_points"].shape[1:3]
+        )
     cache_root = output / "sam3_mask_cache" / "v2"
     for frame_index, raw_image_id in enumerate(image_ids):
         image_id = int(raw_image_id)
@@ -848,20 +852,50 @@ def test_evidence_input_mutation_cannot_change_published_formal_artifacts(
     assert np.array_equal(observed_projection[2], baseline_projection[2])
 
 
-def _rejecting_sam3_producer(*_args: object, **_kwargs: object) -> object:
-    raise AssertionError("footprint must not invoke a SAM3 producer")
+def _install_legacy_producer_sentinel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[str]:
+    """Guard both historical import shapes against a future stage regression."""
+    from utils import sam3_utils
+
+    calls: list[str] = []
+
+    def sentinel(*_args: object, **_kwargs: object) -> object:
+        calls.append("legacy_predict_inst")
+        raise AssertionError("footprint must not invoke a SAM3 producer")
+
+    monkeypatch.setattr(
+        stage, "sam3_masks_from_bboxes_predict_inst", sentinel, raising=False
+    )
+    monkeypatch.setattr(sam3_utils, "sam3_masks_from_bboxes_predict_inst", sentinel)
+    return calls
+
+
+def test_legacy_producer_sentinel_exposes_a_stage_reintroduction(monkeypatch, tmp_path):
+    calls = _install_legacy_producer_sentinel(monkeypatch)
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+
+    def simulated_legacy_stage_path(*_args: object, **_kwargs: object) -> object:
+        return stage.sam3_masks_from_bboxes_predict_inst()
+
+    monkeypatch.setattr(stage, "load_complete_frame_masks", simulated_legacy_stage_path)
+
+    with pytest.raises(
+        AssertionError, match="footprint must not invoke a SAM3 producer"
+    ):
+        stage.run_da3_footprint(str(dataset), save_root)
+    assert calls == ["legacy_predict_inst"]
 
 
 def test_stage_consumes_v2_masks_without_sam3_producer(monkeypatch, tmp_path):
-    from utils import sam3_utils
-
-    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", _rejecting_sam3_producer)
+    calls = _install_legacy_producer_sentinel(monkeypatch)
     dataset, save_root, _ = make_metric_fixture(tmp_path)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
     assert result["success"] is True
+    assert calls == []
     assert [frame["cache_event"] for frame in report["sam3_mask_cache"]["frames"]] == [
         "hit",
         "hit",
@@ -869,9 +903,14 @@ def test_stage_consumes_v2_masks_without_sam3_producer(monkeypatch, tmp_path):
     ]
     assert "sam3_source_masks" not in report["performance"]["stages_seconds"]
     assert report["performance"]["stages_seconds"]["load_self_exemplar_masks"] >= 0.0
+    stage_source = Path(stage.__file__).read_text()
+    assert "import torch" not in stage_source
+    assert "utils.sam3_utils" not in stage_source
+    assert "sam3_masks_from_bboxes_predict_inst" not in stage_source
 
 
-def test_missing_v2_cache_rejects_with_canonical_message(tmp_path):
+def test_missing_v2_cache_rejects_with_canonical_message(monkeypatch, tmp_path):
+    calls = _install_legacy_producer_sentinel(monkeypatch)
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     shutil.rmtree(save_root / dataset.name / "sam3_mask_cache" / "v2")
 
@@ -884,6 +923,7 @@ def test_missing_v2_cache_rejects_with_canonical_message(tmp_path):
     assert report["rejection_reason"] == (
         "canonical self-exemplar mask cache is incomplete; run SKU matching first"
     )
+    assert calls == []
 
 
 @pytest.mark.parametrize(
@@ -901,16 +941,7 @@ def test_missing_v2_cache_rejects_with_canonical_message(tmp_path):
 def test_v2_cache_contract_mismatch_rejects_without_sam3_producer(
     monkeypatch, tmp_path, mutation
 ):
-    from utils import sam3_utils
-
-    calls = 0
-
-    def forbidden_producer(*_args: object, **_kwargs: object) -> object:
-        nonlocal calls
-        calls += 1
-        raise AssertionError("footprint must not invoke a SAM3 producer")
-
-    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", forbidden_producer)
+    calls = _install_legacy_producer_sentinel(monkeypatch)
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     cache_root = save_root / dataset.name / "sam3_mask_cache" / "v2"
     entry = cache_root / "entries" / "0"
@@ -941,7 +972,7 @@ def test_v2_cache_contract_mismatch_rejects_without_sam3_producer(
     assert report["rejection_reason"] == (
         "canonical self-exemplar mask cache is incomplete; run SKU matching first"
     )
-    assert calls == 0
+    assert calls == []
 
 
 def test_current_points_to_complete_single_artifact_generation(monkeypatch, tmp_path):
