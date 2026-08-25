@@ -31,6 +31,7 @@ import type { ViewerBundle } from "./bundle-loader";
 import { POINTS_LAYER, createViewerPipeline, type ViewerPipeline } from "./edl";
 import { createFootprintObjects } from "./footprints";
 import { focusedCameraPosition } from "./focus";
+import { buildPointRangeLookup, resolvePickGlobalId } from "./point-picking";
 import { cachedSelectionBox } from "./selection-bounds";
 import { applySelectionColors, queueSelectionAttributeUpdates, type PointRange } from "./selection-colors";
 
@@ -55,6 +56,7 @@ export interface ViewerSceneController {
   selectGlobalId(globalId: string | null): void;
   focusGlobalId(globalId: string): void;
   setPointSize(pointSize: number): void;
+  setVisibleGlobalIds(ids: ReadonlySet<string>): void;
   setFootprintOpacity(opacity: number): void;
   setViewPreset(preset: "fit" | "top" | "isometric"): void;
   setFootprintPickHandler(handler: ((globalId: string) => void) | null): void;
@@ -125,6 +127,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   points.layers.set(POINTS_LAYER);
   const pointMaterial = points.material as ShaderMaterial;
   const pointColorAttribute = points.geometry.getAttribute("aColor") as Uint8BufferAttribute;
+  const pointVisibilityAttribute = points.geometry.getAttribute("aVisible") as Uint8BufferAttribute;
   // bundle.colors stays pristine as the restore source; the attribute owns a copy.
   const originalPointColors = bundle.colors;
   worldGroup.add(points);
@@ -159,6 +162,8 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   let footprintOpacityScale = 1;
   let selectedGlobalIdForCamera: string | null = null;
   let pickHandler: ((globalId: string) => void) | null = null;
+  const pointRangeLookup = buildPointRangeLookup(bundle.objects);
+  let visibleGlobalIds = new Set(Object.keys(bundle.objects));
   let primaryPointerPress: FootprintPointerPress | null = null;
   let focusAnimation: FocusAnimation | null = null;
   let animationFrame = 0;
@@ -166,7 +171,13 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   const selectionBoxCache = new Map<string, Box3 | null>();
 
   const raycaster = new Raycaster();
+  raycaster.layers.enable(POINTS_LAYER);
   const pointer = new Vector2();
+  let currentPointSize = DEFAULT_POINT_SIZE;
+  const updateRaycasterThreshold = () => {
+    raycaster.params.Points.threshold = currentPointSize * sceneSpan;
+  };
+  updateRaycasterThreshold();
   applySelectionVisuals(currentSelection);
   updateSelectionPointTint(currentSelection);
 
@@ -200,9 +211,14 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
-    const hit = raycaster.intersectObjects(footprints.pickMeshes, false)[0];
-    const globalId = hit?.object.userData.globalId;
-    if (typeof globalId === "string") pickHandler?.(globalId);
+    const footprintHit = raycaster.intersectObjects(footprints.pickMeshes, false)[0];
+    const footprintGlobalId = typeof footprintHit?.object.userData.globalId === "string"
+      ? footprintHit.object.userData.globalId
+      : null;
+    const pointHit = footprintGlobalId === null ? raycaster.intersectObject(points, false)[0] : undefined;
+    const pointIndex = pointHit?.index ?? null;
+    const globalId = resolvePickGlobalId(footprintGlobalId, pointIndex, pointRangeLookup, visibleGlobalIds);
+    if (globalId !== null) pickHandler?.(globalId);
   };
   renderer.domElement.addEventListener("pointerdown", onPointerDown);
   renderer.domElement.addEventListener("pointerup", onPointerUp);
@@ -269,7 +285,26 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     },
     setPointSize(size) {
       const next = clamp(size, MIN_POINT_SIZE, MAX_POINT_SIZE);
+      currentPointSize = next;
       pointMaterial.uniforms.uSize.value = next;
+      updateRaycasterThreshold();
+    },
+    setVisibleGlobalIds(ids) {
+      const next = new Set(ids);
+      const changed: PointRange[] = [];
+      const visibility = pointVisibilityAttribute.array as Uint8Array;
+      for (const range of pointRangeLookup) {
+        const value = next.has(range.globalId) ? 1 : 0;
+        let differs = false;
+        for (let index = range.start; index < range.end; index += 1) {
+          if (visibility[index] !== value) differs = true;
+          visibility[index] = value;
+        }
+        if (differs) changed.push([range.start, range.end]);
+      }
+      queueVisibilityAttributeUpdates(pointVisibilityAttribute, changed);
+      for (const [globalId, target] of footprints.focusTargets) target.visible = next.has(globalId);
+      visibleGlobalIds = next;
     },
     setFootprintOpacity(opacity) {
       footprintOpacityScale = clamp(opacity, 0, 1);
@@ -431,11 +466,13 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
 const POINT_VERTEX_SHADER = /* glsl */ `
 attribute vec3 aColor;
 attribute vec3 aNormal;
+attribute float aVisible;
 uniform float uSize;
 uniform vec2 uResolution;
 uniform mat3 uNormalMatrix;
 varying vec3 vColor;
 varying vec3 vNormal;
+varying float vVisible;
 #include <fog_pars_vertex>
 // colors.u8.bin holds sRGB bytes from the camera JPEGs; three's working space
 // is linear, so decode here before lighting and the OutputPass re-encode.
@@ -445,6 +482,7 @@ vec3 srgbToLinear(vec3 c) {
 void main() {
   vColor = srgbToLinear(aColor);
   vNormal = uNormalMatrix * aNormal;
+  vVisible = aVisible;
   vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mvPosition;
   // World-size splats: pixels = size * viewportHeight * proj[1][1] / clipW,
@@ -461,8 +499,10 @@ const POINT_FRAGMENT_SHADER = /* glsl */ `
 uniform vec3 uLightDir;
 varying vec3 vColor;
 varying vec3 vNormal;
+varying float vVisible;
 #include <fog_pars_fragment>
 void main() {
+  if (vVisible < 0.5) discard;
   // Circular splat: discard outside the inscribed circle (three points_waves).
   vec2 centered = gl_PointCoord - vec2(0.5);
   if (dot(centered, centered) > 0.25) discard;
@@ -479,6 +519,7 @@ export function createPoints(bundle: ViewerBundle, worldMatrix: Matrix4): Points
   // The attribute takes a copy of the bundle colors: selection tinting mutates
   // the attribute array in place, while bundle.colors remains the restore source.
   geometry.setAttribute("aColor", new Uint8BufferAttribute(bundle.colors.slice(), 3, true).setUsage(DynamicDrawUsage));
+  geometry.setAttribute("aVisible", new Uint8BufferAttribute(new Uint8Array(bundle.positions.length / 3).fill(1), 1, false).setUsage(DynamicDrawUsage));
   // int8-quantized unit normals; normalized attributes decode to [-1, 1].
   geometry.setAttribute("aNormal", new Int8BufferAttribute(bundle.normals, 3, true));
   // worldGroup.matrixAutoUpdate is false, so the fixed world_to_view rotation is
@@ -515,4 +556,11 @@ function quantile(sorted: readonly number[], q: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
+}
+
+function queueVisibilityAttributeUpdates(attribute: Uint8BufferAttribute, changed: readonly PointRange[]): void {
+  if (changed.length === 0) return;
+  attribute.clearUpdateRanges();
+  for (const [start, end] of changed) attribute.addUpdateRange(start, end - start);
+  attribute.needsUpdate = true;
 }

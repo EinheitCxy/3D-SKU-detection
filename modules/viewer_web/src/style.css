@@ -77,6 +77,16 @@ dd { margin: 0; font-size: 0.9rem; color: #e6f1f5; overflow-wrap: anywhere; }
 }
 
 .object-count { margin: 0; color: #8da5b0; font-size: 0.75rem; }
+.list-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.45rem; }
+.list-stats p { margin: 0; padding: 0.45rem 0.5rem; border: 1px solid #294550; border-radius: 7px; background: #101f27; }
+.list-stats p span { display: block; color: #8da5b0; font-size: 0.68rem; }
+.list-stats p strong { display: block; margin-top: 0.12rem; font-variant-numeric: tabular-nums; }
+.sku-facets { display: grid; gap: 0.4rem; }
+.sku-facets h3 { margin-top: 0.1rem; }
+.facet-buttons, .future-facets { display: grid; gap: 0.3rem; }
+.facet { text-align: left; padding: 0.4rem 0.5rem; font-size: 0.74rem; }
+.facet.selected { border-color: #f5a524; background: #23323a; }
+.facet-placeholder { text-align: left; padding: 0.36rem 0.45rem; font-size: 0.68rem; }
 .object-list {
   display: grid;
   gap: 0.35rem;
@@ -171,6 +181,8 @@ dd { margin: 0; font-size: 0.9rem; color: #e6f1f5; overflow-wrap: anywhere; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
 }
+.sku-candidates { display: grid; gap: 0.3rem; margin: 0; padding-left: 1.2rem; color: #e6f1f5; font-size: 0.82rem; }
+.sku-candidates li { overflow-wrap: anywhere; }
 .thumb {
   margin: 0;
   overflow: hidden;

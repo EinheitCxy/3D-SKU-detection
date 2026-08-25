@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootstrap } from "./main";
+import { bootstrap, candidateLabel, visibleGlobalIdsForFilters } from "./main";
 
 class FakeElement {
   constructor(readonly tagName: string) {}
@@ -75,5 +75,21 @@ describe("bootstrap", () => {
     } finally {
       Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });
     }
+  });
+});
+
+describe("SKU viewer labels and filters", () => {
+  it("keeps candidate labels free of confidence values", () => {
+    expect(candidateLabel({ sku_id: "430085", sku_name: "产品A", confidence_sum: 1.8, support_count: 2, max_confidence: 0.95 })).toBe("430085 · 产品A");
+  });
+
+  it("filters the supplied global ID order by search and primary SKU", () => {
+    const objects = {
+      "1": { classification: { candidates: [{ sku_id: "A" }] } },
+      "2": { classification: { candidates: [{ sku_id: "B" }] } },
+      "3": { classification: { candidates: [] } },
+    };
+    expect(visibleGlobalIdsForFilters(["1", "2", "3"], objects as never, "", "B")).toEqual(["2"]);
+    expect(visibleGlobalIdsForFilters(["1", "2", "3"], objects as never, "3", null)).toEqual(["3"]);
   });
 });

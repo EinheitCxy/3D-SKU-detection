@@ -40,6 +40,12 @@ bundle 使用不可变 `CURRENT -> runs/<run_id>/`，schema 固定为 `2.0.0`，
 
 Viewer 不使用 SAM3 protection mask。exporter 从 matching 的 v2 processed-space masks 直接赋实例标签，但不会让任何点绕过离群、地面或天空过滤；同一过滤规则适用于所有展示点。
 
+## SKU 浏览与点选
+
+左侧显示 `Total`/`Visible`，SKU facet 只按每个 global ID 的 primary candidate 计数；`显示所有` 可清除 SKU facet，搜索框仍按 global ID 过滤。厂商、品牌、品类显示 `主数据待接入`，POSM、价签、空缺位显示 `检测能力待接入`，这些占位项不可用。右侧选中详情按发布顺序显示所有 `sku_id · sku_name` candidate，不显示 confidence。
+
+点云和 footprint 共用一个 global-ID pick handler。点云通过按 `point_index_range` 排序的二分查找解析归属；footprint 优先，隐藏 ID 不会被选中。过滤只更新一个运行时 `Uint8` visibility attribute 并同步 footprint `visible`，不会复制点云 geometry；shader 会丢弃隐藏点，选中点继续使用现有 magenta 高亮。
+
 ## 验证
 
 ```bash

@@ -3,11 +3,37 @@ import { dataCandidates } from "./data-candidates";
 import { navigationState, stepVisibleId } from "./navigation";
 import { buildEvidenceView, canFocusGlobalId, entryHasGeometry, formatFormalMetric, listGlobalIds } from "./presentation";
 import { createViewerScene, type ViewerSceneController } from "./scene";
+import { buildSkuFacets } from "./sku-filters";
+import type { ObjectIndex } from "./contracts";
 
 interface BootstrapDependencies {
   readonly href: string;
   readonly load: typeof loadViewerBundle;
   readonly mount: (root: HTMLElement, bundle: ViewerBundle) => void;
+}
+
+export function candidateLabel(candidate: {
+  readonly sku_id?: string;
+  readonly sku_name?: string;
+  readonly skuId?: string;
+  readonly skuName?: string;
+  readonly [key: string]: unknown;
+}): string {
+  const skuId = candidate.sku_id ?? candidate.skuId ?? "";
+  const skuName = candidate.sku_name ?? candidate.skuName ?? "";
+  return `${skuId} · ${skuName}`;
+}
+
+export function visibleGlobalIdsForFilters(
+  ids: readonly string[],
+  objects: ObjectIndex,
+  searchQuery: string,
+  skuId: string | null,
+): readonly string[] {
+  return ids.filter((globalId) => {
+    if (!globalId.includes(searchQuery)) return false;
+    return skuId === null || objects[globalId]?.classification.candidates[0]?.sku_id === skuId;
+  });
 }
 
 if (typeof document !== "undefined") {
@@ -49,7 +75,7 @@ export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDepen
   }
 }
 
-function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
+export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   const ids = listGlobalIds(bundle.objects);
   const shell = document.createElement("main");
   shell.className = "viewer-shell";
@@ -66,6 +92,32 @@ function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   const listPanel = document.createElement("aside");
   listPanel.className = "object-panel";
   listPanel.append(title("Global IDs", "h2"));
+  const listStats = document.createElement("div");
+  listStats.className = "list-stats";
+  const totalStat = detailLine("Total", String(ids.length));
+  const visibleStat = detailLine("Visible", String(ids.length));
+  listStats.append(totalStat, visibleStat);
+  const facetPanel = document.createElement("div");
+  facetPanel.className = "sku-facets";
+  facetPanel.append(title("SKU facets", "h3"));
+  const facetButtons = document.createElement("div");
+  facetButtons.className = "facet-buttons";
+  const futureFacets = document.createElement("div");
+  futureFacets.className = "future-facets";
+  for (const label of [
+    "厂商：主数据待接入",
+    "品牌：主数据待接入",
+    "品类：主数据待接入",
+    "POSM：检测能力待接入",
+    "价签：检测能力待接入",
+    "空缺位：检测能力待接入",
+  ]) {
+    const item = button(label);
+    item.disabled = true;
+    item.className = "facet-placeholder";
+    futureFacets.append(item);
+  }
+  facetPanel.append(facetButtons, futureFacets);
   const searchArea = document.createElement("div");
   searchArea.className = "search-area";
   const search = document.createElement("input");
@@ -86,7 +138,7 @@ function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   const clear = button("Clear");
   const focus = button("Focus");
   nav.append(previous, next, clear, focus);
-  listPanel.append(searchArea, count, objectList, nav);
+  listPanel.append(listStats, facetPanel, searchArea, count, objectList, nav);
 
   const sceneWrap = document.createElement("section");
   sceneWrap.className = "scene-stage";
@@ -129,13 +181,14 @@ function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   const controller = createViewerScene(canvasHost, bundle);
   let selectedGlobalId: string | null = null;
   let searchQuery = "";
+  let selectedSkuId: string | null = null;
   let drawerHidden = false;
   const setHidden = (hidden: boolean) => {
     drawerHidden = hidden;
     drawer.classList.toggle("evidence-drawer--hidden", hidden);
     sceneControls.classList.toggle("scene-controls--compact", hidden);
   };
-  const visibleIds = () => ids.filter((globalId) => globalId.includes(searchQuery));
+  const visibleIds = () => visibleGlobalIdsForFilters(ids, bundle.objects, searchQuery, selectedSkuId);
   const renderSummary = () => {
     const totalActive = ids.length ? ids.reduce((acc, id) => acc + bundle.objects[id].active_count, 0) : 0;
     const totalRemoved = ids.length ? ids.reduce((acc, id) => acc + bundle.objects[id].removed_count, 0) : 0;
@@ -153,6 +206,12 @@ function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
 
   const renderList = () => {
     const shown = visibleIds();
+    if (selectedGlobalId !== null && !shown.includes(selectedGlobalId)) {
+      select(null, false);
+      return;
+    }
+    controller.setVisibleGlobalIds(new Set(shown));
+    visibleStat.lastElementChild!.textContent = String(shown.length);
     count.textContent = `Showing ${shown.length} of ${ids.length}`;
     objectList.replaceChildren(
       ...shown.map((globalId) => {
@@ -178,6 +237,28 @@ function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
     next.disabled = state.nextDisabled;
     focus.disabled = selectedGlobalId === null || !canFocusGlobalId(bundle.objects[selectedGlobalId], bundle.footprints, selectedGlobalId);
     clear.disabled = selectedGlobalId === null;
+  };
+
+  const renderFacets = () => {
+    const showAll = button("显示所有");
+    showAll.className = selectedSkuId === null ? "facet selected" : "facet";
+    showAll.addEventListener("click", () => {
+      selectedSkuId = null;
+      renderFacets();
+      renderList();
+    });
+    const facets = buildSkuFacets(bundle.objects).map((facet) => {
+      const item = button(`${facet.skuName} (${facet.count})`);
+      item.className = selectedSkuId === facet.skuId ? "facet selected" : "facet";
+      item.title = facet.skuId;
+      item.addEventListener("click", () => {
+        selectedSkuId = facet.skuId;
+        renderFacets();
+        renderList();
+      });
+      return item;
+    });
+    facetButtons.replaceChildren(showAll, ...facets);
   };
 
   const renderEvidence = () => {
@@ -211,6 +292,10 @@ function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
           "No geometry: every instance of this ID has an empty point range, so no 3D points are rendered or picked for it. The observations below still show what the detector saw.",
         );
     const observationsTitle = title("Observations", "h3");
+    const skuTitle = title("SKU candidates", "h3");
+    const skuCandidates = document.createElement("ul");
+    skuCandidates.className = "sku-candidates";
+    skuCandidates.append(...view.skuCandidates.map((candidate) => text("li", candidateLabel(candidate))));
     const thumbGrid = document.createElement("div");
     thumbGrid.className = "thumb-grid";
     for (const instance of view.instances) {
@@ -228,6 +313,8 @@ function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
     details.replaceChildren(
       title("Object evidence", "h3"),
       detailsList,
+      skuTitle,
+      ...(view.skuCandidates.length === 0 ? [text("p", "No resolved SKU candidate.")] : [skuCandidates]),
       ...(noGeometryNote === null ? [] : [noGeometryNote]),
       observationsTitle,
       thumbGrid,
@@ -298,6 +385,7 @@ function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
     controller.dispose();
   }, { once: true });
   renderSummary();
+  renderFacets();
   renderList();
   renderEvidence();
 }
