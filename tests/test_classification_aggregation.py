@@ -50,6 +50,68 @@ def test_conflicts_keep_all_candidates_but_primary_is_highest_sum() -> None:
     assert result["candidates"][0]["confidence_sum"] == pytest.approx(1.10)
 
 
+def test_non_other_candidate_wins_over_higher_confidence_other_observation() -> None:
+    other = resolved("56642", "其他品类", 0.99)
+    product = resolved("A", "产品A", 0.20)
+    original = [other.copy(), product.copy()]
+
+    result = aggregate_classifications([other, product])
+
+    assert result["status"] == "conflict"
+    assert result["primary_sku_id"] == "A"
+    assert [item["sku_id"] for item in result["candidates"]] == ["A", "56642"]
+    assert [other, product] == original
+
+
+def test_all_other_observations_allow_other_as_primary() -> None:
+    result = aggregate_classifications(
+        [resolved("56642", "其他品类", 0.40), resolved("56642", "其他品类", 0.90)]
+    )
+
+    assert result["status"] == "resolved"
+    assert result["primary_sku_id"] == "56642"
+    assert result["candidates"] == [
+        {
+            "sku_id": "56642",
+            "sku_name": "其他品类",
+            "confidence_sum": pytest.approx(1.30),
+            "support_count": 2,
+            "max_confidence": 0.90,
+        }
+    ]
+
+
+def test_multiple_non_other_candidates_keep_confidence_order_before_other() -> None:
+    result = aggregate_classifications(
+        [
+            resolved("56642", "其他品类", 0.99),
+            resolved("B", "产品B", 0.75),
+            resolved("A", "产品A", 0.40),
+            resolved("A", "产品A", 0.40),
+        ]
+    )
+
+    assert [item["sku_id"] for item in result["candidates"]] == ["A", "B", "56642"]
+    assert result["primary_sku_id"] == "A"
+
+
+def test_unavailable_observations_are_ignored_when_other_and_non_other_exist() -> None:
+    unavailable = {
+        "schema_version": "1.0.0",
+        "source": "personalcare",
+        "project_id": 51,
+        "status": "unavailable",
+        "reason": "invalid_bbox",
+    }
+
+    result = aggregate_classifications(
+        [unavailable, resolved("56642", "其他品类", 0.99), resolved("A", "产品A", 0.20)]
+    )
+
+    assert result["primary_sku_id"] == "A"
+    assert [item["sku_id"] for item in result["candidates"]] == ["A", "56642"]
+
+
 def test_aggregation_is_permutation_stable() -> None:
     inputs = [resolved("2", "乙", 0.8), resolved("1", "甲", 0.8)]
 
@@ -106,11 +168,15 @@ def test_same_id_with_different_names_remains_distinct_and_deterministic() -> No
     ]
 
 
-def test_global_object_index_aggregates_removed_observation_and_keeps_provenance() -> None:
+def test_global_object_index_aggregates_removed_observation_and_keeps_provenance() -> (
+    None
+):
     mapper = GlobalIDMapper()
     mapper.data = {
         "1": [
-            InstanceInfo(1, 0, [0.0, 0.0, 1.0, 1.0], False, resolved("A", "产品A", 0.6)),
+            InstanceInfo(
+                1, 0, [0.0, 0.0, 1.0, 1.0], False, resolved("A", "产品A", 0.6)
+            ),
             InstanceInfo(2, 0, [0.0, 0.0, 1.0, 1.0], True, resolved("B", "产品B", 0.9)),
         ]
     }
@@ -128,8 +194,14 @@ def test_global_object_index_aggregates_removed_observation_and_keeps_provenance
 
 
 def test_global_mapping_copies_classification_for_removed_observation() -> None:
-    first = {"position": [0.0, 0.0, 1.0, 1.0], "classification": resolved("A", "产品A", 0.6)}
-    removed = {"position": [0.0, 0.0, 1.0, 1.0], "classification": resolved("B", "产品B", 0.9)}
+    first = {
+        "position": [0.0, 0.0, 1.0, 1.0],
+        "classification": resolved("A", "产品A", 0.6),
+    }
+    removed = {
+        "position": [0.0, 0.0, 1.0, 1.0],
+        "classification": resolved("B", "产品B", 0.9),
+    }
     mapping = build_global_mapping(
         [{"ref_idx": 1, "ref_id": 0, "target_idx": 2, "target_id": 0}],
         {1: {0}, 2: set()},
@@ -142,7 +214,9 @@ def test_global_mapping_copies_classification_for_removed_observation() -> None:
     assert mapping["1"][1]["classification"] is not removed["classification"]
 
 
-def test_dataset_paths_can_explicitly_use_classified_detection_directory(tmp_path) -> None:
+def test_dataset_paths_can_explicitly_use_classified_detection_directory(
+    tmp_path,
+) -> None:
     dataset = tmp_path / "dataset"
     classified = tmp_path / "classified"
 
@@ -304,7 +378,9 @@ def test_dedup_cleans_both_global_files_when_second_temp_write_fails(
             raise OSError("second temporary write failed")
         return write_temp(path, payload)
 
-    monkeypatch.setattr(dedup_module, "_write_global_publication_temp", fail_second_write)
+    monkeypatch.setattr(
+        dedup_module, "_write_global_publication_temp", fail_second_write
+    )
 
     with pytest.raises(OSError, match="second temporary write failed"):
         deduplicate_sequence(

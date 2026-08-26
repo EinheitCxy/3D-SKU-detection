@@ -29,6 +29,19 @@ _RESOLVED_KEYS = frozenset(
 _UNAVAILABLE_KEYS = frozenset(
     {"schema_version", "source", "project_id", "status", "reason"}
 )
+OTHER_SKU = ("56642", "其他品类")
+
+
+def candidate_sort_key(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Keep the canonical catch-all category behind every specific SKU."""
+    identity = (candidate["sku_id"], candidate["sku_name"])
+    return (
+        identity == OTHER_SKU,
+        -candidate["confidence_sum"],
+        -candidate["support_count"],
+        -candidate["max_confidence"],
+        *identity,
+    )
 
 
 def aggregate_classifications(
@@ -56,17 +69,11 @@ def aggregate_classifications(
                 "max_confidence": max(confidences),
             }
         )
-        metadata_by_candidate[(sku_id, sku_name)] = deepcopy(observations[0][1]["metadata"])
-
-    candidates.sort(
-        key=lambda item: (
-            -item["confidence_sum"],
-            -item["support_count"],
-            -item["max_confidence"],
-            item["sku_id"],
-            item["sku_name"],
+        metadata_by_candidate[(sku_id, sku_name)] = deepcopy(
+            observations[0][1]["metadata"]
         )
-    )
+
+    candidates.sort(key=candidate_sort_key)
     if not candidates:
         return {
             "status": "unavailable",
@@ -90,7 +97,10 @@ def validate_classification(classification: Mapping[str, Any]) -> dict[str, Any]
         raise ValueError("classification must be an object")
     status = classification.get("status")
     expected_keys = _RESOLVED_KEYS if status == "resolved" else _UNAVAILABLE_KEYS
-    if status not in {"resolved", "unavailable"} or set(classification) != expected_keys:
+    if (
+        status not in {"resolved", "unavailable"}
+        or set(classification) != expected_keys
+    ):
         raise ValueError("classification schema is invalid")
     if classification["schema_version"] != "1.0.0":
         raise ValueError("classification schema_version is invalid")
@@ -103,7 +113,10 @@ def validate_classification(classification: Mapping[str, Any]) -> dict[str, Any]
     ):
         raise ValueError("classification project_id is invalid")
     if status == "unavailable":
-        if not isinstance(classification["reason"], str) or not classification["reason"]:
+        if (
+            not isinstance(classification["reason"], str)
+            or not classification["reason"]
+        ):
             raise ValueError("classification unavailable reason is invalid")
         return deepcopy(dict(classification))
 
