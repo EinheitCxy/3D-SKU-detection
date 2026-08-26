@@ -25,15 +25,16 @@ VIDEO="$(realpath "$VIDEO_ARG" 2>/dev/null || echo "$VIDEO_ARG")"
 DATASET_NAME="$(basename "$VIDEO")"; DATASET_NAME="${DATASET_NAME%.*}"
 WORK_ROOT="$REPO_DIR/runtime/video_to_dedup"
 DATASET_DIR="$WORK_ROOT/$DATASET_NAME"
-SAVE_ROOT="$REPO_DIR/Output"
+SAVE_ROOT="${SAVE_ROOT:-$REPO_DIR/Output}"
 DETECTOR_ROOT="${DETECTOR_ROOT:-$REPO_DIR/modules/sku_detector}"
 DETECTOR_ENV="${DETECTOR_ENV:-$REPO_DIR/runtime/sku_detector/.venv}"
 CORE_ENV="${CORE_ENV:-$REPO_DIR/.venv}"
 DETECTOR_DEVICE="${DETECTOR_DEVICE:-cpu}"
+CLASSIFIER_DEVICE="${CLASSIFIER_DEVICE:-cuda:0}"
 export CUDA_VISIBLE_DEVICES="$GPU"
 
 [ -f "$VIDEO" ] || { echo "[ERROR] 视频不存在: $VIDEO" >&2; exit 1; }
-[ -x "$DETECTOR_ENV/bin/python" ] || { echo "[ERROR] 检测环境不存在: $DETECTOR_ENV" >&2; exit 1; }
+[ -n "$DETECTIONS_SRC" ] || [ -x "$DETECTOR_ENV/bin/python" ] || { echo "[ERROR] 检测环境不存在: $DETECTOR_ENV" >&2; exit 1; }
 [ -x "$CORE_ENV/bin/python" ] || { echo "[ERROR] 核心环境不存在: $CORE_ENV" >&2; exit 1; }
 echo "=== video -> 去重结果 ==="
 echo "  video      : $VIDEO"
@@ -105,7 +106,7 @@ run_pipeline() {
   nvidia-smi -L >/dev/null 2>&1 || { echo "[ERROR] DA3 匹配需要可用 NVIDIA GPU；检测结果已保留，未生成 global_mapping.json。" >&2; exit 2; }
   run_python "$CORE_ENV" main.py --mode pipeline --dataset "$DATASET_DIR" \
     --algorithm 3d --match_backend da3 --recon_backend da3 \
-    --save_root "$SAVE_ROOT"
+    --save_root "$SAVE_ROOT" --classifier-device "$CLASSIFIER_DEVICE"
 }
 
 # ---------- [4] 提取结果 ----------
