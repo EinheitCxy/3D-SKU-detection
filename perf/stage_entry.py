@@ -22,6 +22,10 @@ class PipelineApp(Protocol):
 
     def run_sku_matching(self, *args: Any, **kwargs: Any) -> dict[str, Any]: ...
 
+    def run_personalcare_classification(
+        self, *args: Any, **kwargs: Any
+    ) -> dict[str, Any]: ...
+
     def run_improved_sku_analysis(
         self, *args: Any, **kwargs: Any
     ) -> dict[str, Any]: ...
@@ -36,12 +40,15 @@ def dispatch_stage(
     dataset: Path,
     save_root: Path,
     viewer_output: Path | None = None,
+    classification_result_path: Path | None = None,
     exporter: Callable[..., dict[str, Any]] | None = None,
     footprint_runner: Callable[[str, Path], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run one user-visible dependency of a new viewer bundle."""
 
     dataset_text = str(dataset)
+    if stage == "classification":
+        return app.run_personalcare_classification(dataset_text)
     if stage == "reconstruction":
         return app.run_reconstruction(dataset_text, device="cuda", backend="da3")
     if stage == "matching":
@@ -58,7 +65,13 @@ def dispatch_stage(
         )
         if not analysis.get("success", False):
             return {"success": False, "analysis": analysis}
-        dedup = app.run_dedup_sequence(dataset_text, algorithm="3d", backend="da3")
+        detection_dir = _classification_detection_dir(classification_result_path)
+        dedup = app.run_dedup_sequence(
+            dataset_text,
+            algorithm="3d",
+            backend="da3",
+            detection_dir=detection_dir,
+        )
         return {
             "success": bool(dedup.get("success", False)),
             "analysis": analysis,
@@ -92,11 +105,11 @@ def dispatch_stage(
 
         dataset_output = save_root / dataset.name
         result = exporter(
+            dataset_name=dataset.name,
             da3_cache_path=dataset_output / "da3_cache" / "predictions.npz",
             global_mapping_path=dataset_output
             / "dedup_detections"
             / "global_mapping.json",
-            footprint_root=dataset_output / "ground_stack_footprint",
             output_dir=viewer_output or save_root.parent / "viewer-data",
             source_images_dir=dataset / "images",
             sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
@@ -105,6 +118,26 @@ def dispatch_stage(
         )
         return {**result, "success": True}
     raise ValueError(f"unknown benchmark stage: {stage}")
+
+
+def _classification_detection_dir(result_path: Path | None) -> Path:
+    if result_path is None or not result_path.is_file():
+        raise ValueError("classification stage result is missing")
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    result = payload.get("result") if isinstance(payload, dict) else None
+    detection_dir = result.get("detection_dir") if isinstance(result, dict) else None
+    if (
+        not isinstance(payload, dict)
+        or payload.get("success") is not True
+        or not isinstance(result, dict)
+        or result.get("success") is not True
+        or not isinstance(detection_dir, str)
+    ):
+        raise ValueError("classification stage result is incomplete")
+    path = Path(detection_dir)
+    if not path.is_dir():
+        raise ValueError(f"classified detection directory is missing: {path}")
+    return path
 
 
 def project_root_for_entry() -> Path:
@@ -117,6 +150,9 @@ def _build_app(save_root: Path) -> PipelineApp:
     project_root = project_root_for_entry()
     if not (project_root / "src").is_dir():
         raise RuntimeError(f"root src package is missing: {project_root / 'src'}")
+    config_path = project_root / "config.yaml"
+    if not config_path.is_file():
+        raise RuntimeError(f"root config is missing: {config_path}")
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
     from main import SKUDetectionMain
@@ -124,7 +160,7 @@ def _build_app(save_root: Path) -> PipelineApp:
     app = SKUDetectionMain()
     app.save_root = save_root
     app.match_backend = "da3"
-    app.config_path = None
+    app.config_path = config_path
     return app
 
 
@@ -138,11 +174,19 @@ def main() -> None:
     parser.add_argument(
         "--stage",
         required=True,
-        choices=("reconstruction", "matching", "analysis_dedup", "footprint", "viewer_export"),
+        choices=(
+            "classification",
+            "reconstruction",
+            "matching",
+            "analysis_dedup",
+            "footprint",
+            "viewer_export",
+        ),
     )
     parser.add_argument("--dataset", required=True, type=Path)
     parser.add_argument("--save-root", required=True, type=Path)
     parser.add_argument("--viewer-output", required=True, type=Path)
+    parser.add_argument("--classification-result", type=Path, default=None)
     parser.add_argument("--payload-path", required=True, type=Path)
     args = parser.parse_args()
 
@@ -154,6 +198,7 @@ def main() -> None:
             dataset=args.dataset,
             save_root=args.save_root,
             viewer_output=args.viewer_output,
+            classification_result_path=args.classification_result,
         )
         success = bool(result.get("success", False))
         _write_payload(

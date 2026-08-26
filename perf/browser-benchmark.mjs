@@ -16,29 +16,12 @@ const MIME_TYPES = new Map([
   [".webp", "image/webp"],
 ]);
 
-function median(values) {
-  if (values.length === 0) throw new Error("median requires at least one value");
-  const ordered = [...values].sort((left, right) => left - right);
-  const midpoint = Math.floor(ordered.length / 2);
-  return ordered.length % 2 === 1
-    ? ordered[midpoint]
-    : (ordered[midpoint - 1] + ordered[midpoint]) / 2;
-}
-
-export function summariseNavigations(receipts) {
+export function validateNavigationReceipt(receipt) {
   const required = ["bundleLoadedMs", "firstFrameMs", "stableInteractiveMs", "bytes"];
-  for (const receipt of receipts) {
-    for (const key of required) {
-      if (!Number.isFinite(receipt[key])) throw new Error(`navigation receipt missing ${key}`);
-    }
+  for (const key of required) {
+    if (!Number.isFinite(receipt[key])) throw new Error(`navigation receipt missing ${key}`);
   }
-  return {
-    sampleCount: receipts.length,
-    bundleLoadedMsMedian: median(receipts.map((receipt) => receipt.bundleLoadedMs)),
-    firstFrameMsMedian: median(receipts.map((receipt) => receipt.firstFrameMs)),
-    stableInteractiveMsMedian: median(receipts.map((receipt) => receipt.stableInteractiveMs)),
-    bytesMedian: median(receipts.map((receipt) => receipt.bytes)),
-  };
+  return receipt;
 }
 
 export function assertHardwareRenderer(renderer) {
@@ -80,7 +63,6 @@ function parseArgs(argumentsList) {
     dataRoot: resolve(values.get("--data-root")),
     output: resolve(values.get("--output")),
     viewerDist: resolve(values.get("--viewer-dist") ?? new URL("../modules/viewer_web/dist", import.meta.url).pathname),
-    repetitions: Number(values.get("--repetitions") ?? "3"),
   };
 }
 
@@ -190,7 +172,6 @@ async function collectNavigation(browser, origin) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (!Number.isInteger(options.repetitions) || options.repetitions < 3) throw new Error("--repetitions must be an integer of at least 3");
   const { chromium } = await import("playwright");
   const { server, origin } = await startViewerServer(options);
   const browser = await chromium.launch({
@@ -198,21 +179,17 @@ async function main() {
     args: chromiumLaunchArgs(),
   });
   try {
-    const navigations = [];
-    for (let index = 0; index < options.repetitions; index += 1) navigations.push(await collectNavigation(browser, origin));
-    const hardwareRenderer = navigations.every((navigation) => {
-      try {
-        assertHardwareRenderer(navigation.renderer);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    const navigation = validateNavigationReceipt(await collectNavigation(browser, origin));
+    let rendererEvidence = "hardware";
+    try {
+      assertHardwareRenderer(navigation.renderer);
+    } catch {
+      rendererEvidence = "software_or_unavailable";
+    }
     const output = {
       origin,
-      navigations,
-      rendererEvidence: hardwareRenderer ? "hardware" : "software_or_unavailable",
-      summary: summariseNavigations(navigations),
+      navigation,
+      rendererEvidence,
     };
     await import("node:fs/promises").then(({ mkdir, writeFile }) => mkdir(resolve(options.output, ".."), { recursive: true }).then(() => writeFile(options.output, `${JSON.stringify(output, null, 2)}\n`)));
   } finally {

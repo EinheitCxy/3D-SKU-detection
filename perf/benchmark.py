@@ -7,6 +7,7 @@ code: timing must not change the numeric paths that it measures.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 import json
@@ -117,11 +118,11 @@ class StageExecution:
 
 @dataclass(frozen=True)
 class CaseReceipt:
-    """All observed critical-path stages for one dataset and cache mode."""
+    """All observed critical-path stages for one isolated cold dataset run."""
 
     dataset: str
-    cache_mode: str
     stages: tuple[StageReceipt, ...]
+    wall_seconds: float
 
     def stage_by_name(self) -> dict[str, StageReceipt]:
         return {stage.name: stage for stage in self.stages}
@@ -294,62 +295,81 @@ def execute_stage(
 
 
 def summarise_cases(
-    cases: Sequence[CaseReceipt], *, expected_stages: Mapping[str, Sequence[str]]
-) -> dict[str, dict[str, Any]]:
+    cases: Sequence[CaseReceipt], *, expected_stages: Sequence[str]
+) -> dict[str, Any]:
     """Average only cases with every required successful stage.
 
     This avoids turning a browser/telemetry failure into an apparent reduction
     in end-to-end latency.
     """
 
-    summaries: dict[str, dict[str, Any]] = {}
-    for mode, required_names in expected_stages.items():
-        completed: list[CaseReceipt] = []
-        excluded: list[str] = []
-        for case in (case for case in cases if case.cache_mode == mode):
-            by_name = case.stage_by_name()
-            if all(
-                name in by_name and by_name[name].is_complete for name in required_names
-            ):
-                completed.append(case)
-            else:
-                excluded.append(case.dataset)
-        stage_means = {
+    completed: list[CaseReceipt] = []
+    excluded: list[str] = []
+    for case in cases:
+        by_name = case.stage_by_name()
+        if all(
+            name in by_name and by_name[name].is_complete for name in expected_stages
+        ):
+            completed.append(case)
+        else:
+            excluded.append(case.dataset)
+    stage_means = (
+        {
             name: sum(case.stage_by_name()[name].wall_seconds for case in completed)
             / len(completed)
-            for name in required_names
-        } if completed else {}
-        stage_peak_means = {
+            for name in expected_stages
+        }
+        if completed
+        else {}
+    )
+    stage_peak_means = (
+        {
             name: sum(case.stage_by_name()[name].gpu_peak_mib for case in completed)
             / len(completed)
-            for name in required_names
-        } if completed else {}
-        stage_peak_delta_means = {
+            for name in expected_stages
+        }
+        if completed
+        else {}
+    )
+    stage_peak_delta_means = (
+        {
             name: sum(
                 case.stage_by_name()[name].gpu_peak_delta_mib for case in completed
             )
             / len(completed)
-            for name in required_names
-        } if completed else {}
-        summaries[mode] = {
-            "completed_dataset_count": len(completed),
-            "excluded_datasets": sorted(excluded),
-            "stage_mean_seconds": stage_means,
-            "stage_mean_driver_peak_mib": stage_peak_means,
-            "stage_mean_driver_peak_delta_mib": stage_peak_delta_means,
-            "end_to_end_mean_seconds": sum(stage_means.values()) if stage_means else None,
+            for name in expected_stages
         }
-    return summaries
+        if completed
+        else {}
+    )
+    return {
+        "completed_dataset_count": len(completed),
+        "excluded_datasets": sorted(excluded),
+        "stage_mean_seconds": stage_means,
+        "stage_mean_driver_peak_mib": stage_peak_means,
+        "stage_mean_driver_peak_delta_mib": stage_peak_delta_means,
+        "end_to_end_mean_seconds": (
+            sum(case.wall_seconds for case in completed) / len(completed)
+            if completed
+            else None
+        ),
+    }
 
 
 def _case_directory_name(dataset_name: str) -> str:
     prefix = "floor_display"
-    return f"fd{dataset_name[len(prefix):]}" if dataset_name.startswith(prefix) else dataset_name
+    return (
+        f"fd{dataset_name[len(prefix):]}"
+        if dataset_name.startswith(prefix)
+        else dataset_name
+    )
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
 
 
 def run_case(
@@ -357,133 +377,179 @@ def run_case(
     repo_root: Path,
     run_root: Path,
     dataset_name: str,
-    cache_mode: str,
     gpu_index: int,
     stage_builder: Callable[..., Sequence[StageSpec]] | None = None,
     executor: Callable[..., StageExecution] = execute_stage,
 ) -> CaseReceipt:
-    """Run all dependent stages for one cold or warm dataset case.
+    """Run every dependent stage once from an empty dataset-specific root.
 
     A stage receipt is written immediately so an interrupted GPU job remains
     auditable. Downstream work stops at the first non-complete stage because it
     would otherwise consume stale or missing artifacts.
     """
 
-    case_root = run_root / _case_directory_name(dataset_name) / cache_mode
+    case_root = run_root / _case_directory_name(dataset_name)
+    case_root.mkdir(parents=True, exist_ok=False)
     actual_stage_builder = stage_builder or build_case_stages
     stage_specs = actual_stage_builder(
         repo_root=repo_root,
         dataset_name=dataset_name,
         case_root=case_root,
-        cache_mode=cache_mode,
     )
-    completed: list[StageReceipt] = []
-    persisted: list[dict[str, Any]] = []
-    for spec in stage_specs:
-        execution = executor(
+    case_started = time.perf_counter()
+    executions: dict[str, StageExecution] = {}
+    classification_specs = [
+        spec for spec in stage_specs if spec.name == "classification"
+    ]
+    if len(classification_specs) > 1:
+        raise ValueError("a case cannot contain multiple classification stages")
+    classification_spec = classification_specs[0] if classification_specs else None
+    sequential_specs = [spec for spec in stage_specs if spec.name != "classification"]
+
+    def execute(spec: StageSpec) -> StageExecution:
+        return executor(
             spec=spec,
             logs_dir=case_root / "logs",
             telemetry_dir=case_root / "telemetry",
             gpu_index=gpu_index,
             environment={
                 "CUDA_VISIBLE_DEVICES": str(gpu_index),
-                "PLAYWRIGHT_BROWSERS_PATH": str(
-                    repo_root / "perf" / ".playwright"
-                ),
+                "PLAYWRIGHT_BROWSERS_PATH": str(repo_root / "perf" / ".playwright"),
             },
         )
-        completed.append(execution.receipt)
-        persisted.append(
+
+    def ordered_executions() -> list[StageExecution]:
+        return [
+            executions[spec.name] for spec in stage_specs if spec.name in executions
+        ]
+
+    def persist(case_wall_seconds: float | None = None) -> None:
+        persisted = [
             {
                 **asdict(execution.receipt),
                 "stdout_path": str(execution.stdout_path),
                 "stderr_path": str(execution.stderr_path),
                 "telemetry_path": str(execution.telemetry_path),
             }
-        )
+            for execution in ordered_executions()
+        ]
         _write_json(
             case_root / "stages.json",
             {
                 "dataset": dataset_name,
-                "cache_mode": cache_mode,
+                "wall_seconds": (
+                    time.perf_counter() - case_started
+                    if case_wall_seconds is None
+                    else case_wall_seconds
+                ),
                 "stages": persisted,
             },
         )
-        if not execution.receipt.is_complete:
-            break
-    return CaseReceipt(dataset_name, cache_mode, tuple(completed))
+
+    classification_future: Future[StageExecution] | None = None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        if classification_spec is not None:
+            classification_future = pool.submit(execute, classification_spec)
+        for spec in sequential_specs:
+            if spec.name == "analysis_dedup" and classification_future is not None:
+                classification = classification_future.result()
+                executions[classification.receipt.name] = classification
+                persist()
+                if not classification.receipt.is_complete:
+                    break
+            execution = execute(spec)
+            executions[execution.receipt.name] = execution
+            persist()
+            if not execution.receipt.is_complete:
+                break
+        if classification_future is not None and "classification" not in executions:
+            classification = classification_future.result()
+            executions[classification.receipt.name] = classification
+            persist()
+
+    wall_seconds = time.perf_counter() - case_started
+    persist(wall_seconds)
+    return CaseReceipt(
+        dataset_name,
+        tuple(execution.receipt for execution in ordered_executions()),
+        wall_seconds,
+    )
 
 
-def render_markdown_report(summary: Mapping[str, Mapping[str, Any]]) -> str:
+def render_markdown_report(summary: Mapping[str, Any]) -> str:
     """Render averages without manufacturing a value for incomplete cases."""
 
-    lines = ["# DA3 到 Web Viewer 性能报告", ""]
-    for mode, details in summary.items():
-        lines.extend([f"## {mode}", ""])
-        completed = details["completed_dataset_count"]
-        excluded = details["excluded_datasets"]
-        if completed == 0:
-            lines.extend(
-                [
-                    "端到端平均：N/A (no complete cases)",
-                    "",
-                    f"排除的数据集：{', '.join(excluded) if excluded else 'none'}",
-                    "",
-                ]
-            )
-            continue
-        total = details["end_to_end_mean_seconds"]
+    lines = ["# DA3 到 Web Viewer 性能报告", "", "## 一次性 cold run", ""]
+    completed = summary["completed_dataset_count"]
+    excluded = summary["excluded_datasets"]
+    if completed == 0:
         lines.extend(
             [
-                f"完整数据集数：{completed}",
-                f"端到端平均：{total:.3f} s",
-                "",
-                "| 阶段 | 平均耗时 (s) | 占端到端 | 平均 driver peak (MiB) | 平均新增 (MiB) |",
-                "| --- | ---: | ---: | ---: | ---: |",
-            ]
-        )
-        for name, seconds in details["stage_mean_seconds"].items():
-            share = 0.0 if total == 0 else seconds / total * 100
-            peak = details["stage_mean_driver_peak_mib"][name]
-            delta = details["stage_mean_driver_peak_delta_mib"][name]
-            lines.append(
-                f"| {name} | {seconds:.3f} | {share:.1f}% | {peak:.1f} | {delta:.1f} |"
-            )
-        lines.extend(
-            [
+                "端到端平均：N/A (no complete cases)",
                 "",
                 f"排除的数据集：{', '.join(excluded) if excluded else 'none'}",
                 "",
             ]
         )
+        return "\n".join(lines)
+    total = summary["end_to_end_mean_seconds"]
+    lines.extend(
+        [
+            f"完整数据集数：{completed}",
+            f"端到端平均：{total:.3f} s",
+            "",
+            "| 阶段 | 平均耗时 (s) | 占真实 wall time | 平均 driver peak (MiB) | 平均新增 (MiB) |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for name, seconds in summary["stage_mean_seconds"].items():
+        share = 0.0 if total == 0 else seconds / total * 100
+        peak = summary["stage_mean_driver_peak_mib"][name]
+        delta = summary["stage_mean_driver_peak_delta_mib"][name]
+        lines.append(
+            f"| {name} | {seconds:.3f} | {share:.1f}% | {peak:.1f} | {delta:.1f} |"
+        )
+    lines.extend(
+        [
+            "",
+            f"排除的数据集：{', '.join(excluded) if excluded else 'none'}",
+            "",
+            "classification 与 reconstruction/matching 并行；阶段占比和 GPU peak 不可相加。",
+            "端到端平均来自 case 的真实 wall time。",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
-def _expected_stage_names(cache_mode: str) -> tuple[str, ...]:
-    later = (
+def _expected_stage_names() -> tuple[str, ...]:
+    return (
+        "classification",
+        "reconstruction",
         "matching",
         "analysis_dedup",
         "footprint",
         "viewer_export",
         "browser_first_interactive",
     )
-    return ("reconstruction", *later) if cache_mode == "cold" else later
 
 
 def _case_payload(case: CaseReceipt) -> dict[str, Any]:
     return {
         "dataset": case.dataset,
-        "cache_mode": case.cache_mode,
+        "wall_seconds": case.wall_seconds,
         "stages": [asdict(stage) for stage in case.stages],
         "complete": all(
             name in case.stage_by_name() and case.stage_by_name()[name].is_complete
-            for name in _expected_stage_names(case.cache_mode)
+            for name in _expected_stage_names()
         ),
     }
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Benchmark DA3 reconstruction through viewer display")
+    parser = argparse.ArgumentParser(
+        description="Benchmark DA3 reconstruction through viewer display"
+    )
     parser.add_argument(
         "--datasets",
         nargs="+",
@@ -497,17 +563,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="validate the executable scheduling path without running stages",
     )
     args = parser.parse_args(argv)
+    if len(set(args.datasets)) != len(args.datasets):
+        parser.error("--datasets must not contain duplicates")
 
     repository_root = Path(__file__).resolve().parents[1]
     if args.dry_run:
         for dataset_name in args.datasets:
-            print(f"{dataset_name}: cold -> warm")
+            print(f"{dataset_name}: one-shot cold")
         return 0
     run_root = args.run_root or (
-        repository_root
-        / "perf"
-        / "runs"
-        / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        repository_root / "perf" / "runs" / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     )
     run_root.mkdir(parents=True, exist_ok=False)
     preflight = repository_root / "perf" / "resources.preflight.json"
@@ -516,34 +581,28 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     cases: list[CaseReceipt] = []
     for dataset_name in args.datasets:
-        cold = run_case(
+        case = run_case(
             repo_root=repository_root,
             run_root=run_root,
             dataset_name=dataset_name,
-            cache_mode="cold",
             gpu_index=args.gpu_index,
         )
-        cases.append(cold)
-        if _case_payload(cold)["complete"]:
-            cases.append(
-                run_case(
-                    repo_root=repository_root,
-                    run_root=run_root,
-                    dataset_name=dataset_name,
-                    cache_mode="warm",
-                    gpu_index=args.gpu_index,
-                )
-            )
+        cases.append(case)
 
-    expected = {mode: _expected_stage_names(mode) for mode in ("cold", "warm")}
-    summary = summarise_cases(cases, expected_stages=expected)
+    summary = summarise_cases(cases, expected_stages=_expected_stage_names())
     _write_json(
         run_root / "summary.json",
-        {"generated_at": datetime.now(UTC).isoformat(), "cases": [_case_payload(case) for case in cases], "summary": summary},
+        {
+            "generated_at": datetime.now(UTC).isoformat(),
+            "cases": [_case_payload(case) for case in cases],
+            "summary": summary,
+        },
     )
-    (run_root / "report.md").write_text(render_markdown_report(summary), encoding="utf-8")
+    (run_root / "report.md").write_text(
+        render_markdown_report(summary), encoding="utf-8"
+    )
     print(run_root)
-    return 0
+    return 0 if all(_case_payload(case)["complete"] for case in cases) else 1
 
 
 def build_case_stages(
@@ -551,24 +610,11 @@ def build_case_stages(
     repo_root: Path,
     dataset_name: str,
     case_root: Path,
-    cache_mode: str,
 ) -> Sequence[StageSpec]:
-    """Build the critical DA3-to-viewer path for one isolated case.
+    """Build one complete DA3-to-viewer path in an isolated output root."""
 
-    Warm deliberately starts from matching: reconstructing again would measure
-    a second DA3 inference rather than cache reuse. Every later stage is
-    rerun, so the case still measures the path that creates a fresh bundle and
-    opens it in a browser with an empty HTTP cache.
-    """
-
-    if cache_mode not in {"cold", "warm"}:
-        raise ValueError("cache_mode must be cold or warm")
     dataset = repo_root / "imdata" / dataset_name
-    save_root = (
-        case_root / "output"
-        if cache_mode == "cold"
-        else case_root.parent / "cold" / "output"
-    )
+    save_root = case_root / "output"
     receipt_root = case_root / "stage-payloads"
     entry = repo_root / "perf" / "stage_entry.py"
     browser = repo_root / "perf" / "browser-benchmark.mjs"
@@ -578,7 +624,8 @@ def build_case_stages(
         return (
             "uv",
             "run",
-            "--offline",
+            "--active",
+            "--no-project",
             "python",
             str(entry),
             "--stage",
@@ -589,15 +636,16 @@ def build_case_stages(
             str(save_root),
             "--viewer-output",
             str(case_root / "viewer-data"),
+            "--classification-result",
+            str(receipt_root / "classification.json"),
             "--payload-path",
             str(receipt_root / f"{name}.json"),
         )
 
-    stages: list[StageSpec] = []
-    if cache_mode == "cold":
-        stages.append(
-            StageSpec("reconstruction", stage_command("reconstruction"), code_dir)
-        )
+    stages: list[StageSpec] = [
+        StageSpec("classification", stage_command("classification"), code_dir),
+        StageSpec("reconstruction", stage_command("reconstruction"), code_dir),
+    ]
     for name in ("matching", "analysis_dedup", "footprint", "viewer_export"):
         stages.append(StageSpec(name, stage_command(name), code_dir))
     stages.append(
@@ -608,8 +656,6 @@ def build_case_stages(
                 str(browser),
                 "--data-root",
                 str(case_root / "viewer-data"),
-                "--dataset-name",
-                dataset_name,
                 "--output",
                 str(case_root / "browser.json"),
             ),

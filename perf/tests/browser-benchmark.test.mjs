@@ -5,28 +5,23 @@ import {
   assertHardwareRenderer,
   chromiumLaunchArgs,
   viewerMountFailureMessage,
-  summariseNavigations,
+  validateNavigationReceipt,
 } from "../browser-benchmark.mjs";
 
-test("summariseNavigations uses the median cache-disabled navigation", () => {
-  const summary = summariseNavigations([
-    { bundleLoadedMs: 140, firstFrameMs: 180, stableInteractiveMs: 220, bytes: 1_000 },
-    { bundleLoadedMs: 100, firstFrameMs: 120, stableInteractiveMs: 150, bytes: 900 },
-    { bundleLoadedMs: 120, firstFrameMs: 160, stableInteractiveMs: 200, bytes: 1_100 },
-  ]);
+test("validateNavigationReceipt preserves one cache-disabled navigation", () => {
+  const navigation = {
+    bundleLoadedMs: 140,
+    firstFrameMs: 180,
+    stableInteractiveMs: 220,
+    bytes: 1_000,
+  };
 
-  assert.deepEqual(summary, {
-    sampleCount: 3,
-    bundleLoadedMsMedian: 120,
-    firstFrameMsMedian: 160,
-    stableInteractiveMsMedian: 200,
-    bytesMedian: 1_000,
-  });
+  assert.equal(validateNavigationReceipt(navigation), navigation);
 });
 
-test("summariseNavigations rejects incomplete browser evidence", () => {
+test("validateNavigationReceipt rejects incomplete browser evidence", () => {
   assert.throws(
-    () => summariseNavigations([{ bundleLoadedMs: 100, firstFrameMs: 120 }]),
+    () => validateNavigationReceipt({ bundleLoadedMs: 100, firstFrameMs: 120 }),
     /stableInteractiveMs/,
   );
 });
