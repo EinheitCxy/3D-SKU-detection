@@ -11,7 +11,10 @@ from src.deduplicate_detections import (
     deduplicate_sequence,
     resolve_dataset_paths,
 )
-from utils.classification_aggregation import aggregate_classifications
+from utils.classification_aggregation import (
+    aggregate_classifications,
+    build_resolved_classification,
+)
 from utils.global_id_mapper import GlobalIDMapper, InstanceInfo
 from utils.global_object_index import build_global_object_index
 
@@ -33,6 +36,30 @@ def resolved(sku_id: str, sku_name: str, confidence: float) -> dict[str, object]
             "object_kind": None,
         },
     }
+
+
+def test_build_resolved_classification_uses_canonical_schema() -> None:
+    assert build_resolved_classification(51, "430085^产品A", 0.75) == resolved(
+        "430085", "产品A", 0.75
+    )
+
+
+@pytest.mark.parametrize(
+    "project_id,label,confidence",
+    [
+        (50, "430085^产品A", 0.75),
+        (51, "430085", 0.75),
+        (51, "^产品A", 0.75),
+        (51, "430085^", 0.75),
+        (51, "430085^产品A", float("nan")),
+        (51, "430085^产品A", float("inf")),
+    ],
+)
+def test_build_resolved_classification_rejects_invalid_input(
+    project_id: int, label: str, confidence: float
+) -> None:
+    with pytest.raises(ValueError):
+        build_resolved_classification(project_id, label, confidence)
 
 
 def test_conflicts_keep_all_candidates_but_primary_is_highest_sum() -> None:

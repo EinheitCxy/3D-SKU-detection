@@ -32,6 +32,29 @@ _UNAVAILABLE_KEYS = frozenset(
 OTHER_SKU = ("56642", "其他品类")
 
 
+def build_resolved_classification(
+    project_id: int, label: str, confidence: float
+) -> dict[str, Any]:
+    """Build and validate the canonical V1 record from a classifier label."""
+    if not isinstance(label, str):
+        raise ValueError("classification label must be 'sku_id^sku_name'")
+    sku_id, separator, sku_name = label.partition("^")
+    if separator == "" or not sku_id.strip() or not sku_name.strip():
+        raise ValueError("classification label must be 'sku_id^sku_name'")
+    return validate_classification(
+        {
+            "schema_version": "1.0.0",
+            "source": "personalcare",
+            "project_id": project_id,
+            "status": "resolved",
+            "sku_id": sku_id.strip(),
+            "sku_name": sku_name.strip(),
+            "confidence": confidence,
+            "metadata": deepcopy(_METADATA),
+        }
+    )
+
+
 def candidate_sort_key(candidate: Mapping[str, Any]) -> tuple[Any, ...]:
     """Keep the canonical catch-all category behind every specific SKU."""
     identity = (candidate["sku_id"], candidate["sku_name"])
