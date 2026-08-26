@@ -37,6 +37,10 @@ scripts/3d/ops/build_unified_env.sh OUTPUT_DIR
 候选测试通过后才可由维护者执行候选优先的环境切换；切换后保留原根环境为有界备份，直到
 导入、聚焦测试和 GPU 等价性验证全部验收。
 
+根宿主只承诺 image-only SAM3 推理，故不安装官方 notebook-only 的 `decord`。视频
+workflow 在进入 SAM3 前由 OpenCV 抽取图像帧；直接 `.mp4` loader 仍显式依赖 `decord`，
+不会在统一环境中回退到其他解码实现。
+
 完整视频工作流使用：
 
 ```bash

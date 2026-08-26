@@ -12,6 +12,7 @@ import pytest
 
 
 CODE_ROOT = Path(__file__).resolve().parents[1]
+SAM3_ROOT = CODE_ROOT / "sam3"
 UNIFIED_ENV_BUILDER = CODE_ROOT / "scripts" / "3d" / "ops" / "build_unified_env.sh"
 
 
@@ -110,6 +111,37 @@ def test_unified_env_builder_rejects_protected_descendant_before_uv(
     assert result.returncode == 1
     assert "protected environment" in result.stderr
     assert not uv_called.exists()
+
+
+def test_sam3_image_model_builder_import_does_not_require_optional_video_decoder(
+    tmp_path: Path,
+) -> None:
+    """Image-only SAM3 imports must not load the optional decord video reader."""
+    (tmp_path / "decord.py").write_text(
+        "raise ModuleNotFoundError('decord intentionally unavailable')\n",
+        encoding="utf-8",
+    )
+    pythonpath_entries = [str(tmp_path), str(SAM3_ROOT), str(CODE_ROOT)]
+    if existing_pythonpath := os.environ.get("PYTHONPATH"):
+        pythonpath_entries.append(existing_pythonpath)
+    environment = os.environ | {"PYTHONPATH": os.pathsep.join(pythonpath_entries)}
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from sam3.model_builder import build_sam3_image_model; "
+            "print(build_sam3_image_model.__name__)",
+        ],
+        cwd=CODE_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "build_sam3_image_model"
 
 
 def test_da3_matching_core_import_does_not_require_vggt_source() -> None:

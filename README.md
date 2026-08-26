@@ -57,6 +57,10 @@ scripts/3d/ops/build_unified_env.sh /tmp/3d-recognition-unified-env
 候选环境的完整测试、主环境切换和 GPU 等价性验证由维护流程在验收后执行；不要在构建
 候选时覆盖任一现有环境。
 
+统一宿主环境只支持本流水线的 image-only SAM3 推理，不安装 `decord`。官方 SAM3 将它
+归入可选 notebook 依赖；本项目的视频入口先用 OpenCV 抽帧，再向 SAM3 传入图像目录。
+直接让 SAM3 读取 `.mp4` 不属于该宿主环境的支持范围，并会明确要求该可选依赖。
+
 ## 常用命令
 
 ```bash

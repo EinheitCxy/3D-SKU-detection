@@ -26,4 +26,4 @@ uv venv "$OUTPUT_DIR" --python 3.11
 VIRTUAL_ENV="$OUTPUT_DIR" uv sync --active --frozen --extra dev
 uv pip check --python "$OUTPUT_DIR/bin/python"
 PYTHONPATH="$PYTHONPATH" "$OUTPUT_DIR/bin/python" -c \
-  'import torch, xformers, depth_anything_3, omegaconf, e3nn, evo, sam3'
+  'from sam3.model_builder import build_sam3_image_model; import torch, xformers, depth_anything_3, omegaconf, e3nn, evo'
