@@ -28,7 +28,8 @@
 
 候选宿主环境必须由以下命令创建，且 `OUTPUT_DIR` 必须不存在。脚本使用冻结的根锁文件，
 不会修改根 `.venv` 或 `Depth-Anything-3/.venv`，然后执行 `uv pip check` 和 DA3/SAM3
-源码 import smoke：
+源码 import smoke。候选 venv 使用 uv 的 relocatable 模式，验收后才可安全重命名为
+根 `.venv`：
 
 ```bash
 scripts/3d/ops/build_unified_env.sh OUTPUT_DIR
@@ -36,6 +37,15 @@ scripts/3d/ops/build_unified_env.sh OUTPUT_DIR
 
 候选测试通过后才可由维护者执行候选优先的环境切换；切换后保留原根环境为有界备份，直到
 导入、聚焦测试和 GPU 等价性验证全部验收。
+
+历史上以非 relocatable 模式创建且已重命名的环境，其 `pytest`、`uvicorn` 等
+console-script shebang 仍会指向旧候选路径；`uv sync --frozen` 不会改写它们。停止项目
+Python 进程后，维护者应重建当前根环境，而不是尝试手改 shebang：
+
+```bash
+uv venv --relocatable --clear .venv --python 3.11
+uv sync --frozen --extra dev
+```
 
 根宿主只承诺 image-only SAM3 推理，故不安装官方 notebook-only 的 `decord`。视频
 workflow 在进入 SAM3 前由 OpenCV 抽取图像帧；直接 `.mp4` loader 仍显式依赖 `decord`，

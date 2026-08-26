@@ -19,10 +19,10 @@ esac
   exit 1
 }
 
-PYTHONPATH="$PROJECT_ROOT/Depth-Anything-3/src:$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
+PYTHONPATH="$PROJECT_ROOT/Depth-Anything-3/src:$PROJECT_ROOT/sam3:$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 cd "$PROJECT_ROOT"
-uv venv "$OUTPUT_DIR" --python 3.11
+uv venv "$OUTPUT_DIR" --python 3.11 --relocatable
 VIRTUAL_ENV="$OUTPUT_DIR" uv sync --active --frozen --extra dev
 uv pip check --python "$OUTPUT_DIR/bin/python"
 PYTHONPATH="$PYTHONPATH" "$OUTPUT_DIR/bin/python" -c \

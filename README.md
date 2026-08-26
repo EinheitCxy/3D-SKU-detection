@@ -48,7 +48,8 @@ DA3/SAM3 仍保留为仓库内源码，DA3 subprocess 默认执行 `.venv/bin/py
 1.26.4 与 OpenCV 4.11，视频工作流默认复用该环境。
 
 需要重建候选统一环境时，先提供一个不存在的目标目录；脚本不会更改当前根 `.venv` 或
-`Depth-Anything-3/.venv`，并会执行锁文件同步、依赖检查与 DA3/SAM3 import smoke：
+`Depth-Anything-3/.venv`。候选以 uv 的 relocatable venv 创建，因此验收后可安全重命名
+为根 `.venv`；脚本随后执行锁文件同步、依赖检查与 DA3/SAM3 import smoke：
 
 ```bash
 scripts/3d/ops/build_unified_env.sh /tmp/3d-recognition-unified-env
@@ -56,6 +57,15 @@ scripts/3d/ops/build_unified_env.sh /tmp/3d-recognition-unified-env
 
 候选环境的完整测试、主环境切换和 GPU 等价性验证由维护流程在验收后执行；不要在构建
 候选时覆盖任一现有环境。
+
+若历史候选在未使用 relocatable 选项时已被重命名，`uv sync --frozen` 不会修复其旧的
+console-script shebang。维护者应在停掉项目 Python 进程后重新创建根环境（不要在运行中的
+环境上执行）：
+
+```bash
+uv venv --relocatable --clear .venv --python 3.11
+uv sync --frozen --extra dev
+```
 
 统一宿主环境只支持本流水线的 image-only SAM3 推理，不安装 `decord`。官方 SAM3 将它
 归入可选 notebook 依赖；本项目的视频入口先用 OpenCV 抽帧，再向 SAM3 传入图像目录。

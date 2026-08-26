@@ -79,6 +79,56 @@ def test_unified_env_builder_rejects_existing_output(tmp_path: Path) -> None:
     assert marker.read_text(encoding="utf-8") == "preserve"
 
 
+def test_unified_env_builder_creates_a_relocatable_candidate(tmp_path: Path) -> None:
+    """The builder passes uv's relocatable flag when creating a candidate."""
+    candidate = tmp_path / "candidate"
+    stub_bin = tmp_path / "bin"
+    stub_bin.mkdir()
+    uv_calls = tmp_path / "uv-calls"
+    smoke_pythonpath = tmp_path / "smoke-pythonpath"
+    stub_uv = stub_bin / "uv"
+    stub_uv.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'printf \'%s\\n\' "$*" >> "$UV_CALLS"\n'
+        'if [ "$1" = "venv" ]; then\n'
+        '  mkdir -p "$2/bin"\n'
+        "  cat > \"$2/bin/python\" <<'EOF'\n"
+        "#!/usr/bin/env bash\n"
+        'printf \'%s\' "$PYTHONPATH" > "$SMOKE_PYTHONPATH"\n'
+        "EOF\n"
+        '  chmod +x "$2/bin/python"\n'
+        "fi\n",
+        encoding="utf-8",
+    )
+    stub_uv.chmod(0o755)
+    environment = os.environ | {
+        "PATH": f"{stub_bin}{os.pathsep}{os.environ['PATH']}",
+        "UV_CALLS": str(uv_calls),
+        "SMOKE_PYTHONPATH": str(smoke_pythonpath),
+    }
+
+    result = subprocess.run(
+        ["bash", str(UNIFIED_ENV_BUILDER), str(candidate)],
+        cwd=CODE_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    first_call = uv_calls.read_text(encoding="utf-8").splitlines()[0].split()
+    assert first_call[:2] == ["venv", str(candidate)]
+    assert "--relocatable" in first_call
+    smoke_source_paths = set(
+        smoke_pythonpath.read_text(encoding="utf-8").split(os.pathsep)
+    )
+    assert str(CODE_ROOT / "Depth-Anything-3" / "src") in smoke_source_paths
+    assert str(SAM3_ROOT) in smoke_source_paths
+    assert str(CODE_ROOT) in smoke_source_paths
+
+
 @pytest.mark.parametrize(
     "protected_environment",
     [CODE_ROOT / ".venv", CODE_ROOT / "Depth-Anything-3" / ".venv"],
