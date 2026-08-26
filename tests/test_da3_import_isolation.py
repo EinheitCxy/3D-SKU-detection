@@ -40,6 +40,24 @@ def test_root_project_declares_unified_da3_dependency_contract() -> None:
     } <= dependencies
 
 
+def test_root_project_excludes_incompatible_unified_runtime_packages() -> None:
+    """The Python 3.11 candidate avoids obsolete or unsupported runtime wheels."""
+    with (CODE_ROOT / "pyproject.toml").open("rb") as project_file:
+        project = tomllib.load(project_file)
+    with (CODE_ROOT / "uv.lock").open("rb") as lock_file:
+        lock = tomllib.load(lock_file)
+
+    dependencies = set(project["project"]["dependencies"])
+    locked_package_names = {package["name"] for package in lock["package"]}
+
+    assert "ipywidgets>=8.0.4" in dependencies
+    assert not any(
+        dependency.startswith(("decord", "pygltflib", "dataclasses"))
+        for dependency in dependencies
+    )
+    assert {"decord", "pygltflib", "dataclasses"}.isdisjoint(locked_package_names)
+
+
 def test_unified_env_builder_rejects_existing_output(tmp_path: Path) -> None:
     """A pre-existing candidate is left untouched instead of being overwritten."""
     candidate = tmp_path / "candidate"

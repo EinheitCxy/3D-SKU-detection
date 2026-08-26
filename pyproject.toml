@@ -18,7 +18,6 @@ dependencies = [
     # Computer vision
     "opencv-python>=4.8.0",
     "Pillow>=9.0.0",
-    "decord>=0.6.0",  # Required for SAM3 image/video loading
     "pycocotools>=2.0.7",  # Required for SAM3 COCO format support
     # SAM3 dependencies
     "psutil>=5.9.0",  # sam3_video_predictor 运行时依赖（此前由 viser 传递引入）
@@ -40,8 +39,7 @@ dependencies = [
     "typer>=0.9.0",
     # 3D processing and visualization
     "trimesh>=4.0.0",
-    # 3D file formats
-    "pygltflib>=1.15.0",
+    "ipywidgets>=8.0.4",  # Required by Open3D's Python 3.11 runtime
     # Deep learning utilities
     "einops>=0.6.0",
     # Utilities
