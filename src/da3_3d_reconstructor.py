@@ -51,17 +51,14 @@ from .reconstructor_base import ReconstructorBase, register_reconstructor  # noq
 class DA33DReconstructor(ReconstructorBase):
     """Depth-Anything-3 3D重建器（与 Pi3 接口兼容）。
 
-    通过 subprocess 调用 Depth-Anything-3/.venv 运行 DA3 推理（DA3 依赖 numpy<2 与
-    root 3D core 的 numpy>=2 冲突，故隔离在 DA3 自带 venv 中），结果缓存到 da3_cache/predictions.npz，
-    格式与 pi3_cache 完全一致，无需修改下游 SKU 匹配代码。
+    通过 subprocess 调用根 .venv 运行 DA3 推理。DA3/SAM3 源码保留在仓库中，由子进程
+    从仓库路径导入；结果缓存到 da3_cache/predictions.npz。
     """
 
     # HuggingFace 默认模型；可通过 model_path 覆盖
     DEFAULT_HF_REPO = "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
-    # DA3 自带 venv（含 numpy<2 + omegaconf/addict/e3nn 等 DA3 依赖）
-    DEFAULT_DA3_VENV_PYTHON = (
-        REPO_ROOT / "Depth-Anything-3" / ".venv" / "bin" / "python"
-    )
+    # 统一宿主环境包含 DA3/SAM3 的运行时依赖。
+    DEFAULT_DA3_VENV_PYTHON = REPO_ROOT / ".venv" / "bin" / "python"
     DA3_RUNNER = THIS_DIR / "da3_runner.py"
 
     def __init__(
@@ -75,11 +72,11 @@ class DA33DReconstructor(ReconstructorBase):
         self.da3_venv_python = Path(
             os.environ.get("DA3_VENV_PYTHON", self.DEFAULT_DA3_VENV_PYTHON)
         ).expanduser()
-        # subprocess 模式：不在父进程加载 DA3（依赖隔离在 DA3 venv），仅校验 venv 与 runner 可用
+        # subprocess 模式：父进程不加载 DA3，仅校验统一环境与 runner 可用。
         if not self.da3_venv_python.is_file():
             raise FileNotFoundError(
                 f"DA3 Python 不存在: {self.da3_venv_python}。"
-                "请设置 DA3_VENV_PYTHON 指向已有的 Depth-Anything-3/.venv/bin/python。"
+                "请设置 DA3_VENV_PYTHON 指向已有的统一宿主环境 Python。"
             )
         if not self.DA3_RUNNER.exists():
             raise FileNotFoundError(f"DA3 runner 脚本不存在: {self.DA3_RUNNER}")
@@ -107,7 +104,7 @@ class DA33DReconstructor(ReconstructorBase):
     # ---- 推理（subprocess 调 da3_runner.py，在 DA3 venv 中跑） ----
 
     def run_inference(self, image_paths: List[str]) -> Dict[str, Any]:
-        """subprocess 调 DA3 venv 运行 da3_runner.py，返回与 Pi3 缓存兼容的 pred 字典。
+        """subprocess 调统一宿主环境运行 da3_runner.py，返回与 Pi3 缓存兼容的 pred 字典。
 
         子进程直接写出 da3_cache/predictions.npz（含正确 shape），父进程读回返回。
         """

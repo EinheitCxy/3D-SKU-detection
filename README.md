@@ -40,7 +40,22 @@ reconstruction/matching 并行，并在 dedup 前 join；端到端统计使用�
 uv sync --extra dev
 ```
 
-DA3 仍通过 `Depth-Anything-3/.venv/bin/python` 的隔离 subprocess 运行；需要时可用 `DA3_VENV_PYTHON` 指向它。SKU detector 保持自己的 `modules/sku_detector/pyproject.toml`；其 `runtime/sku_detector/.venv` 固定为 NumPy 1.26.4 与 OpenCV 4.11，视频工作流默认复用该环境。
+验收并切换候选环境后，根 `.venv` 是 core、DA3、SAM3 和 BSON API 的唯一宿主环境：Python 3.11、NumPy
+1.26.4、Torch 2.7.1、TorchVision 0.22.1 与 xFormers 0.0.31 由根 `uv.lock` 固定。
+DA3/SAM3 仍保留为仓库内源码，DA3 subprocess 默认执行 `.venv/bin/python`；仅在诊断或
+显式测试时才用 `DA3_VENV_PYTHON` 覆盖。SKU detector 保持自己的
+`modules/sku_detector/pyproject.toml`；其 `runtime/sku_detector/.venv` 固定为 NumPy
+1.26.4 与 OpenCV 4.11，视频工作流默认复用该环境。
+
+需要重建候选统一环境时，先提供一个不存在的目标目录；脚本不会更改当前根 `.venv` 或
+`Depth-Anything-3/.venv`，并会执行锁文件同步、依赖检查与 DA3/SAM3 import smoke：
+
+```bash
+scripts/3d/ops/build_unified_env.sh /tmp/3d-recognition-unified-env
+```
+
+候选环境的完整测试、主环境切换和 GPU 等价性验证由维护流程在验收后执行；不要在构建
+候选时覆盖任一现有环境。
 
 ## 常用命令
 

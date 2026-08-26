@@ -1,7 +1,14 @@
 import numpy as np
 
-from src.da3_3d_reconstructor import DA33DReconstructor
+from src.da3_3d_reconstructor import DA33DReconstructor, REPO_ROOT
 from src.da3_runner import _source_to_processed_affines
+
+
+def test_da3_default_interpreter_is_root_environment():
+    """DA3 subprocesses must use the unified repository host environment."""
+    expected = REPO_ROOT / ".venv" / "bin" / "python"
+
+    assert DA33DReconstructor.DEFAULT_DA3_VENV_PYTHON == expected
 
 
 def test_da3_reconstructor_uses_explicit_existing_python(monkeypatch, tmp_path):

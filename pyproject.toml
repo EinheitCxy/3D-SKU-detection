@@ -3,15 +3,16 @@ name = "3d-sku-detection"
 version = "0.1.0"
 description = "3D SKU Detection and Clustering Analysis System"
 readme = "README.md"
-requires-python = ">=3.8.1,<3.13"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     # Core scientific computing
-    "numpy>=1.21.0",
+    "numpy==1.26.4",
     "scipy>=1.10.1",
     "pandas>=1.5.0",
     # Machine learning (core)
-    "torch>=2.0.0",
-    "torchvision>=0.15.0",
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+    "xformers==0.0.31",
     "scikit-learn>=1.3.2",
     "scikit-image>=0.20.0",  # LAB色彩空间转换（可视化增强）
     # Computer vision
@@ -25,6 +26,18 @@ dependencies = [
     "ftfy==6.1.1",  # Text formatting
     "regex",  # Regular expressions
     "iopath>=0.1.10",  # I/O utilities
+    # DA3 runtime (source remains vendored in Depth-Anything-3/)
+    "addict",
+    "omegaconf",
+    "e3nn",
+    "evo",
+    "imageio",
+    "moviepy==1.0.3",
+    "pillow-heif",
+    "plyfile",
+    "pycolmap",
+    "requests",
+    "typer>=0.9.0",
     # 3D processing and visualization
     "trimesh>=4.0.0",
     # 3D file formats
@@ -41,6 +54,10 @@ dependencies = [
     "shapely>=2,<3",
     "open3d>=0.19.0",
     "faiss-cpu>=1.8.0.post1",
+    # BSON API runtime
+    "fastapi",
+    "uvicorn",
+    "bson",
 ]
 
 [project.optional-dependencies]

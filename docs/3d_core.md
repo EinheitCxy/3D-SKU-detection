@@ -12,7 +12,10 @@
 | `modules/` | 可独立使用的检测器、分类器、viewer 和视频 workflow | viewer bundle 例外 |
 | `runtime/` | 迁移环境、工具 cache 和临时 workflow 数据 | 是；Git 忽略 |
 
-根 `pyproject.toml` 是 DA3/SAM3/Open3D 核心依赖。`modules/sku_detector/pyproject.toml` 是独立的 YOLO 依赖，二者不合并。
+根 `pyproject.toml` 与 `uv.lock` 定义 core、DA3、SAM3、Open3D 和 BSON API 的单一宿主
+依赖契约：Python 3.11、NumPy 1.26.4、Torch 2.7.1、TorchVision 0.22.1 和 xFormers
+0.0.31 必须保持锁定。`Depth-Anything-3/` 与 `sam3/` 是仓库内源码，不在候选环境中
+重复安装 distribution。`modules/sku_detector/pyproject.toml` 是独立的 YOLO 依赖，二者不合并。
 
 ## 默认路径与后端
 
@@ -21,7 +24,18 @@
 - 默认输出：根 `Output/`。
 - 默认 viewer bundle：`modules/viewer_web/public/data`。
 - 所有相对 `--save_root` 值按仓库根解析，而非调用终端的当前目录。
-- DA3 runner 使用 `Depth-Anything-3/.venv/bin/python`；可用 `DA3_VENV_PYTHON` 覆盖。
+- DA3 runner 默认使用根 `.venv/bin/python`；可用 `DA3_VENV_PYTHON` 覆盖。
+
+候选宿主环境必须由以下命令创建，且 `OUTPUT_DIR` 必须不存在。脚本使用冻结的根锁文件，
+不会修改根 `.venv` 或 `Depth-Anything-3/.venv`，然后执行 `uv pip check` 和 DA3/SAM3
+源码 import smoke：
+
+```bash
+scripts/3d/ops/build_unified_env.sh OUTPUT_DIR
+```
+
+候选测试通过后才可由维护者执行候选优先的环境切换；切换后保留原根环境为有界备份，直到
+导入、聚焦测试和 GPU 等价性验证全部验收。
 
 完整视频工作流使用：
 
