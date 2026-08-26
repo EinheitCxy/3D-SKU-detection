@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tomllib
 from pathlib import Path
+
+import pytest
 
 
 CODE_ROOT = Path(__file__).resolve().parents[1]
@@ -55,6 +58,40 @@ def test_unified_env_builder_rejects_existing_output(tmp_path: Path) -> None:
     assert result.returncode == 1
     assert "already exists" in result.stderr
     assert marker.read_text(encoding="utf-8") == "preserve"
+
+
+@pytest.mark.parametrize(
+    "protected_environment",
+    [CODE_ROOT / ".venv", CODE_ROOT / "Depth-Anything-3" / ".venv"],
+    ids=["root-venv", "da3-venv"],
+)
+def test_unified_env_builder_rejects_protected_descendant_before_uv(
+    tmp_path: Path, protected_environment: Path
+) -> None:
+    """Protected-environment descendants cannot become candidate locations."""
+    stub_bin = tmp_path / "bin"
+    stub_bin.mkdir()
+    uv_called = tmp_path / "uv-called"
+    stub_uv = stub_bin / "uv"
+    stub_uv.write_text(
+        f"#!/usr/bin/env bash\ntouch {uv_called}\n",
+        encoding="utf-8",
+    )
+    stub_uv.chmod(0o755)
+    environment = os.environ | {"PATH": f"{stub_bin}{os.pathsep}{os.environ['PATH']}"}
+
+    result = subprocess.run(
+        ["bash", str(UNIFIED_ENV_BUILDER), str(protected_environment / "candidate")],
+        cwd=CODE_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "protected environment" in result.stderr
+    assert not uv_called.exists()
 
 
 def test_da3_matching_core_import_does_not_require_vggt_source() -> None:

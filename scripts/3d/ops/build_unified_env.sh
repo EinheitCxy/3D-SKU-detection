@@ -3,15 +3,22 @@ set -euo pipefail
 
 [ "$#" -eq 1 ] || { echo "usage: $0 OUTPUT_DIR" >&2; exit 2; }
 
-OUTPUT_DIR="$1"
-[ "${OUTPUT_DIR#/}" = "$OUTPUT_DIR" ] && OUTPUT_DIR="$(pwd)/$OUTPUT_DIR"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+OUTPUT_DIR="$(realpath -m "$1")"
+ROOT_VENV="$(realpath -m "$PROJECT_ROOT/.venv")"
+DA3_VENV="$(realpath -m "$PROJECT_ROOT/Depth-Anything-3/.venv")"
+case "$OUTPUT_DIR" in
+  "$ROOT_VENV" | "$ROOT_VENV"/* | "$DA3_VENV" | "$DA3_VENV"/*)
+    echo "candidate environment is inside protected environment: $OUTPUT_DIR" >&2
+    exit 1
+    ;;
+esac
 [ ! -e "$OUTPUT_DIR" ] || {
   echo "candidate environment already exists: $OUTPUT_DIR" >&2
   exit 1
 }
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 PYTHONPATH="$PROJECT_ROOT/Depth-Anything-3/src:$PROJECT_ROOT${PYTHONPATH:+:$PYTHONPATH}"
 
 cd "$PROJECT_ROOT"
