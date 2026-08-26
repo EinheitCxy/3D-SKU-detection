@@ -1,44 +1,34 @@
-import type { FootprintBundle, ObjectIndex, ObjectIndexEntry } from "./contracts";
-import type { ViewerBundle } from "./bundle-loader";
+import type { ObjectIndex, ObjectIndexEntry, OrderedSku } from "./contracts";
 
-export interface EvidenceFootprintView {
-  readonly available: boolean;
-  readonly areaM2: number | null;
-  readonly observationsUsed: number | null;
+export interface ObservationCounts {
+  readonly total: number;
+  readonly active: number;
+  readonly removed: number;
 }
 
-export interface EvidenceInstanceView {
+export interface SelectedObjectObservationView {
   readonly imageId: number;
   readonly objectId: number;
   readonly removed: boolean;
   readonly thumbnailUrl: string;
 }
 
-export interface EvidenceView {
+export interface SelectedObjectView {
   readonly globalId: string;
-  readonly object: ObjectIndexEntry;
-  readonly skuCandidates: readonly {
-    readonly skuId: string;
-    readonly skuName: string;
-  }[];
-  readonly footprint: EvidenceFootprintView;
-  readonly instances: readonly EvidenceInstanceView[];
-  /** False when every instance range is empty: observations exist, no 3D points. */
-  readonly hasGeometry: boolean;
+  readonly orderedSkus: readonly OrderedSku[];
+  readonly observations: readonly SelectedObjectObservationView[];
 }
 
-export function formatFormalMetric(footprints: FootprintBundle): string {
-  return footprints.status === "accepted" && footprints.value_m2 !== null
-    ? `${footprints.value_m2.toFixed(2)} m²`
-    : "—";
+export function formatDatasetSummary(datasetName: string, frameCount: number): string {
+  return `${datasetName} · ${frameCount} frames`;
 }
 
 export function entryHasGeometry(object: ObjectIndexEntry): boolean {
-  return object.instances.some((instance) => instance.point_index_range[1] > instance.point_index_range[0]);
+  return object.point_ranges.some(([start, end]) => end > start);
 }
 
-export function canFocusGlobalId(object: ObjectIndexEntry | undefined, footprints: FootprintBundle, globalId: string): boolean {
-  return footprints.per_global_id[globalId] !== undefined || (object !== undefined && entryHasGeometry(object));
+export function canFocusGlobalId(object: ObjectIndexEntry | undefined): boolean {
+  return object !== undefined && entryHasGeometry(object);
 }
 
 export function listGlobalIds(objects: ObjectIndex): string[] {
@@ -49,26 +39,39 @@ export function listGlobalIds(objects: ObjectIndex): string[] {
   });
 }
 
-export function buildEvidenceView(bundle: ViewerBundle, globalId: string): EvidenceView | null {
-  if (globalId === "union") return null;
-  const object = bundle.objects[globalId];
+export function summarizeObjectCounts(
+  objects: ObjectIndex,
+  visibleGlobalIds: ReadonlySet<string>,
+): { readonly total: number; readonly visible: number } {
+  let visible = 0;
+  for (const globalId of visibleGlobalIds) {
+    if (objects[globalId] !== undefined) visible += 1;
+  }
+  return { total: Object.keys(objects).length, visible };
+}
+
+export function summarizeObservationCounts(
+  observations: readonly { readonly removed: boolean }[],
+): ObservationCounts {
+  const removed = observations.filter((observation) => observation.removed).length;
+  return { total: observations.length, active: observations.length - removed, removed };
+}
+
+export function buildSelectedObjectView(
+  objects: ObjectIndex,
+  globalId: string,
+  generationUrl: string,
+): SelectedObjectView | null {
+  const object = objects[globalId];
   if (object === undefined) return null;
-  const geometry = bundle.footprints.status === "accepted" ? bundle.footprints.per_global_id[globalId] : undefined;
-  const properties = geometry?.properties;
-  const hasFootprint = properties !== undefined && properties.global_id === globalId && "observations_used" in properties;
   return {
     globalId,
-    object,
-    skuCandidates: object.classification.candidates.map((candidate) => ({ skuId: candidate.sku_id, skuName: candidate.sku_name })),
-    footprint: hasFootprint
-      ? { available: true, areaM2: properties.area_m2, observationsUsed: properties.observations_used }
-      : { available: false, areaM2: null, observationsUsed: null },
-    instances: object.instances.map((instance) => ({
-      imageId: instance.image_id,
-      objectId: instance.object_id,
-      removed: instance.removed,
-      thumbnailUrl: new URL(instance.thumbnail, bundle.generationUrl).toString(),
+    orderedSkus: object.ordered_skus,
+    observations: object.observations.map((observation) => ({
+      imageId: observation.image_id,
+      objectId: observation.object_id,
+      removed: observation.removed,
+      thumbnailUrl: new URL(observation.thumbnail, generationUrl).toString(),
     })),
-    hasGeometry: entryHasGeometry(object),
   };
 }

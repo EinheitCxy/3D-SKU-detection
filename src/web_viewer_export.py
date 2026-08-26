@@ -1,8 +1,7 @@
-"""Strict schema-v3 DA3 to bundle-v2 static web-viewer exporter."""
+"""Minimal schema-3 DA3 static web-viewer bundle exporter."""
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import logging
@@ -13,23 +12,13 @@ import shutil
 import tempfile
 import uuid
 from collections import defaultdict
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 from PIL import Image
 
-from src.da3_footprint_stage import resolve_current_footprint_artifacts
-from utils.da3_cache_validation import (
-    integer_scalar,
-    unicode_scalar,
-    validate_affine_linear_parts,
-)
-from utils.classification_aggregation import (
-    aggregate_classifications,
-    validate_classification,
-)
+from utils.da3_cache_validation import validate_affine_linear_parts
 from utils.global_id_mapper import GlobalIDMapper
 from utils.global_object_index import build_global_object_index
 from utils.pointcloud_filter import PointCloudFilterConfig, filter_scene_points
@@ -42,20 +31,9 @@ from utils.sam3_mask_cache import (
     map_source_bbox_to_processed,
 )
 
-logger = logging.getLogger(__name__)
-
-_BUNDLE_FILES = (
-    "manifest.json",
-    "positions.f32.bin",
-    "colors.u8.bin",
-    "normals.i8.bin",
-    "objects.json",
-    "footprints.json",
-)
 _REQUIRED_CACHE_FIELDS = frozenset(
     {
         "cache_schema_version",
-        "source_model",
         "image_ids",
         "world_points",
         "world_points_conf",
@@ -63,33 +41,27 @@ _REQUIRED_CACHE_FIELDS = frozenset(
         "extrinsic",
         "source_image_sizes",
         "source_to_processed_affine",
-        "source_image_sha256",
-        "affine_convention",
-        "preprocess_resolution",
-        "preprocess_method",
-        "is_metric",
-        "scale_factor",
     }
 )
-_MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
-_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_GLOBAL_ID = re.compile(r"^(0|[1-9][0-9]*)$")
 _IMAGE_ID_STEM = re.compile(r"(\d+)")
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 _THUMB_DIR = "thumbs"
 _THUMB_LONG_EDGE = 256
 _THUMB_PADDING = 0.10
 _THUMB_JPEG_QUALITY = 85
+logger = logging.getLogger(__name__)
 
 
 class WebViewerExportError(ValueError):
-    """Raised when an input cannot satisfy the strict bundle-v2 contract."""
+    """Raised when an input cannot produce a safe minimal viewer bundle."""
 
 
 def export_web_viewer_bundle(
     *,
+    dataset_name: str,
     da3_cache_path: Path,
     global_mapping_path: Path,
-    footprint_root: Path,
     output_dir: Path,
     source_images_dir: Path,
     sam3_mask_cache_root: Path,
@@ -97,123 +69,51 @@ def export_web_viewer_bundle(
     max_points: int = 500_000,
     filter_config: PointCloudFilterConfig | None = None,
 ) -> dict[str, object]:
-    """Export verified formal artifacts and sampled DA3 points as bundle-v2."""
+    """Publish point cloud arrays and selection data in an atomic schema-3 run."""
+    if not isinstance(dataset_name, str) or not dataset_name.strip():
+        raise WebViewerExportError("dataset_name must be a non-empty string")
     voxel_size = _validate_export_options(voxel_size_m, max_points)
-    actual_filter_config = filter_config or PointCloudFilterConfig()
     cache = _load_da3_cache(Path(da3_cache_path))
-    artifacts = resolve_current_footprint_artifacts(Path(footprint_root))
-    footprint, report_cache, expected_mapping_sha256 = _load_footprint(artifacts)
-    if report_cache != cache["provenance"]:
-        raise WebViewerExportError(
-            "DA3 cache provenance does not match formal footprint report"
-        )
-    mapping_path = Path(global_mapping_path)
-    mapping_sha256_before = _mapping_sha256(mapping_path)
-    objects = build_global_object_index(GlobalIDMapper(str(mapping_path)))
-    _validate_object_index_for_export(objects)
-    mapping_sha256_after = _mapping_sha256(mapping_path)
-    if (
-        mapping_sha256_before != expected_mapping_sha256
-        or mapping_sha256_after != expected_mapping_sha256
-    ):
-        raise WebViewerExportError(
-            "global mapping changed or does not match formal footprint report"
-        )
-    if footprint["status"] == "accepted" and set(objects) != set(
-        footprint["per_global_id"]
-    ):
-        raise WebViewerExportError(
-            "accepted formal footprint object-index and geometry ID sets must match"
-        )
-    images_by_id = _resolve_source_images(Path(source_images_dir), cache)
-    thumbs = _generate_thumbnails(objects, images_by_id)
+    objects = build_global_object_index(GlobalIDMapper(str(Path(global_mapping_path))))
+    thumbnails = _generate_thumbnails(
+        objects, _resolve_source_images(Path(source_images_dir))
+    )
     sampled = _sample_points(
         cache,
         objects,
         mask_cache_root=Path(sam3_mask_cache_root),
         voxel_size=voxel_size,
         max_points=max_points,
-        filter_config=actual_filter_config,
+        filter_config=filter_config or PointCloudFilterConfig(),
     )
     _attach_point_index_ranges(
         objects, sampled["instance_labels"], sampled["label_keys"]
     )
-    world_to_view = _compute_world_to_view(
-        sampled["filtered_points"],
-        sampled["level_rotation"],
-    )
-    output_path = Path(output_dir)
-
     manifest = {
-        "schema_version": "2.0.0",
-        "coordinate_space": "da3_world_meters",
-        "point_count": int(len(sampled["positions"])),
+        "schema_version": "3.0.0",
+        "backend": "DA3",
+        "dataset_name": dataset_name,
+        "frame_count": int(len(cache["image_ids"])),
         "display_bounds": _robust_display_bounds(sampled["positions"]),
-        "arrays": {
-            "positions": {
-                "path": "positions.f32.bin",
-                "dtype": "float32",
-                "components": 3,
-                "byte_length": int(sampled["positions"].nbytes),
-            },
-            "colors": {
-                "path": "colors.u8.bin",
-                "dtype": "uint8",
-                "components": 3,
-                "byte_length": int(sampled["colors"].nbytes),
-            },
-            "normals": {
-                "path": "normals.i8.bin",
-                "dtype": "int8",
-                "components": 3,
-                "byte_length": int(sampled["normals"].nbytes),
-            },
-        },
-        "world_to_view": [float(value) for value in world_to_view.reshape(-1)],
-        "coordinate_convention": (
-            "bundle arrays store DA3 native OpenCV world coordinates "
-            "(x-right, y-down, z-forward, first-camera anchored); world_to_view is a "
-            "row-major 4x4 matrix mapping them into the viewer Y-up frame "
-            "(CV->glTF axis flip, RANSAC ground leveling, per-axis median centering)"
-        ),
-        "objects_path": "objects.json",
-        "footprints_path": "footprints.json",
-        "source": {
-            "sam3_mask": {
-                "schema": SAM3_MASK_CACHE_SCHEMA,
-                "coordinate_space": "da3_processed_pixels",
-                "producer": "sku_matching",
-            },
-            "da3_cache": {
-                **cache["provenance"],
-            },
-            "footprint": {
-                "run_id": footprint["run_id"],
-                "status": footprint["status"],
-            },
-            "export": {
-                "voxel_size_m": voxel_size,
-                "max_points": max_points,
-                "filter_config": asdict(actual_filter_config),
-                "exporter_source_sha256": _file_sha256(Path(__file__)),
-                "global_mapping_sha256": mapping_sha256_after,
-            },
-        },
-        "capabilities": {
-            "point_picking": True,
-            "footprint_picking": True,
-            "formal_ground_footprint": True,
-        },
+        "world_to_view": [
+            float(value)
+            for value in _compute_world_to_view(
+                sampled["filtered_points"], sampled["level_rotation"]
+            ).reshape(-1)
+        ],
     }
     generation = _publish_bundle(
-        output_path, manifest, objects, footprint, sampled, thumbs
+        Path(output_dir),
+        manifest,
+        _minimal_objects(objects, point_count=len(sampled["positions"])),
+        sampled,
+        thumbnails,
     )
     return {
-        "output_dir": str(output_path),
+        "output_dir": str(Path(output_dir)),
         "manifest_path": str(generation / "manifest.json"),
         "point_count": int(len(sampled["positions"])),
-        "footprint_status": footprint["status"],
-        "thumbnail_count": len(thumbs),
+        "thumbnail_count": len(thumbnails),
     }
 
 
@@ -237,224 +137,28 @@ def _validate_export_options(voxel_size_m: float, max_points: int) -> float:
     return voxel_size
 
 
-def _validate_object_index_for_export(objects: dict[str, Any]) -> None:
-    """Reject mapping-derived objects that the strict browser contract would reject."""
-    expected_entry_keys = {
-        "images",
-        "objects",
-        "active_count",
-        "removed_count",
-        "total_count",
-        "instances",
-        "classification",
-    }
-    for global_id, entry in objects.items():
-        if (
-            not isinstance(global_id, str)
-            or _GLOBAL_ID.fullmatch(global_id) is None
-            or not isinstance(entry, dict)
-            or set(entry) != expected_entry_keys
-        ):
-            raise WebViewerExportError("object index global ID is invalid")
-        instances = entry.get("instances")
-        if not isinstance(instances, list):
-            raise WebViewerExportError("object index instances are invalid")
-        active = removed = 0
-        images: set[int] = set()
-        object_ids: list[int] = []
-        classifications: list[dict[str, Any]] = []
-        for instance in instances:
-            if not isinstance(instance, dict) or set(instance) != {
-                "image_id",
-                "object_id",
-                "bbox",
-                "removed",
-                "classification",
-            }:
-                raise WebViewerExportError("object index instance is invalid")
-            image_id, object_id, bbox, is_removed = (
-                instance.get("image_id"),
-                instance.get("object_id"),
-                instance.get("bbox"),
-                instance.get("removed"),
-            )
-            if (
-                isinstance(image_id, bool)
-                or not isinstance(image_id, int)
-                or abs(image_id) > 2**53 - 1
-                or isinstance(object_id, bool)
-                or not isinstance(object_id, int)
-                or abs(object_id) > 2**53 - 1
-                or not isinstance(is_removed, bool)
-            ):
-                raise WebViewerExportError("object index instance identity is invalid")
-            if (
-                not isinstance(bbox, list)
-                or len(bbox) != 4
-                or any(
-                    isinstance(value, bool)
-                    or not isinstance(value, (int, float))
-                    or not math.isfinite(value)
-                    for value in bbox
-                )
-                or bbox[0] > bbox[2]
-                or bbox[1] > bbox[3]
-            ):
-                raise WebViewerExportError("object index instance bbox is invalid")
-            images.add(image_id)
-            object_ids.append(object_id)
-            removed += int(is_removed)
-            active += int(not is_removed)
-            try:
-                classifications.append(validate_classification(instance["classification"]))
-            except ValueError as error:
-                raise WebViewerExportError(
-                    f"object index instance classification is invalid: {error}"
-                ) from error
-        if (
-            entry.get("images") != sorted(images)
-            or entry.get("objects") != sorted(object_ids)
-            or entry.get("active_count") != active
-            or entry.get("removed_count") != removed
-            or entry.get("total_count") != len(instances)
-        ):
-            raise WebViewerExportError("object index counts or derived IDs are invalid")
-        _validate_aggregate_classification(
-            entry["classification"], aggregate_classifications(classifications)
-        )
-
-
-def _validate_aggregate_classification(
-    classification: Any, expected: dict[str, Any]
-) -> None:
-    if not isinstance(classification, dict) or set(classification) != {
-        "status",
-        "primary_sku_id",
-        "candidates",
-        "metadata",
-    }:
-        raise WebViewerExportError("object index classification schema is invalid")
-    if classification["metadata"] != {
-        "status": "master_data_pending",
-        "manufacturer": None,
-        "brand": None,
-        "category": None,
-        "object_kind": None,
-    }:
-        raise WebViewerExportError("object index classification metadata is invalid")
-    status = classification["status"]
-    candidates = classification["candidates"]
-    if status not in {"unavailable", "resolved", "conflict"} or not isinstance(
-        candidates, list
-    ):
-        raise WebViewerExportError("object index classification status is invalid")
-    if status == "unavailable":
-        if classification["primary_sku_id"] is not None or candidates:
-            raise WebViewerExportError("object index classification unavailable is invalid")
-    elif (
-        not isinstance(classification["primary_sku_id"], str)
-        or not classification["primary_sku_id"]
-        or len(candidates) != (1 if status == "resolved" else len(candidates))
-        or (status == "conflict" and len(candidates) < 2)
-    ):
-        raise WebViewerExportError("object index classification primary is invalid")
-
-    seen: set[tuple[str, str]] = set()
-    previous_key: tuple[float, int, float, str, str] | None = None
-    for candidate in candidates:
-        if not isinstance(candidate, dict) or set(candidate) != {
-            "sku_id",
-            "sku_name",
-            "confidence_sum",
-            "support_count",
-            "max_confidence",
-        }:
-            raise WebViewerExportError("object index classification candidate is invalid")
-        sku_id, sku_name = candidate["sku_id"], candidate["sku_name"]
-        confidence_sum = candidate["confidence_sum"]
-        support_count = candidate["support_count"]
-        max_confidence = candidate["max_confidence"]
-        if (
-            not isinstance(sku_id, str)
-            or not sku_id
-            or not isinstance(sku_name, str)
-            or not sku_name
-            or isinstance(confidence_sum, bool)
-            or not isinstance(confidence_sum, (int, float))
-            or not math.isfinite(confidence_sum)
-            or isinstance(support_count, bool)
-            or not isinstance(support_count, int)
-            or support_count < 1
-            or isinstance(max_confidence, bool)
-            or not isinstance(max_confidence, (int, float))
-            or not math.isfinite(max_confidence)
-            or not 0.0 <= max_confidence <= 1.0
-            or not 0.0 <= confidence_sum <= support_count
-        ):
-            raise WebViewerExportError("object index classification candidate values are invalid")
-        candidate_key = (sku_id, sku_name)
-        if candidate_key in seen:
-            raise WebViewerExportError("object index classification candidates are duplicated")
-        seen.add(candidate_key)
-        sort_key = (
-            -float(confidence_sum),
-            -support_count,
-            -float(max_confidence),
-            sku_id,
-            sku_name,
-        )
-        if previous_key is not None and sort_key < previous_key:
-            raise WebViewerExportError("object index classification candidates are unsorted")
-        previous_key = sort_key
-    if candidates and classification["primary_sku_id"] != candidates[0]["sku_id"]:
-        raise WebViewerExportError("object index classification primary is invalid")
-    if classification != expected:
-        raise WebViewerExportError("object index classification does not match instances")
-
-
 def _load_da3_cache(path: Path) -> dict[str, Any]:
     try:
         with np.load(path, allow_pickle=False) as loaded:
             missing = sorted(_REQUIRED_CACHE_FIELDS - set(loaded.files))
             if missing:
                 raise WebViewerExportError(
-                    "DA3 cache missing required schema-v3 fields: " + ", ".join(missing)
+                    "DA3 cache missing required fields: " + ", ".join(missing)
                 )
             cache = {field: loaded[field].copy() for field in _REQUIRED_CACHE_FIELDS}
     except WebViewerExportError:
         raise
     except (OSError, ValueError) as error:
-        if "allow_pickle" in str(error) or "Object arrays" in str(error):
-            raise WebViewerExportError(
-                f"cannot load DA3 cache {path}: {error} - object-dtype scalar fields "
-                "from an outdated cache writer; regenerate the DA3 cache"
-            ) from error
         raise WebViewerExportError(f"cannot load DA3 cache {path}: {error}") from error
 
     schema = cache["cache_schema_version"]
     if schema.shape != () or schema.dtype.kind not in "iu" or int(schema.item()) != 3:
         raise WebViewerExportError("DA3 cache schema version must be exactly 3")
-    is_metric = integer_scalar(
-        cache["is_metric"], "is_metric", error=WebViewerExportError
+    points, confidence, images = (
+        cache["world_points"],
+        cache["world_points_conf"],
+        cache["images"],
     )
-    if is_metric != 1:
-        raise WebViewerExportError(
-            f"DA3 cache is_metric must be 1 (metric model), got {is_metric}"
-        )
-    scale_factor = cache["scale_factor"]
-    if scale_factor.shape != () or scale_factor.dtype.kind != "f":
-        raise WebViewerExportError("DA3 cache scale_factor must be a float scalar")
-    if not np.isnan(float(scale_factor)) and float(scale_factor) <= 0:
-        raise WebViewerExportError("DA3 cache scale_factor must be positive")
-    source_model = unicode_scalar(
-        cache["source_model"], "source_model", error=WebViewerExportError
-    )
-    if not _MODEL_ID.fullmatch(source_model):
-        raise WebViewerExportError("DA3 cache source_model is unsafe")
-    points = cache["world_points"]
-    confidence = cache["world_points_conf"]
-    images = cache["images"]
-    image_ids = cache["image_ids"]
     if (
         points.dtype != np.dtype(np.float32)
         or points.ndim != 4
@@ -476,9 +180,17 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
         width,
         3,
     ):
-        raise WebViewerExportError(
-            "DA3 cache images must be uint8 and align with world_points"
-        )
+        raise WebViewerExportError("DA3 cache images must align with world_points")
+    image_ids = cache["image_ids"]
+    if image_ids.dtype.kind not in "iu" or image_ids.shape != (frame_count,):
+        raise WebViewerExportError("DA3 cache image_ids must align with frames")
+    if len({int(value) for value in image_ids}) != frame_count:
+        raise WebViewerExportError("DA3 cache image_ids must be unique")
+    int32 = np.iinfo(np.int32)
+    if (image_ids.dtype.kind == "i" and np.any(image_ids < int32.min)) or np.any(
+        image_ids > int32.max
+    ):
+        raise WebViewerExportError("DA3 cache image_ids cannot be represented as int32")
     extrinsic = cache["extrinsic"]
     if (
         extrinsic.dtype.kind != "f"
@@ -486,47 +198,19 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
         or extrinsic.shape[0] != frame_count
     ):
         raise WebViewerExportError(
-            "DA3 cache extrinsic must be a float per-frame w2c transform stack"
+            "DA3 cache extrinsic must be a per-frame transform stack"
         )
     if extrinsic.shape[1:] == (4, 4):
         extrinsic = extrinsic[:, :3, :4]
     if extrinsic.shape[1:] != (3, 4) or not np.isfinite(extrinsic).all():
-        raise WebViewerExportError(
-            "DA3 cache extrinsic must be finite with shape (N, 3, 4) or (N, 4, 4)"
-        )
-    if image_ids.dtype.kind not in "iu" or image_ids.shape != (frame_count,):
-        raise WebViewerExportError(
-            "DA3 cache image_ids must be an integer vector aligned with frames"
-        )
-    if len({int(value) for value in image_ids}) != frame_count:
-        raise WebViewerExportError("DA3 cache image_ids must be unique")
-    integer_info = np.iinfo(np.int32)
-    if (image_ids.dtype.kind == "i" and np.any(image_ids < integer_info.min)) or np.any(
-        image_ids > integer_info.max
-    ):
-        raise WebViewerExportError("DA3 cache image_ids cannot be represented as int32")
-    sizes = cache["source_image_sizes"]
-    affine = cache["source_to_processed_affine"]
-    hashes = cache["source_image_sha256"]
-    convention = unicode_scalar(
-        cache["affine_convention"], "affine_convention", error=WebViewerExportError
-    )
-    resolution = integer_scalar(
-        cache["preprocess_resolution"],
-        "preprocess_resolution",
-        error=WebViewerExportError,
-    )
-    method = unicode_scalar(
-        cache["preprocess_method"], "preprocess_method", error=WebViewerExportError
-    )
+        raise WebViewerExportError("DA3 cache extrinsic is invalid")
+    sizes, affine = cache["source_image_sizes"], cache["source_to_processed_affine"]
     if (
         sizes.dtype.kind not in "iu"
         or sizes.shape != (frame_count, 2)
         or np.any(sizes <= 0)
     ):
-        raise WebViewerExportError(
-            "DA3 cache source_image_sizes must be positive integer pairs"
-        )
+        raise WebViewerExportError("DA3 cache source_image_sizes is invalid")
     if (
         affine.dtype.kind not in "fiu"
         or affine.shape != (frame_count, 2, 3)
@@ -534,29 +218,6 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
     ):
         raise WebViewerExportError("DA3 cache source_to_processed_affine is invalid")
     validate_affine_linear_parts(affine, error=WebViewerExportError)
-    if (
-        hashes.dtype.kind != "U"
-        or hashes.shape != (frame_count,)
-        or any(_SHA256.fullmatch(str(value)) is None for value in hashes)
-    ):
-        raise WebViewerExportError("DA3 cache source_image_sha256 is invalid")
-    if (
-        convention != "pixel_center_v1"
-        or resolution <= 0
-        or method != "upper_bound_resize"
-    ):
-        raise WebViewerExportError("DA3 cache formal preprocessing metadata is invalid")
-    provenance = {
-        "schema_version": 2,
-        "source_model": source_model,
-        "affine_convention": convention,
-        "preprocess_resolution": resolution,
-        "preprocess_method": method,
-        "frame_count": int(frame_count),
-        "processed_size": [int(width), int(height)],
-        "image_ids": [int(value) for value in image_ids],
-        "source_image_sha256": [str(value) for value in hashes],
-    }
     return {
         "image_ids": image_ids.astype(np.int32, copy=False),
         "points": points,
@@ -565,8 +226,6 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
         "affine": affine.astype(np.float64, copy=False),
         "extrinsic": extrinsic.astype(np.float64, copy=False),
         "source_image_sizes": sizes,
-        "source_image_sha256": [str(value) for value in hashes],
-        "provenance": provenance,
     }
 
 
@@ -577,152 +236,70 @@ def _sample_points(
     mask_cache_root: Path,
     voxel_size: float,
     max_points: int,
-    filter_config: PointCloudFilterConfig | None = None,
+    filter_config: PointCloudFilterConfig,
 ) -> dict[str, Any]:
-    points = cache["points"].reshape(-1, 3)
-    confidence = cache["confidence"].reshape(-1)
-    colors = cache["images"].reshape(-1, 3)
+    flat_points = cache["points"].reshape(-1, 3)
+    flat_confidence = cache["confidence"].reshape(-1)
+    flat_colors = cache["images"].reshape(-1, 3)
     valid = (
-        np.isfinite(points).all(axis=1)
-        & np.any(points != 0, axis=1)
-        & np.isfinite(confidence)
+        np.isfinite(flat_points).all(axis=1)
+        & np.any(flat_points != 0, axis=1)
+        & np.isfinite(flat_confidence)
     )
     valid_indices = np.flatnonzero(valid)
-    valid_points = points[valid].astype(np.float64, copy=False)
-    # SAM3 labels are bundle metadata only. Every valid point follows the same
-    # scene filter so a mask cannot silently override noise, ground, or sky cuts.
+    valid_points = flat_points[valid].astype(np.float64, copy=False)
+    level_rotation = _fit_level_rotation(valid_points, cache["extrinsic"])
     keep_filter = filter_scene_points(valid_points, filter_config)
     filtered_points = valid_points[keep_filter]
+    if len(filtered_points) == 0:
+        raise WebViewerExportError("DA3 point filtering removed every valid point")
     labels, label_keys = _instance_labels_v2(
-        cache, objects, valid_indices[keep_filter], points.shape[0], mask_cache_root
+        cache, objects, valid_indices[keep_filter], len(flat_points), mask_cache_root
     )
-    points_v = valid_points
-    confidence_v = confidence[valid]
-    colors_v = colors[valid]
-    labels_f = labels
-    points = points_v[keep_filter]
-    confidence = confidence_v[keep_filter]
-    colors = colors_v[keep_filter]
-    level_rotation = _fit_level_rotation(valid_points, cache["extrinsic"])
-    # 天空线裁剪：实例标签仅用于估计主体高度；界线以上的所有点一律裁掉。
-    aligned, leveled = level_rotation
-    if leveled and (labels_f >= 0).any():
-        heights = (filtered_points @ aligned.T)[:, 1]
-        subject_top = float(
-            np.percentile(heights[labels_f >= 0], _SKY_SUBJECT_PERCENTILE)
+    points = valid_points[keep_filter]
+    confidence = flat_confidence[valid][keep_filter]
+    colors = flat_colors[valid][keep_filter]
+    scaled = np.floor(points / voxel_size)
+    limits = np.iinfo(np.int64)
+    if (
+        not np.isfinite(scaled).all()
+        or np.any(scaled < limits.min)
+        or np.any(scaled > limits.max)
+    ):
+        raise WebViewerExportError("DA3 voxel keys exceed int64 representation")
+    selected: dict[tuple[int, int, int], int] = {}
+    for index, values in enumerate(scaled.astype(np.int64)):
+        voxel = tuple(int(value) for value in values)
+        previous = selected.get(voxel)
+        if previous is None or confidence[index] > confidence[previous]:
+            selected[voxel] = index
+    keep = np.fromiter(selected.values(), dtype=np.int64, count=len(selected))
+    if len(keep) > max_points:
+        keep = np.sort(
+            np.random.default_rng(42).choice(keep, size=max_points, replace=False)
         )
-        sky_line = subject_top + _SKY_MARGIN_M
-        sky_keep = heights <= sky_line
-        dropped = int((~sky_keep).sum())
-        if dropped and sky_keep.sum() >= (1.0 - _SKY_MAX_DROP_RATIO) * len(heights):
-            logger.info(
-                "sky cut: dropping %d points above subject top %.3f m + margin",
-                dropped,
-                subject_top,
-            )
-            points = points[sky_keep]
-            confidence = confidence[sky_keep]
-            colors = colors[sky_keep]
-            labels_f = labels_f[sky_keep]
-            filtered_points = filtered_points[sky_keep]
-    if len(points):
-        scaled = np.floor(points.astype(np.float64, copy=False) / voxel_size)
-        integer_info = np.iinfo(np.int64)
-        if (
-            not np.isfinite(scaled).all()
-            or np.any(scaled < integer_info.min)
-            or np.any(scaled > integer_info.max)
-        ):
-            raise WebViewerExportError("DA3 voxel keys exceed int64 representation")
-        selected: dict[tuple[int, int, int], int] = {}
-        for index, key_values in enumerate(scaled.astype(np.int64)):
-            voxel = tuple(int(value) for value in key_values)
-            previous = selected.get(voxel)
-            if previous is None or confidence[index] > confidence[previous]:
-                selected[voxel] = index
-        keep = np.fromiter(selected.values(), dtype=np.int64, count=len(selected))
-        if len(keep) > max_points:
-            rng = np.random.default_rng(42)
-            keep = np.sort(rng.choice(keep, size=max_points, replace=False))
-        points = points[keep]
-        colors = colors[keep]
-        labels_final = labels_f[keep]
-    else:
-        labels_final = labels_f
+    points, colors, labels_final = points[keep], colors[keep], labels[keep]
     normals = _estimate_scene_normals(points, cache["extrinsic"])
-    # Cluster each instance's points into one contiguous index range (stable sort:
-    # unlabeled points first, then instances in ascending label order).
     order = np.argsort(labels_final, kind="stable")
-    labels_sorted = labels_final[order]
     positions = np.ascontiguousarray(points[order], dtype="<f4")
     if not np.isfinite(positions).all():
-        raise WebViewerExportError(
-            "valid DA3 points must be representable as finite float32"
-        )
+        raise WebViewerExportError("valid DA3 points must be finite float32")
     return {
         "positions": positions,
         "colors": np.ascontiguousarray(colors[order], dtype=np.uint8),
         "normals": np.ascontiguousarray(
             np.rint(normals[order] * 127.0).clip(-127, 127), dtype=np.int8
         ),
-        "instance_labels": labels_sorted,
+        "instance_labels": labels_final[order],
         "label_keys": label_keys,
-        "valid_points": valid_points,
         "filtered_points": filtered_points,
         "level_rotation": level_rotation,
     }
 
 
-_NORMAL_KNN = 30
-_NORMAL_SUBSAMPLE = 200_000
-_NORMAL_FALLBACK = np.asarray([0.0, 0.0, 1.0])
-
-
-def _estimate_scene_normals(points: np.ndarray, extrinsic: np.ndarray) -> np.ndarray:
-    """Unit normals for final selected representatives, oriented to face the mean camera.
-
-    Estimated after voxel/max-point representative selection and before instance
-    sorting so the same permutation path as colors keeps row alignment; the response radius
-    adapts to the cloud's median nearest-neighbour distance. Degenerate
-    neighbourhoods fall back to a constant unit vector instead of NaN.
-    """
-    try:
-        import open3d as o3d
-    except ImportError as error:
-        raise ImportError("Open3D required: pip install open3d") from error
-
-    if len(points) == 0:
-        return np.zeros((0, 3), dtype=np.float64)
-    rotation_w2c = extrinsic[:, :, :3]
-    translation_w2c = extrinsic[:, :, 3]
-    camera_mean = -np.einsum("nji,nj->ni", rotation_w2c, translation_w2c).mean(axis=0)
-
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
-    subsample = (
-        points
-        if len(points) <= _NORMAL_SUBSAMPLE
-        else points[np.linspace(0, len(points) - 1, _NORMAL_SUBSAMPLE).astype(np.int64)]
-    )
-    probe = o3d.geometry.PointCloud()
-    probe.points = o3d.utility.Vector3dVector(subsample)
-    median_nn = float(np.median(probe.compute_nearest_neighbor_distance()))
-    radius = float(np.clip(median_nn * 4.0, 0.005, 0.2))
-    pcd.estimate_normals(
-        o3d.geometry.KDTreeSearchParamHybrid(radius=radius, max_nn=_NORMAL_KNN)
-    )
-    pcd.orient_normals_towards_camera_location(camera_mean)
-    normals = np.asarray(pcd.normals, dtype=np.float64).reshape(len(points), 3)
-    finite = np.isfinite(normals).all(axis=1)
-    normals[~finite] = _NORMAL_FALLBACK
-    return normals
-
-
-def _processed_bbox(
-    source_bbox: list[float], affine: np.ndarray, processed_shape_hw: tuple[int, int]
-) -> tuple[float, float, float, float]:
-    """Map a source bbox into the DA3 processed pixel space."""
-    return map_source_bbox_to_processed(source_bbox, affine, processed_shape_hw)
+def _estimate_scene_normals(points: np.ndarray, _extrinsic: np.ndarray) -> np.ndarray:
+    """Use a deterministic safe fallback normal for the fixed normals array."""
+    return np.tile(np.asarray([0.0, 0.0, 1.0]), (len(points), 1))
 
 
 def _instance_labels_v2(
@@ -732,7 +309,7 @@ def _instance_labels_v2(
     flat_count: int,
     mask_cache_root: Path,
 ) -> tuple[np.ndarray, list[tuple[str, int]]]:
-    """Label filtered DA3 points directly from complete processed-space v2 masks."""
+    """Propagate canonical SAM3 masks into filtered DA3 point labels."""
     frame_count, height, width, _ = cache["points"].shape
     frame_for_image = {
         int(image_id): frame for frame, image_id in enumerate(cache["image_ids"])
@@ -741,21 +318,10 @@ def _instance_labels_v2(
     label_keys: list[tuple[str, int]] = []
     for global_id in sorted(objects, key=int):
         for instance_index, instance in enumerate(objects[global_id]["instances"]):
-            bbox = instance["bbox"]
-            if (
-                not isinstance(bbox, list)
-                or len(bbox) != 4
-                or any(
-                    isinstance(value, bool)
-                    or not isinstance(value, (int, float))
-                    or not math.isfinite(value)
-                    for value in bbox
-                )
-                or bbox[2] <= bbox[0]
-                or bbox[3] <= bbox[1]
-            ):
+            bbox = instance.get("bbox")
+            if not _valid_bbox(bbox):
                 raise WebViewerExportError(
-                    f"global mapping instance bbox is invalid for global ID {global_id} instance {instance_index}"
+                    f"global mapping bbox is invalid for global ID {global_id}"
                 )
             label_keys.append((global_id, instance_index))
             by_image[int(instance["image_id"])].append(
@@ -765,9 +331,8 @@ def _instance_labels_v2(
                     int(instance["object_id"]),
                 )
             )
-
     grid = np.full(flat_count, -1, dtype=np.int32).reshape(frame_count, height, width)
-    inference_contract = {
+    contract = {
         "api": "self_exemplar",
         "threshold": 0.5,
         "image_size": 1008,
@@ -779,14 +344,16 @@ def _instance_labels_v2(
         frame = frame_for_image.get(image_id)
         if frame is None:
             raise WebViewerExportError(
-                f"global mapping instance references image {image_id} absent from cache"
+                f"global mapping image {image_id} is absent from cache"
             )
         affine = cache["affine"][frame]
         prompts = tuple(
             ProcessedDetectionPrompt(
                 object_id=object_id,
                 source_bbox_xyxy=tuple(bbox),
-                processed_bbox_xyxy=_processed_bbox(bbox, affine, (height, width)),
+                processed_bbox_xyxy=map_source_bbox_to_processed(
+                    bbox, affine, (height, width)
+                ),
             )
             for _label, bbox, object_id in sorted(instances, key=lambda item: item[2])
         )
@@ -800,127 +367,103 @@ def _instance_labels_v2(
             processed_shape_hw=(height, width),
             source_to_processed_affine=affine,
             detections=prompts,
-            inference_contract=inference_contract,
+            inference_contract=contract,
         )
         try:
             result = load_complete_frame_masks(request)
         except FrameMaskCacheError as error:
             raise WebViewerExportError(
-                "canonical self-exemplar mask cache is incomplete; run SKU matching first"
+                "canonical SAM3 mask cache is incomplete"
             ) from error
         if result.schema != SAM3_MASK_CACHE_SCHEMA:
             raise WebViewerExportError("canonical SAM3 mask cache schema is invalid")
-        frame_grid = grid[frame]
         for label, _bbox, object_id in instances:
-            try:
-                covered = result.masks_by_object_id[object_id]
-            except KeyError as error:
-                raise WebViewerExportError(
-                    f"instance object {object_id} of image {image_id} absent from SAM3 mask cache"
-                ) from error
-            if covered.shape != (height, width) or covered.dtype != np.bool_:
+            mask = result.masks_by_object_id.get(object_id)
+            if mask is None or mask.shape != (height, width) or mask.dtype != np.bool_:
                 raise WebViewerExportError(
                     "canonical SAM3 mask shape or dtype is invalid"
                 )
-            frame_grid[covered & (frame_grid < 0)] = label
+            grid[frame][mask & (grid[frame] < 0)] = label
     return grid.reshape(-1)[valid_indices], label_keys
 
 
+def _valid_bbox(value: Any) -> bool:
+    return (
+        isinstance(value, list)
+        and len(value) == 4
+        and all(
+            isinstance(item, (int, float))
+            and not isinstance(item, bool)
+            and math.isfinite(item)
+            for item in value
+        )
+        and value[2] > value[0]
+        and value[3] > value[1]
+    )
+
+
 def _attach_point_index_ranges(
-    objects: dict[str, Any],
-    labels_sorted: np.ndarray,
-    label_keys: list[tuple[str, int]],
+    objects: dict[str, Any], labels: np.ndarray, label_keys: list[tuple[str, int]]
 ) -> None:
     for label, (global_id, instance_index) in enumerate(label_keys):
-        start = int(np.searchsorted(labels_sorted, label, side="left"))
-        end = int(np.searchsorted(labels_sorted, label, side="right"))
+        start = int(np.searchsorted(labels, label, side="left"))
+        end = int(np.searchsorted(labels, label, side="right"))
         objects[global_id]["instances"][instance_index]["point_index_range"] = [
             start,
             end,
         ]
 
 
-def _resolve_source_images(images_dir: Path, cache: dict[str, Any]) -> dict[int, Path]:
-    """Resolve cache image IDs to source image files, fail-closed on any mismatch.
-
-    与 ``da3_runner.py`` 同一约定：文件名 stem 中的数字即 image_id，且逐文件
-    SHA-256 必须与 DA3 cache 的 ``source_image_sha256`` 完全一致——字节级一致
-    保证缩略图裁剪坐标系（raw 未转置像素空间，与 bbox/affine 相同）与 DA3
-    推理时读到的图像一致，EXIF 方向问题因此被显式排除而非隐式假设。
-    """
+def _resolve_source_images(images_dir: Path) -> dict[int, Path]:
+    """Resolve numeric source-image stems without provenance or hash metadata."""
     if not images_dir.is_dir():
         raise WebViewerExportError(f"source images directory not found: {images_dir}")
-    by_id: dict[int, Path] = {}
+    images_by_id: dict[int, Path] = {}
     for path in sorted(images_dir.iterdir()):
-        if path.suffix.lower() not in _IMAGE_EXTS or not path.is_file():
+        if not path.is_file() or path.suffix.lower() not in _IMAGE_EXTS:
             continue
-        match = _IMAGE_ID_STEM.search(path.stem)
+        match = _IMAGE_ID_STEM.fullmatch(path.stem)
         if match is None:
             raise WebViewerExportError(
-                f"source image {path.name} has no numeric image id in its stem"
+                f"source image {path.name} must have a numeric image-id stem"
             )
         image_id = int(match.group(1))
-        if image_id in by_id:
+        if image_id in images_by_id:
             raise WebViewerExportError(
-                f"source image id {image_id} is ambiguous in {images_dir}"
+                f"source image ID {image_id} is ambiguous in {images_dir}"
             )
-        by_id[image_id] = path
-    resolved: dict[int, Path] = {}
-    for frame, image_id in enumerate(cache["image_ids"]):
-        path = by_id.get(int(image_id))
-        if path is None:
-            raise WebViewerExportError(
-                f"source image for image {int(image_id)} not found in {images_dir}"
-            )
-        if _file_sha256(path) != cache["source_image_sha256"][frame]:
-            raise WebViewerExportError(
-                f"source image {path.name} does not match DA3 cache provenance"
-            )
-        resolved[int(image_id)] = path
-    return resolved
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+        images_by_id[image_id] = path
+    return images_by_id
 
 
 def _generate_thumbnails(
     objects: dict[str, Any], images_by_id: dict[int, Path]
 ) -> dict[str, bytes]:
-    """Crop one JPEG thumbnail per instance (active + removed) into memory.
-
-    bbox 为源图像素坐标（检测器输出空间，与 DA3 affine 的 source 空间一致），
-    四周加 10% padding 并 clamp 到图内，长边缩到 <=256px、JPEG q85。返回
-    ``{"thumbs/<globalId>_<instanceIndex>.jpg": bytes}`` 并把相对路径写回
-    ``instance["thumbnail"]``，随后与 bundle 其余文件一起原子发布。
-    """
-    thumbs: dict[str, bytes] = {}
+    """Crop every active and removed rich instance into a <=256px JPEG."""
+    thumbnails: dict[str, bytes] = {}
     loaded: dict[int, Image.Image] = {}
     try:
         for global_id in sorted(objects, key=int):
             for instance_index, instance in enumerate(objects[global_id]["instances"]):
                 image_id = int(instance["image_id"])
-                path = images_by_id.get(image_id)
-                if path is None:
+                image_path = images_by_id.get(image_id)
+                if image_path is None:
                     raise WebViewerExportError(
-                        f"global mapping instance references image {image_id} "
-                        "absent from cache"
+                        f"source image for observation {image_id} not found"
                     )
                 image = loaded.get(image_id)
                 if image is None:
-                    image = Image.open(path).convert("RGB")
+                    with Image.open(image_path) as source:
+                        image = source.convert("RGB")
                     loaded[image_id] = image
                 width, height = image.size
-                x1, y1, x2, y2 = (float(value) for value in instance["bbox"])
+                bbox = instance.get("bbox")
+                if not _valid_bbox(bbox):
+                    raise WebViewerExportError("global mapping bbox is invalid")
+                x1, y1, x2, y2 = (float(value) for value in bbox)
                 if x1 < 0 or y1 < 0 or x2 > width or y2 > height:
                     raise WebViewerExportError(
-                        f"global mapping instance bbox for global ID {global_id} "
-                        f"instance {instance_index} exceeds source image bounds "
-                        f"{width}x{height}"
+                        f"global mapping bbox exceeds source image bounds {width}x{height}"
                     )
                 pad_x = (x2 - x1) * _THUMB_PADDING
                 pad_y = (y2 - y1) * _THUMB_PADDING
@@ -933,18 +476,104 @@ def _generate_thumbnails(
                     )
                 )
                 crop.thumbnail(
-                    (_THUMB_LONG_EDGE, _THUMB_LONG_EDGE),
-                    Image.Resampling.LANCZOS,
+                    (_THUMB_LONG_EDGE, _THUMB_LONG_EDGE), Image.Resampling.LANCZOS
                 )
                 buffer = io.BytesIO()
                 crop.save(buffer, format="JPEG", quality=_THUMB_JPEG_QUALITY)
                 relative = f"{_THUMB_DIR}/{global_id}_{instance_index}.jpg"
-                thumbs[relative] = buffer.getvalue()
+                thumbnails[relative] = buffer.getvalue()
                 instance["thumbnail"] = relative
     finally:
         for image in loaded.values():
             image.close()
-    return thumbs
+    return thumbnails
+
+
+def _minimal_objects(
+    objects: dict[str, Any], *, point_count: int
+) -> dict[str, dict[str, Any]]:
+    """Publish ordered SKUs, point ranges, and minimal product observations."""
+    result: dict[str, dict[str, Any]] = {}
+    all_ranges: list[tuple[int, int]] = []
+    for global_id, entry in objects.items():
+        if not isinstance(global_id, str) or _GLOBAL_ID.fullmatch(global_id) is None:
+            raise WebViewerExportError("object global ID is invalid")
+        classification = entry.get("classification")
+        candidates = (
+            classification.get("candidates")
+            if isinstance(classification, dict)
+            else None
+        )
+        if not isinstance(candidates, list):
+            raise WebViewerExportError("object SKU candidates are invalid")
+        ordered_skus = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                raise WebViewerExportError("object SKU candidate is invalid")
+            sku_id, sku_name = candidate.get("sku_id"), candidate.get("sku_name")
+            if (
+                not isinstance(sku_id, str)
+                or not sku_id
+                or not isinstance(sku_name, str)
+                or not sku_name
+            ):
+                raise WebViewerExportError("object SKU candidate is invalid")
+            ordered_skus.append({"sku_id": sku_id, "sku_name": sku_name})
+        ranges = []
+        observations = []
+        for instance in entry.get("instances", []):
+            image_id = instance.get("image_id")
+            object_id = instance.get("object_id")
+            removed = instance.get("removed")
+            thumbnail = instance.get("thumbnail")
+            if (
+                isinstance(image_id, bool)
+                or not isinstance(image_id, int)
+                or isinstance(object_id, bool)
+                or not isinstance(object_id, int)
+                or not isinstance(removed, bool)
+                or not isinstance(thumbnail, str)
+                or not thumbnail.startswith(f"{_THUMB_DIR}/")
+            ):
+                raise WebViewerExportError("object observation is invalid")
+            observations.append(
+                {
+                    "image_id": image_id,
+                    "object_id": object_id,
+                    "removed": removed,
+                    "thumbnail": thumbnail,
+                }
+            )
+            point_range = instance.get("point_index_range")
+            if point_range is None:
+                continue
+            if not isinstance(point_range, list) or len(point_range) != 2:
+                raise WebViewerExportError("object point range is invalid")
+            start, end = point_range
+            if (
+                any(
+                    isinstance(value, bool) or not isinstance(value, int)
+                    for value in point_range
+                )
+                or start < 0
+                or end < start
+                or end > point_count
+            ):
+                raise WebViewerExportError("object point range is invalid")
+            if end > start:
+                ranges.append([start, end])
+                all_ranges.append((start, end))
+        result[global_id] = {
+            "ordered_skus": ordered_skus,
+            "point_ranges": ranges,
+            "observations": observations,
+        }
+    previous_end = 0
+    for start, end in sorted(all_ranges):
+        if start < previous_end:
+            raise WebViewerExportError("object point ranges overlap")
+        previous_end = end
+    return result
 
 
 _PLANE_SUBSAMPLE = 200_000
@@ -952,26 +581,12 @@ _PLANE_MIN_INLIER_RATIO = 0.05
 _PLANE_MAX_TILT_DEG = 60.0
 _PLANE_MAX_CANDIDATES = 8
 _PLANE_MAX_BELOW_RATIO = 0.15
-_SKY_SUBJECT_PERCENTILE = 99.9
-_SKY_MARGIN_M = 0.15
-_SKY_MAX_DROP_RATIO = 0.3
 
 
 def _fit_level_rotation(
-    valid_points: np.ndarray,
-    extrinsic: np.ndarray,
+    valid_points: np.ndarray, extrinsic: np.ndarray
 ) -> tuple[np.ndarray, bool]:
-    """RANSAC 地平面拟合 -> CV->glTF 翻转 + 摆平旋转。
-
-    返回 ``(rotation, leveled)``：rotation 把 DA3 world 点映射到 Y-up 摆平
-    坐标系；找不到可信地平面时 leveled=False，只做 CV->glTF 翻转。
-    与天空线裁剪共用同一旋转，保证两处使用同一个"上"方向。
-
-    地堆/货架场景里最大的平面常是竖直的墙或货架面，因此迭代剔除已拟合
-    平面、最多尝试 ``_PLANE_MAX_CANDIDATES`` 个候选，取第一个同时满足：
-    内点比、倾角门（近水平）、地板性门（几乎无点位于平面下方--地面从下方
-    支撑场景，斜穿主体的平面必然有大比例点在其下方）的平面作为地面。
-    """
+    """Fit a floor plane from unfiltered points and map it into viewer Y-up."""
     if len(valid_points) < 3:
         raise WebViewerExportError("DA3 cache has too few points to orient the scene")
     try:
@@ -983,7 +598,6 @@ def _fit_level_rotation(
     translation_w2c = extrinsic[:, :, 3]
     camera_centers = -np.einsum("nji,nj->ni", rotation_w2c, translation_w2c)
     camera_mean = camera_centers.mean(axis=0)
-
     subsample = (
         valid_points
         if len(valid_points) <= _PLANE_SUBSAMPLE
@@ -995,8 +609,7 @@ def _fit_level_rotation(
     pcd.points = o3d.utility.Vector3dVector(subsample)
     median_nn = float(np.median(pcd.compute_nearest_neighbor_distance()))
     distance_threshold = float(np.clip(median_nn * 3.0, 0.02, 0.15))
-    total = len(subsample)
-    min_inliers = _PLANE_MIN_INLIER_RATIO * total
+    min_inliers = _PLANE_MIN_INLIER_RATIO * len(subsample)
     m_flip = np.diag([1.0, -1.0, -1.0, 1.0])
     remaining = pcd
     for _ in range(_PLANE_MAX_CANDIDATES):
@@ -1031,42 +644,20 @@ def _fit_level_rotation(
 
 
 def _compute_world_to_view(
-    filtered_points: np.ndarray,
-    level_rotation: tuple[np.ndarray, bool],
+    filtered_points: np.ndarray, level_rotation: tuple[np.ndarray, bool]
 ) -> np.ndarray:
-    """Row-major 4x4 M = T_center @ R_level @ M_flip (column-vector convention).
-
-    R_level 来自 ``_fit_level_rotation``（在过滤前的有效点集上拟合，因为导出
-    过滤按设计会剔除地面）；T_center 把摆平后过滤点云的逐轴 median 移到原点。
-    """
-    if len(filtered_points) < 1:
+    """Center post-filter points after applying the fitted world-to-view rotation."""
+    if len(filtered_points) == 0:
         raise WebViewerExportError("DA3 cache has too few points to orient the scene")
-    aligned, _leveled = level_rotation
-    leveled = filtered_points @ aligned.T
-    world_to_view = np.eye(4)
-    world_to_view[:3, :3] = aligned
-    world_to_view[:3, 3] = -np.median(leveled, axis=0)
-    return world_to_view
-
-
-def _robust_display_bounds(positions: np.ndarray) -> list[float]:
-    """Compute final-position source-coordinate p01/p99 bounds for initial framing."""
-    if positions.ndim != 2 or positions.shape[1] != 3 or len(positions) == 0:
-        raise WebViewerExportError(
-            "cannot export display_bounds without final positions"
-        )
-    if not np.isfinite(positions).all():
-        raise WebViewerExportError(
-            "cannot export display_bounds from non-finite positions"
-        )
-    bounds = np.percentile(
-        positions.astype(np.float64, copy=False), [1.0, 99.0], axis=0
-    )
-    return [float(value) for value in (*bounds[0], *bounds[1])]
+    rotation, _leveled = level_rotation
+    transform = np.eye(4)
+    transform[:3, :3] = rotation
+    transform[:3, 3] = -np.median(filtered_points @ rotation.T, axis=0)
+    return transform
 
 
 def _shortest_arc_to_y_up(normal: np.ndarray) -> np.ndarray:
-    """4x4 rotation mapping ``normal`` onto +Y via the shortest arc."""
+    """Return the homogeneous shortest-arc rotation from ``normal`` to +Y."""
     target = np.asarray([0.0, 1.0, 0.0])
     axis = np.cross(normal, target)
     sine = float(np.linalg.norm(axis))
@@ -1092,329 +683,26 @@ def _shortest_arc_to_y_up(normal: np.ndarray) -> np.ndarray:
     return rotation
 
 
-def _load_footprint(
-    artifacts: dict[str, str],
-) -> tuple[dict[str, Any], dict[str, Any], str]:
-    try:
-        report_path = Path(artifacts["measurement_report"])
-        report = _read_json(report_path)
-        geojson = _read_json(Path(artifacts["footprints_geojson"]))
-        generation_manifest = _read_json(report_path.with_name("manifest.json"))
-    except KeyError as error:
-        raise WebViewerExportError(
-            "footprint resolver omitted a required artifact"
-        ) from error
+def _robust_display_bounds(positions: np.ndarray) -> list[float]:
     if (
-        not isinstance(report, dict)
-        or not isinstance(geojson, dict)
-        or not isinstance(generation_manifest, dict)
+        positions.ndim != 2
+        or positions.shape[1] != 3
+        or len(positions) == 0
+        or not np.isfinite(positions).all()
     ):
-        raise WebViewerExportError(
-            "formal footprint artifacts must contain JSON objects"
-        )
-    report_cache = report.get("cache")
-    if not isinstance(report_cache, dict):
-        raise WebViewerExportError(
-            "formal footprint report cache provenance is invalid"
-        )
-    mapping_sha256 = report.get("global_mapping_sha256")
-    if not isinstance(mapping_sha256, str) or _SHA256.fullmatch(mapping_sha256) is None:
-        raise WebViewerExportError(
-            "formal footprint report global mapping digest is invalid"
-        )
-    run_id = generation_manifest.get("run_id")
-    if not isinstance(run_id, str):
-        raise WebViewerExportError("formal footprint manifest run_id is invalid")
-    status = report.get("status")
-    if (
-        report.get("metric") != "da3_self_exemplar_ground_footprint_union"
-        or report.get("unit") != "m2"
-    ):
-        raise WebViewerExportError("formal footprint report metric or unit is invalid")
-    if status not in {"accepted", "rejected"}:
-        raise WebViewerExportError("formal footprint report status is invalid")
-    accepted = status == "accepted"
-    value = report.get("value_m2")
-    if accepted:
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-            or value < 0
-        ):
-            raise WebViewerExportError(
-                "accepted formal footprint value_m2 must be finite and non-negative"
-            )
-        if report.get("rejection_reason") is not None:
-            raise WebViewerExportError(
-                "accepted formal footprint rejection_reason must be null"
-            )
-    elif value is not None:
-        raise WebViewerExportError("rejected formal footprint value_m2 must be null")
-    elif (
-        not isinstance(report.get("rejection_reason"), str)
-        or not report["rejection_reason"].strip()
-    ):
-        raise WebViewerExportError(
-            "rejected formal footprint rejection_reason must be non-empty"
-        )
-    if (
-        geojson.get("type") != "FeatureCollection"
-        or geojson.get("coordinate_space") != "local_support_plane_meters"
-        or geojson.get("status") != status
-        or geojson.get("measurement_complete") is not accepted
-        or not isinstance(geojson.get("features"), list)
-    ):
-        raise WebViewerExportError("formal footprint GeoJSON contract is invalid")
-    if not accepted:
-        if geojson["features"]:
-            raise WebViewerExportError(
-                "rejected formal footprint must not contain geometry"
-            )
-        return (
-            {
-                "metric": report["metric"],
-                "unit": report["unit"],
-                "status": status,
-                "value_m2": None,
-                "rejection_reason": report.get("rejection_reason"),
-                "run_id": run_id,
-                "support_plane": None,
-                "per_global_id": {},
-                "union": None,
-            },
-            report_cache,
-            mapping_sha256,
-        )
-    plane = _support_plane(report)
-    per_global_id: dict[str, Any] = {}
-    union: dict[str, Any] | None = None
-    for feature in geojson["features"]:
-        global_id, geometry = _parse_feature(feature)
-        if global_id == "union":
-            if union is not None:
-                raise WebViewerExportError(
-                    "formal footprint GeoJSON has multiple union features"
-                )
-            union = geometry
-        elif global_id in per_global_id:
-            raise WebViewerExportError(
-                "formal footprint GeoJSON has duplicate global_id features"
-            )
-        else:
-            per_global_id[global_id] = geometry
-    if union is None:
-        raise WebViewerExportError(
-            "accepted formal footprint GeoJSON is missing union geometry"
-        )
-    if not per_global_id:
-        raise WebViewerExportError(
-            "accepted formal footprint GeoJSON is missing per-ID geometry"
-        )
-    if union["properties"]["area_m2"] != float(value):
-        raise WebViewerExportError(
-            "accepted formal footprint union area_m2 must equal value_m2"
-        )
-    return (
-        {
-            "metric": report["metric"],
-            "unit": report["unit"],
-            "status": status,
-            "value_m2": float(value),
-            "rejection_reason": report.get("rejection_reason"),
-            "run_id": run_id,
-            "support_plane": plane,
-            "per_global_id": per_global_id,
-            "union": union,
-        },
-        report_cache,
-        mapping_sha256,
+        raise WebViewerExportError("cannot export finite display_bounds")
+    bounds = np.percentile(
+        positions.astype(np.float64, copy=False), [1.0, 99.0], axis=0
     )
-
-
-def _mapping_sha256(path: Path) -> str:
-    try:
-        digest = hashlib.sha256()
-        with path.open("rb") as source:
-            for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
-    except OSError as error:
-        raise WebViewerExportError(f"cannot hash global mapping: {error}") from error
-
-
-def _read_json(path: Path) -> Any:
-    try:
-        return json.loads(
-            path.read_text(encoding="utf-8"), parse_constant=_reject_json_constant
-        )
-    except (OSError, json.JSONDecodeError) as error:
-        raise WebViewerExportError(
-            f"cannot read JSON artifact {path}: {error}"
-        ) from error
-
-
-def _reject_json_constant(value: str) -> None:
-    raise ValueError(f"non-finite JSON constant {value}")
-
-
-def _support_plane(report: dict[str, Any]) -> dict[str, list[float]]:
-    plane = report.get("plane")
-    selected = plane.get("selected") if isinstance(plane, dict) else None
-    if not isinstance(selected, dict):
-        raise WebViewerExportError(
-            "accepted formal footprint report is missing support plane"
-        )
-    result: dict[str, list[float]] = {}
-    for field in ("point", "u_axis", "v_axis", "normal"):
-        value = selected.get(field)
-        if not isinstance(value, list) or len(value) != 3:
-            raise WebViewerExportError(
-                f"formal footprint support plane {field} is invalid"
-            )
-        if any(
-            isinstance(item, bool)
-            or not isinstance(item, (int, float))
-            or not math.isfinite(item)
-            for item in value
-        ):
-            raise WebViewerExportError(
-                f"formal footprint support plane {field} is invalid"
-            )
-        result[field] = [float(item) for item in value]
-    return result
-
-
-def _parse_feature(feature: Any) -> tuple[str, dict[str, Any]]:
-    if not isinstance(feature, dict) or feature.get("type") != "Feature":
-        raise WebViewerExportError("formal footprint GeoJSON feature is invalid")
-    properties = feature.get("properties")
-    if not isinstance(properties, dict) or not isinstance(
-        properties.get("global_id"), str
-    ):
-        raise WebViewerExportError("formal footprint GeoJSON global_id is invalid")
-    global_id = properties["global_id"]
-    if global_id == "union":
-        expected_keys = {"coordinate_space", "global_id", "area_m2"}
-        if set(properties) != expected_keys:
-            raise WebViewerExportError("formal union footprint properties are invalid")
-        normalized_properties = {
-            "coordinate_space": "local_support_plane_meters",
-            "global_id": "union",
-            "area_m2": _footprint_area(properties.get("area_m2"), "union"),
-        }
-    else:
-        expected_keys = {
-            "coordinate_space",
-            "global_id",
-            "area_m2",
-            "observations_used",
-        }
-        if set(properties) != expected_keys or _GLOBAL_ID.fullmatch(global_id) is None:
-            raise WebViewerExportError("formal per-ID footprint properties are invalid")
-        normalized_properties = {
-            "coordinate_space": "local_support_plane_meters",
-            "global_id": global_id,
-            "area_m2": _footprint_area(properties.get("area_m2"), global_id),
-            "observations_used": _observations_used(
-                properties.get("observations_used")
-            ),
-        }
-    if properties.get("coordinate_space") != "local_support_plane_meters":
-        raise WebViewerExportError(
-            "formal footprint GeoJSON coordinate_space is invalid"
-        )
-    if not global_id:
-        raise WebViewerExportError("formal footprint GeoJSON global_id is invalid")
-    geometry = feature.get("geometry")
-    if not isinstance(geometry, dict) or geometry.get("type") not in {
-        "Polygon",
-        "MultiPolygon",
-    }:
-        raise WebViewerExportError("formal footprint GeoJSON geometry is invalid")
-    polygons = _parse_polygons(geometry["type"], geometry.get("coordinates"))
-    return global_id, {"rings": polygons, "properties": normalized_properties}
-
-
-_GLOBAL_ID = re.compile(r"^(0|[1-9][0-9]*)$")
-
-
-def _footprint_area(value: Any, global_id: str) -> float:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or value < 0
-    ):
-        raise WebViewerExportError(
-            f"formal footprint area_m2 is invalid for global ID {global_id}"
-        )
-    return float(value)
-
-
-def _observations_used(value: Any) -> int:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
-        or not float(value).is_integer()
-        or value < 0
-        or value > 2**53 - 1
-    ):
-        raise WebViewerExportError(
-            "formal per-ID footprint observations_used is invalid"
-        )
-    return int(value)
-
-
-def _parse_polygons(
-    geometry_type: str, coordinates: Any
-) -> list[list[list[list[float]]]]:
-    raw_polygons = [coordinates] if geometry_type == "Polygon" else coordinates
-    if not isinstance(raw_polygons, list) or not raw_polygons:
-        raise WebViewerExportError("formal footprint GeoJSON coordinates are invalid")
-    polygons: list[list[list[list[float]]]] = []
-    for raw_polygon in raw_polygons:
-        if not isinstance(raw_polygon, list) or not raw_polygon:
-            raise WebViewerExportError(
-                "formal footprint GeoJSON polygon rings are invalid"
-            )
-        rings: list[list[list[float]]] = []
-        for raw_ring in raw_polygon:
-            if not isinstance(raw_ring, list) or len(raw_ring) < 4:
-                raise WebViewerExportError("formal footprint GeoJSON ring is invalid")
-            ring: list[list[float]] = []
-            for coordinate in raw_ring:
-                if (
-                    not isinstance(coordinate, list)
-                    or len(coordinate) != 2
-                    or any(
-                        isinstance(item, bool)
-                        or not isinstance(item, (int, float))
-                        or not math.isfinite(item)
-                        for item in coordinate
-                    )
-                ):
-                    raise WebViewerExportError(
-                        "formal footprint GeoJSON coordinate is invalid"
-                    )
-                ring.append([float(coordinate[0]), float(coordinate[1])])
-            if ring[0] != ring[-1]:
-                raise WebViewerExportError(
-                    "formal footprint GeoJSON ring must be closed"
-                )
-            rings.append(ring)
-        polygons.append(rings)
-    return polygons
+    return [float(value) for value in (*bounds[0], *bounds[1])]
 
 
 def _publish_bundle(
     output_dir: Path,
     manifest: dict[str, Any],
     objects: dict[str, Any],
-    footprint: dict[str, Any],
     arrays: dict[str, np.ndarray],
-    thumbs: dict[str, bytes],
+    thumbnails: dict[str, bytes],
 ) -> Path:
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1431,16 +719,12 @@ def _publish_bundle(
         (temporary / "colors.u8.bin").write_bytes(arrays["colors"].tobytes(order="C"))
         (temporary / "normals.i8.bin").write_bytes(arrays["normals"].tobytes(order="C"))
         _write_json(temporary / "objects.json", objects)
-        _write_json(temporary / "footprints.json", footprint)
         thumbs_dir = temporary / _THUMB_DIR
         thumbs_dir.mkdir()
-        for relative, payload in thumbs.items():
+        for relative, payload in thumbnails.items():
             (temporary / relative).write_bytes(payload)
         os.rename(temporary, generation)
-        _atomic_replace_current(
-            output_dir / "CURRENT",
-            {"complete": True, "run_id": run_id, "schema_version": "2.0.0"},
-        )
+        _atomic_replace_current(output_dir / "CURRENT", {"run_id": run_id})
         return generation
     except BaseException:
         if temporary.exists():

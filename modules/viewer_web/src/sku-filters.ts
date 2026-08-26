@@ -1,4 +1,4 @@
-import type { ClassificationCandidate, ObjectIndex } from "./contracts";
+import type { ObjectIndex, OrderedSku } from "./contracts";
 
 export interface SkuFacet {
   readonly skuId: string;
@@ -9,7 +9,7 @@ export interface SkuFacet {
 export function buildSkuFacets(objects: ObjectIndex): readonly SkuFacet[] {
   const counts = new Map<string, { skuName: string; count: number }>();
   for (const entry of Object.values(objects)) {
-    const primary: ClassificationCandidate | undefined = entry.classification.candidates[0];
+    const primary: OrderedSku | undefined = entry.ordered_skus[0];
     if (primary === undefined) continue;
     const current = counts.get(primary.sku_id);
     counts.set(primary.sku_id, { skuName: primary.sku_name, count: (current?.count ?? 0) + 1 });
@@ -21,7 +21,7 @@ export function buildSkuFacets(objects: ObjectIndex): readonly SkuFacet[] {
 
 export function filterGlobalIdsBySku(objects: ObjectIndex, skuId: string): readonly string[] {
   return Object.entries(objects)
-    .filter(([, entry]) => entry.classification.candidates[0]?.sku_id === skuId)
+    .filter(([, entry]) => entry.ordered_skus[0]?.sku_id === skuId)
     .map(([globalId]) => globalId)
     .sort(compareGlobalIds);
 }

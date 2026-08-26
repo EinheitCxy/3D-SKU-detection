@@ -147,7 +147,7 @@ class EDLPass extends Pass {
 }
 
 /**
- * Renders the remaining layer-0 scene (grid, axes, footprints, selection box)
+ * Renders the remaining layer-0 scene (grid, axes, selection box)
  * on top of the EDL-composited image without touching its color, exactly like
  * potree draws helpers above the shaded point cloud.
  */

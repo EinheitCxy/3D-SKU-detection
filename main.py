@@ -202,6 +202,7 @@ _MATCHING_INFERENCE_LOCK = threading.RLock()
 
 def _serialize_matching_inference(call):
     """Serialize matching because its sampling stack uses process-global RNG."""
+
     @wraps(call)
     def wrapped(self, *args, **kwargs):
         reference_idx = kwargs.get("reference_idx")
@@ -640,6 +641,7 @@ class SKUDetectionMain:
                 exc_info=True,
             )
             return {"success": False, "error": str(e), "duration_s": duration}
+
     def run_detection_visualization(
         self,
         dataset_path: str,
@@ -846,7 +848,9 @@ class SKUDetectionMain:
                 return {"success": False, "error": msg, "duration_s": duration}
 
             dataset = Path(dataset_path)
-            output_root = self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
+            output_root = (
+                self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
+            )
             normalized_backend = "pt" if backend == "point_tracking" else backend
             output_subdir = (
                 "output_pt"
@@ -861,7 +865,11 @@ class SKUDetectionMain:
                 return {"success": False, "error": msg, "duration_s": duration}
 
             script_path = (
-                PROJECT_ROOT / "scripts" / "3d" / "evaluation" / "accuracy_evaluation.sh"
+                PROJECT_ROOT
+                / "scripts"
+                / "3d"
+                / "evaluation"
+                / "accuracy_evaluation.sh"
             )
             if script_path.exists():
                 import subprocess
@@ -895,7 +903,11 @@ class SKUDetectionMain:
 
             msg = f"准确性评估脚本不存在: {script_path}"
             logger.error(msg)
-            return {"success": False, "error": msg, "duration_s": perf_counter() - start}
+            return {
+                "success": False,
+                "error": msg,
+                "duration_s": perf_counter() - start,
+            }
         except (OSError, subprocess.SubprocessError, RuntimeError) as e:
             duration = perf_counter() - start
             logger.error(
@@ -1152,11 +1164,7 @@ class SKUDetectionMain:
         run_id = payload["run_id"]
         assert isinstance(run_id, str)
         run_dir = (
-            output_root
-            / dataset.name
-            / "personalcare_classification"
-            / "runs"
-            / run_id
+            output_root / dataset.name / "personalcare_classification" / "runs" / run_id
         ).resolve()
         detection_dir = Path(payload["detection_dir"])
         result_path = Path(payload["result_path"])
@@ -1251,7 +1259,7 @@ class SKUDetectionMain:
                 match_backend = (
                     self.match_backend if hasattr(self, "match_backend") else "vggt"
                 )
-            # DA3 的 canonical 产物是 schema-v3 metric predictions.npz；其他后端用 GLB。
+                # DA3 的 canonical 产物是 schema-v3 metric predictions.npz；其他后端用 GLB。
                 dataset = Path(dataset_path)
                 output_dir = (
                     (self.save_root / dataset.name)
@@ -1265,14 +1273,18 @@ class SKUDetectionMain:
                 else:
                     base_output = Path("reconstruction.glb")
                     if match_backend not in base_output.stem:
-                        filename = f"{base_output.stem}_{match_backend}{base_output.suffix}"
+                        filename = (
+                            f"{base_output.stem}_{match_backend}{base_output.suffix}"
+                        )
                         expected_result = cache_dir / filename
                     else:
                         expected_result = cache_dir / base_output
                     reusable = expected_result.exists()
 
                 if reusable:
-                    logger.info(f"步骤1: 检测到可复用3D重建结果 {expected_result}，跳过3D重建")
+                    logger.info(
+                        f"步骤1: 检测到可复用3D重建结果 {expected_result}，跳过3D重建"
+                    )
                     summary["reconstruction"] = True
                 else:
                     logger.info(f"步骤1: 3D重建 (backend: {match_backend})")
@@ -1292,12 +1304,12 @@ class SKUDetectionMain:
                 logger.info("步骤1: 跳过3D重建（使用 Point Tracking 算法）")
                 summary["reconstruction"] = True  # 标记为成功（不需要）
 
-        # 2. 原始检测框可视化
+            # 2. 原始检测框可视化
             logger.info("步骤2: 原始检测框可视化")
             viz = self.run_detection_visualization(dataset_path)
             summary["visualization"] = bool(viz.get("success", False))
 
-        # 3. SKU匹配推理
+            # 3. SKU匹配推理
             logger.info(f"步骤3: SKU匹配推理 (algorithm: {algorithm})")
             match_backend = self.match_backend if "3d" in algorithm else "vggt"
             match = self.run_sku_matching(
@@ -1313,7 +1325,7 @@ class SKUDetectionMain:
                 summary["accuracy_evaluation"] = False
                 return summary
 
-        # 3. SKU计数分析
+            # 3. SKU计数分析
             analysis = self.run_improved_sku_analysis(
                 dataset_path, algorithm=algorithm, backend=match_backend
             )
@@ -1331,7 +1343,7 @@ class SKUDetectionMain:
                 summary["accuracy_evaluation"] = False
                 return summary
 
-        # 4. 顺序去重（默认包含以便一键产出去重JSON）
+            # 4. 顺序去重（默认包含以便一键产出去重JSON）
             dedup = self.run_dedup_sequence(
                 dataset_path,
                 algorithm=algorithm,
@@ -1340,31 +1352,35 @@ class SKUDetectionMain:
             )
             summary["dedup"] = bool(dedup.get("success", False))
 
-        # 5. 去重后的检测框可视化
+            # 5. 去重后的检测框可视化
             if summary["dedup"]:
                 dataset = Path(dataset_path)
                 dataset_name = dataset.name
                 output_base = (
                     self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
                 )
-            # deduplicate_sequence 输出到 output_base/dataset_name/dedup_detections/
+                # deduplicate_sequence 输出到 output_base/dataset_name/dedup_detections/
                 dedup_detection_dir = output_base / dataset_name / "dedup_detections"
 
-                if dedup_detection_dir.exists() and any(dedup_detection_dir.glob("*.json")):
+                if dedup_detection_dir.exists() and any(
+                    dedup_detection_dir.glob("*.json")
+                ):
                     logger.info("开始可视化去重后的检测框...")
                     dedup_viz = self.run_detection_visualization(
                         dataset_path,
                         detection_dir=str(dedup_detection_dir),
                         output_suffix="dedup_imgs_w_bboxes",
                     )
-                    summary["dedup_visualization"] = bool(dedup_viz.get("success", False))
+                    summary["dedup_visualization"] = bool(
+                        dedup_viz.get("success", False)
+                    )
                 else:
                     logger.warning(f"去重检测目录为空或不存在: {dedup_detection_dir}")
                     summary["dedup_visualization"] = False
             else:
                 summary["dedup_visualization"] = False
 
-        # 6. 准确性评估 (可选)
+            # 6. 准确性评估 (可选)
             acc = self.run_accuracy_evaluation(
                 dataset_path, backend=match_backend if "3d" in algorithm else "pt"
             )
@@ -1837,11 +1853,11 @@ def main() -> None:
         from src.web_viewer_export import export_web_viewer_bundle
 
         result = export_web_viewer_bundle(
+            dataset_name=dataset.name,
             da3_cache_path=dataset_output / "da3_cache" / "predictions.npz",
             global_mapping_path=dataset_output
             / "dedup_detections"
             / "global_mapping.json",
-            footprint_root=dataset_output / "ground_stack_footprint",
             output_dir=viewer_web_output,
             source_images_dir=dataset / "images",
             sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
@@ -1849,12 +1865,10 @@ def main() -> None:
             max_points=int(args.viewer_web_max_points),
         )
         logger.info(
-            "viewer-web export: output_dir=%s manifest_path=%s point_count=%s "
-            "footprint_status=%s thumbnails=%s",
+            "viewer-web export: output_dir=%s manifest_path=%s point_count=%s thumbnails=%s",
             result["output_dir"],
             result["manifest_path"],
             result["point_count"],
-            result["footprint_status"],
             result["thumbnail_count"],
         )
         default_viewer_web_output = PROJECT_ROOT / "modules" / "viewer_web" / "public" / "data"
