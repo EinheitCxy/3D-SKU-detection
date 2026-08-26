@@ -52,6 +52,10 @@ CUDA_VISIBLE_DEVICES=2 uv run python main.py --mode pipeline \
   --recon_backend da3 --match_backend da3 \
   --classifier-device cuda:0
 
+# 复用外部已补全 classification 的检测结果，不启动本地分类器
+uv run python main.py --mode pipeline \
+  --dataset imdata/floor_display2 --algorithm 3d --no-classifier
+
 # 导出静态 minimal schema 3.0.0 Web bundle（不运行 ground-stack-area）
 uv run python main.py --mode viewer-web \
   --dataset imdata/floor_display2
@@ -93,7 +97,9 @@ Viewer bundle 不包含 footprint、evidence、hash/provenance、source digest�
 
 ## Personalcare classification in viewer objects
 
-pipeline 在 dataset validation 后立即异步提交独立的 personalcare 分类 subprocess；它可与 DA3 reconstruction 或 matching 并行。分类进程每个 dataset 仅加载一次原始 MobileNetV3 模型，按原始 object 顺序批量分类；原始 `detections_results/` 永不改写。实际是否存在 classifier/matching 的时间重叠取决于 cache、可视化与运行 receipt：本次 fd6 cache-reuse receipt 中分类在 matching 开始前已完成。matching 完成后 pipeline 才 join 分类结果；两者都成功才执行 dedup，因此 dedup 显式读取本次已发布的 enriched detections。
+pipeline 默认启用 `--classifier`：在 dataset validation 后立即异步提交独立的 personalcare 分类 subprocess；它可与 DA3 reconstruction 或 matching 并行。分类进程每个 dataset 仅加载一次原始 MobileNetV3 模型，按原始 object 顺序批量分类；原始 `detections_results/` 永不改写。实际是否存在 classifier/matching 的时间重叠取决于 cache、可视化与运行 receipt：本次 fd6 cache-reuse receipt 中分类在 matching 开始前已完成。matching 完成后 pipeline 才 join 分类结果；两者都成功才执行 dedup，因此 dedup 显式读取本次已发布的 enriched detections。
+
+传入 `--no-classifier` 时，pipeline 不启动本地分类器，也不创建分类发布指针或兼容副本；它会在任何重建或 matching 前同步校验 `<dataset>/detections_results/` 中每个数字命名 JSON 的每个 object `classification`，然后将该输入目录显式传给 dedup。外部检测必须符合现有 personalcare classification schema。
 
 分类产物在 `<save_root>/<dataset>/personalcare_classification/CURRENT -> runs/<time_ns>-<pid>/`：run 内有 `detections/<frame>.json` 和 `result.json`。有效 object 同时保留 raw `classes.cls`/`confidences.cls` 与规范化 `classification`；无效 bbox 保留原始数据并以 `status: unavailable`、`reason: invalid_bbox` 发布。此发布只用完整 run 的原子 `CURRENT` 指针，不产生分类 hash、signature、encryption、feature vector 或内容指纹。
 

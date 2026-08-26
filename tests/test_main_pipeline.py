@@ -51,6 +51,96 @@ def _pipeline_fixture(
     return app, dataset
 
 
+def _resolved_classification(sku_id: str) -> dict[str, object]:
+    return {
+        "schema_version": "1.0.0",
+        "source": "personalcare",
+        "project_id": 51,
+        "status": "resolved",
+        "sku_id": sku_id,
+        "sku_name": f"SKU {sku_id}",
+        "confidence": 0.9,
+        "metadata": {
+            "status": "master_data_pending",
+            "manufacturer": None,
+            "brand": None,
+            "category": None,
+            "object_kind": None,
+        },
+    }
+
+
+def _write_enriched_detections(dataset: Path) -> None:
+    (dataset / "detections_results" / "0.json").write_text(
+        json.dumps(
+            {
+                "classes": {},
+                "objects": [
+                    {
+                        "position": [0, 0, 4, 4],
+                        "classification": _resolved_classification("100"),
+                    },
+                    {
+                        "position": [4, 0, 8, 4],
+                        "classification": _resolved_classification("101"),
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_pipeline_external_classifier_uses_enriched_input(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """External enriched detections bypass local classification and feed dedup."""
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    app.classifier_enabled = False
+    _write_enriched_detections(dataset)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        app,
+        "run_personalcare_classification",
+        lambda *_: pytest.fail("local classifier must not run"),
+    )
+    monkeypatch.setattr(
+        app,
+        "run_sku_matching",
+        lambda *_args, **_kwargs: {"success": True},
+    )
+    monkeypatch.setattr(
+        app,
+        "run_dedup_sequence",
+        lambda *_args, **kwargs: calls.append(kwargs["detection_dir"])
+        or {"success": True},
+    )
+
+    summary = app.run_complete_pipeline(str(dataset), algorithm="3d")
+
+    assert summary["classification"] is True
+    assert calls == [str(dataset / "detections_results")]
+
+
+def test_external_classification_directory_rejects_invalid_object(
+    tmp_path: Path,
+) -> None:
+    """A malformed later object cannot bypass external enriched-input validation."""
+    dataset = tmp_path / "dataset"
+    (dataset / "detections_results").mkdir(parents=True)
+    _write_enriched_detections(dataset)
+    invalid = json.loads(
+        (dataset / "detections_results" / "0.json").read_text(encoding="utf-8")
+    )
+    invalid["objects"][1]["classification"]["confidence"] = 2.0
+    (dataset / "detections_results" / "0.json").write_text(
+        json.dumps(invalid), encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="confidence"):
+        main.validate_external_classification_directory(dataset)
+
+
 def _published_classifier_payload(
     dataset: Path, output_root: Path, *, run_id: str = "123456789-4321"
 ) -> tuple[dict[str, object], Path, Path]:
@@ -467,6 +557,40 @@ def test_pipeline_cli_defaults_classifier_device_to_cuda_zero(
     main.main()
 
     assert captured["classifier_device"] == "cuda:0"
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["main.py", "--mode", "pipeline"], True),
+        (["main.py", "--mode", "pipeline", "--no-classifier"], False),
+    ],
+)
+def test_pipeline_cli_can_disable_classifier(
+    monkeypatch: pytest.MonkeyPatch, argv: list[str], expected: bool
+) -> None:
+    """Pipeline CLI preserves local classification by default and can disable it."""
+    captured: dict[str, object] = {}
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.default_dataset = ""
+            self.save_root = None
+            self.match_backend = ""
+            self.classifier_device = ""
+            self.classifier_enabled: bool | None = None
+            self.config_path = None
+
+        def run_complete_pipeline(self, *_args, **_kwargs) -> None:
+            captured["classifier_enabled"] = self.classifier_enabled
+
+    monkeypatch.setattr(main, "SKUDetectionMain", FakeApp)
+    monkeypatch.setattr(main, "_configure_logging_to_save_root", lambda _path: None)
+    monkeypatch.setattr(main.sys, "argv", argv)
+
+    main.main()
+
+    assert captured["classifier_enabled"] is expected
 
 
 def test_pipeline_joins_classification_only_before_dedup(

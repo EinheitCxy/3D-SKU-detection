@@ -75,6 +75,40 @@ def _is_complete_classifier_current(current: object, run_id: str) -> bool:
     )
 
 
+def validate_external_classification_directory(dataset: Path) -> Path:
+    """Validate externally enriched detections before using them for deduplication."""
+    from utils.classification_aggregation import validate_classification
+    from utils.detection_objects import flatten_detection_objects
+
+    detection_dir = dataset / "detections_results"
+    if not detection_dir.is_dir():
+        raise ValueError(
+            f"external classification directory does not exist: {detection_dir}"
+        )
+
+    detection_files: list[Path] = []
+    for detection_file in detection_dir.glob("*.json"):
+        if not detection_file.stem.isdecimal():
+            raise ValueError(
+                f"external classification filename must be numeric: {detection_file.name}"
+            )
+        detection_files.append(detection_file)
+    if not detection_files:
+        raise ValueError(f"external classification directory is empty: {detection_dir}")
+
+    for detection_file in sorted(detection_files, key=lambda path: int(path.stem)):
+        with detection_file.open(encoding="utf-8") as handle:
+            payload = json.load(handle)
+        for object_index, detection in enumerate(flatten_detection_objects(payload)):
+            if not isinstance(detection, dict):
+                raise ValueError(
+                    f"external detection object is invalid: "
+                    f"{detection_file.name}[{object_index}]"
+                )
+            validate_classification(detection.get("classification"))
+    return detection_dir
+
+
 def _resolve_save_root(value: str | None) -> Path:
     """Resolve omitted and relative output roots against the repository root."""
     if value is None or not value.strip():
@@ -237,6 +271,7 @@ class SKUDetectionMain:
         # DA3 is the repository default for 3D matching.
         self.match_backend: str = "da3"
         self.classifier_device: str = "cuda:0"
+        self.classifier_enabled: bool = True
         logger.info("初始化3D SKU Detection主程序")
 
     def show_banner(self) -> None:
@@ -1224,6 +1259,19 @@ class SKUDetectionMain:
         classifier_future: Future[StepResult] | None = None
         classification_result: StepResult | None = None
 
+        if not self.classifier_enabled:
+            try:
+                external_detection_dir = validate_external_classification_directory(
+                    Path(dataset_path)
+                )
+            except (OSError, ValueError, json.JSONDecodeError) as error:
+                logger.error("external classification validation failed: %s", error)
+                return {"validation": True, "classification": False}
+            classification_result = {
+                "success": True,
+                "detection_dir": str(external_detection_dir),
+            }
+
         def join_classification() -> StepResult:
             nonlocal classification_result
             if classification_result is not None:
@@ -1249,11 +1297,13 @@ class SKUDetectionMain:
             classification_result = result
             return classification_result
 
-        classifier_executor = ThreadPoolExecutor(max_workers=1)
+        classifier_executor: ThreadPoolExecutor | None = None
         try:
-            classifier_future = classifier_executor.submit(
-                self.run_personalcare_classification, dataset_path
-            )
+            if self.classifier_enabled:
+                classifier_executor = ThreadPoolExecutor(max_workers=1)
+                classifier_future = classifier_executor.submit(
+                    self.run_personalcare_classification, dataset_path
+                )
             # 1. 3D重建（如果使用3D算法）
             if "3d" in algorithm:
                 match_backend = (
@@ -1393,7 +1443,8 @@ class SKUDetectionMain:
 
             return summary
         finally:
-            classifier_executor.shutdown(wait=True)
+            if classifier_executor is not None:
+                classifier_executor.shutdown(wait=True)
 
     def run_concise_pipeline(
         self, dataset_path: str, algorithm: str = "point_tracking"
@@ -1631,6 +1682,12 @@ def main() -> None:
         help="personalcare 分类器设备（默认 cuda:0）",
     )
     parser.add_argument(
+        "--classifier",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="运行本地分类；--no-classifier 使用外部 enriched detections",
+    )
+    parser.add_argument(
         "--save_json",
         action="store_true",
         default=bool(yaml_main.get("save_json", False)),
@@ -1757,6 +1814,7 @@ def main() -> None:
     # 将命令行或配置中的匹配后端设置到应用实例（仅3D算法生效）
     app.match_backend = args.match_backend
     app.classifier_device = args.classifier_device
+    app.classifier_enabled = args.classifier
     app.config_path = (
         Path(args.config).resolve()
         if args.config
