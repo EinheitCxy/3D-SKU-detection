@@ -275,10 +275,10 @@ uv run --offline pytest tests/test_docker_mapping_processor.py -q
 
 - [ ] **Step 3: Implement strict request preparation**
 
-Write numeric images and canonical detections. Adapt top-level
-`{classes,objects}` and `{skus:[...]}` inputs into canonical
+Write numeric images and canonical detections. Accept only the confirmed
+sku-classifier frame shape `{classes,objects}` and write canonical
 `{skus:[...]}`. Use the current classification schema helper; do not copy
-legacy model code or accept `features`.
+legacy model code, add compatibility shapes or accept `features`.
 
 - [ ] **Step 4: Implement Viewer ZIP packaging**
 
