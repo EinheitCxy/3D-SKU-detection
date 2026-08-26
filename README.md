@@ -67,6 +67,20 @@ uv venv --relocatable --clear .venv --python 3.11
 uv sync --frozen --extra dev
 ```
 
+## 离线 Global-ID Mapping Docker 服务
+
+`docker/` 提供只消费外部 classifier 结果的 DA3/SAM3 BSON 映射服务。它使用本地 base
+image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 checkpoint 离线构建；
+镜像不包含 detector/classifier、Pi3、VGGT、输入数据或运行输出。
+
+```bash
+bash docker/build.sh
+docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
+uv run python docker/test_api.py --dataset <path> --classifier-result <path>
+```
+
+详细的离线前提、named contexts、输入 shape 与客户端输出见 [docker/README.md](docker/README.md)。
+
 统一宿主环境只支持本流水线的 image-only SAM3 推理，不安装 `decord`。官方 SAM3 将它
 归入可选 notebook 依赖；本项目的视频入口先用 OpenCV 抽帧，再向 SAM3 传入图像目录。
 直接让 SAM3 读取 `.mp4` 不属于该宿主环境的支持范围，并会明确要求该可选依赖。
