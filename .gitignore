@@ -41,6 +41,9 @@ Dockered_GlobalIDMapping/code/
 # Excluded: standalone Lingmou GitLab project (own repo, keep out of this repo)
 frame_sampler/
 
+# Standalone Docker packaging checkout (tracks origin/docker independently)
+/docker/
+
 # Datasets (large; keep only the benchmark CSV at imdata root)
 imdata/*/
 imdata/*.gltf

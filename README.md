@@ -49,8 +49,8 @@ DA3/SAM3 仍保留为仓库内源码，DA3 subprocess 默认执行 `.venv/bin/py
 
 根环境固定使用 `opencv-python-headless==4.11.0.86`，不能同时安装 GUI `opencv-python`，从而避免
 最小容器导入 `cv2` 时依赖 `libGL`。一次性准备官方 Linux x86_64 wheel 后，在
-`docker/wheels/` 建立被 Git 忽略的本地链接（或手动放置同名 wheel）；根项目以该相对 flat index
-离线锁定和构建，不提交 wheel：
+独立 `origin/docker` checkout 的 `docker/wheels/` 建立被 Git 忽略的本地链接（或手动放置同名
+wheel）；根项目以该相对 flat index 离线锁定和构建，不提交 wheel：
 
 ```bash
 ln -s /path/to/offline-wheels/opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl \
@@ -81,9 +81,18 @@ uv sync --frozen --extra dev
 
 ## 离线 Global-ID Mapping Docker 服务
 
-`docker/` 提供只消费外部 classifier 结果的 DA3/SAM3 BSON 映射服务。它使用本地 base
-image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 checkpoint 离线构建；
-镜像不包含 detector/classifier、Pi3、VGGT、输入数据或运行输出。
+Docker 包装代码由独立 `origin/docker` 分支维护，父仓库不跟踪并忽略 `/docker/`。首次建立标准
+工作区时，在 main checkout 根目录创建一个追踪该远端分支的嵌套 worktree：
+
+```bash
+git fetch origin docker
+git worktree add --track -b docker docker origin/docker
+```
+
+此后 `/home/xingyu/3D_Recognization` 追踪 `main`，其 `docker/` 子目录独立追踪 `docker`。
+Docker wrapper 提供只消费外部 classifier 结果的 DA3/SAM3 BSON 映射服务，使用本地 base
+image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 checkpoint 离线构建；镜像
+不包含 detector/classifier、Pi3、VGGT、输入数据或运行输出。
 
 ```bash
 bash docker/build.sh
@@ -91,7 +100,8 @@ docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
 uv run python docker/test_api.py --dataset <path> --classifier-result <path>
 ```
 
-详细的离线前提、named contexts、输入 shape 与客户端输出见 [docker/README.md](docker/README.md)。
+详细的离线前提、named contexts、输入 shape 与客户端输出见
+[独立 Docker 分支 README](https://github.com/EinheitCxy/3D-SKU-detection/blob/docker/README.md)。
 
 统一宿主环境只支持本流水线的 image-only SAM3 推理，不安装 `decord`。官方 SAM3 将它
 归入可选 notebook 依赖；本项目的视频入口先用 OpenCV 抽帧，再向 SAM3 传入图像目录。
