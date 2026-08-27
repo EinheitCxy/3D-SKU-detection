@@ -104,6 +104,7 @@ def test_offline_mapping_docker_build_separates_wrapper_and_core_roots() -> None
     build_script = (docker_root / "build.sh").read_text()
 
     assert 'CORE_REPO_ROOT="${CORE_REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"' in build_script
+    assert 'CORE_REPO_ROOT="$(realpath -e "$CORE_REPO_ROOT")"' in build_script
     assert 'SAM3_CHECKPOINT="$CORE_REPO_ROOT/sam3/checkpoints/sam3.pt"' in build_script
     assert 'test -f "$CORE_REPO_ROOT/pyproject.toml"' in build_script
     assert 'test -f "$CORE_REPO_ROOT/uv.lock"' in build_script

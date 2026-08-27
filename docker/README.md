@@ -10,6 +10,8 @@
 `__init__.py`、`api.py`、`processor.py` 和 `request_runner.py` 始终从脚本所在的
 `SCRIPT_DIR` 读取；pipeline 核心源码、`pyproject.toml`、`uv.lock`、DA3/SAM3 源码、
 SAM3 checkpoint，以及 builder 的 `/workspace` 挂载均从 `CORE_REPO_ROOT` 读取。
+无论使用默认值还是显式传入值，`CORE_REPO_ROOT`（包括相对路径）都会立即规范化为
+绝对且存在的路径。
 
 在完整核心 checkout 内构建时，`CORE_REPO_ROOT` 默认是 `docker/` 的父目录：
 
