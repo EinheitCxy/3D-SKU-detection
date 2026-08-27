@@ -95,6 +95,13 @@ def _write_mapping(path: Path) -> None:
                         "removed": False,
                         "classification": _classification(),
                     },
+                    {
+                        "image_id": 7,
+                        "object_id": 6,
+                        "bbox": [246.0, 246.0, 266.0, 256.0],
+                        "removed": False,
+                        "classification": _classification(),
+                    },
                 ]
             }
         ),
@@ -129,6 +136,11 @@ def _write_mask_cache(root: Path) -> None:
                 source_bbox_xyxy=(128.0, 0.0, 384.0, 128.0),
                 processed_bbox_xyxy=(0.5, 0.0, 1.5, 0.5),
             ),
+            ProcessedDetectionPrompt(
+                object_id=6,
+                source_bbox_xyxy=(246.0, 246.0, 266.0, 256.0),
+                processed_bbox_xyxy=(0.9609375, 0.9609375, 1.0390625, 1.0),
+            ),
         ),
         inference_contract={
             "api": "self_exemplar",
@@ -145,6 +157,7 @@ def _write_mask_cache(root: Path) -> None:
             3: np.ones((2, 2), dtype=bool),
             4: np.zeros((2, 2), dtype=bool),
             5: np.zeros((2, 2), dtype=bool),
+            6: np.zeros((2, 2), dtype=bool),
         },
     )
 
@@ -254,11 +267,17 @@ def test_export_publishes_schema3_bundle_with_product_thumbnails(
                     "removed": False,
                     "thumbnail": "thumbs/11_2.jpg",
                 },
+                {
+                    "image_id": 7,
+                    "object_id": 6,
+                    "removed": False,
+                    "thumbnail": "thumbs/11_3.jpg",
+                },
             ],
         }
     }
     thumbnails = sorted((generation / "thumbs").iterdir())
-    assert len(thumbnails) == 3
+    assert len(thumbnails) == 4
     for thumbnail in thumbnails:
         with Image.open(thumbnail) as image:
             assert image.format == "JPEG"
@@ -273,11 +292,16 @@ def test_export_publishes_schema3_bundle_with_product_thumbnails(
         pixels = np.asarray(image)
     assert np.allclose(pixels[34, 64], exporter._THUMB_BACKGROUND, atol=6)
     assert np.allclose(pixels[44, 64], (25, 50, 75), atol=6)
+    with Image.open(generation / "thumbs" / "11_3.jpg") as image:
+        pixels = np.asarray(image)
+    assert np.allclose(pixels[16, 64], exporter._THUMB_BACKGROUND, atol=6)
+    assert np.allclose(pixels[64, 40], (25, 50, 75), atol=6)
+    assert np.allclose(pixels[64, 4], (25, 50, 75), atol=6)
     assert result == {
         "output_dir": str(exporter_inputs["output_dir"]),
         "manifest_path": str(generation / "manifest.json"),
         "point_count": 4,
-        "thumbnail_count": 3,
+        "thumbnail_count": 4,
     }
 
 

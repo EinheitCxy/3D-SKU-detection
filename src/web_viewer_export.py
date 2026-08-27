@@ -490,8 +490,13 @@ def _generate_thumbnails(
                         source_top - padded_top,
                     ),
                 )
-                crop.thumbnail(
-                    (_THUMB_SIZE, _THUMB_SIZE), Image.Resampling.LANCZOS
+                scale = min(_THUMB_SIZE / crop.width, _THUMB_SIZE / crop.height)
+                crop = crop.resize(
+                    (
+                        max(1, round(crop.width * scale)),
+                        max(1, round(crop.height * scale)),
+                    ),
+                    Image.Resampling.LANCZOS,
                 )
                 thumbnail = Image.new(
                     "RGB", (_THUMB_SIZE, _THUMB_SIZE), _THUMB_BACKGROUND
