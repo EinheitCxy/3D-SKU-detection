@@ -4,10 +4,6 @@ WORKDIR /app
 
 RUN find /app -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
-COPY --from=system_debs . /tmp/system-debs/
-RUN dpkg -i /tmp/system-debs/*.deb \
-    && rm -rf /tmp/system-debs /var/lib/apt/lists/*
-
 COPY --from=venv . /app/.venv/
 COPY --from=da3_model . /opt/models/da3/
 COPY --from=sam3_checkpoint sam3.pt /app/sam3/checkpoints/sam3.pt
@@ -17,6 +13,10 @@ COPY --from=app utils /app/utils
 COPY --from=app docker/__init__.py docker/api.py docker/processor.py docker/request_runner.py /app/docker/
 COPY --from=app Depth-Anything-3/src /app/Depth-Anything-3/src
 COPY --from=app sam3/sam3 /app/sam3/sam3
+
+RUN --mount=type=bind,from=system_debs,target=/tmp/system-debs,ro \
+    apt-get install --no-install-recommends --yes /tmp/system-debs/*.deb \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONPATH=/app:/app/Depth-Anything-3/src:/app/sam3 \
