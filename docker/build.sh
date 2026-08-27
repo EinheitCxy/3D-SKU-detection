@@ -2,13 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CORE_REPO_ROOT="${CORE_REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 BASE_IMAGE="harbor-cn.lingmouai.com/alg/sku-classifier-base:0.0.4"
 HOST_UV="${HOST_UV:-/home/xingyu/.local/bin/uv}"
 UV_CACHE_DIR="${UV_CACHE_DIR:-/home/xingyu/.cache/uv}"
 DA3_MODEL_CACHE="${DA3_MODEL_CACHE:-/home/xingyu/.cache/huggingface/hub/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1}"
 DA3_SNAPSHOT="b2359bdf726fb44ef62acca04d629dcf158053e7"
-SAM3_CHECKPOINT="$REPO_ROOT/sam3/checkpoints/sam3.pt"
+SAM3_CHECKPOINT="$CORE_REPO_ROOT/sam3/checkpoints/sam3.pt"
 IMAGE_TAG="${IMAGE_TAG:-global-id-mapping:da3-self-contained}"
 BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-/data/www/comfyui/3d-recognition-build}"
 OPENCV_WHEEL_DIR="${OPENCV_WHEEL_DIR:-$BUILD_WORK_ROOT/runtime/wheels}"
@@ -70,8 +70,8 @@ test -f "$DA3_MODEL_CACHE/snapshots/$DA3_SNAPSHOT/model.safetensors"
 test -f "$DA3_MODEL_CACHE/refs/main"
 grep -Fx "$DA3_SNAPSHOT" "$DA3_MODEL_CACHE/refs/main" >/dev/null
 test -f "$SAM3_CHECKPOINT"
-test -f "$REPO_ROOT/pyproject.toml"
-test -f "$REPO_ROOT/uv.lock"
+test -f "$CORE_REPO_ROOT/pyproject.toml"
+test -f "$CORE_REPO_ROOT/uv.lock"
 test -d "$BUILD_WORK_ROOT"
 test -w "$BUILD_WORK_ROOT"
 test -f "$OPENCV_WHEEL_DIR/$OPENCV_HEADLESS_WHEEL"
@@ -84,12 +84,12 @@ APP_CONTEXT="$BUILD_ROOT/app"
 VENV_CONTEXT="$BUILD_ROOT/venv"
 # 最小应用 context：只保留 Mapping API 所需源码。
 mkdir -p "$APP_CONTEXT/Depth-Anything-3" "$APP_CONTEXT/sam3" "$APP_CONTEXT/docker" "$VENV_CONTEXT"
-cp -a "$REPO_ROOT/main.py" "$REPO_ROOT/config.yaml" "$APP_CONTEXT/"
-cp -a "$REPO_ROOT/src" "$REPO_ROOT/utils" "$APP_CONTEXT/"
-cp -a "$REPO_ROOT/Depth-Anything-3/src" "$APP_CONTEXT/Depth-Anything-3/"
-cp -a "$REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"
-cp -a "$REPO_ROOT/docker/__init__.py" "$REPO_ROOT/docker/api.py" \
-  "$REPO_ROOT/docker/processor.py" "$REPO_ROOT/docker/request_runner.py" "$APP_CONTEXT/docker/"
+cp -a "$CORE_REPO_ROOT/main.py" "$CORE_REPO_ROOT/config.yaml" "$APP_CONTEXT/"
+cp -a "$CORE_REPO_ROOT/src" "$CORE_REPO_ROOT/utils" "$APP_CONTEXT/"
+cp -a "$CORE_REPO_ROOT/Depth-Anything-3/src" "$APP_CONTEXT/Depth-Anything-3/"
+cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"
+cp -a "$SCRIPT_DIR/__init__.py" "$SCRIPT_DIR/api.py" \
+  "$SCRIPT_DIR/processor.py" "$SCRIPT_DIR/request_runner.py" "$APP_CONTEXT/docker/"
 find "$APP_CONTEXT" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$APP_CONTEXT" -type f -name '*.py[co]' -delete
 rm -rf "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/app"
@@ -100,7 +100,7 @@ rm -rf "$APP_CONTEXT/sam3/sam3/perflib/tests"
 
 # 离线 Python 环境：从冻结 lock 和本地 uv cache 创建唯一 venv。
 docker run --rm --pull=never --network none --user "$(id -u):$(id -g)" --entrypoint /bin/bash \
-  -v "$REPO_ROOT:/workspace:ro" \
+  -v "$CORE_REPO_ROOT:/workspace:ro" \
   -v "$HOST_UV:/usr/local/bin/uv:ro" \
   -v "$UV_CACHE_DIR:/uv-cache" \
   -v "$OPENCV_WHEEL_DIR:/workspace/docker/wheels:ro" \
@@ -125,7 +125,7 @@ DOCKER_BUILDKIT=1 docker build --network=none --pull=false \
   --build-context app="$APP_CONTEXT" \
   --build-context venv="$VENV_CONTEXT/.venv" \
   --build-context da3_model="$DA3_MODEL_CACHE" \
-  --build-context sam3_checkpoint="$REPO_ROOT/sam3/checkpoints" \
+  --build-context sam3_checkpoint="$CORE_REPO_ROOT/sam3/checkpoints" \
   --build-context system_debs="$SYSTEM_DEB_DIR" \
   -t "$IMAGE_TAG" \
   "$SCRIPT_DIR"

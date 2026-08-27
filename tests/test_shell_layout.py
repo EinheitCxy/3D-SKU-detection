@@ -99,6 +99,27 @@ def test_offline_mapping_docker_build_contract() -> None:
     assert "--build-context sam3_checkpoint=" in build_script
 
 
+def test_offline_mapping_docker_build_separates_wrapper_and_core_roots() -> None:
+    docker_root = REPOSITORY_ROOT / "docker"
+    build_script = (docker_root / "build.sh").read_text()
+
+    assert 'CORE_REPO_ROOT="${CORE_REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"' in build_script
+    assert 'SAM3_CHECKPOINT="$CORE_REPO_ROOT/sam3/checkpoints/sam3.pt"' in build_script
+    assert 'test -f "$CORE_REPO_ROOT/pyproject.toml"' in build_script
+    assert 'test -f "$CORE_REPO_ROOT/uv.lock"' in build_script
+    assert 'cp -a "$CORE_REPO_ROOT/main.py" "$CORE_REPO_ROOT/config.yaml" "$APP_CONTEXT/"' in build_script
+    assert 'cp -a "$CORE_REPO_ROOT/src" "$CORE_REPO_ROOT/utils" "$APP_CONTEXT/"' in build_script
+    assert 'cp -a "$CORE_REPO_ROOT/Depth-Anything-3/src" "$APP_CONTEXT/Depth-Anything-3/"' in build_script
+    assert 'cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"' in build_script
+    assert '-v "$CORE_REPO_ROOT:/workspace:ro"' in build_script
+    assert '--build-context sam3_checkpoint="$CORE_REPO_ROOT/sam3/checkpoints"' in build_script
+    for wrapper in ("__init__.py", "api.py", "processor.py", "request_runner.py"):
+        assert f'"$SCRIPT_DIR/{wrapper}"' in build_script
+    assert '-f "$SCRIPT_DIR/Dockerfile"' in build_script
+    assert '  "$SCRIPT_DIR"\n' in build_script
+    assert "$REPO_ROOT" not in build_script
+
+
 def test_offline_mapping_docker_build_includes_local_x11_opengl_runtime_debs() -> None:
     docker_root = REPOSITORY_ROOT / "docker"
     dockerfile = (docker_root / "Dockerfile").read_text()

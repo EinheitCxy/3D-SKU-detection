@@ -6,6 +6,26 @@
 
 ## 离线构建
 
+`build.sh` 将包装代码与核心运行代码分开定位：Dockerfile、`build.sh`、
+`__init__.py`、`api.py`、`processor.py` 和 `request_runner.py` 始终从脚本所在的
+`SCRIPT_DIR` 读取；pipeline 核心源码、`pyproject.toml`、`uv.lock`、DA3/SAM3 源码、
+SAM3 checkpoint，以及 builder 的 `/workspace` 挂载均从 `CORE_REPO_ROOT` 读取。
+
+在完整核心 checkout 内构建时，`CORE_REPO_ROOT` 默认是 `docker/` 的父目录：
+
+```bash
+cd /path/to/3D_Recognization
+bash docker/build.sh
+```
+
+在由 `git subtree split --prefix=docker` 得到的 standalone checkout 中，必须显式
+指向完整核心 checkout：
+
+```bash
+cd /path/to/3D_Recognization-docker
+CORE_REPO_ROOT=/path/to/3D_Recognization bash build.sh
+```
+
 构建主机必须已经拥有下列本地内容：
 
 - `harbor-cn.lingmouai.com/alg/sku-classifier-base:0.0.4`（linux/amd64、Ubuntu
@@ -18,11 +38,11 @@
   `libx11-6_*.deb` 与 `libgl1_*.deb`；
 - DA3 Hugging Face cache（`refs/`、`blobs/` 和 snapshot
   `b2359bdf726fb44ef62acca04d629dcf158053e7`）；
-- `sam3/checkpoints/sam3.pt`。
+- `$CORE_REPO_ROOT/sam3/checkpoints/sam3.pt`。
 
 默认 DA3 cache 是
 `/home/xingyu/.cache/huggingface/hub/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1`。
-路径不同则在调用时显式覆盖 `DA3_MODEL_CACHE`；同理可覆盖 `HOST_UV`、
+路径不同则在调用时显式覆盖 `DA3_MODEL_CACHE`；同理可覆盖 `CORE_REPO_ROOT`、`HOST_UV`、
 `UV_CACHE_DIR`、`IMAGE_TAG`、`BUILD_WORK_ROOT`、`OPENCV_WHEEL_DIR` 和 `SYSTEM_DEB_DIR`。
 `OPENCV_WHEEL_DIR` 必须指向包含上述官方 wheel 的现有目录；`SYSTEM_DEB_DIR` 必须指向准备好的
 Ubuntu `.deb` 目录。`build.sh` 会先把它们规范化为绝对路径，再在创建临时 context 前检查精确文件名
