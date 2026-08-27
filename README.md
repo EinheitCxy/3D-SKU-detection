@@ -142,11 +142,11 @@ DA3 bbox 的 source→processed 映射唯一权威是 `predictions.npz` 中每�
 
 ## Minimal Viewer 与点云策略
 
-Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。`CURRENT` 只包含 `run_id`；run 内的 `manifest.json` 固定为 schema `3.0.0`，包含轻量 `backend: "DA3"`、真实 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不携带 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。导出器从 dataset `images/` 中按数字文件名解析原图，为每个 active 与 removed observation 按 bbox 写入 `thumbs/*.jpg`（最长边 256px）；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
+Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。`CURRENT` 只包含 `run_id`；run 内的 `manifest.json` 固定为 schema `3.0.0`，包含轻量 `backend: "DA3"`、真实 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不携带 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。导出器从 dataset `images/` 中按数字文件名解析原图，为每个 active 与 removed observation 按 bbox（保留 10% padding）写入 `thumbs/*.jpg`：JPEG 始终为精确 `128×128`，crop 等比缩放并居中补深色背景，不拉伸或中心裁掉商品；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
 
 canonical “其他品类”是 `sku_id=56642`、`sku_name=其他品类`。只要存在任一具体 SKU，具体 SKU 按既有 confidence/support 顺序排在 56642 之前；只有全部有效观测都是其他品类时，56642 才能排在首位。Viewer 只消费已排序的 SKU ID/名称，不接收或显示 confidence。
 
-产品界面的 Backend badge 直接显示 manifest 的 `backend`；对象与 SKU counts 由前端读取 `objects.json` 的 observations 派生，而非额外后端聚合字段。默认 `Select by SKU`，与 `Select by Global ID` 互斥，切换会清除上一选择。SKU 选择保留完整场景并批量 magenta 高亮；canvas pick 自动切换为 Global ID。`View Controls` 默认折叠，展开后只有 Fit、Top、Iso 和 Point size。右栏为 `Selected Object`，只显示 Global ID 与按发布顺序排列的 SKU。
+产品界面的 Backend badge 直接显示 manifest 的 `backend`；对象与 SKU counts 由前端读取 `objects.json` 的 observations 派生，而非额外后端聚合字段。默认 `Select by SKU`，与 `Select by Global ID` 互斥，切换会清除上一选择。SKU 选择保留完整场景并批量 magenta 高亮；canvas pick 自动切换为 Global ID。`View Controls` 默认折叠，展开后只有 Fit、Top、Iso 和 Point size。右栏为 `Selected Object`，只显示 Global ID 与按发布顺序排列的 SKU；observation 缩略图以紧凑三列优先网格显示，caption 与 removed 灰化语义保持不变。
 
 Viewer bundle 不包含 footprint、evidence、hash/provenance、source digest、confidence 或其他审计型 rich-contract 元数据。它只恢复产品缩略图所需的 observation 标识和相对 JPEG 路径。点云过滤仍对所有点统一执行，选择和 Focus 通过 `point_ranges` 增量更新现有 geometry，不复制点云。
 

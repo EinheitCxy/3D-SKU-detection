@@ -84,8 +84,15 @@ def _write_mapping(path: Path) -> None:
                     {
                         "image_id": 7,
                         "object_id": 4,
-                        "bbox": [128.0, 128.0, 384.0, 384.0],
+                        "bbox": [128.0, 128.0, 384.0, 256.0],
                         "removed": True,
+                        "classification": _classification(),
+                    },
+                    {
+                        "image_id": 7,
+                        "object_id": 5,
+                        "bbox": [128.0, 0.0, 384.0, 128.0],
+                        "removed": False,
                         "classification": _classification(),
                     },
                 ]
@@ -114,8 +121,13 @@ def _write_mask_cache(root: Path) -> None:
             ),
             ProcessedDetectionPrompt(
                 object_id=4,
-                source_bbox_xyxy=(128.0, 128.0, 384.0, 384.0),
-                processed_bbox_xyxy=(0.5, 0.5, 1.5, 1.5),
+                source_bbox_xyxy=(128.0, 128.0, 384.0, 256.0),
+                processed_bbox_xyxy=(0.5, 0.5, 1.5, 1.0),
+            ),
+            ProcessedDetectionPrompt(
+                object_id=5,
+                source_bbox_xyxy=(128.0, 0.0, 384.0, 128.0),
+                processed_bbox_xyxy=(0.5, 0.0, 1.5, 0.5),
             ),
         ),
         inference_contract={
@@ -132,6 +144,7 @@ def _write_mask_cache(root: Path) -> None:
         lambda: {
             3: np.ones((2, 2), dtype=bool),
             4: np.zeros((2, 2), dtype=bool),
+            5: np.zeros((2, 2), dtype=bool),
         },
     )
 
@@ -235,20 +248,36 @@ def test_export_publishes_schema3_bundle_with_product_thumbnails(
                     "removed": True,
                     "thumbnail": "thumbs/11_1.jpg",
                 },
+                {
+                    "image_id": 7,
+                    "object_id": 5,
+                    "removed": False,
+                    "thumbnail": "thumbs/11_2.jpg",
+                },
             ],
         }
     }
     thumbnails = sorted((generation / "thumbs").iterdir())
-    assert len(thumbnails) == 2
+    assert len(thumbnails) == 3
     for thumbnail in thumbnails:
         with Image.open(thumbnail) as image:
             assert image.format == "JPEG"
-            assert max(image.size) <= 256
+            assert image.mode == "RGB"
+            assert image.size == (128, 128)
+    with Image.open(generation / "thumbs" / "11_1.jpg") as image:
+        pixels = np.asarray(image)
+    assert np.allclose(pixels[16, 64], exporter._THUMB_BACKGROUND, atol=6)
+    assert np.allclose(pixels[112, 64], exporter._THUMB_BACKGROUND, atol=6)
+    assert np.allclose(pixels[64, 64], (25, 50, 75), atol=6)
+    with Image.open(generation / "thumbs" / "11_2.jpg") as image:
+        pixels = np.asarray(image)
+    assert np.allclose(pixels[34, 64], exporter._THUMB_BACKGROUND, atol=6)
+    assert np.allclose(pixels[44, 64], (25, 50, 75), atol=6)
     assert result == {
         "output_dir": str(exporter_inputs["output_dir"]),
         "manifest_path": str(generation / "manifest.json"),
         "point_count": 4,
-        "thumbnail_count": 2,
+        "thumbnail_count": 3,
     }
 
 

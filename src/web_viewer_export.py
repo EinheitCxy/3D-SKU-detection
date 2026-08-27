@@ -47,9 +47,10 @@ _GLOBAL_ID = re.compile(r"^(0|[1-9][0-9]*)$")
 _IMAGE_ID_STEM = re.compile(r"(\d+)")
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 _THUMB_DIR = "thumbs"
-_THUMB_LONG_EDGE = 256
+_THUMB_SIZE = 128
 _THUMB_PADDING = 0.10
 _THUMB_JPEG_QUALITY = 85
+_THUMB_BACKGROUND = (16, 31, 39)
 logger = logging.getLogger(__name__)
 
 
@@ -439,7 +440,7 @@ def _resolve_source_images(images_dir: Path) -> dict[int, Path]:
 def _generate_thumbnails(
     objects: dict[str, Any], images_by_id: dict[int, Path]
 ) -> dict[str, bytes]:
-    """Crop every active and removed rich instance into a <=256px JPEG."""
+    """Crop every active and removed instance into a padded 128px JPEG."""
     thumbnails: dict[str, bytes] = {}
     loaded: dict[int, Image.Image] = {}
     try:
@@ -467,19 +468,43 @@ def _generate_thumbnails(
                     )
                 pad_x = (x2 - x1) * _THUMB_PADDING
                 pad_y = (y2 - y1) * _THUMB_PADDING
-                crop = image.crop(
+                padded_left = math.floor(x1 - pad_x)
+                padded_top = math.floor(y1 - pad_y)
+                padded_right = math.ceil(x2 + pad_x)
+                padded_bottom = math.ceil(y2 + pad_y)
+                crop = Image.new(
+                    "RGB",
+                    (padded_right - padded_left, padded_bottom - padded_top),
+                    _THUMB_BACKGROUND,
+                )
+                source_left = max(0, padded_left)
+                source_top = max(0, padded_top)
+                source_right = min(width, padded_right)
+                source_bottom = min(height, padded_bottom)
+                crop.paste(
+                    image.crop(
+                        (source_left, source_top, source_right, source_bottom)
+                    ),
                     (
-                        max(0, math.floor(x1 - pad_x)),
-                        max(0, math.floor(y1 - pad_y)),
-                        min(width, math.ceil(x2 + pad_x)),
-                        min(height, math.ceil(y2 + pad_y)),
-                    )
+                        source_left - padded_left,
+                        source_top - padded_top,
+                    ),
                 )
                 crop.thumbnail(
-                    (_THUMB_LONG_EDGE, _THUMB_LONG_EDGE), Image.Resampling.LANCZOS
+                    (_THUMB_SIZE, _THUMB_SIZE), Image.Resampling.LANCZOS
+                )
+                thumbnail = Image.new(
+                    "RGB", (_THUMB_SIZE, _THUMB_SIZE), _THUMB_BACKGROUND
+                )
+                thumbnail.paste(
+                    crop,
+                    (
+                        (_THUMB_SIZE - crop.width) // 2,
+                        (_THUMB_SIZE - crop.height) // 2,
+                    ),
                 )
                 buffer = io.BytesIO()
-                crop.save(buffer, format="JPEG", quality=_THUMB_JPEG_QUALITY)
+                thumbnail.save(buffer, format="JPEG", quality=_THUMB_JPEG_QUALITY)
                 relative = f"{_THUMB_DIR}/{global_id}_{instance_index}.jpg"
                 thumbnails[relative] = buffer.getvalue()
                 instance["thumbnail"] = relative

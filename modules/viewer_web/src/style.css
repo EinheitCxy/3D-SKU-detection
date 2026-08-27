@@ -55,10 +55,10 @@ dd { margin: 0; color: #e6f1f5; overflow-wrap: anywhere; }
 .selected-content { min-height: 0; }
 .selected-content dl { display: grid; gap: .2rem; }
 .selected-content ul { display: grid; gap: .35rem; margin: 0; padding-left: 1.25rem; overflow-wrap: anywhere; }
-.thumb-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
-.thumb { margin: 0; overflow: hidden; background: #101f27; border: 1px solid #294550; border-radius: 8px; }
-.thumb img { display: block; width: 100%; height: auto; }
-.thumb figcaption { padding: .3rem .42rem; color: #8da5b0; font-size: .68rem; }
+.thumb-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .32rem; }
+.thumb { margin: 0; overflow: hidden; background: #101f27; border: 1px solid #294550; border-radius: 5px; }
+.thumb img { display: block; aspect-ratio: 1; width: 100%; object-fit: contain; }
+.thumb figcaption { padding: .22rem .3rem; color: #8da5b0; font-size: .62rem; line-height: 1.25; }
 .thumb.removed { opacity: .45; }
 .thumb.removed img { filter: grayscale(1); }
 .thumb.removed figcaption { text-decoration: line-through; }

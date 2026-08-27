@@ -54,7 +54,7 @@ canonical “其他品类”是 `sku_id=56642`、`sku_name=其他品类`。只�
 - SKU 选择保留完整场景，并批量以 magenta 高亮匹配的 Global ID；canvas 点选自动切换到 Global ID。
 - `View Controls` 默认折叠；展开后只提供 Fit、Top、Iso 和 Point size，折叠时不会遮挡 canvas。
 - 左栏显示从 object index 与当前 scene 可见集合推导的 `Total` / `Visible`。
-- 右栏标题为 `Selected Object`，显示 Global ID、该对象由 observations 派生的 Observations / Active / Removed、按发布顺序排列的 SKU，以及 observation thumbnail grid；卡片显示 image/object ID，removed 卡片灰化。
+- 右栏标题为 `Selected Object`，显示 Global ID、该对象由 observations 派生的 Observations / Active / Removed、按发布顺序排列的 SKU，以及紧凑的三列优先 observation thumbnail grid；每张图片都是导出器生成的精确 `128×128` 等比补深色背景 JPEG，卡片仍显示 image/object ID，removed 卡片灰化。
 - Focus 始终使用对象的 `point_ranges`，不会复制点云 geometry。
 
 Viewer 不包含 footprint、source provenance、hash/filter metadata 或 confidence 字段；也不加载这些旧 rich-contract 产物。
