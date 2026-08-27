@@ -104,17 +104,30 @@ def test_offline_mapping_docker_build_includes_local_x11_opengl_runtime_debs() -
     dockerfile = (docker_root / "Dockerfile").read_text()
     build_script = (docker_root / "build.sh").read_text()
 
-    assert "COPY --from=system_debs . /tmp/system-debs/" in dockerfile
-    assert "RUN dpkg -i /tmp/system-debs/*.deb" in dockerfile
-    assert "rm -rf /tmp/system-debs" in dockerfile
-    assert "apt-get" not in dockerfile
+    system_debs_mount = (
+        "RUN --mount=type=bind,from=system_debs,target=/tmp/system-debs,ro"
+    )
+    assert system_debs_mount in dockerfile
+    assert "apt-get install --no-install-recommends --yes /tmp/system-debs/*.deb" in dockerfile
+    assert "COPY --from=system_debs" not in dockerfile
+    assert "dpkg -i" not in dockerfile
+    assert dockerfile.index(system_debs_mount) > dockerfile.index(
+        "COPY --from=da3_model"
+    )
 
     assert 'SYSTEM_DEB_DIR="${SYSTEM_DEB_DIR:-$BUILD_WORK_ROOT/runtime/system-debs/ubuntu-22.04-amd64}"' in build_script
     assert 'PREPARE_SYSTEM_DEPS_ONLY="${PREPARE_SYSTEM_DEPS_ONLY:-0}"' in build_script
-    assert 'SYSTEM_DEPS_BASE_IMAGE="ubuntu:22.04"' in build_script
     assert 'if [ "$PREPARE_SYSTEM_DEPS_ONLY" = "1" ]; then' in build_script
+    assert 'docker image inspect "$BASE_IMAGE" >/dev/null' in build_script
+    assert "source /etc/os-release" in build_script
+    assert 'test "$ID" = "ubuntu"' in build_script
+    assert 'test "$VERSION_ID" = "22.04"' in build_script
+    assert "--network=none --entrypoint /bin/bash" in build_script
+    assert 'rm -f /output/*.deb /output/lock' in build_script
+    assert 'rm -rf /output/partial' in build_script
+    assert 'chown "$OUTPUT_UID:$OUTPUT_GID" /output /output/*.deb' in build_script
     assert "apt-get update" in build_script
-    assert "apt-get install --download-only --yes" in build_script
+    assert "apt-get install --download-only --yes --no-install-recommends" in build_script
     assert "libx11-6 libgl1" in build_script
     assert 'compgen -G "$SYSTEM_DEB_DIR/libx11-6_*.deb"' in build_script
     assert 'compgen -G "$SYSTEM_DEB_DIR/libgl1_*.deb"' in build_script

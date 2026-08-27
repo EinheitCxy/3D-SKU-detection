@@ -15,20 +15,33 @@ OPENCV_WHEEL_DIR="${OPENCV_WHEEL_DIR:-$BUILD_WORK_ROOT/runtime/wheels}"
 OPENCV_HEADLESS_WHEEL="opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
 SYSTEM_DEB_DIR="${SYSTEM_DEB_DIR:-$BUILD_WORK_ROOT/runtime/system-debs/ubuntu-22.04-amd64}"
 PREPARE_SYSTEM_DEPS_ONLY="${PREPARE_SYSTEM_DEPS_ONLY:-0}"
-SYSTEM_DEPS_BASE_IMAGE="ubuntu:22.04"
 
 # 可选的一次在线准备：下载 Ubuntu 运行时 .deb，供后续离线镜像组装。
 if [ "$PREPARE_SYSTEM_DEPS_ONLY" = "1" ]; then
-  docker image inspect "$SYSTEM_DEPS_BASE_IMAGE" >/dev/null
-  test "$(docker image inspect --format '{{.Architecture}}' "$SYSTEM_DEPS_BASE_IMAGE")" = "amd64"
+  docker image inspect "$BASE_IMAGE" >/dev/null
+  test "$(docker image inspect --format '{{.Architecture}}' "$BASE_IMAGE")" = "amd64"
+  docker run --rm --pull=never --network=none --entrypoint /bin/bash \
+    "$BASE_IMAGE" -ceu '
+      source /etc/os-release
+      test "$ID" = "ubuntu"
+      test "$VERSION_ID" = "22.04"
+    '
   mkdir -p "$SYSTEM_DEB_DIR"
   SYSTEM_DEB_DIR="$(realpath -e "$SYSTEM_DEB_DIR")"
-  docker run --rm --pull=never \
+  docker run --rm --pull=never --entrypoint /bin/bash \
+    -e OUTPUT_UID="$(id -u)" \
+    -e OUTPUT_GID="$(id -g)" \
     -v "$SYSTEM_DEB_DIR:/output" \
-    "$SYSTEM_DEPS_BASE_IMAGE" bash -ceu '
+    "$BASE_IMAGE" -ceu '
+      rm -f /output/*.deb /output/lock
+      rm -rf /output/partial
+      mkdir -p /output/partial
       apt-get update
-      apt-get install --download-only --yes \
+      apt-get install --download-only --yes --no-install-recommends \
         -o Dir::Cache::archives=/output libx11-6 libgl1
+      rm -f /output/lock
+      rm -rf /output/partial
+      chown "$OUTPUT_UID:$OUTPUT_GID" /output /output/*.deb
     '
   exit 0
 fi

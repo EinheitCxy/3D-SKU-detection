@@ -8,7 +8,8 @@
 
 构建主机必须已经拥有下列本地内容：
 
-- `harbor-cn.lingmouai.com/alg/sku-classifier-base:0.0.4`（linux/amd64）；
+- `harbor-cn.lingmouai.com/alg/sku-classifier-base:0.0.4`（linux/amd64、Ubuntu
+  22.04）；
 - `/home/xingyu/.local/bin/uv` 和完整 uv cache；
 - 官方 `opencv-python-headless==4.11.0.86` Linux x86_64 wheel：
   `/data/www/comfyui/3d-recognition-build/runtime/wheels/opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`；
@@ -22,15 +23,17 @@
 默认 DA3 cache 是
 `/home/xingyu/.cache/huggingface/hub/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1`。
 路径不同则在调用时显式覆盖 `DA3_MODEL_CACHE`；同理可覆盖 `HOST_UV`、
-`UV_CACHE_DIR`、`IMAGE_TAG`、`BUILD_WORK_ROOT` 和 `OPENCV_WHEEL_DIR`。后者必须指向包含上述
-官方 wheel 的现有目录；`build.sh` 会先把它规范化为绝对路径，再在创建临时 context 前检查精确文件名
+`UV_CACHE_DIR`、`IMAGE_TAG`、`BUILD_WORK_ROOT`、`OPENCV_WHEEL_DIR` 和 `SYSTEM_DEB_DIR`。
+`OPENCV_WHEEL_DIR` 必须指向包含上述官方 wheel 的现有目录；`SYSTEM_DEB_DIR` 必须指向准备好的
+Ubuntu `.deb` 目录。`build.sh` 会先把它们规范化为绝对路径，再在创建临时 context 前检查精确文件名
 是否存在，并以只读挂载覆盖 builder 的 `/workspace/docker/wheels` 相对 flat index。默认临时构建目录是
-`/data/www/comfyui/3d-recognition-build`，必须已经存在且当前用户可写。构建需要约 6 GB
-的 DA3 named context，且不会下载、
-push、prune 或使用网络。
+`/data/www/comfyui/3d-recognition-build`，必须已经存在且当前用户可写。构建需要约 6 GB 的 DA3
+named context，且不会下载、push、prune 或使用网络。
 
-首次在可联网环境准备 Open3D 所需的 Ubuntu runtime packages；该命令使用已存在的
-`ubuntu:22.04` 基础镜像下载 `libx11-6`、`libgl1` 及其依赖到本地目录，然后退出而不构建最终镜像：
+首次在可联网环境准备 Open3D 所需的 Ubuntu runtime packages；该命令复用已存在的 Mapping
+base image，并在下载前离线验证它是 Ubuntu 22.04 amd64。它将下载 `libx11-6`、`libgl1` 及其
+必需依赖到本地目录，然后退出而不构建最终镜像。准备时只清理该目录顶层已有 `.deb`、`lock` 和
+`partial`，并以调用者 uid/gid 回写下载结果：
 
 ```bash
 PREPARE_SYSTEM_DEPS_ONLY=1 bash docker/build.sh
