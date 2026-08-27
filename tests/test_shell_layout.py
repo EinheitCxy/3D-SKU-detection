@@ -97,3 +97,26 @@ def test_offline_mapping_docker_build_contract() -> None:
     assert "--build-context venv=" in build_script
     assert "--build-context da3_model=" in build_script
     assert "--build-context sam3_checkpoint=" in build_script
+
+
+def test_offline_mapping_docker_build_includes_local_x11_opengl_runtime_debs() -> None:
+    docker_root = REPOSITORY_ROOT / "docker"
+    dockerfile = (docker_root / "Dockerfile").read_text()
+    build_script = (docker_root / "build.sh").read_text()
+
+    assert "COPY --from=system_debs . /tmp/system-debs/" in dockerfile
+    assert "RUN dpkg -i /tmp/system-debs/*.deb" in dockerfile
+    assert "rm -rf /tmp/system-debs" in dockerfile
+    assert "apt-get" not in dockerfile
+
+    assert 'SYSTEM_DEB_DIR="${SYSTEM_DEB_DIR:-$BUILD_WORK_ROOT/runtime/system-debs/ubuntu-22.04-amd64}"' in build_script
+    assert 'PREPARE_SYSTEM_DEPS_ONLY="${PREPARE_SYSTEM_DEPS_ONLY:-0}"' in build_script
+    assert 'SYSTEM_DEPS_BASE_IMAGE="ubuntu:22.04"' in build_script
+    assert 'if [ "$PREPARE_SYSTEM_DEPS_ONLY" = "1" ]; then' in build_script
+    assert "apt-get update" in build_script
+    assert "apt-get install --download-only --yes" in build_script
+    assert "libx11-6 libgl1" in build_script
+    assert 'compgen -G "$SYSTEM_DEB_DIR/libx11-6_*.deb"' in build_script
+    assert 'compgen -G "$SYSTEM_DEB_DIR/libgl1_*.deb"' in build_script
+    assert '--build-context system_debs="$SYSTEM_DEB_DIR"' in build_script
+    assert "docker build --network=none --pull=false" in build_script

@@ -4,6 +4,10 @@ WORKDIR /app
 
 RUN find /app -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 
+COPY --from=system_debs . /tmp/system-debs/
+RUN dpkg -i /tmp/system-debs/*.deb \
+    && rm -rf /tmp/system-debs /var/lib/apt/lists/*
+
 COPY --from=venv . /app/.venv/
 COPY --from=da3_model . /opt/models/da3/
 COPY --from=sam3_checkpoint sam3.pt /app/sam3/checkpoints/sam3.pt
