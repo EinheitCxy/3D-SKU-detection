@@ -133,3 +133,6 @@ def test_offline_mapping_docker_build_includes_local_x11_opengl_runtime_debs() -
     assert 'compgen -G "$SYSTEM_DEB_DIR/libgl1_*.deb"' in build_script
     assert '--build-context system_debs="$SYSTEM_DEB_DIR"' in build_script
     assert "docker build --network=none --pull=false" in build_script
+    assert 'test -f "$VENV_CONTEXT/.venv/pyvenv.cfg"' in build_script
+    assert 'test -L "$VENV_CONTEXT/.venv/bin/python"' in build_script
+    assert 'test -x "$VENV_CONTEXT/.venv/bin/python"' not in build_script

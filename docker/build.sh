@@ -116,7 +116,8 @@ docker run --rm --pull=never --network none --user "$(id -u):$(id -g)" --entrypo
     "$VIRTUAL_ENV/bin/python" -c "import bson, cv2, fastapi, torch, torchvision, xformers"
   '
 
-test -x "$VENV_CONTEXT/.venv/bin/python"
+test -f "$VENV_CONTEXT/.venv/pyvenv.cfg"
+test -L "$VENV_CONTEXT/.venv/bin/python"
 
 # 最终离线镜像组装：所有运行时输入均通过 named context 提供。
 DOCKER_BUILDKIT=1 docker build --network=none --pull=false \
