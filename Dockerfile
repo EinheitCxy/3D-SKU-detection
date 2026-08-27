@@ -15,7 +15,8 @@ COPY --from=app Depth-Anything-3/src /app/Depth-Anything-3/src
 COPY --from=app sam3/sam3 /app/sam3/sam3
 
 RUN --mount=type=bind,from=system_debs,target=/tmp/system-debs,ro \
-    apt-get install --no-install-recommends --yes /tmp/system-debs/*.deb \
+    dpkg -i /tmp/system-debs/*.deb \
+    && test -z "$(dpkg --audit)" \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 ENV PATH=/app/.venv/bin:$PATH \
