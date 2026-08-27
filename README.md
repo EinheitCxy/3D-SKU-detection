@@ -12,6 +12,9 @@
 - `/home/xingyu/.local/bin/uv` 和完整 uv cache；
 - 官方 `opencv-python-headless==4.11.0.86` Linux x86_64 wheel：
   `/data/www/comfyui/3d-recognition-build/runtime/wheels/opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`；
+- Ubuntu 22.04 amd64 runtime `.deb` 目录，默认是
+  `/data/www/comfyui/3d-recognition-build/runtime/system-debs/ubuntu-22.04-amd64`，其中必须含有
+  `libx11-6_*.deb` 与 `libgl1_*.deb`；
 - DA3 Hugging Face cache（`refs/`、`blobs/` 和 snapshot
   `b2359bdf726fb44ef62acca04d629dcf158053e7`）；
 - `sam3/checkpoints/sam3.pt`。
@@ -26,6 +29,15 @@
 的 DA3 named context，且不会下载、
 push、prune 或使用网络。
 
+首次在可联网环境准备 Open3D 所需的 Ubuntu runtime packages；该命令使用已存在的
+`ubuntu:22.04` 基础镜像下载 `libx11-6`、`libgl1` 及其依赖到本地目录，然后退出而不构建最终镜像：
+
+```bash
+PREPARE_SYSTEM_DEPS_ONLY=1 bash docker/build.sh
+```
+
+之后的正常构建只使用该本地目录和其他已准备输入，仍保持 `--network=none`：
+
 ```bash
 bash docker/build.sh
 docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
@@ -37,11 +49,15 @@ BuildKit named contexts 装配最终镜像。运行时固定一份 `/app/.venv`�
 `DA3_VENV_PYTHON=/app/.venv/bin/python`、离线 Hugging Face/Transformers，并且 Uvicorn
 仅启动一个 worker。
 
-首次准备 wheel 后，后续构建始终使用 `--network=none`、冻结 lock 和项目 `[tool.uv].find-links`
-flat index，不需要网络。`OPENCV_WHEEL_DIR` 必须为现有目录，脚本会在挂载前把它规范化为绝对路径：
+`libX11` 与 `libGL` 仅用于满足 Open3D 的动态链接依赖；Docker 容器不会显示任何 UI。首次准备
+wheel 和上述 system `.deb` 后，后续构建始终使用 `--network=none`、冻结 lock 和项目
+`[tool.uv].find-links` flat index，不需要网络。`OPENCV_WHEEL_DIR` 与 `SYSTEM_DEB_DIR` 均可覆盖，
+且必须为现有目录；脚本会在使用前把它们规范化为绝对路径：
 
 ```bash
-OPENCV_WHEEL_DIR=/path/to/offline-wheels bash docker/build.sh
+OPENCV_WHEEL_DIR=/path/to/offline-wheels \
+SYSTEM_DEB_DIR=/path/to/ubuntu-22.04-amd64-debs \
+bash docker/build.sh
 ```
 
 ## BSON 输入与客户端

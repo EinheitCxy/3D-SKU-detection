@@ -13,12 +13,36 @@ IMAGE_TAG="${IMAGE_TAG:-global-id-mapping:da3-self-contained}"
 BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-/data/www/comfyui/3d-recognition-build}"
 OPENCV_WHEEL_DIR="${OPENCV_WHEEL_DIR:-$BUILD_WORK_ROOT/runtime/wheels}"
 OPENCV_HEADLESS_WHEEL="opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+SYSTEM_DEB_DIR="${SYSTEM_DEB_DIR:-$BUILD_WORK_ROOT/runtime/system-debs/ubuntu-22.04-amd64}"
+PREPARE_SYSTEM_DEPS_ONLY="${PREPARE_SYSTEM_DEPS_ONLY:-0}"
+SYSTEM_DEPS_BASE_IMAGE="ubuntu:22.04"
+
+# 可选的一次在线准备：下载 Ubuntu 运行时 .deb，供后续离线镜像组装。
+if [ "$PREPARE_SYSTEM_DEPS_ONLY" = "1" ]; then
+  docker image inspect "$SYSTEM_DEPS_BASE_IMAGE" >/dev/null
+  test "$(docker image inspect --format '{{.Architecture}}' "$SYSTEM_DEPS_BASE_IMAGE")" = "amd64"
+  mkdir -p "$SYSTEM_DEB_DIR"
+  SYSTEM_DEB_DIR="$(realpath -e "$SYSTEM_DEB_DIR")"
+  docker run --rm --pull=never \
+    -v "$SYSTEM_DEB_DIR:/output" \
+    "$SYSTEM_DEPS_BASE_IMAGE" bash -ceu '
+      apt-get update
+      apt-get install --download-only --yes \
+        -o Dir::Cache::archives=/output libx11-6 libgl1
+    '
+  exit 0
+fi
 
 [ -d "$OPENCV_WHEEL_DIR" ] || {
   echo "OPENCV_WHEEL_DIR must be an existing directory: $OPENCV_WHEEL_DIR" >&2
   exit 1
 }
 OPENCV_WHEEL_DIR="$(realpath -e "$OPENCV_WHEEL_DIR")"
+[ -d "$SYSTEM_DEB_DIR" ] || {
+  echo "SYSTEM_DEB_DIR must be an existing directory: $SYSTEM_DEB_DIR" >&2
+  exit 1
+}
+SYSTEM_DEB_DIR="$(realpath -e "$SYSTEM_DEB_DIR")"
 
 docker image inspect "$BASE_IMAGE" >/dev/null
 test "$(docker image inspect --format '{{.Architecture}}' "$BASE_IMAGE")" = "amd64"
@@ -38,11 +62,14 @@ test -f "$REPO_ROOT/uv.lock"
 test -d "$BUILD_WORK_ROOT"
 test -w "$BUILD_WORK_ROOT"
 test -f "$OPENCV_WHEEL_DIR/$OPENCV_HEADLESS_WHEEL"
+compgen -G "$SYSTEM_DEB_DIR/libx11-6_*.deb" >/dev/null
+compgen -G "$SYSTEM_DEB_DIR/libgl1_*.deb" >/dev/null
 
 BUILD_ROOT="$(mktemp -d "$BUILD_WORK_ROOT/global-id-mapping.XXXXXX")"
 trap 'rm -rf "$BUILD_ROOT"' EXIT
 APP_CONTEXT="$BUILD_ROOT/app"
 VENV_CONTEXT="$BUILD_ROOT/venv"
+# 最小应用 context：只保留 Mapping API 所需源码。
 mkdir -p "$APP_CONTEXT/Depth-Anything-3" "$APP_CONTEXT/sam3" "$APP_CONTEXT/docker" "$VENV_CONTEXT"
 cp -a "$REPO_ROOT/main.py" "$REPO_ROOT/config.yaml" "$APP_CONTEXT/"
 cp -a "$REPO_ROOT/src" "$REPO_ROOT/utils" "$APP_CONTEXT/"
@@ -58,6 +85,7 @@ rm -rf "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/services"
 rm -f "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/cli.py"
 rm -rf "$APP_CONTEXT/sam3/sam3/perflib/tests"
 
+# 离线 Python 环境：从冻结 lock 和本地 uv cache 创建唯一 venv。
 docker run --rm --pull=never --network none --user "$(id -u):$(id -g)" --entrypoint /bin/bash \
   -v "$REPO_ROOT:/workspace:ro" \
   -v "$HOST_UV:/usr/local/bin/uv:ro" \
@@ -77,11 +105,13 @@ docker run --rm --pull=never --network none --user "$(id -u):$(id -g)" --entrypo
 
 test -x "$VENV_CONTEXT/.venv/bin/python"
 
+# 最终离线镜像组装：所有运行时输入均通过 named context 提供。
 DOCKER_BUILDKIT=1 docker build --network=none --pull=false \
   -f "$SCRIPT_DIR/Dockerfile" \
   --build-context app="$APP_CONTEXT" \
   --build-context venv="$VENV_CONTEXT/.venv" \
   --build-context da3_model="$DA3_MODEL_CACHE" \
   --build-context sam3_checkpoint="$REPO_ROOT/sam3/checkpoints" \
+  --build-context system_debs="$SYSTEM_DEB_DIR" \
   -t "$IMAGE_TAG" \
   "$SCRIPT_DIR"
