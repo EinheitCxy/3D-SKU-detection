@@ -14,6 +14,12 @@ import pytest
 CODE_ROOT = Path(__file__).resolve().parents[1]
 SAM3_ROOT = CODE_ROOT / "sam3"
 UNIFIED_ENV_BUILDER = CODE_ROOT / "scripts" / "3d" / "ops" / "build_unified_env.sh"
+OPENCV_HEADLESS_REQUIREMENT = "opencv-python-headless==4.11.0.86"
+OPENCV_HEADLESS_WHEEL = (
+    "opencv_python_headless-4.11.0.86-cp37-abi3-"
+    "manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+)
+PROJECT_OPENCV_WHEEL_DIR = "docker/wheels"
 
 
 def test_root_project_declares_unified_da3_dependency_contract() -> None:
@@ -45,7 +51,8 @@ def test_root_project_excludes_incompatible_unified_runtime_packages() -> None:
     """The Python 3.11 candidate avoids obsolete or unsupported runtime wheels."""
     with (CODE_ROOT / "pyproject.toml").open("rb") as project_file:
         project = tomllib.load(project_file)
-    with (CODE_ROOT / "uv.lock").open("rb") as lock_file:
+    lock_path = CODE_ROOT / "uv.lock"
+    with lock_path.open("rb") as lock_file:
         lock = tomllib.load(lock_file)
 
     dependencies = set(project["project"]["dependencies"])
@@ -57,6 +64,48 @@ def test_root_project_excludes_incompatible_unified_runtime_packages() -> None:
         for dependency in dependencies
     )
     assert {"decord", "pygltflib", "dataclasses"}.isdisjoint(locked_package_names)
+
+
+def test_root_project_pins_headless_opencv_without_gui_variant() -> None:
+    """The unified runtime must not pull libGL through the GUI OpenCV wheel."""
+    with (CODE_ROOT / "pyproject.toml").open("rb") as project_file:
+        project = tomllib.load(project_file)
+    lock_path = CODE_ROOT / "uv.lock"
+    with lock_path.open("rb") as lock_file:
+        lock = tomllib.load(lock_file)
+
+    dependencies = set(project["project"]["dependencies"])
+    locked_package_names = {package["name"] for package in lock["package"]}
+
+    assert OPENCV_HEADLESS_REQUIREMENT in dependencies
+    assert not any(
+        dependency.startswith("opencv-python")
+        and dependency != OPENCV_HEADLESS_REQUIREMENT
+        for dependency in dependencies
+    )
+    assert "opencv-python-headless" in locked_package_names
+    assert "opencv-python" not in locked_package_names
+    assert project["tool"]["uv"]["find-links"] == [PROJECT_OPENCV_WHEEL_DIR]
+    opencv_package = next(
+        package
+        for package in lock["package"]
+        if package["name"] == "opencv-python-headless"
+    )
+    assert opencv_package["source"] == {"registry": PROJECT_OPENCV_WHEEL_DIR}
+    assert opencv_package["wheels"] == [
+        {"path": OPENCV_HEADLESS_WHEEL}
+    ]
+    assert "/data/www/" not in lock_path.read_text(encoding="utf-8")
+
+
+def test_unified_env_builder_supplies_the_headless_wheel_offline() -> None:
+    """A cache cleanup still leaves the exact OpenCV wheel discoverable offline."""
+    builder = UNIFIED_ENV_BUILDER.read_text(encoding="utf-8")
+
+    assert 'OPENCV_WHEEL_DIR="$PROJECT_ROOT/docker/wheels"' in builder
+    assert f'OPENCV_HEADLESS_WHEEL="{OPENCV_HEADLESS_WHEEL}"' in builder
+    assert 'test -f "$OPENCV_WHEEL_DIR/$OPENCV_HEADLESS_WHEEL"' in builder
+    assert 'uv sync --active --frozen --offline --extra dev' in builder
 
 
 def test_unified_env_builder_rejects_existing_output(tmp_path: Path) -> None:

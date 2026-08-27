@@ -10,6 +10,8 @@
 
 - `harbor-cn.lingmouai.com/alg/sku-classifier-base:0.0.4`（linux/amd64）；
 - `/home/xingyu/.local/bin/uv` 和完整 uv cache；
+- 官方 `opencv-python-headless==4.11.0.86` Linux x86_64 wheel：
+  `/data/www/comfyui/3d-recognition-build/runtime/wheels/opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl`；
 - DA3 Hugging Face cache（`refs/`、`blobs/` 和 snapshot
   `b2359bdf726fb44ef62acca04d629dcf158053e7`）；
 - `sam3/checkpoints/sam3.pt`。
@@ -17,7 +19,9 @@
 默认 DA3 cache 是
 `/home/xingyu/.cache/huggingface/hub/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1`。
 路径不同则在调用时显式覆盖 `DA3_MODEL_CACHE`；同理可覆盖 `HOST_UV`、
-`UV_CACHE_DIR`、`IMAGE_TAG` 和 `BUILD_WORK_ROOT`。默认临时构建目录是
+`UV_CACHE_DIR`、`IMAGE_TAG`、`BUILD_WORK_ROOT` 和 `OPENCV_WHEEL_DIR`。后者必须指向包含上述
+官方 wheel 的现有目录；`build.sh` 会先把它规范化为绝对路径，再在创建临时 context 前检查精确文件名
+是否存在，并以只读挂载覆盖 builder 的 `/workspace/docker/wheels` 相对 flat index。默认临时构建目录是
 `/data/www/comfyui/3d-recognition-build`，必须已经存在且当前用户可写。构建需要约 6 GB
 的 DA3 named context，且不会下载、
 push、prune 或使用网络。
@@ -32,6 +36,13 @@ root base dependencies（不含 dev extras，且不把 editable 项目路径写�
 BuildKit named contexts 装配最终镜像。运行时固定一份 `/app/.venv`、
 `DA3_VENV_PYTHON=/app/.venv/bin/python`、离线 Hugging Face/Transformers，并且 Uvicorn
 仅启动一个 worker。
+
+首次准备 wheel 后，后续构建始终使用 `--network=none`、冻结 lock 和项目 `[tool.uv].find-links`
+flat index，不需要网络。`OPENCV_WHEEL_DIR` 必须为现有目录，脚本会在挂载前把它规范化为绝对路径：
+
+```bash
+OPENCV_WHEEL_DIR=/path/to/offline-wheels bash docker/build.sh
+```
 
 ## BSON 输入与客户端
 

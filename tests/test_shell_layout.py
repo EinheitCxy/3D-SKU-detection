@@ -65,6 +65,7 @@ def test_offline_mapping_docker_build_contract() -> None:
 
     assert (docker_root / "Dockerfile.dockerignore").is_file()
     assert (docker_root / "README.md").is_file()
+    assert (docker_root / "wheels" / ".gitignore").read_text() == "*.whl\n!.gitignore\n"
     assert (docker_root / "test_api.py").is_file()
     assert (docker_root / "build.sh").stat().st_mode & 0o111
     assert "# syntax=docker/dockerfile" not in dockerfile
@@ -81,6 +82,11 @@ def test_offline_mapping_docker_build_contract() -> None:
     assert "--network=none" in build_script
     assert "--pull=never" in build_script
     assert "--pull=false" in build_script
+    assert 'OPENCV_WHEEL_DIR="${OPENCV_WHEEL_DIR:-$BUILD_WORK_ROOT/runtime/wheels}"' in build_script
+    assert 'OPENCV_WHEEL_DIR="$(realpath -e "$OPENCV_WHEEL_DIR")"' in build_script
+    assert "opencv_python_headless-4.11.0.86-cp37-abi3-" in build_script
+    assert 'test -f "$OPENCV_WHEEL_DIR/$OPENCV_HEADLESS_WHEEL"' in build_script
+    assert '-v "$OPENCV_WHEEL_DIR:/workspace/docker/wheels:ro"' in build_script
     assert 'test -w "$UV_CACHE_DIR"' in build_script
     assert 'rm -rf "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/app"' in build_script
     assert 'rm -rf "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/bench"' in build_script

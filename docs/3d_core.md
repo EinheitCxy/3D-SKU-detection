@@ -51,6 +51,11 @@ uv sync --frozen --extra dev
 workflow 在进入 SAM3 前由 OpenCV 抽取图像帧；直接 `.mp4` loader 仍显式依赖 `decord`，
 不会在统一环境中回退到其他解码实现。
 
+根依赖精确固定 `opencv-python-headless==4.11.0.86`，不允许并存 GUI `opencv-python`，以避免
+无显示 Docker 镜像导入 `cv2` 时要求 `libGL`。首次将官方 Linux x86_64 wheel 放到
+`docker/wheels/`（或创建被 Git 忽略的同名本地链接）后，候选 builder 从这个项目相对 flat index
+保持 `--offline`；Docker builder 以 `OPENCV_WHEEL_DIR` 指定的外部目录只读覆盖相同路径。
+
 完整视频工作流使用：
 
 ```bash

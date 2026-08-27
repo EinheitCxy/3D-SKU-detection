@@ -47,6 +47,18 @@ DA3/SAM3 仍保留为仓库内源码，DA3 subprocess 默认执行 `.venv/bin/py
 `modules/sku_detector/pyproject.toml`；其 `runtime/sku_detector/.venv` 固定为 NumPy
 1.26.4 与 OpenCV 4.11，视频工作流默认复用该环境。
 
+根环境固定使用 `opencv-python-headless==4.11.0.86`，不能同时安装 GUI `opencv-python`，从而避免
+最小容器导入 `cv2` 时依赖 `libGL`。一次性准备官方 Linux x86_64 wheel 后，在
+`docker/wheels/` 建立被 Git 忽略的本地链接（或手动放置同名 wheel）；根项目以该相对 flat index
+离线锁定和构建，不提交 wheel：
+
+```bash
+ln -s /path/to/offline-wheels/opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl \
+  docker/wheels/opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+scripts/3d/ops/build_unified_env.sh /tmp/3d-recognition-unified-env
+OPENCV_WHEEL_DIR=/path/to/offline-wheels bash docker/build.sh
+```
+
 需要重建候选统一环境时，先提供一个不存在的目标目录；脚本不会更改当前根 `.venv` 或
 `Depth-Anything-3/.venv`。候选以 uv 的 relocatable venv 创建，因此验收后可安全重命名
 为根 `.venv`；脚本随后执行锁文件同步、依赖检查与 DA3/SAM3 import smoke：

@@ -11,6 +11,14 @@ DA3_SNAPSHOT="b2359bdf726fb44ef62acca04d629dcf158053e7"
 SAM3_CHECKPOINT="$REPO_ROOT/sam3/checkpoints/sam3.pt"
 IMAGE_TAG="${IMAGE_TAG:-global-id-mapping:da3-self-contained}"
 BUILD_WORK_ROOT="${BUILD_WORK_ROOT:-/data/www/comfyui/3d-recognition-build}"
+OPENCV_WHEEL_DIR="${OPENCV_WHEEL_DIR:-$BUILD_WORK_ROOT/runtime/wheels}"
+OPENCV_HEADLESS_WHEEL="opencv_python_headless-4.11.0.86-cp37-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
+
+[ -d "$OPENCV_WHEEL_DIR" ] || {
+  echo "OPENCV_WHEEL_DIR must be an existing directory: $OPENCV_WHEEL_DIR" >&2
+  exit 1
+}
+OPENCV_WHEEL_DIR="$(realpath -e "$OPENCV_WHEEL_DIR")"
 
 docker image inspect "$BASE_IMAGE" >/dev/null
 test "$(docker image inspect --format '{{.Architecture}}' "$BASE_IMAGE")" = "amd64"
@@ -29,6 +37,7 @@ test -f "$REPO_ROOT/pyproject.toml"
 test -f "$REPO_ROOT/uv.lock"
 test -d "$BUILD_WORK_ROOT"
 test -w "$BUILD_WORK_ROOT"
+test -f "$OPENCV_WHEEL_DIR/$OPENCV_HEADLESS_WHEEL"
 
 BUILD_ROOT="$(mktemp -d "$BUILD_WORK_ROOT/global-id-mapping.XXXXXX")"
 trap 'rm -rf "$BUILD_ROOT"' EXIT
@@ -53,6 +62,7 @@ docker run --rm --pull=never --network none --user "$(id -u):$(id -g)" --entrypo
   -v "$REPO_ROOT:/workspace:ro" \
   -v "$HOST_UV:/usr/local/bin/uv:ro" \
   -v "$UV_CACHE_DIR:/uv-cache" \
+  -v "$OPENCV_WHEEL_DIR:/workspace/docker/wheels:ro" \
   -v "$VENV_CONTEXT:/output" \
   "$BASE_IMAGE" -c '
     set -euo pipefail
