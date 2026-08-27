@@ -3,6 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CORE_REPO_ROOT="${CORE_REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+CORE_REPO_ROOT="$(realpath -e "$CORE_REPO_ROOT")"
 BASE_IMAGE="harbor-cn.lingmouai.com/alg/sku-classifier-base:0.0.4"
 HOST_UV="${HOST_UV:-/home/xingyu/.local/bin/uv}"
 UV_CACHE_DIR="${UV_CACHE_DIR:-/home/xingyu/.cache/uv}"
