@@ -108,9 +108,10 @@ def test_offline_mapping_docker_build_includes_local_x11_opengl_runtime_debs() -
         "RUN --mount=type=bind,from=system_debs,target=/tmp/system-debs,ro"
     )
     assert system_debs_mount in dockerfile
-    assert "apt-get install --no-install-recommends --yes /tmp/system-debs/*.deb" in dockerfile
+    assert "dpkg -i /tmp/system-debs/*.deb" in dockerfile
+    assert 'test -z "$(dpkg --audit)"' in dockerfile
+    assert "apt-get" not in dockerfile
     assert "COPY --from=system_debs" not in dockerfile
-    assert "dpkg -i" not in dockerfile
     assert dockerfile.index(system_debs_mount) > dockerfile.index(
         "COPY --from=da3_model"
     )
