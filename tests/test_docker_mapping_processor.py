@@ -353,19 +353,19 @@ def test_build_success_response_has_exact_keys(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "payload",
+    ("payload", "message"),
     [
-        "[1]",
-        "[\"1\"]",
-        "[\"NaN\"]",
+        ("[1]", "global_skus"),
+        ("[\"1\"]", "global_skus"),
+        ("[\"NaN\"]", "non-finite JSON"),
     ],
 )
 def test_build_success_response_rejects_non_object_global_sku_entries(
-    payload: str, tmp_path: Path
+    payload: str, message: str, tmp_path: Path
 ) -> None:
     global_skus = tmp_path / "global_skus.json"
     global_skus.write_text(payload, encoding="utf-8")
-    with pytest.raises(ValueError, match="global_skus"):
+    with pytest.raises(ValueError, match=message):
         build_success_response(global_skus, tmp_path / "viewer")
 
 
@@ -381,6 +381,16 @@ def test_build_success_response_propagates_invalid_global_skus_json(
 ) -> None:
     global_skus = tmp_path / "global_skus.json"
     global_skus.write_text("not json", encoding="utf-8")
+
+    with pytest.raises(json.JSONDecodeError):
+        build_success_response(global_skus, tmp_path / "viewer")
+
+
+def test_build_success_response_propagates_invalid_embedded_global_sku_json(
+    tmp_path: Path,
+) -> None:
+    global_skus = tmp_path / "global_skus.json"
+    global_skus.write_text('["not json"]', encoding="utf-8")
 
     with pytest.raises(json.JSONDecodeError):
         build_success_response(global_skus, tmp_path / "viewer")

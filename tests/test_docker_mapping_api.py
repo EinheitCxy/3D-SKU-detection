@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import sys
 import threading
 import time
+import warnings
+import zipfile
 from pathlib import Path
 
 import bson
@@ -15,7 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from docker import api, request_runner
+from docker import api, request_runner, test_api
 
 
 def _exit_child(*_args) -> dict[str, object]:
@@ -115,6 +118,41 @@ def test_runner_reports_the_first_missing_required_stage(
         request_runner.run_mapping_request(
             tmp_path / "dataset", tmp_path / "outputs", tmp_path / "viewer", "/models/da3"
         )
+
+
+@pytest.mark.parametrize(
+    "members",
+    [
+        [
+            "manifest.json",
+            "manifest.json",
+            "positions.f32.bin",
+            "colors.u8.bin",
+            "normals.i8.bin",
+            "objects.json",
+        ],
+        [
+            "manifest.json",
+            "positions.f32.bin",
+            "colors.u8.bin",
+            "normals.i8.bin",
+            "objects.json",
+            "thumbs/nested/0.jpg",
+        ],
+    ],
+)
+def test_client_rejects_duplicate_or_nested_viewer_bundle_members(
+    members: list[str],
+) -> None:
+    bundle = io.BytesIO()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        with zipfile.ZipFile(bundle, "w") as archive:
+            for member in members:
+                archive.writestr(member, b"x")
+
+    with pytest.raises(ValueError):
+        test_api._verify_viewer_bundle(bundle.getvalue())
 
 
 def test_api_round_trips_exact_success_bson_and_pipeline_error(
