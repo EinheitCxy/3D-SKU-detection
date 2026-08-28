@@ -60,16 +60,22 @@ def _load_request(dataset: Path, classifier_result: Path) -> dict[str, object]:
 
 def _verify_viewer_bundle(bundle: bytes) -> None:
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
-        members = set(archive.namelist())
+        member_names = archive.namelist()
+        if len(member_names) != len(set(member_names)):
+            raise ValueError("viewer bundle contains duplicate members")
+        members = set(member_names)
         expected = set(_FIXED_VIEWER_FILES)
         if not expected.issubset(members):
             raise ValueError("viewer bundle is missing fixed members")
-        if any(
-            name not in expected
-            and not (name.startswith("thumbs/") and name.endswith(".jpg"))
-            for name in members
-        ):
-            raise ValueError("viewer bundle contains an unexpected member")
+        for name in members - expected:
+            parts = name.split("/")
+            if (
+                len(parts) != 2
+                or parts[0] != "thumbs"
+                or parts[1] == ".jpg"
+                or not parts[1].endswith(".jpg")
+            ):
+                raise ValueError("viewer bundle contains an unexpected member")
 
 
 def main(argv: Sequence[str] | None = None) -> None:

@@ -219,10 +219,7 @@ def build_success_response(global_skus_path: Path, generation_dir: Path) -> dict
     for index, item in enumerate(global_skus):
         if not isinstance(item, str):
             raise ValueError(f"global_skus[{index}] must be a JSON string")
-        try:
-            decoded = json.loads(item, parse_constant=_reject_nonfinite)
-        except (TypeError, json.JSONDecodeError, ValueError) as error:
-            raise ValueError(f"global_skus[{index}] is invalid JSON: {error}") from error
+        decoded = json.loads(item, parse_constant=_reject_nonfinite)
         if not isinstance(decoded, dict):
             raise ValueError(f"global_skus[{index}] must decode to an object")
     return {
