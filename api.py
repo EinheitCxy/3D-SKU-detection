@@ -160,7 +160,7 @@ def _handle_bson_request(body: bytes) -> Response:
                 try:
                     response = build_success_response(
                         Path(str(result["global_skus_path"])),
-                        Path(str(result["viewer_root"])),
+                        Path(str(result["viewer_dir"])),
                     )
                 except (KeyError, TypeError, ValueError, OSError) as error:
                     raise RequestExecutionError("response", str(error)) from error

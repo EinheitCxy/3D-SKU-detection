@@ -55,7 +55,7 @@ def run_mapping_request(
 
     dataset_output = output_root / dataset_dir.name
     try:
-        export_web_viewer_bundle(
+        export_result = export_web_viewer_bundle(
             dataset_name=dataset_dir.name,
             da3_cache_path=dataset_output / "da3_cache" / "predictions.npz",
             global_mapping_path=dataset_output
@@ -73,7 +73,7 @@ def run_mapping_request(
         "global_skus_path": str(
             dataset_output / "dedup_detections" / "global_skus.json"
         ),
-        "viewer_root": str(viewer_root),
+        "viewer_dir": str(Path(str(export_result["manifest_path"])).parent),
     }
 
 

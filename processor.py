@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import math
-import re
 import zipfile
 from copy import deepcopy
 from dataclasses import dataclass
@@ -26,7 +25,6 @@ _VIEWER_FILES = (
     "normals.i8.bin",
     "objects.json",
 )
-_SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
 @dataclass(frozen=True)
@@ -195,91 +193,27 @@ def _reject_nonfinite(value: str) -> None:
     raise ValueError(f"non-finite JSON value is invalid: {value}")
 
 
-def pack_viewer_bundle(viewer_root: Path) -> bytes:
-    """Pack only CURRENT and its selected fixed Viewer generation."""
-    viewer_root = Path(viewer_root)
-    current_path = viewer_root / "CURRENT"
-    if current_path.is_symlink() or not current_path.is_file():
-        raise ValueError("viewer CURRENT is missing")
-    try:
-        pointer = json.loads(
-            current_path.read_text(encoding="utf-8"), parse_constant=_reject_nonfinite
-        )
-    except (OSError, json.JSONDecodeError, ValueError) as error:
-        raise ValueError(f"viewer CURRENT is invalid: {error}") from error
-    run_id = pointer.get("run_id") if isinstance(pointer, dict) else None
-    if not isinstance(run_id, str) or not _SAFE_RUN_ID.fullmatch(run_id):
-        raise ValueError("viewer CURRENT run_id is invalid")
-    run_root = viewer_root / "runs" / run_id
-    if run_root.is_symlink() or not run_root.is_dir():
-        raise ValueError("viewer CURRENT run is missing")
-    viewer_root_resolved = viewer_root.resolve()
-    run_root_resolved = run_root.resolve()
-    if not _is_relative_to(run_root_resolved, viewer_root_resolved):
-        raise ValueError("viewer CURRENT run is outside viewer root")
-    paths = [run_root / name for name in _VIEWER_FILES]
-    for path in paths:
-        if (
-            path.is_symlink()
-            or not path.is_file()
-            or not _is_relative_to(path.resolve(), run_root_resolved)
-        ):
-            raise ValueError("viewer run is missing a required file")
-    thumbs_root = run_root / "thumbs"
-    if (
-        thumbs_root.is_symlink()
-        or not thumbs_root.is_dir()
-        or not _is_relative_to(thumbs_root.resolve(), run_root_resolved)
-    ):
-        raise ValueError("viewer run thumbs directory is missing")
-    thumbs = []
-    for path in sorted(thumbs_root.iterdir(), key=lambda item: item.name):
-        if path.is_symlink():
-            raise ValueError("viewer thumbnail symlink is not allowed")
-        if not _safe_thumbnail_name(path.name):
-            raise ValueError("viewer thumbnail name is invalid")
-        if (
-            path.suffix == ".jpg"
-            and path.is_file()
-            and _is_relative_to(path.resolve(), run_root_resolved)
-        ):
-            thumbs.append(path)
+def pack_viewer_bundle(generation_dir: Path) -> bytes:
+    """Pack one selected Viewer generation with flat archive member names."""
+    generation_dir = Path(generation_dir)
+    paths = [generation_dir / name for name in _VIEWER_FILES]
+    thumbs = sorted((generation_dir / "thumbs").glob("*.jpg"))
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
-        archive.writestr("CURRENT", current_path.read_bytes())
         for path, name in zip(paths, _VIEWER_FILES):
-            archive.writestr(f"runs/{run_id}/{name}", path.read_bytes())
+            archive.writestr(name, path.read_bytes())
         for path in thumbs:
-            archive.writestr(f"runs/{run_id}/thumbs/{path.name}", path.read_bytes())
+            archive.writestr(f"thumbs/{path.name}", path.read_bytes())
     return buffer.getvalue()
 
 
-def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-    except ValueError:
-        return False
-    return True
-
-
-def _safe_thumbnail_name(name: str) -> bool:
-    return (
-        bool(name)
-        and "\\" not in name
-        and all(ord(character) >= 32 and ord(character) != 127 for character in name)
-    )
-
-
-def build_success_response(global_skus_path: Path, viewer_root: Path) -> dict[str, Any]:
+def build_success_response(global_skus_path: Path, generation_dir: Path) -> dict[str, Any]:
     """Read published global SKU strings and return the exact success envelope."""
-    try:
-        global_skus = json.loads(
-            Path(global_skus_path).read_text(encoding="utf-8"),
-            parse_constant=_reject_nonfinite,
-        )
-    except (OSError, json.JSONDecodeError, ValueError) as error:
-        raise ValueError(f"global_skus is invalid: {error}") from error
+    global_skus = json.loads(
+        Path(global_skus_path).read_text(encoding="utf-8"),
+        parse_constant=_reject_nonfinite,
+    )
     if not isinstance(global_skus, list):
         raise ValueError("global_skus must be a list")
     for index, item in enumerate(global_skus):
@@ -293,5 +227,5 @@ def build_success_response(global_skus_path: Path, viewer_root: Path) -> dict[st
             raise ValueError(f"global_skus[{index}] must decode to an object")
     return {
         "global_skus": global_skus,
-        "viewer_bundle": pack_viewer_bundle(viewer_root),
+        "viewer_bundle": pack_viewer_bundle(generation_dir),
     }

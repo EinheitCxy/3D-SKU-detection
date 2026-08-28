@@ -61,19 +61,12 @@ def _load_request(dataset: Path, classifier_result: Path) -> dict[str, object]:
 def _verify_viewer_bundle(bundle: bytes) -> None:
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         members = set(archive.namelist())
-        if "CURRENT" not in members:
-            raise ValueError("viewer bundle is missing CURRENT")
-        pointer = json.loads(archive.read("CURRENT"))
-        run_id = pointer.get("run_id") if isinstance(pointer, dict) else None
-        if not isinstance(run_id, str) or not run_id:
-            raise ValueError("viewer bundle CURRENT is invalid")
-        run_root = f"runs/{run_id}/"
-        expected = {"CURRENT", *(run_root + name for name in _FIXED_VIEWER_FILES)}
+        expected = set(_FIXED_VIEWER_FILES)
         if not expected.issubset(members):
-            raise ValueError("viewer bundle is missing fixed run members")
+            raise ValueError("viewer bundle is missing fixed members")
         if any(
             name not in expected
-            and not (name.startswith(run_root + "thumbs/") and name.endswith(".jpg"))
+            and not (name.startswith("thumbs/") and name.endswith(".jpg"))
             for name in members
         ):
             raise ValueError("viewer bundle contains an unexpected member")

@@ -105,7 +105,9 @@ pipeline 所需的 object-level `classification`，不会在容器内执行分�
 
 客户端从 `<dataset>/images/` 和 `--classifier-result` 中读取相同数字 frame ID 的文件，
 POST 到本机服务，并将响应写为 `global_skus.json` 与 `viewer_bundle.zip`。它会验证 BSON
-成功响应仅包含这两个字段，并验证 Viewer ZIP 的 `CURRENT` 以及固定 run members。
+成功响应仅包含这两个字段，并验证扁平 Viewer ZIP 的根固定成员 `manifest.json`、
+`positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`、`objects.json` 与可选
+`thumbs/*.jpg`；ZIP 不包含 `CURRENT` 或 `runs/<run_id>/` 路径。
 
 ```bash
 uv run python docker/test_api.py \
