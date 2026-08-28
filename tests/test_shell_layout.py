@@ -114,7 +114,7 @@ def test_offline_mapping_docker_build_separates_wrapper_and_core_roots() -> None
     assert 'cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"' in build_script
     assert '-v "$CORE_REPO_ROOT:/workspace:ro"' in build_script
     assert '--build-context sam3_checkpoint="$CORE_REPO_ROOT/sam3/checkpoints"' in build_script
-    for wrapper in ("__init__.py", "api.py", "processor.py", "request_runner.py"):
+    for wrapper in ("__init__.py", "api.py", "processor.py"):
         assert f'"$SCRIPT_DIR/{wrapper}"' in build_script
     assert '-f "$SCRIPT_DIR/Dockerfile"' in build_script
     assert '  "$SCRIPT_DIR"\n' in build_script

@@ -94,6 +94,10 @@ Docker wrapper 提供只消费外部 classifier 结果的 DA3/SAM3 BSON 映射�
 image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 checkpoint 离线构建；镜像
 不包含 detector/classifier、Pi3、VGGT、输入数据或运行输出。
 
+运行时采用直接同步链路 `docker/api.py -> docker/processor.py:process()`：单 worker 配合请求锁
+串行处理 fd，不创建 multiprocessing child 或 Pipe。API 成功返回 BSON；pipeline、输入或导出异常
+不做 stage 包装，直接以 HTTP 500 traceback 返回。
+
 客户端只发送以下 BSON 输入，`images` 为非空 bytes list，`skus` 为同帧数的 classifier JSON-string
 list：
 

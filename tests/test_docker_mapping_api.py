@@ -1,44 +1,26 @@
 from __future__ import annotations
 
-import asyncio
 import io
-import os
 import sys
 import threading
 import time
 import warnings
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import bson
-import httpx
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from docker import api, request_runner, test_api
+from docker import api, processor, test_api
 
 
-def _exit_child(*_args) -> dict[str, object]:
-    os._exit(17)
-
-
-async def _post_api_async(body: bytes) -> httpx.Response:
-    transport = httpx.ASGITransport(app=api.app)
-    async with httpx.AsyncClient(
-        transport=transport, base_url="http://test"
-    ) as client:
-        return await client.post(
-            "/api",
-            content=body,
-            headers={"content-type": "application/bson"},
-        )
-
-
-def _post_api(body: bytes) -> httpx.Response:
-    return asyncio.run(_post_api_async(body))
+def _post_api(body: bytes):
+    return api.mapping_api(body)
 
 
 class _Pipeline:
@@ -58,29 +40,30 @@ class _Pipeline:
         return {
             "validation": True,
             "reconstruction": True,
-            "visualization": False,
             "matching": True,
             "improved_analysis": True,
             "classification": True,
             "dedup": True,
-            "dedup_visualization": False,
-            "accuracy_evaluation": False,
         }
 
 
-def test_runner_fixes_da3_requires_complete_summary_and_exports_viewer(
+def test_processor_runs_da3_pipeline_and_exports_viewer(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     exported: dict[str, object] = {}
-    monkeypatch.setattr(request_runner, "SKUDetectionMain", _Pipeline)
+    monkeypatch.setattr(processor, "SKUDetectionMain", _Pipeline)
     monkeypatch.setattr(
-        request_runner,
+        processor,
         "export_web_viewer_bundle",
         lambda **kwargs: exported.update(kwargs)
-        or {"manifest_path": str(tmp_path / "viewer" / "runs" / "run-1" / "manifest.json")},
+        or {
+            "manifest_path": str(
+                tmp_path / "viewer" / "runs" / "run-1" / "manifest.json"
+            )
+        },
     )
 
-    result = request_runner.run_mapping_request(
+    result = processor.run_mapping_request(
         tmp_path / "dataset", tmp_path / "outputs", tmp_path / "viewer", "/models/da3"
     )
 
@@ -93,11 +76,23 @@ def test_runner_fixes_da3_requires_complete_summary_and_exports_viewer(
     assert pipeline.model_path == "/models/da3"
     assert exported == {
         "dataset_name": "dataset",
-        "da3_cache_path": tmp_path / "outputs" / "dataset" / "da3_cache" / "predictions.npz",
-        "global_mapping_path": tmp_path / "outputs" / "dataset" / "dedup_detections" / "global_mapping.json",
+        "da3_cache_path": tmp_path
+        / "outputs"
+        / "dataset"
+        / "da3_cache"
+        / "predictions.npz",
+        "global_mapping_path": tmp_path
+        / "outputs"
+        / "dataset"
+        / "dedup_detections"
+        / "global_mapping.json",
         "output_dir": tmp_path / "viewer",
         "source_images_dir": tmp_path / "dataset" / "images",
-        "sam3_mask_cache_root": tmp_path / "outputs" / "dataset" / "sam3_mask_cache" / "v2",
+        "sam3_mask_cache_root": tmp_path
+        / "outputs"
+        / "dataset"
+        / "sam3_mask_cache"
+        / "v2",
     }
     assert result["viewer_dir"] == str(tmp_path / "viewer" / "runs" / "run-1")
     assert result["global_skus_path"] == str(
@@ -105,19 +100,79 @@ def test_runner_fixes_da3_requires_complete_summary_and_exports_viewer(
     )
 
 
-def test_runner_reports_the_first_missing_required_stage(
+def test_processor_propagates_pipeline_and_viewer_errors_directly(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     class _FailedPipeline(_Pipeline):
         def run_complete_pipeline(self, *_args, **_kwargs):
             return {"validation": True, "reconstruction": False}
 
-    monkeypatch.setattr(request_runner, "SKUDetectionMain", _FailedPipeline)
-
-    with pytest.raises(request_runner.RequestRunnerError, match="reconstruction"):
-        request_runner.run_mapping_request(
-            tmp_path / "dataset", tmp_path / "outputs", tmp_path / "viewer", "/models/da3"
+    monkeypatch.setattr(processor, "SKUDetectionMain", _FailedPipeline)
+    with pytest.raises(RuntimeError, match="reconstruction"):
+        processor.run_mapping_request(
+            tmp_path / "dataset",
+            tmp_path / "outputs",
+            tmp_path / "viewer",
+            "/models/da3",
         )
+
+    monkeypatch.setattr(processor, "SKUDetectionMain", _Pipeline)
+    monkeypatch.setattr(
+        processor,
+        "export_web_viewer_bundle",
+        lambda **_kwargs: (_ for _ in ()).throw(ValueError("viewer failed")),
+    )
+    with pytest.raises(ValueError, match="viewer failed"):
+        processor.run_mapping_request(
+            tmp_path / "dataset",
+            tmp_path / "outputs",
+            tmp_path / "viewer",
+            "/models/da3",
+        )
+
+
+def test_process_directly_composes_request_pipeline_and_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: dict[str, object] = {}
+    monkeypatch.setenv("DA3_MODEL_PATH", "/models/da3")
+
+    def prepare(inputs, work_root):
+        calls["inputs"] = inputs
+        calls["work_root"] = work_root
+        return SimpleNamespace(dataset_dir=work_root / "dataset")
+
+    def run(dataset_dir, output_root, viewer_root, model_path):
+        calls["run"] = (dataset_dir, output_root, viewer_root, model_path)
+        return {
+            "global_skus_path": str(output_root / "dataset" / "global_skus.json"),
+            "viewer_dir": str(viewer_root / "generation"),
+        }
+
+    def build(global_skus_path, viewer_dir):
+        calls["build"] = (global_skus_path, viewer_dir)
+        return {"global_skus": ['{"objects":[]}'], "viewer_bundle": b"zip"}
+
+    monkeypatch.setattr(processor, "prepare_request", prepare)
+    monkeypatch.setattr(processor, "run_mapping_request", run)
+    monkeypatch.setattr(processor, "build_success_response", build)
+
+    inputs = {"images": [b"image"], "skus": ["{}"]}
+    result = processor.process(inputs)
+
+    work_root = calls["work_root"]
+    assert calls["inputs"] is inputs
+    assert calls["run"] == (
+        work_root / "dataset",
+        work_root / "outputs",
+        work_root / "viewer",
+        "/models/da3",
+    )
+    assert calls["build"] == (
+        work_root / "outputs" / "dataset" / "global_skus.json",
+        work_root / "viewer" / "generation",
+    )
+    assert result == {"global_skus": ['{"objects":[]}'], "viewer_bundle": b"zip"}
 
 
 @pytest.mark.parametrize(
@@ -155,112 +210,43 @@ def test_client_rejects_duplicate_or_nested_viewer_bundle_members(
         test_api._verify_viewer_bundle(bundle.getvalue())
 
 
-def test_api_round_trips_exact_success_bson_and_pipeline_error(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_api_round_trips_success_bson_and_returns_tracebacks(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DA3_MODEL_PATH", "/models/da3")
     monkeypatch.setattr(
         api,
-        "prepare_request",
-        lambda _inputs, root: type("Prepared", (), {"dataset_dir": root / "dataset"})(),
-    )
-    monkeypatch.setattr(
-        api,
-        "build_success_response",
-        lambda _skus, _viewer: {"global_skus": ['{"skus":[]}'], "viewer_bundle": b"zip"},
-    )
-    monkeypatch.setattr(
-        api,
-        "execute_mapping_child",
-        lambda *_args: {"global_skus_path": "global_skus.json", "viewer_dir": "viewer"},
+        "process",
+        lambda _inputs: {"global_skus": ['{"skus":[]}'], "viewer_bundle": b"zip"},
     )
     response = _post_api(bson.dumps({"images": [], "skus": []}))
-
     assert response.status_code == 200
-    assert bson.loads(response.content) == {
+    assert bson.loads(response.body) == {
         "global_skus": ['{"skus":[]}'],
         "viewer_bundle": b"zip",
     }
 
     monkeypatch.setattr(
         api,
-        "execute_mapping_child",
-        lambda *_args: (_ for _ in ()).throw(api.RequestExecutionError("matching", "boom")),
+        "process",
+        lambda _inputs: (_ for _ in ()).throw(RuntimeError("pipeline failed")),
     )
     response = _post_api(bson.dumps({"images": [], "skus": []}))
     assert response.status_code == 500
-    assert bson.loads(response.content) == {"stage": "matching", "message": "boom"}
+    assert b"RuntimeError: pipeline failed" in response.body
 
-
-def test_api_returns_contract_errors_as_bson_400() -> None:
     response = _post_api(b"not bson")
-
-    assert response.status_code == 400
-    payload = bson.loads(response.content)
-    assert set(payload) == {"stage", "message"}
-    assert payload["stage"] == "contract"
-
-
-def test_api_returns_bson_400_when_decoder_raises_unexpected_exception(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    decode_bson = bson.loads
-    monkeypatch.setattr(
-        api.bson,
-        "loads",
-        lambda _body: (_ for _ in ()).throw(UnboundLocalError("unsupported BSON")),
-    )
-
-    response = _post_api(b"valid body is irrelevant")
-    monkeypatch.setattr(api.bson, "loads", decode_bson)
-
-    assert response.status_code == 400
-    assert decode_bson(response.content)["stage"] == "contract"
-
-
-def test_api_returns_bson_500_when_request_workspace_creation_fails(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class _BrokenTemporaryDirectory:
-        def __init__(self, **_kwargs) -> None:
-            pass
-
-        def __enter__(self):
-            raise OSError("workspace unavailable")
-
-        def __exit__(self, *_args) -> None:
-            pass
-
-    monkeypatch.setattr(api.tempfile, "TemporaryDirectory", _BrokenTemporaryDirectory)
-
-    response = _post_api(bson.dumps({"images": [], "skus": []}))
-
     assert response.status_code == 500
-    assert bson.loads(response.content) == {
-        "stage": "request",
-        "message": "workspace unavailable",
-    }
+    assert b"bson" in response.body.lower()
 
 
 def test_api_serializes_concurrent_requests(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("DA3_MODEL_PATH", "/models/da3")
-    monkeypatch.setattr(
-        api,
-        "prepare_request",
-        lambda _inputs, root: type("Prepared", (), {"dataset_dir": root / "dataset"})(),
-    )
-    monkeypatch.setattr(
-        api,
-        "build_success_response",
-        lambda _skus, _viewer: {"global_skus": [], "viewer_bundle": b"zip"},
-    )
     active = 0
     maximum = 0
     guard = threading.Lock()
 
-    def blocking_child(*_args):
+    def blocking_process(_inputs):
         nonlocal active, maximum
         with guard:
             active += 1
@@ -268,9 +254,9 @@ def test_api_serializes_concurrent_requests(
         time.sleep(0.05)
         with guard:
             active -= 1
-        return {"global_skus_path": "global_skus.json", "viewer_dir": "viewer"}
+        return {"global_skus": [], "viewer_bundle": b"zip"}
 
-    monkeypatch.setattr(api, "execute_mapping_child", blocking_child)
+    monkeypatch.setattr(api, "process", blocking_process)
     body = bson.dumps({"images": [], "skus": []})
     statuses: list[int] = []
 
@@ -285,95 +271,3 @@ def test_api_serializes_concurrent_requests(
 
     assert statuses == [200, 200]
     assert maximum == 1
-
-
-def test_child_execution_requests_spawn_context(tmp_path: Path) -> None:
-    contexts: list[str] = []
-
-    class _Sender:
-        def __init__(self) -> None:
-            self.payload = None
-            self.closed = False
-
-        def send(self, payload):
-            self.payload = payload
-
-        def close(self) -> None:
-            self.closed = True
-
-    class _Receiver:
-        def __init__(self, sender: _Sender) -> None:
-            self.sender = sender
-
-        def poll(self) -> bool:
-            return self.sender.payload is not None
-
-        def recv(self):
-            return self.sender.payload
-
-        def close(self) -> None:
-            pass
-
-    class _Process:
-        sentinel = object()
-
-        def __init__(self, target, args) -> None:
-            self.target = target
-            self.args = args
-            self.exitcode = 0
-            self.join_calls = 0
-            self.terminated = False
-            self.alive = True
-
-        def start(self) -> None:
-            self.target(*self.args)
-            self.alive = False
-
-        def join(self) -> None:
-            self.join_calls += 1
-
-        def is_alive(self) -> bool:
-            return self.alive
-
-        def terminate(self) -> None:
-            self.terminated = True
-            self.alive = False
-
-    class _Context:
-        def Pipe(self, duplex: bool):
-            assert duplex is False
-            sender = _Sender()
-            return _Receiver(sender), sender
-
-        def Process(self, *, target, args):
-            return _Process(target, args)
-
-    def context_factory(method: str):
-        contexts.append(method)
-        return _Context()
-
-    result = api.execute_mapping_child(
-        tmp_path / "dataset",
-        tmp_path / "outputs",
-        tmp_path / "viewer",
-        "/models/da3",
-        context_factory=context_factory,
-        runner=lambda *_args: {"summary": {"dedup": True}},
-        waiter=lambda connections: [connections[0]],
-    )
-
-    assert contexts == ["spawn"]
-    assert result == {"summary": {"dedup": True}}
-
-
-def test_child_exit_is_reported_and_reaped(tmp_path: Path) -> None:
-    with pytest.raises(api.RequestExecutionError, match="17") as error:
-        api.execute_mapping_child(
-            tmp_path / "dataset",
-            tmp_path / "outputs",
-            tmp_path / "viewer",
-            "/models/da3",
-            runner=_exit_child,
-        )
-
-    assert error.value.stage == "child"
