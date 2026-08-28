@@ -130,7 +130,7 @@ def test_api_round_trips_exact_success_bson_and_pipeline_error(
         "execute_mapping_child",
         lambda *_args: {"global_skus_path": "global_skus.json", "viewer_root": "viewer"},
     )
-    response = _post_api(bson.dumps({"images": [], "skus": [], "project_id": 51}))
+    response = _post_api(bson.dumps({"images": [], "skus": []}))
 
     assert response.status_code == 200
     assert bson.loads(response.content) == {
@@ -143,7 +143,7 @@ def test_api_round_trips_exact_success_bson_and_pipeline_error(
         "execute_mapping_child",
         lambda *_args: (_ for _ in ()).throw(api.RequestExecutionError("matching", "boom")),
     )
-    response = _post_api(bson.dumps({"images": [], "skus": [], "project_id": 51}))
+    response = _post_api(bson.dumps({"images": [], "skus": []}))
     assert response.status_code == 500
     assert bson.loads(response.content) == {"stage": "matching", "message": "boom"}
 
@@ -189,7 +189,7 @@ def test_api_returns_bson_500_when_request_workspace_creation_fails(
 
     monkeypatch.setattr(api.tempfile, "TemporaryDirectory", _BrokenTemporaryDirectory)
 
-    response = _post_api(bson.dumps({"images": [], "skus": [], "project_id": 51}))
+    response = _post_api(bson.dumps({"images": [], "skus": []}))
 
     assert response.status_code == 500
     assert bson.loads(response.content) == {
@@ -227,7 +227,7 @@ def test_api_serializes_concurrent_requests(
         return {"global_skus_path": "global_skus.json", "viewer_root": "viewer"}
 
     monkeypatch.setattr(api, "execute_mapping_child", blocking_child)
-    body = bson.dumps({"images": [], "skus": [], "project_id": 51})
+    body = bson.dumps({"images": [], "skus": []})
     statuses: list[int] = []
 
     def call() -> None:

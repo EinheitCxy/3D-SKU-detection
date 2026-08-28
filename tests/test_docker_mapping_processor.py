@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import pytest
 
+from docker import processor
 from docker.processor import (
     build_success_response,
     pack_viewer_bundle,
@@ -55,12 +56,11 @@ def test_prepare_request_converts_classifier_frames_in_object_order(
         {
             "images": [_image_bytes(), _image_bytes()],
             "skus": [_frame(), _frame()],
-            "project_id": 51,
         },
         tmp_path,
     )
 
-    assert prepared.project_id == 51
+    assert not hasattr(prepared, "project_id")
     assert sorted(
         path.name for path in (prepared.dataset_dir / "images").iterdir()
     ) == [
@@ -109,7 +109,6 @@ def test_prepare_request_preserves_two_object_order_and_detector_metadata(
         {
             "images": [_image_bytes()],
             "skus": [json.dumps(frame, ensure_ascii=False)],
-            "project_id": 51,
         },
         tmp_path,
     )
@@ -157,7 +156,7 @@ def test_prepare_request_preserves_two_object_order_and_detector_metadata(
 def test_prepare_request_rejects_malformed_input(
     mutator, message: str, tmp_path: Path
 ) -> None:
-    inputs = {"images": [_image_bytes()], "skus": [_frame()], "project_id": 51}
+    inputs = {"images": [_image_bytes()], "skus": [_frame()]}
     mutator(inputs)
     with pytest.raises(ValueError, match=message):
         prepare_request(inputs, tmp_path)
@@ -174,21 +173,86 @@ def test_prepare_request_rejects_wrapper_features_and_extra_keys(
         inputs = {
             "images": [_image_bytes()],
             "skus": [json.dumps(payload["skus"][0])],
-            "project_id": 51,
         }
         with pytest.raises(ValueError):
             prepare_request(inputs, tmp_path)
 
 
-def test_prepare_request_requires_exact_request_keys_and_project_id(tmp_path: Path) -> None:
-    base = {"images": [_image_bytes()], "skus": [_frame()], "project_id": 51}
-    for inputs in (
-        {**base, "features": []},
-        {key: value for key, value in base.items() if key != "project_id"},
-        {**base, "project_id": True},
-    ):
-        with pytest.raises(ValueError):
-            prepare_request(inputs, tmp_path)
+class _UnreadableTopLevelMetadata:
+    def __iter__(self):
+        raise AssertionError("top-level metadata must not be iterated")
+
+    def __deepcopy__(self, _memo):
+        raise AssertionError("top-level metadata must not be copied")
+
+    def __str__(self) -> str:
+        raise AssertionError("top-level metadata must not be parsed")
+
+
+def test_prepare_request_ignores_top_level_features_and_metadata(tmp_path: Path) -> None:
+    ignored = _UnreadableTopLevelMetadata()
+
+    prepared = prepare_request(
+        {
+            "images": [_image_bytes()],
+            "skus": [_frame()],
+            "features": ignored,
+            "project_id": ignored,
+            "upstream_trace": ignored,
+        },
+        tmp_path,
+    )
+
+    assert {path.name for path in prepared.dataset_dir.iterdir()} == {
+        "images",
+        "detections_results",
+    }
+    written = json.loads(
+        (prepared.dataset_dir / "detections_results" / "0.json").read_text()
+    )
+    assert set(written) == {"skus"}
+    assert all(
+        key not in json.dumps(written) for key in ("features", "upstream_trace")
+    )
+
+
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        {"skus": [_frame()]},
+        {"images": [_image_bytes()]},
+    ],
+)
+def test_prepare_request_requires_images_and_skus(
+    inputs: dict[str, object], tmp_path: Path
+) -> None:
+    with pytest.raises(ValueError):
+        prepare_request(inputs, tmp_path)
+
+
+def test_prepare_request_uses_fixed_personalcare_domain(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    domains: list[int] = []
+    real_builder = processor.build_resolved_classification
+
+    def record_domain(domain: int, label: str, confidence: float) -> dict[str, object]:
+        domains.append(domain)
+        return real_builder(domain, label, confidence)
+
+    monkeypatch.setattr(processor, "build_resolved_classification", record_domain)
+
+    processor.prepare_request(
+        {
+            "images": [_image_bytes()],
+            "skus": [_frame()],
+            "project_id": "ignored-request-value",
+        },
+        tmp_path,
+    )
+
+    assert domains
+    assert set(domains) == {51}
 
 
 def test_prepare_request_rejects_missing_or_malformed_detector_fields(
@@ -226,7 +290,6 @@ def test_prepare_request_rejects_missing_or_malformed_detector_fields(
                 {
                     "images": [_image_bytes()],
                     "skus": [json.dumps(case)],
-                    "project_id": 51,
                 },
                 tmp_path,
             )

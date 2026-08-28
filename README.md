@@ -94,6 +94,17 @@ Docker wrapper 提供只消费外部 classifier 结果的 DA3/SAM3 BSON 映射�
 image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 checkpoint 离线构建；镜像
 不包含 detector/classifier、Pi3、VGGT、输入数据或运行输出。
 
+客户端只发送以下 BSON 输入，`images` 为非空 bytes list，`skus` 为同帧数的 classifier JSON-string
+list：
+
+```text
+{images: [<numeric-frame image bytes>, ...], skus: ["{classes: {det, cls}, objects: [...]}", ...]}
+```
+
+顶层 `features`、`project_id` 和其他上游透传字段均被 Docker adapter 忽略，不会解析、校验、复制或
+落盘；adapter 固定以 personalcare domain `51` 构建 object-level `classification`。object 内的
+`features` 仍会被拒绝。成功 BSON 响应严格只有 `global_skus` 与 `viewer_bundle`。
+
 ```bash
 bash docker/build.sh
 docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
