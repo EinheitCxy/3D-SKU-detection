@@ -96,7 +96,8 @@ image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 check
 
 运行时采用直接同步链路 `docker/api.py -> docker/processor.py:process()`：单 worker 配合请求锁
 串行处理 fd，不创建 multiprocessing child 或 Pipe。API 成功返回 BSON；pipeline、输入或导出异常
-不做 stage 包装，直接以 HTTP 500 traceback 返回。
+不做 stage 包装，直接以 HTTP 500 traceback 返回。每个 fd 完成后清除按临时路径持有的 DA3
+request cache，SAM3 model cache 保留并跨请求复用。
 
 客户端只发送以下 BSON 输入，`images` 为非空 bytes list，`skus` 为同帧数的 classifier JSON-string
 list：

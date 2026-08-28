@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import sys
 import threading
@@ -10,6 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import bson
+import httpx
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,10 +19,23 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from docker import api, processor, test_api
+from utils import matching_algorithms, sku_matching_system
 
 
-def _post_api(body: bytes):
-    return api.mapping_api(body)
+async def _post_api_async(body: bytes) -> httpx.Response:
+    transport = httpx.ASGITransport(app=api.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as client:
+        return await client.post(
+            "/api",
+            content=body,
+            headers={"content-type": "application/bson"},
+        )
+
+
+def _post_api(body: bytes) -> httpx.Response:
+    return asyncio.run(_post_api_async(body))
 
 
 class _Pipeline:
@@ -156,6 +171,9 @@ def test_process_directly_composes_request_pipeline_and_response(
     monkeypatch.setattr(processor, "prepare_request", prepare)
     monkeypatch.setattr(processor, "run_mapping_request", run)
     monkeypatch.setattr(processor, "build_success_response", build)
+    matching_algorithms.PI3_SCENE_CACHE["old-scene"] = {"tensor": object()}
+    sku_matching_system._DA3_IMAGE_CACHE["old-images"] = object()
+    sku_matching_system._DA3_TRANSFORMS_CACHE["old-transforms"] = [object()]
 
     inputs = {"images": [b"image"], "skus": ["{}"]}
     result = processor.process(inputs)
@@ -173,6 +191,35 @@ def test_process_directly_composes_request_pipeline_and_response(
         work_root / "viewer" / "generation",
     )
     assert result == {"global_skus": ['{"objects":[]}'], "viewer_bundle": b"zip"}
+    assert matching_algorithms.PI3_SCENE_CACHE == {}
+    assert sku_matching_system._DA3_IMAGE_CACHE == {}
+    assert sku_matching_system._DA3_TRANSFORMS_CACHE == {}
+
+
+def test_process_clears_request_caches_when_pipeline_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DA3_MODEL_PATH", "/models/da3")
+    monkeypatch.setattr(
+        processor,
+        "prepare_request",
+        lambda _inputs, root: SimpleNamespace(dataset_dir=root / "dataset"),
+    )
+    monkeypatch.setattr(
+        processor,
+        "run_mapping_request",
+        lambda *_args: (_ for _ in ()).throw(RuntimeError("pipeline failed")),
+    )
+    matching_algorithms.PI3_SCENE_CACHE["failed-scene"] = {"tensor": object()}
+    sku_matching_system._DA3_IMAGE_CACHE["failed-images"] = object()
+    sku_matching_system._DA3_TRANSFORMS_CACHE["failed-transforms"] = [object()]
+
+    with pytest.raises(RuntimeError, match="pipeline failed"):
+        processor.process({"images": [b"image"], "skus": ["{}"]})
+
+    assert matching_algorithms.PI3_SCENE_CACHE == {}
+    assert sku_matching_system._DA3_IMAGE_CACHE == {}
+    assert sku_matching_system._DA3_TRANSFORMS_CACHE == {}
 
 
 @pytest.mark.parametrize(
@@ -220,7 +267,7 @@ def test_api_round_trips_success_bson_and_returns_tracebacks(
     )
     response = _post_api(bson.dumps({"images": [], "skus": []}))
     assert response.status_code == 200
-    assert bson.loads(response.body) == {
+    assert bson.loads(response.content) == {
         "global_skus": ['{"skus":[]}'],
         "viewer_bundle": b"zip",
     }
@@ -232,11 +279,15 @@ def test_api_round_trips_success_bson_and_returns_tracebacks(
     )
     response = _post_api(bson.dumps({"images": [], "skus": []}))
     assert response.status_code == 500
-    assert b"RuntimeError: pipeline failed" in response.body
+    assert "RuntimeError: pipeline failed" in response.text
 
     response = _post_api(b"not bson")
     assert response.status_code == 500
-    assert b"bson" in response.body.lower()
+    assert "bson" in response.text.lower()
+
+    response = _post_api(b"")
+    assert response.status_code == 500
+    assert "bson" in response.text.lower()
 
 
 def test_api_serializes_concurrent_requests(
