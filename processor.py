@@ -5,6 +5,9 @@ from __future__ import annotations
 import io
 import json
 import math
+import os
+import sys
+import tempfile
 import zipfile
 from copy import deepcopy
 from dataclasses import dataclass
@@ -14,6 +17,12 @@ from typing import Any, Mapping
 import cv2
 import numpy as np
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from main import PROJECT_ROOT as MAIN_PROJECT_ROOT, SKUDetectionMain
+from src.web_viewer_export import export_web_viewer_bundle
 from utils.classification_aggregation import build_resolved_classification
 
 _FRAME_KEYS = frozenset({"classes", "objects"})
@@ -25,11 +34,35 @@ _VIEWER_FILES = (
     "normals.i8.bin",
     "objects.json",
 )
+_REQUIRED_STAGES = (
+    "validation",
+    "reconstruction",
+    "matching",
+    "improved_analysis",
+    "classification",
+    "dedup",
+)
 
 
 @dataclass(frozen=True)
 class PreparedRequest:
     dataset_dir: Path
+
+
+def process(inputs: Mapping[str, Any]) -> dict[str, Any]:
+    """Run one complete mapping request and return its BSON-ready result."""
+    with tempfile.TemporaryDirectory(prefix="global-id-mapping-") as work_dir:
+        work_root = Path(work_dir)
+        prepared = prepare_request(inputs, work_root)
+        result = run_mapping_request(
+            prepared.dataset_dir,
+            work_root / "outputs",
+            work_root / "viewer",
+            os.environ["DA3_MODEL_PATH"],
+        )
+        return build_success_response(
+            Path(result["global_skus_path"]), Path(result["viewer_dir"])
+        )
 
 
 def prepare_request(inputs: Mapping[str, Any], work_root: Path) -> PreparedRequest:
@@ -153,7 +186,10 @@ def _canonical_object(
         raise ValueError("sku object cls index must be an integer")
     if class_index < 0 or class_index >= len(labels):
         raise ValueError("sku object cls index is out of range")
-    if not isinstance(object_confidences, dict) or set(object_confidences) != _CLASS_KEYS:
+    if (
+        not isinstance(object_confidences, dict)
+        or set(object_confidences) != _CLASS_KEYS
+    ):
         raise ValueError("sku object confidences must contain exactly det and cls")
     detector_confidence = object_confidences["det"]
     _validate_confidence(detector_confidence, "det")
@@ -208,7 +244,9 @@ def pack_viewer_bundle(generation_dir: Path) -> bytes:
     return buffer.getvalue()
 
 
-def build_success_response(global_skus_path: Path, generation_dir: Path) -> dict[str, Any]:
+def build_success_response(
+    global_skus_path: Path, generation_dir: Path
+) -> dict[str, Any]:
     """Read published global SKU strings and return the exact success envelope."""
     global_skus = json.loads(
         Path(global_skus_path).read_text(encoding="utf-8"),
@@ -225,4 +263,45 @@ def build_success_response(global_skus_path: Path, generation_dir: Path) -> dict
     return {
         "global_skus": global_skus,
         "viewer_bundle": pack_viewer_bundle(generation_dir),
+    }
+
+
+def run_mapping_request(
+    dataset_dir: Path,
+    output_root: Path,
+    viewer_root: Path,
+    model_path: str,
+) -> dict[str, str]:
+    """Run DA3 mapping and export the selected Viewer generation."""
+    dataset_dir = Path(dataset_dir)
+    output_root = Path(output_root)
+    viewer_root = Path(viewer_root)
+
+    pipeline = SKUDetectionMain()
+    pipeline.save_root = output_root
+    pipeline.match_backend = "da3"
+    pipeline.classifier_enabled = False
+    pipeline.config_path = MAIN_PROJECT_ROOT / "config.yaml"
+
+    summary = pipeline.run_complete_pipeline(
+        str(dataset_dir), algorithm="3d", model_path=model_path
+    )
+    for stage in _REQUIRED_STAGES:
+        if summary.get(stage) is not True:
+            raise RuntimeError(f"pipeline stage {stage} did not succeed")
+
+    dataset_output = output_root / dataset_dir.name
+    export_result = export_web_viewer_bundle(
+        dataset_name=dataset_dir.name,
+        da3_cache_path=dataset_output / "da3_cache" / "predictions.npz",
+        global_mapping_path=dataset_output / "dedup_detections" / "global_mapping.json",
+        output_dir=viewer_root,
+        source_images_dir=dataset_dir / "images",
+        sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
+    )
+    return {
+        "global_skus_path": str(
+            dataset_output / "dedup_detections" / "global_skus.json"
+        ),
+        "viewer_dir": str(Path(export_result["manifest_path"]).parent),
     }

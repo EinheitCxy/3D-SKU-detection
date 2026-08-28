@@ -5,6 +5,8 @@ from .processor import (
     build_success_response,
     pack_viewer_bundle,
     prepare_request,
+    process,
+    run_mapping_request,
 )
 
 __all__ = [
@@ -12,4 +14,6 @@ __all__ = [
     "prepare_request",
     "pack_viewer_bundle",
     "build_success_response",
+    "process",
+    "run_mapping_request",
 ]

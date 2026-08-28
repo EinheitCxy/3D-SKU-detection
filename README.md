@@ -4,10 +4,14 @@
 `POST /api` 服务。镜像不包含 detector、personalcare classifier、Pi3、VGGT、任何
 输入数据或运行产物；调用方必须提供每帧的原图和外部 classifier 结果。
 
+请求链路保持为 `api.py -> processor.process()`：API 只做 BSON 解码/编码并用一个锁
+串行执行请求，processor 在临时目录中直接运行 pipeline 和 Viewer export。服务不再创建
+request 子进程或 Pipe；处理失败时 HTTP 500 直接返回 Python traceback。
+
 ## 离线构建
 
 `build.sh` 将包装代码与核心运行代码分开定位：Dockerfile、`build.sh`、
-`__init__.py`、`api.py`、`processor.py` 和 `request_runner.py` 始终从脚本所在的
+`__init__.py`、`api.py` 和 `processor.py` 始终从脚本所在的
 `SCRIPT_DIR` 读取；pipeline 核心源码、`pyproject.toml`、`uv.lock`、DA3/SAM3 源码、
 SAM3 checkpoint，以及 builder 的 `/workspace` 挂载均从 `CORE_REPO_ROOT` 读取。
 无论使用默认值还是显式传入值，`CORE_REPO_ROOT`（包括相对路径）都会立即规范化为
@@ -72,7 +76,7 @@ docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
 root base dependencies（不含 dev extras，且不把 editable 项目路径写进 venv），再用
 BuildKit named contexts 装配最终镜像。运行时固定一份 `/app/.venv`、
 `DA3_VENV_PYTHON=/app/.venv/bin/python`、离线 Hugging Face/Transformers，并且 Uvicorn
-仅启动一个 worker。
+仅启动一个 worker；API 内的请求锁保证同一时刻只运行一个 fd。
 
 `libX11` 与 `libGL` 仅用于满足 Open3D 的动态链接依赖；Docker 容器不会显示任何 UI。首次准备
 wheel 和上述 system `.deb` 后，后续构建始终使用 `--network=none`、冻结 lock 和项目
