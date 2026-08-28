@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -9,6 +10,10 @@ from pathlib import Path
 import bson
 import httpx
 import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from docker import api, request_runner
 
@@ -68,7 +73,8 @@ def test_runner_fixes_da3_requires_complete_summary_and_exports_viewer(
     monkeypatch.setattr(
         request_runner,
         "export_web_viewer_bundle",
-        lambda **kwargs: exported.update(kwargs) or {"manifest_path": "manifest.json"},
+        lambda **kwargs: exported.update(kwargs)
+        or {"manifest_path": str(tmp_path / "viewer" / "runs" / "run-1" / "manifest.json")},
     )
 
     result = request_runner.run_mapping_request(
@@ -90,7 +96,7 @@ def test_runner_fixes_da3_requires_complete_summary_and_exports_viewer(
         "source_images_dir": tmp_path / "dataset" / "images",
         "sam3_mask_cache_root": tmp_path / "outputs" / "dataset" / "sam3_mask_cache" / "v2",
     }
-    assert result["viewer_root"] == str(tmp_path / "viewer")
+    assert result["viewer_dir"] == str(tmp_path / "viewer" / "runs" / "run-1")
     assert result["global_skus_path"] == str(
         tmp_path / "outputs" / "dataset" / "dedup_detections" / "global_skus.json"
     )
@@ -128,7 +134,7 @@ def test_api_round_trips_exact_success_bson_and_pipeline_error(
     monkeypatch.setattr(
         api,
         "execute_mapping_child",
-        lambda *_args: {"global_skus_path": "global_skus.json", "viewer_root": "viewer"},
+        lambda *_args: {"global_skus_path": "global_skus.json", "viewer_dir": "viewer"},
     )
     response = _post_api(bson.dumps({"images": [], "skus": []}))
 
@@ -224,7 +230,7 @@ def test_api_serializes_concurrent_requests(
         time.sleep(0.05)
         with guard:
             active -= 1
-        return {"global_skus_path": "global_skus.json", "viewer_root": "viewer"}
+        return {"global_skus_path": "global_skus.json", "viewer_dir": "viewer"}
 
     monkeypatch.setattr(api, "execute_mapping_child", blocking_child)
     body = bson.dumps({"images": [], "skus": []})

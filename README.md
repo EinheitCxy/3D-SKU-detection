@@ -104,6 +104,9 @@ list：
 顶层 `features`、`project_id` 和其他上游透传字段均被 Docker adapter 忽略，不会解析、校验、复制或
 落盘；adapter 固定以 personalcare domain `51` 构建 object-level `classification`。object 内的
 `features` 仍会被拒绝。成功 BSON 响应严格只有 `global_skus` 与 `viewer_bundle`。
+其中 Docker 响应的 `viewer_bundle` 是扁平 ZIP：根目录含 `manifest.json`、
+`positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`、`objects.json`，缩略图为
+`thumbs/*.jpg`；它不包含发布器内部的 `CURRENT` 或 `runs/<run_id>/` 路径。
 
 ```bash
 bash docker/build.sh

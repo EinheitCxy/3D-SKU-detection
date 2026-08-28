@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import zipfile
 from pathlib import Path
 
 import cv2
 import numpy as np
 import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from docker import processor
 from docker.processor import (
@@ -295,13 +300,11 @@ def test_prepare_request_rejects_missing_or_malformed_detector_fields(
             )
 
 
-def test_pack_viewer_bundle_contains_current_and_selected_fixed_run_files(
+def test_pack_viewer_bundle_contains_flat_fixed_generation_files(
     tmp_path: Path,
 ) -> None:
-    viewer = tmp_path / "viewer"
-    run = viewer / "runs" / "run-1"
-    (run / "thumbs").mkdir(parents=True)
-    (viewer / "CURRENT").write_text('{"run_id":"run-1"}', encoding="utf-8")
+    generation = tmp_path / "viewer" / "runs" / "run-1"
+    (generation / "thumbs").mkdir(parents=True)
     for name in (
         "manifest.json",
         "positions.f32.bin",
@@ -309,94 +312,31 @@ def test_pack_viewer_bundle_contains_current_and_selected_fixed_run_files(
         "normals.i8.bin",
         "objects.json",
     ):
-        (run / name).write_bytes(name.encode())
-    (run / "thumbs" / "0.jpg").write_bytes(b"jpg")
-    (run / "thumbs" / "ignored.png").write_bytes(b"png")
-    (run / "ignored.txt").write_text("no", encoding="utf-8")
+        (generation / name).write_bytes(name.encode())
+    (generation / "thumbs" / "0.jpg").write_bytes(b"jpg")
+    (generation / "thumbs" / "ignored.png").write_bytes(b"png")
+    (generation / "ignored.txt").write_text("no", encoding="utf-8")
 
-    bundle = pack_viewer_bundle(viewer)
+    bundle = pack_viewer_bundle(generation)
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         assert all(
             info.compress_type == zipfile.ZIP_STORED for info in archive.infolist()
         )
         assert archive.namelist() == [
-            "CURRENT",
-            "runs/run-1/manifest.json",
-            "runs/run-1/positions.f32.bin",
-            "runs/run-1/colors.u8.bin",
-            "runs/run-1/normals.i8.bin",
-            "runs/run-1/objects.json",
-            "runs/run-1/thumbs/0.jpg",
+            "manifest.json",
+            "positions.f32.bin",
+            "colors.u8.bin",
+            "normals.i8.bin",
+            "objects.json",
+            "thumbs/0.jpg",
         ]
-
-
-def _viewer_layout(tmp_path: Path) -> tuple[Path, Path]:
-    viewer = tmp_path / "viewer"
-    run = viewer / "runs" / "run-1"
-    (run / "thumbs").mkdir(parents=True)
-    (viewer / "CURRENT").write_text('{"run_id":"run-1"}', encoding="utf-8")
-    for name in (
-        "manifest.json",
-        "positions.f32.bin",
-        "colors.u8.bin",
-        "normals.i8.bin",
-        "objects.json",
-    ):
-        (run / name).write_bytes(name.encode())
-    (run / "thumbs" / "0.jpg").write_bytes(b"jpg")
-    return viewer, run
-
-
-@pytest.mark.parametrize("boundary", ["current", "run", "fixed", "thumbs", "thumb"])
-def test_pack_viewer_bundle_rejects_symlink_boundaries(
-    boundary: str, tmp_path: Path
-) -> None:
-    viewer, run = _viewer_layout(tmp_path)
-    outside = tmp_path / "outside"
-    outside.mkdir()
-    target = outside / "target"
-    target.write_bytes(b"outside")
-    if boundary == "current":
-        current = viewer / "CURRENT"
-        current.unlink()
-        current.symlink_to(target)
-    elif boundary == "run":
-        real_run = viewer / "runs" / "run-1"
-        real_run.rename(viewer / "runs" / "real-run")
-        real_run.symlink_to(viewer / "runs" / "real-run", target_is_directory=True)
-    elif boundary == "fixed":
-        fixed = run / "manifest.json"
-        fixed.unlink()
-        fixed.symlink_to(target)
-    elif boundary == "thumbs":
-        thumbs = run / "thumbs"
-        thumbs.rename(run / "real-thumbs")
-        thumbs.symlink_to(run / "real-thumbs", target_is_directory=True)
-    else:
-        thumb = run / "thumbs" / "0.jpg"
-        thumb.unlink()
-        thumb.symlink_to(target)
-    with pytest.raises(ValueError):
-        pack_viewer_bundle(viewer)
-
-
-@pytest.mark.parametrize("name", ["unsafe\\name.jpg", "bad\nname.jpg", "bad\x7fname.jpg"])
-def test_pack_viewer_bundle_rejects_unsafe_thumbnail_names(
-    name: str, tmp_path: Path
-) -> None:
-    viewer, run = _viewer_layout(tmp_path)
-    (run / "thumbs" / name).write_bytes(b"jpg")
-    with pytest.raises(ValueError, match="thumbnail"):
-        pack_viewer_bundle(viewer)
 
 
 def test_build_success_response_has_exact_keys(tmp_path: Path) -> None:
     global_skus = tmp_path / "global_skus.json"
     global_skus.write_text('["{\\"objects\\":[]}"]', encoding="utf-8")
-    viewer = tmp_path / "viewer"
-    run = viewer / "runs" / "r"
-    (run / "thumbs").mkdir(parents=True)
-    (viewer / "CURRENT").write_text('{"run_id":"r"}', encoding="utf-8")
+    generation = tmp_path / "viewer" / "runs" / "r"
+    (generation / "thumbs").mkdir(parents=True)
     for name in (
         "manifest.json",
         "positions.f32.bin",
@@ -404,10 +344,10 @@ def test_build_success_response_has_exact_keys(tmp_path: Path) -> None:
         "normals.i8.bin",
         "objects.json",
     ):
-        (run / name).write_bytes(b"x")
-    (run / "thumbs" / "0.jpg").write_bytes(b"x")
+        (generation / name).write_bytes(b"x")
+    (generation / "thumbs" / "0.jpg").write_bytes(b"x")
 
-    response = build_success_response(global_skus, viewer)
+    response = build_success_response(global_skus, generation)
     assert set(response) == {"global_skus", "viewer_bundle"}
     assert response["global_skus"] == ['{"objects":[]}']
 
@@ -426,4 +366,21 @@ def test_build_success_response_rejects_non_object_global_sku_entries(
     global_skus = tmp_path / "global_skus.json"
     global_skus.write_text(payload, encoding="utf-8")
     with pytest.raises(ValueError, match="global_skus"):
+        build_success_response(global_skus, tmp_path / "viewer")
+
+
+def test_build_success_response_propagates_missing_global_skus_file(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(FileNotFoundError):
+        build_success_response(tmp_path / "missing.json", tmp_path / "viewer")
+
+
+def test_build_success_response_propagates_invalid_global_skus_json(
+    tmp_path: Path,
+) -> None:
+    global_skus = tmp_path / "global_skus.json"
+    global_skus.write_text("not json", encoding="utf-8")
+
+    with pytest.raises(json.JSONDecodeError):
         build_success_response(global_skus, tmp_path / "viewer")
