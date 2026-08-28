@@ -6,7 +6,9 @@
 
 请求链路保持为 `api.py -> processor.process()`：API 只做 BSON 解码/编码并用一个锁
 串行执行请求，processor 在临时目录中直接运行 pipeline 和 Viewer export。服务不再创建
-request 子进程或 Pipe；处理失败时 HTTP 500 直接返回 Python traceback。
+request 子进程或 Pipe；处理失败时 HTTP 500 直接返回 Python traceback。每次请求结束都会
+清理按临时路径缓存的 DA3 image/transform/scene tensor，SAM3 model cache 则留在进程内供
+下一次请求复用。
 
 ## 离线构建
 

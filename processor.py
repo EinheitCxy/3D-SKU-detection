@@ -16,6 +16,7 @@ from typing import Any, Mapping
 
 import cv2
 import numpy as np
+import torch
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -24,6 +25,8 @@ if str(PROJECT_ROOT) not in sys.path:
 from main import PROJECT_ROOT as MAIN_PROJECT_ROOT, SKUDetectionMain
 from src.web_viewer_export import export_web_viewer_bundle
 from utils.classification_aggregation import build_resolved_classification
+from utils.matching_algorithms import PI3_SCENE_CACHE
+from utils.sku_matching_system import _DA3_IMAGE_CACHE, _DA3_TRANSFORMS_CACHE
 
 _FRAME_KEYS = frozenset({"classes", "objects"})
 _CLASS_KEYS = frozenset({"det", "cls"})
@@ -52,17 +55,24 @@ class PreparedRequest:
 def process(inputs: Mapping[str, Any]) -> dict[str, Any]:
     """Run one complete mapping request and return its BSON-ready result."""
     with tempfile.TemporaryDirectory(prefix="global-id-mapping-") as work_dir:
-        work_root = Path(work_dir)
-        prepared = prepare_request(inputs, work_root)
-        result = run_mapping_request(
-            prepared.dataset_dir,
-            work_root / "outputs",
-            work_root / "viewer",
-            os.environ["DA3_MODEL_PATH"],
-        )
-        return build_success_response(
-            Path(result["global_skus_path"]), Path(result["viewer_dir"])
-        )
+        try:
+            work_root = Path(work_dir)
+            prepared = prepare_request(inputs, work_root)
+            result = run_mapping_request(
+                prepared.dataset_dir,
+                work_root / "outputs",
+                work_root / "viewer",
+                os.environ["DA3_MODEL_PATH"],
+            )
+            return build_success_response(
+                Path(result["global_skus_path"]), Path(result["viewer_dir"])
+            )
+        finally:
+            PI3_SCENE_CACHE.clear()
+            _DA3_IMAGE_CACHE.clear()
+            _DA3_TRANSFORMS_CACHE.clear()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
 
 def prepare_request(inputs: Mapping[str, Any], work_root: Path) -> PreparedRequest:
