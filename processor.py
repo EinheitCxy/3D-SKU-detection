@@ -17,7 +17,6 @@ import numpy as np
 
 from utils.classification_aggregation import build_resolved_classification
 
-_REQUEST_KEYS = frozenset({"images", "skus", "project_id"})
 _FRAME_KEYS = frozenset({"classes", "objects"})
 _CLASS_KEYS = frozenset({"det", "cls"})
 _VIEWER_FILES = (
@@ -33,22 +32,17 @@ _SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 @dataclass(frozen=True)
 class PreparedRequest:
     dataset_dir: Path
-    project_id: int
 
 
 def prepare_request(inputs: Mapping[str, Any], work_root: Path) -> PreparedRequest:
     """Validate BSON-decoded input and write a numeric canonical dataset."""
-    if not isinstance(inputs, Mapping) or set(inputs) != _REQUEST_KEYS:
-        raise ValueError("request keys must be exactly images, skus, project_id")
-    project_id = inputs["project_id"]
-    if (
-        isinstance(project_id, bool)
-        or not isinstance(project_id, int)
-        or project_id != 51
-    ):
-        raise ValueError("project_id must be exactly 51")
-    images = inputs["images"]
-    skus = inputs["skus"]
+    if not isinstance(inputs, Mapping):
+        raise ValueError("request must be an object")
+    try:
+        images = inputs["images"]
+        skus = inputs["skus"]
+    except KeyError as error:
+        raise ValueError("request requires images and skus") from error
     if not isinstance(images, list) or not images:
         raise ValueError("images must be a non-empty list")
     if not isinstance(skus, list) or len(skus) != len(images):
@@ -72,7 +66,7 @@ def prepare_request(inputs: Mapping[str, Any], work_root: Path) -> PreparedReque
         (detections_dir / f"{index}.json").write_text(
             json.dumps(frame, ensure_ascii=False, allow_nan=False), encoding="utf-8"
         )
-    return PreparedRequest(dataset_dir=dataset_dir, project_id=project_id)
+    return PreparedRequest(dataset_dir=dataset_dir)
 
 
 def _validate_image(payload: Any, index: int) -> bytes:

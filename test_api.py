@@ -55,7 +55,6 @@ def _load_request(dataset: Path, classifier_result: Path) -> dict[str, object]:
     return {
         "images": [path.read_bytes() for path in image_paths],
         "skus": [path.read_text(encoding="utf-8") for path in result_paths],
-        "project_id": 51,
     }
 
 

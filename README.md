@@ -87,19 +87,21 @@ bash docker/build.sh
 
 ## BSON 输入与客户端
 
-服务接收如下 BSON 文档，`project_id` 必须为 `51`：
+服务只读取如下 BSON 文档中的必需输入：
 
 ```text
 {
   images: [<numeric-frame image bytes>, ...],
-  skus: ["{classes: {det, cls}, objects: [...]}", ...],
-  project_id: 51,
+  skus: ["{classes: {det, cls}, objects: [...]}", ...]
 }
 ```
 
-`skus[i]` 是 classifier 的逐帧 JSON，保留 `{classes, objects}`；每个 object 必须包含
-det/cls 索引、det/cls confidence 和 bbox。服务将它规范化为当前 pipeline 所需的
-object-level `classification`，不会在容器内执行分类器。
+`images` 必须是非空 bytes list；`skus` 必须是同帧数的 JSON-string list。顶层的
+`features`、`project_id` 及其他上游透传字段会被忽略：服务不会解析、校验、复制或落盘它们。
+Adapter 固定以 personalcare domain `51` 构建 object-level `classification`，请求不能改变该值。
+`skus[i]` 是 classifier 的逐帧 JSON，保留 `{classes, objects}`；每个 object 必须包含 det/cls
+索引、det/cls confidence 和 bbox；object 内的 `features` 仍会被拒绝。服务将它规范化为当前
+pipeline 所需的 object-level `classification`，不会在容器内执行分类器。
 
 客户端从 `<dataset>/images/` 和 `--classifier-result` 中读取相同数字 frame ID 的文件，
 POST 到本机服务，并将响应写为 `global_skus.json` 与 `viewer_bundle.zip`。它会验证 BSON
