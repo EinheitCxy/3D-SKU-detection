@@ -24,7 +24,6 @@
 通过校验后，浏览器将二进制点云转为 typed arrays、将缩略图转为本地 object URL，并把 manifest 与
 object index 交给 Viewer。页面输出交互式 3D 点云、SKU / Global ID 筛选、高亮、对象详情和对应
 缩略图；加载失败时显示具体错误，不渲染不完整数据。
-
 ## 本地启动
 
 本分支只包含 `viewer_web/`，不包含 Mapping Docker API 或推理流水线；因此需要先从原有 Mapping

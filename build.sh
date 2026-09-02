@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VIEWER_WEB_DIR="$SCRIPT_DIR/viewer_web"
 CORE_REPO_ROOT="${CORE_REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 CORE_REPO_ROOT="$(realpath -e "$CORE_REPO_ROOT")"
 BASE_IMAGE="harbor-cn.lingmouai.com/alg/sku-classifier-base:0.0.4"
@@ -73,11 +74,17 @@ grep -Fx "$DA3_SNAPSHOT" "$DA3_MODEL_CACHE/refs/main" >/dev/null
 test -f "$SAM3_CHECKPOINT"
 test -f "$CORE_REPO_ROOT/pyproject.toml"
 test -f "$CORE_REPO_ROOT/uv.lock"
+test -f "$VIEWER_WEB_DIR/package.json"
+test -f "$VIEWER_WEB_DIR/package-lock.json"
 test -d "$BUILD_WORK_ROOT"
 test -w "$BUILD_WORK_ROOT"
 test -f "$OPENCV_WHEEL_DIR/$OPENCV_HEADLESS_WHEEL"
 compgen -G "$SYSTEM_DEB_DIR/libx11-6_*.deb" >/dev/null
 compgen -G "$SYSTEM_DEB_DIR/libgl1_*.deb" >/dev/null
+
+npm --prefix "$VIEWER_WEB_DIR" ci --offline --ignore-scripts
+npm --prefix "$VIEWER_WEB_DIR" run build
+test -f "$VIEWER_WEB_DIR/dist/index.html"
 
 BUILD_ROOT="$(mktemp -d "$BUILD_WORK_ROOT/global-id-mapping.XXXXXX")"
 trap 'rm -rf "$BUILD_ROOT"' EXIT
@@ -89,6 +96,7 @@ cp -a "$CORE_REPO_ROOT/main.py" "$CORE_REPO_ROOT/config.yaml" "$APP_CONTEXT/"
 cp -a "$CORE_REPO_ROOT/src" "$CORE_REPO_ROOT/utils" "$APP_CONTEXT/"
 cp -a "$CORE_REPO_ROOT/Depth-Anything-3/src" "$APP_CONTEXT/Depth-Anything-3/"
 cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"
+cp -a "$VIEWER_WEB_DIR/dist" "$APP_CONTEXT/viewer"
 cp -a "$SCRIPT_DIR/__init__.py" "$SCRIPT_DIR/api.py" \
   "$SCRIPT_DIR/processor.py" "$APP_CONTEXT/docker/"
 find "$APP_CONTEXT" -type d -name __pycache__ -prune -exec rm -rf {} +
