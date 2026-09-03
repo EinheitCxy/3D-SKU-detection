@@ -87,7 +87,7 @@ PREPARE_SYSTEM_DEPS_ONLY=1 bash docker/build.sh
 ```bash
 bash docker/build.sh
 docker run --rm --gpus all -p 8011:80 \
-  --mount type=bind,src="$(pwd)/docker/.env",dst=/app/docker/.env,readonly \
+  --mount type=bind,src="$(pwd)/docker/.env",dst=/app/.env,readonly \
   global-id-mapping:da3-self-contained
 ```
 
@@ -133,7 +133,7 @@ Adapter 固定以 personalcare domain `51` 构建 object-level `classification`�
 索引、det/cls confidence 和 bbox；object 内的 `features` 仍会被拒绝。服务将它规范化为当前
 pipeline 所需的 object-level `classification`，不会在容器内执行分类器。
 
-在 pipeline 和 Viewer 成功后，服务只读取容器内 `/app/docker/.env`。部署主机的
+在 pipeline 和 Viewer 成功后，服务只读取容器内 `/app/.env`。部署主机的
 `docker/.env` 必须显式提供 `COS_SECRET_ID`、`COS_SECRET_KEY`、`COS_BUCKET`、`COS_REGION`
 和 `COS_KEY_PREFIX`，并以只读 bind mount 挂入；该文件受 `docker/.gitignore` 与
 `docker/Dockerfile.dockerignore` 排除，绝不能提交、复制进镜像或上传到 GitHub/Gitee。

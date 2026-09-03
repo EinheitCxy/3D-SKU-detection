@@ -23,7 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from main import PROJECT_ROOT as MAIN_PROJECT_ROOT, SKUDetectionMain
-from docker.cos_upload import CosUploadConfig, upload_viewer_bundle, validate_taskid
+from cos_upload import CosUploadConfig, upload_viewer_bundle, validate_taskid
 from src.web_viewer_export import export_web_viewer_bundle
 from utils.classification_aggregation import build_resolved_classification
 from utils.matching_algorithms import PI3_SCENE_CACHE

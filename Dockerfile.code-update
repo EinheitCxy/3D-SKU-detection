@@ -1,5 +1,7 @@
 ARG BASE_IMAGE=harbor-cn.lingmouai.com/asu/global-id-mapping:4.0
 FROM ${BASE_IMAGE}
 
-COPY --from=app processor.py cos_upload.py /app/docker/
+COPY --from=app api.py processor.py cos_upload.py /app/
 COPY --from=app cos-sdk /app/.venv/lib/python3.11/site-packages/
+
+CMD ["/app/.venv/bin/python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "80", "--workers", "1"]

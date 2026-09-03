@@ -19,6 +19,7 @@ BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/global-id-mapping-code-update.XXXXXX")"
 trap 'rm -rf "$BUILD_ROOT"' EXIT
 APP_CONTEXT="$BUILD_ROOT/app"
 mkdir -p "$APP_CONTEXT/cos-sdk"
+cp "$SCRIPT_DIR/api.py" "$APP_CONTEXT/api.py"
 cp "$SCRIPT_DIR/processor.py" "$APP_CONTEXT/processor.py"
 cp "$SCRIPT_DIR/cos_upload.py" "$APP_CONTEXT/cos_upload.py"
 cp -a "$COS_SITE_PACKAGES/qcloud_cos" "$COS_SITE_PACKAGES/crcmod" \

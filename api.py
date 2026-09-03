@@ -7,7 +7,7 @@ import bson
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 
-from docker.processor import process
+from processor import process
 
 app = FastAPI()
 _REQUEST_LOCK = threading.Lock()
