@@ -2,24 +2,17 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import re
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 from urllib.parse import quote
 
-import requests
+from qcloud_cos import CosConfig, CosS3Client
 
 
 _TASKID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _KEY_PREFIX_SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _ENV_KEY_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-_SIGNATURE_TTL = 900
-
-
 @dataclass(frozen=True)
 class CosUploadConfig:
     secret_id: str
@@ -78,44 +71,22 @@ def validate_key_prefix(key_prefix: object) -> str:
     return key_prefix
 
 
-def _authorization(
-    config: CosUploadConfig, uri: str, content_type: str, start: int
-) -> str:
-    sign_time = f"{start};{start + _SIGNATURE_TTL}"
-    host = f"{config.bucket}.cos.{config.region}.myqcloud.com"
-    encode_value = lambda value: quote(value, safe="-_.~")
-    canonical_headers = (
-        f"content-type={encode_value(content_type)}&host={encode_value(host)}\n"
-    )
-    http_string = f"put\n{uri}\n\n{canonical_headers}"
-    string_to_sign = (
-        f"sha1\n{sign_time}\n{hashlib.sha1(http_string.encode('utf-8')).hexdigest()}\n"
-    )
-    sign_key = hmac.new(
-        config.secret_key.encode("utf-8"), sign_time.encode("utf-8"), hashlib.sha1
-    ).hexdigest()
-    # COS V5 specifies the hexadecimal SignKey text itself as the next HMAC key.
-    signature = hmac.new(
-        sign_key.encode("utf-8"), string_to_sign.encode("utf-8"), hashlib.sha1
-    ).hexdigest()
-    return (
-        f"q-sign-algorithm=sha1&q-ak={quote(config.secret_id, safe='')}&"
-        f"q-sign-time={sign_time}&q-key-time={sign_time}&"
-        f"q-header-list=content-type;host&q-url-param-list=&q-signature={signature}"
-    )
-
-
 def upload_mapping_results(
     taskid: object,
     global_skus_bytes: bytes,
     viewer_bundle_bytes: bytes,
     config: CosUploadConfig,
-    *,
-    session=requests,
-    now: Callable[[], int] = time.time,
 ) -> dict[str, str]:
     taskid = validate_taskid(taskid)
     key_prefix = validate_key_prefix(config.key_prefix)
+    client = CosS3Client(
+        CosConfig(
+            Region=config.region,
+            SecretId=config.secret_id,
+            SecretKey=config.secret_key,
+            Scheme="https",
+        )
+    )
     host = f"{config.bucket}.cos.{config.region}.myqcloud.com"
     results: dict[str, str] = {}
     for filename, content, content_type, result_key in (
@@ -128,23 +99,13 @@ def upload_mapping_results(
         ),
     ):
         key = f"{key_prefix}/{taskid}/{filename}"
-        encoded_key = quote(key, safe="/._-")
-        uri = f"/{encoded_key}"
-        url = f"https://{host}{uri}"
-        headers = {
-            "Content-Type": content_type,
-            "Host": host,
-            "Authorization": _authorization(config, uri, content_type, int(now())),
-        }
-        response = session.put(
-            url,
-            data=content,
-            headers=headers,
-            timeout=(5, 30),
-            allow_redirects=False,
+        client.put_object(
+            Bucket=config.bucket,
+            Key=key,
+            Body=content,
+            ContentType=content_type,
         )
-        response.raise_for_status()
-        if not 200 <= response.status_code < 300:
-            raise requests.HTTPError(f"COS upload returned HTTP {response.status_code}")
-        results[result_key] = url
+        results[result_key] = (
+            f"https://{host}/{quote(key, safe='/._-')}"
+        )
     return results
