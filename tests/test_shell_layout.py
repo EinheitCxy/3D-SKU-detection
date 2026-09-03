@@ -104,6 +104,20 @@ def test_offline_mapping_docker_build_contract() -> None:
     assert "--build-context sam3_checkpoint=" in build_script
 
 
+def test_mapping_image_flattens_runtime_wrapper_files() -> None:
+    docker_root = REPOSITORY_ROOT / "docker"
+    dockerfile = (docker_root / "Dockerfile").read_text()
+    code_update_dockerfile = (docker_root / "Dockerfile.code-update").read_text()
+    build_script = (docker_root / "build.sh").read_text()
+
+    assert "COPY --from=app api.py processor.py cos_upload.py /app/" in dockerfile
+    assert '"api:app"' in dockerfile
+    assert "/app/docker/" not in dockerfile + code_update_dockerfile
+    assert "COPY --from=app api.py processor.py cos_upload.py /app/" in code_update_dockerfile
+    assert '"$SCRIPT_DIR/api.py"' in build_script
+    assert '"$APP_CONTEXT/docker/"' not in build_script
+
+
 def test_mapping_code_update_build_derives_from_4_and_replaces_processor(
     tmp_path: Path,
 ) -> None:
@@ -134,6 +148,7 @@ done
 
 [ -n "$app_context" ]
 cmp "$app_context/processor.py" "$EXPECTED_PROCESSOR"
+cmp "$app_context/api.py" "$EXPECTED_API"
 cmp "$app_context/cos-sdk/qcloud_cos/__init__.py" "$EXPECTED_QCLOUD_INIT"
 printf '%s\\n' "$@" > "$DOCKER_ARGS_LOG"
 """
@@ -144,6 +159,7 @@ printf '%s\\n' "$@" > "$DOCKER_ARGS_LOG"
         "TMPDIR": str(tmp_path),
         "IMAGE_TAG": "global-id-mapping:4.0-traceback-test",
         "EXPECTED_PROCESSOR": str(docker_root / "processor.py"),
+        "EXPECTED_API": str(docker_root / "api.py"),
         "EXPECTED_QCLOUD_INIT": str(Path(qcloud_cos.__file__)),
         "COS_SITE_PACKAGES": str(Path(qcloud_cos.__file__).parents[1]),
         "DOCKER_ARGS_LOG": str(args_log),
@@ -163,6 +179,10 @@ printf '%s\\n' "$@" > "$DOCKER_ARGS_LOG"
     assert "--pull=false" in docker_args
     assert "BASE_IMAGE=global-id-mapping:4.0-traceback" in docker_args
     assert any(arg.endswith("Dockerfile.code-update") for arg in docker_args)
+    assert "COPY --from=app api.py processor.py cos_upload.py /app/" in (
+        docker_root / "Dockerfile.code-update"
+    ).read_text()
+    assert '"api:app"' in (docker_root / "Dockerfile.code-update").read_text()
 
 
 def test_offline_mapping_docker_build_separates_wrapper_and_core_roots() -> None:
@@ -180,9 +200,9 @@ def test_offline_mapping_docker_build_separates_wrapper_and_core_roots() -> None
     assert 'cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"' in build_script
     assert '-v "$CORE_REPO_ROOT:/workspace:ro"' in build_script
     assert '--build-context sam3_checkpoint="$CORE_REPO_ROOT/sam3/checkpoints"' in build_script
-    for wrapper in ("__init__.py", "api.py", "processor.py", "cos_upload.py"):
+    for wrapper in ("api.py", "processor.py", "cos_upload.py"):
         assert f'"$SCRIPT_DIR/{wrapper}"' in build_script
-    assert "docker/cos_upload.py" in docker_root.joinpath("Dockerfile").read_text()
+    assert "api.py processor.py cos_upload.py /app/" in docker_root.joinpath("Dockerfile").read_text()
     assert '-f "$SCRIPT_DIR/Dockerfile"' in build_script
     assert '  "$SCRIPT_DIR"\n' in build_script
     assert "$REPO_ROOT" not in build_script
