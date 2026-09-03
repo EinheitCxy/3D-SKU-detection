@@ -153,18 +153,11 @@ POST 到本机服务，并将响应写为 `global_skus.json` 与 `viewer_bundle.
 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`、`objects.json` 与可选
 `thumbs/*.jpg`；ZIP 不包含 `CURRENT` 或 `runs/<run_id>/` 路径。
 
-## Docker Viewer
+## Viewer Bundle
 
-镜像构建时会离线编译独立的 `docker/viewer_web/`，并在 `/viewer/` 提供静态页面：
-
-```text
-http://<host>:<port>/viewer/
-```
-
-该页面在浏览器本地选择上述 `viewer_bundle.zip` 后渲染，不上传 ZIP、也不在容器中保存结果。
-`docker/viewer_web` 是从 `modules/viewer_web` 独立复制的前端，原产品 Viewer 不会被 Docker
-接口修改。当前适配器仅接受 processor 生成的平铺、非加密 `ZIP_STORED` schema 3.0.0 文件；
-固定成员、二进制形状、缩略图路径与对象契约都会在页面加载前校验。
+此 Docker 服务不构建、携带或托管可视化页面。它只生成平铺、非加密 `ZIP_STORED` schema 3.0.0 的
+`viewer_bundle.zip`，并与 `global_skus.json` 一同上传 COS；BSON 成功响应中的 `cos.viewer_bundle_url`
+可供独立 Viewer 下载并渲染。
 
 ```bash
 uv run python docker/test_api.py \

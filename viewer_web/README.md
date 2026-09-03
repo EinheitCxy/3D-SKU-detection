@@ -2,8 +2,12 @@
 
 ## 接收
 
-页面提供本地文件选择框，用户选择 Docker BSON 响应保存的 `viewer_bundle.zip`。ZIP 仅在浏览器
-内存中读取，不会上传、解压到磁盘或写回服务端。
+页面从 URL query 读取 `recognition_task_id`，直接下载
+`<COS public base>/<recognition_task_id>/viewer_bundle.zip`。ZIP 仅在浏览器内存中读取，不会上传、
+解压到磁盘或写回服务端。`recognition_task_id` 不做前端格式校验。
+
+Viewer 自身的 `.env` 只提供 `VITE_COS_VIEWER_BASE_URL`（COS 的公开对象基址），不包含任何 COS
+密钥且受 `.gitignore` 排除。浏览器直接向 COS 下载 ZIP，因此 Bucket 必须允许 Viewer 域名的跨域 `GET`。
 
 ## 处理
 

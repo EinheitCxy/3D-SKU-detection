@@ -9,6 +9,7 @@ import type { ObjectIndex, OrderedSku } from "./contracts";
 interface BootstrapDependencies {
   readonly mount: (root: HTMLElement, bundle: ViewerBundle) => void;
   readonly loadZip?: typeof loadDockerViewerBundle;
+  readonly fetch?: typeof fetch;
 }
 
 export type SelectionMode = "sku" | "global";
@@ -83,6 +84,10 @@ export function visibleGlobalIdsForFilters(
   );
 }
 
+export function viewerBundleUrl(baseUrl: string, taskID: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(taskID)}/viewer_bundle.zip`;
+}
+
 if (typeof document !== "undefined") {
   const app = document.querySelector<HTMLElement>("#app");
   if (app === null) throw new Error("Viewer app root is missing");
@@ -92,29 +97,27 @@ if (typeof document !== "undefined") {
 export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDependencies): Promise<void> {
   const loadZip = dependencies?.loadZip ?? loadDockerViewerBundle;
   const mount = dependencies?.mount ?? mountViewer;
-  const pickerPanel = document.createElement("section");
-  pickerPanel.className = "zip-picker";
-  pickerPanel.append(title("Open Viewer Bundle"), text("p", "Select Docker's viewer_bundle.zip to open it locally."));
+  const fetchResource = dependencies?.fetch ?? fetch;
+  const loadingPanel = document.createElement("section");
+  loadingPanel.className = "zip-picker";
+  loadingPanel.append(title("Open Viewer Bundle"), text("p", "Loading the recognition task from COS."));
   const detail = document.createElement("pre");
-  const picker = document.createElement("input");
-  picker.type = "file";
-  picker.accept = ".zip,application/zip";
-  picker.setAttribute("aria-label", "Open viewer_bundle.zip");
-  picker.onchange = async () => {
-    const selected = picker.files?.[0];
-    if (selected === undefined) return;
-    picker.disabled = true;
-    try {
-      mount(root, await loadZip(selected));
-    } catch (error) {
-      detail.textContent = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
-    } finally {
-      picker.value = "";
-      picker.disabled = false;
-    }
-  };
-  pickerPanel.append(detail, picker);
-  root.replaceChildren(pickerPanel);
+  loadingPanel.append(detail);
+  root.replaceChildren(loadingPanel);
+
+  const taskID = new URLSearchParams(window.location.search).get("recognition_task_id");
+  if (taskID === null) {
+    detail.textContent = "recognition_task_id is required";
+    return;
+  }
+  try {
+    const bundleUrl = viewerBundleUrl(import.meta.env.VITE_COS_VIEWER_BASE_URL, taskID);
+    const bundleResponse = await fetchResource(bundleUrl);
+    if (!bundleResponse.ok) throw new Error(`Viewer bundle download failed: HTTP ${bundleResponse.status}`);
+    mount(root, await loadZip(await bundleResponse.blob()));
+  } catch (error) {
+    detail.textContent = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+  }
 }
 
 export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {

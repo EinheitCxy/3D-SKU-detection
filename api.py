@@ -6,12 +6,10 @@ import traceback
 import bson
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
-from fastapi.staticfiles import StaticFiles
 
 from docker.processor import process
 
 app = FastAPI()
-app.mount("/viewer", StaticFiles(directory="/app/viewer", html=True, check_dir=False), name="viewer")
 _REQUEST_LOCK = threading.Lock()
 
 

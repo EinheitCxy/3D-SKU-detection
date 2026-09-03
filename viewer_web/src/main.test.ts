@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootstrap, candidateLabel, configureViewControlsState, disabledFacetLabels, selectionModeTransition, selectionStateAfterCanvasPick, visibleGlobalIdsForFilters } from "./main";
+import { bootstrap, candidateLabel, configureViewControlsState, disabledFacetLabels, selectionModeTransition, selectionStateAfterCanvasPick, viewerBundleUrl, visibleGlobalIdsForFilters } from "./main";
 
 class FakeElement {
   constructor(readonly tagName: string) {}
@@ -18,72 +18,43 @@ class FakeElement {
 }
 
 describe("bootstrap", () => {
-  it("only exposes the local ZIP picker and never loads HTTP data roots", async () => {
+  it("downloads the requested task bundle from COS and mounts it", async () => {
     const root = new FakeElement("root");
     const previousDocument = globalThis.document;
     const previousWindow = globalThis.window;
     Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: (tag: string) => new FakeElement(tag) } });
-    Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://viewer.test/review/?data=https%3A%2F%2Fcdn.test%2Fbundle" } } });
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { search: "?recognition_task_id=QXahlXG7acJ867Myahs8" } } });
+    const bundle = {} as import("./bundle-loader").ViewerBundle;
+    const fetched: string[] = [];
+    let mounted: import("./bundle-loader").ViewerBundle | null = null;
     try {
       await bootstrap(root as unknown as HTMLElement, {
-        mount: () => { throw new Error("mount must not run before ZIP selection"); },
+        fetch: async (url) => {
+          fetched.push(String(url));
+          return new Response(new Blob(["zip"], { type: "application/zip" }));
+        },
+        loadZip: async (archive) => {
+          expect(await archive.text()).toBe("zip");
+          return bundle;
+        },
+        mount: (_root, received) => { mounted = received; },
       });
-      expect(root.children).toHaveLength(1);
-      expect(root.children[0].className).toBe("zip-picker");
-      expect(root.children[0].children.map((child) => child.tagName)).toEqual(["h2", "p", "pre", "input"]);
+      expect(fetched).toHaveLength(1);
+      expect(fetched[0]).not.toBe("/viewer-config");
+      expect(fetched[0]).toMatch(/QXahlXG7acJ867Myahs8\/viewer_bundle\.zip$/);
+      expect(mounted).toBe(bundle);
     } finally {
       Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });
       Object.defineProperty(globalThis, "window", { configurable: true, value: previousWindow });
     }
   });
+});
 
-  it("keeps the ZIP picker available and shows the error when ZIP loading fails", async () => {
-    const root = new FakeElement("root");
-    const previousDocument = globalThis.document;
-    const file = new Blob(["zip"], { type: "application/zip" });
-    Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: (tag: string) => new FakeElement(tag) } });
-    try {
-      await bootstrap(root as unknown as HTMLElement, {
-        loadZip: async () => { throw new Error("invalid ZIP"); },
-        mount: () => { throw new Error("mount must not run"); },
-      });
-      const panel = root.children[0];
-      const detail = panel.children[2];
-      const picker = panel.children[3] as FakeElement & { files?: Blob[]; disabled?: boolean };
-      picker.files = [file];
-      picker.value = "viewer_bundle.zip";
-      await picker.onchange?.();
-      expect(panel.className).toBe("zip-picker");
-      expect(picker.disabled).toBe(false);
-      expect(picker.value).toBe("");
-      expect(detail.textContent).toContain("invalid ZIP");
-    } finally {
-      Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });
-    }
-  });
-
-  it("loads a user-selected Docker viewer ZIP", async () => {
-    const root = new FakeElement("root");
-    const previousDocument = globalThis.document;
-    const bundle = {} as import("./bundle-loader").ViewerBundle;
-    const file = new Blob(["zip"], { type: "application/zip" });
-    let mounted: import("./bundle-loader").ViewerBundle | null = null;
-    Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: (tag: string) => new FakeElement(tag) } });
-    try {
-      await bootstrap(root as unknown as HTMLElement, {
-        loadZip: async (selected) => {
-          expect(selected).toBe(file);
-          return bundle;
-        },
-        mount: (_root, received) => { mounted = received; },
-      });
-      const picker = root.children[0].children[3] as FakeElement & { files?: Blob[] };
-      picker.files = [file];
-      await picker.onchange?.();
-      expect(mounted).toBe(bundle);
-    } finally {
-      Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });
-    }
+describe("COS bundle URL", () => {
+  it("uses the raw recognition task value as one encoded COS key segment", () => {
+    expect(viewerBundleUrl("https://cos.test/global-id-mapping", "task /?x=1")).toBe(
+      "https://cos.test/global-id-mapping/task%20%2F%3Fx%3D1/viewer_bundle.zip",
+    );
   });
 });
 
