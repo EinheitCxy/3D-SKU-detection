@@ -110,13 +110,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise ValueError("viewer_bundle must be bytes")
     if not isinstance(cos, dict) or set(cos) != {
         "taskID",
-        "global_skus_url",
         "viewer_bundle_url",
     }:
-        raise ValueError("cos must contain taskID and both result URLs")
+        raise ValueError("cos must contain taskID and viewer bundle URL")
     if cos["taskID"] != args.taskID or not all(
         isinstance(cos[name], str)
-        for name in ("global_skus_url", "viewer_bundle_url")
+        for name in ("viewer_bundle_url",)
     ):
         raise ValueError("cos response is invalid")
     _verify_viewer_bundle(viewer_bundle)

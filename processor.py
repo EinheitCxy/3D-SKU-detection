@@ -23,7 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from main import PROJECT_ROOT as MAIN_PROJECT_ROOT, SKUDetectionMain
-from docker.cos_upload import CosUploadConfig, upload_mapping_results, validate_taskid
+from docker.cos_upload import CosUploadConfig, upload_viewer_bundle, validate_taskid
 from src.web_viewer_export import export_web_viewer_bundle
 from utils.classification_aggregation import build_resolved_classification
 from utils.matching_algorithms import PI3_SCENE_CACHE
@@ -59,11 +59,8 @@ def process(inputs: Mapping[str, Any]) -> dict[str, Any]:
             response = build_success_response(
                 Path(result["global_skus_path"]), Path(result["viewer_dir"])
             )
-            upload_result = upload_mapping_results(
+            upload_result = upload_viewer_bundle(
                 prepared.taskid,
-                json.dumps(
-                    response["global_skus"], ensure_ascii=False, separators=(",", ":")
-                ).encode("utf-8"),
                 response["viewer_bundle"],
                 CosUploadConfig.from_env(),
             )

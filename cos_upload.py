@@ -1,4 +1,4 @@
-"""Upload mapping artifacts to Tencent Cloud COS using COS XML API signatures."""
+"""Upload Viewer bundles to Tencent Cloud COS using the official Python SDK."""
 
 from __future__ import annotations
 
@@ -71,9 +71,8 @@ def validate_key_prefix(key_prefix: object) -> str:
     return key_prefix
 
 
-def upload_mapping_results(
+def upload_viewer_bundle(
     taskid: object,
-    global_skus_bytes: bytes,
     viewer_bundle_bytes: bytes,
     config: CosUploadConfig,
 ) -> dict[str, str]:
@@ -88,24 +87,11 @@ def upload_mapping_results(
         )
     )
     host = f"{config.bucket}.cos.{config.region}.myqcloud.com"
-    results: dict[str, str] = {}
-    for filename, content, content_type, result_key in (
-        ("global_skus.json", global_skus_bytes, "application/json", "global_skus_url"),
-        (
-            "viewer_bundle.zip",
-            viewer_bundle_bytes,
-            "application/zip",
-            "viewer_bundle_url",
-        ),
-    ):
-        key = f"{key_prefix}/{taskid}/{filename}"
-        client.put_object(
-            Bucket=config.bucket,
-            Key=key,
-            Body=content,
-            ContentType=content_type,
-        )
-        results[result_key] = (
-            f"https://{host}/{quote(key, safe='/._-')}"
-        )
-    return results
+    key = f"{key_prefix}/{taskid}/viewer_bundle.zip"
+    client.put_object(
+        Bucket=config.bucket,
+        Key=key,
+        Body=viewer_bundle_bytes,
+        ContentType="application/zip",
+    )
+    return {"viewer_bundle_url": f"https://{host}/{quote(key, safe='/._-')}"}

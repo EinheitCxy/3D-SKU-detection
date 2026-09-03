@@ -146,7 +146,6 @@ pipeline 所需的 object-level `classification`，不会在容器内执行分�
 ```text
 cos: {
   taskID: "<taskID>",
-  global_skus_url: "<COS URL>",
   viewer_bundle_url: "<COS URL>"
 }
 ```
@@ -160,8 +159,8 @@ POST 到本机服务，并将响应写为 `global_skus.json` 与 `viewer_bundle.
 ## Viewer Bundle
 
 此 Docker 服务不构建、携带或托管可视化页面。它只生成平铺、非加密 `ZIP_STORED` schema 3.0.0 的
-`viewer_bundle.zip`，并与 `global_skus.json` 一同上传 COS；BSON 成功响应中的 `cos.viewer_bundle_url`
-可供独立 Viewer 下载并渲染。
+`viewer_bundle.zip` 并上传 COS；`global_skus` 只保留在 BSON 成功响应中，不写入 COS。响应中的
+`cos.viewer_bundle_url` 可供独立 Viewer 下载并渲染。
 
 可视化代码位于独立的 `visualization` 分支，且该分支只包含 `viewer/`。Viewer 从页面 URL 读取
 `recognition_task_id`，以它定位对应的 COS `viewer_bundle.zip` 后在浏览器渲染；其 `viewer/.env` 只配置
