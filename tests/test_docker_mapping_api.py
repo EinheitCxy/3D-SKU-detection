@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import sys
 import threading
 import time
-import warnings
-import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -226,11 +223,6 @@ def test_process_directly_composes_request_pipeline_and_response(
     )
     assert result == {
         "global_skus": ['{"objects":[]}'],
-        "viewer_bundle": b"zip",
-        "cos": {
-            "taskID": "task-01",
-            "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
-        },
     }
     assert matching_algorithms.PI3_SCENE_CACHE == {}
     assert sku_matching_system._DA3_IMAGE_CACHE == {}
@@ -263,41 +255,6 @@ def test_process_clears_request_caches_when_pipeline_fails(
     assert sku_matching_system._DA3_TRANSFORMS_CACHE == {}
 
 
-@pytest.mark.parametrize(
-    "members",
-    [
-        [
-            "manifest.json",
-            "manifest.json",
-            "positions.f32.bin",
-            "colors.u8.bin",
-            "normals.i8.bin",
-            "objects.json",
-        ],
-        [
-            "manifest.json",
-            "positions.f32.bin",
-            "colors.u8.bin",
-            "normals.i8.bin",
-            "objects.json",
-            "thumbs/nested/0.jpg",
-        ],
-    ],
-)
-def test_client_rejects_duplicate_or_nested_viewer_bundle_members(
-    members: list[str],
-) -> None:
-    bundle = io.BytesIO()
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", UserWarning)
-        with zipfile.ZipFile(bundle, "w") as archive:
-            for member in members:
-                archive.writestr(member, b"x")
-
-    with pytest.raises(ValueError):
-        test_api._verify_viewer_bundle(bundle.getvalue())
-
-
 def test_client_requires_task_id_and_validates_cos_response(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -308,26 +265,10 @@ def test_client_requires_task_id_and_validates_cos_response(
     (dataset / "images" / "0.jpg").write_bytes(b"image")
     (classifier_result / "0.json").write_text("{}", encoding="utf-8")
 
-    bundle = io.BytesIO()
-    with zipfile.ZipFile(bundle, "w") as archive:
-        for name in (
-            "manifest.json",
-            "positions.f32.bin",
-            "colors.u8.bin",
-            "normals.i8.bin",
-            "objects.json",
-        ):
-            archive.writestr(name, b"x")
-
     class _Response:
         content = bson.dumps(
             {
                 "global_skus": ['{"objects":[]}'],
-                "viewer_bundle": bundle.getvalue(),
-                "cos": {
-                    "taskID": "task-01",
-                    "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
-                },
             }
         )
 
@@ -368,22 +309,12 @@ def test_api_round_trips_success_bson_and_returns_tracebacks(
         "process",
         lambda inputs: {
             "global_skus": ['{"skus":[]}'],
-            "viewer_bundle": b"zip",
-            "cos": {
-                "taskID": inputs["taskID"],
-                "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
-            },
         },
     )
     response = _post_api(bson.dumps({"taskID": "task-01", "images": [], "skus": []}))
     assert response.status_code == 200
     assert bson.loads(response.content) == {
         "global_skus": ['{"skus":[]}'],
-        "viewer_bundle": b"zip",
-        "cos": {
-            "taskID": "task-01",
-            "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
-        },
     }
 
     monkeypatch.setattr(
@@ -419,7 +350,7 @@ def test_api_serializes_concurrent_requests(
         time.sleep(0.05)
         with guard:
             active -= 1
-        return {"global_skus": [], "viewer_bundle": b"zip"}
+        return {"global_skus": []}
 
     monkeypatch.setattr(api, "process", blocking_process)
     body = bson.dumps({"images": [], "skus": []})
