@@ -303,6 +303,7 @@ def test_client_requires_task_id_and_validates_cos_response(
 
 def test_api_round_trips_success_bson_and_returns_tracebacks(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.setattr(
         api,
@@ -325,6 +326,7 @@ def test_api_round_trips_success_bson_and_returns_tracebacks(
     response = _post_api(bson.dumps({"taskID": "task-01", "images": [], "skus": []}))
     assert response.status_code == 500
     assert "RuntimeError: pipeline failed" in response.text
+    assert "RuntimeError: pipeline failed" in caplog.text
 
     response = _post_api(b"not bson")
     assert response.status_code == 500
