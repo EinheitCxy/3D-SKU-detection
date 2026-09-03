@@ -59,15 +59,12 @@ def process(inputs: Mapping[str, Any]) -> dict[str, Any]:
             response = build_success_response(
                 Path(result["global_skus_path"]), Path(result["viewer_dir"])
             )
-            upload_result = upload_viewer_bundle(
+            upload_viewer_bundle(
                 prepared.taskid,
                 response["viewer_bundle"],
                 CosUploadConfig.from_env(),
             )
-            return {
-                **response,
-                "cos": {"taskID": prepared.taskid, **upload_result},
-            }
+            return {"global_skus": response["global_skus"]}
         finally:
             PI3_SCENE_CACHE.clear()
             _DA3_IMAGE_CACHE.clear()

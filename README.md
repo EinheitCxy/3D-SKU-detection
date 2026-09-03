@@ -139,28 +139,18 @@ pipeline 所需的 object-level `classification`，不会在容器内执行分�
 无法读取该文件时，服务保留底层的原生 OS 异常。
 
 当前 `COS_KEY_PREFIX=global-id-mapping`，因此上传 key 固定为
-`global-id-mapping/<taskID>/global_skus.json` 和
-`global-id-mapping/<taskID>/viewer_bundle.zip`，不会落在 bucket 根目录。成功 BSON 响应保留
-`global_skus` 和 `viewer_bundle`，并新增：
-
-```text
-cos: {
-  taskID: "<taskID>",
-  viewer_bundle_url: "<COS URL>"
-}
-```
+`global-id-mapping/<taskID>/viewer_bundle.zip`，不会落在 bucket 根目录。成功 BSON 响应只返回
+`global_skus`；Viewer 依据请求中的 `taskID` 直接从 COS 定位 ZIP。
 
 客户端从 `<dataset>/images/` 和 `--classifier-result` 中读取相同数字 frame ID 的文件，
-POST 到本机服务，并将响应写为 `global_skus.json` 与 `viewer_bundle.zip`。它会验证 BSON
-成功响应的 `global_skus`、`viewer_bundle`、`cos` 三个字段，并验证扁平 Viewer ZIP 的根固定成员 `manifest.json`、
-`positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`、`objects.json` 与可选
-`thumbs/*.jpg`；ZIP 不包含 `CURRENT` 或 `runs/<run_id>/` 路径。
+POST 到本机服务，并将响应中的 `global_skus` 写为 `global_skus.json`。Viewer ZIP 不经 BSON 返回，
+由独立 Viewer 依据 `taskID` 从 COS 下载。
 
 ## Viewer Bundle
 
 此 Docker 服务不构建、携带或托管可视化页面。它只生成平铺、非加密 `ZIP_STORED` schema 3.0.0 的
-`viewer_bundle.zip` 并上传 COS；`global_skus` 只保留在 BSON 成功响应中，不写入 COS。响应中的
-`cos.viewer_bundle_url` 可供独立 Viewer 下载并渲染。
+`viewer_bundle.zip` 并上传 COS；`global_skus` 只保留在 BSON 成功响应中，不写入 COS。独立 Viewer
+依据 `taskID` 直接定位并下载该 ZIP。
 
 可视化代码位于独立的 `visualization` 分支，且该分支只包含 `viewer/`。Viewer 从页面 URL 读取
 `recognition_task_id`，以它定位对应的 COS `viewer_bundle.zip` 后在浏览器渲染；其 `viewer/.env` 只配置

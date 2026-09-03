@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import argparse
-import io
 import json
-import zipfile
 from pathlib import Path
 from typing import Sequence
 
@@ -13,13 +11,6 @@ import bson
 import requests
 
 
-_FIXED_VIEWER_FILES = (
-    "manifest.json",
-    "positions.f32.bin",
-    "colors.u8.bin",
-    "normals.i8.bin",
-    "objects.json",
-)
 _IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png"})
 
 
@@ -62,26 +53,6 @@ def _load_request(
     }
 
 
-def _verify_viewer_bundle(bundle: bytes) -> None:
-    with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
-        member_names = archive.namelist()
-        if len(member_names) != len(set(member_names)):
-            raise ValueError("viewer bundle contains duplicate members")
-        members = set(member_names)
-        expected = set(_FIXED_VIEWER_FILES)
-        if not expected.issubset(members):
-            raise ValueError("viewer bundle is missing fixed members")
-        for name in members - expected:
-            parts = name.split("/")
-            if (
-                len(parts) != 2
-                or parts[0] != "thumbs"
-                or parts[1] == ".jpg"
-                or not parts[1].endswith(".jpg")
-            ):
-                raise ValueError("viewer bundle contains an unexpected member")
-
-
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
     payload = _load_request(args.dataset, args.classifier_result, args.taskID)
@@ -93,39 +64,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     response.raise_for_status()
     decoded = bson.loads(response.content)
-    if not isinstance(decoded, dict) or set(decoded) != {
-        "global_skus",
-        "viewer_bundle",
-        "cos",
-    }:
-        raise ValueError("mapping response must contain global_skus, viewer_bundle and cos")
+    if not isinstance(decoded, dict) or set(decoded) != {"global_skus"}:
+        raise ValueError("mapping response must contain only global_skus")
     global_skus = decoded["global_skus"]
-    viewer_bundle = decoded["viewer_bundle"]
-    cos = decoded["cos"]
     if not isinstance(global_skus, list) or not all(
         isinstance(item, str) for item in global_skus
     ):
         raise ValueError("global_skus must be a string list")
-    if not isinstance(viewer_bundle, bytes):
-        raise ValueError("viewer_bundle must be bytes")
-    if not isinstance(cos, dict) or set(cos) != {
-        "taskID",
-        "viewer_bundle_url",
-    }:
-        raise ValueError("cos must contain taskID and viewer bundle URL")
-    if cos["taskID"] != args.taskID or not all(
-        isinstance(cos[name], str)
-        for name in ("viewer_bundle_url",)
-    ):
-        raise ValueError("cos response is invalid")
-    _verify_viewer_bundle(viewer_bundle)
 
     output_dir = args.output_dir or args.dataset / "docker_mapping_response"
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "global_skus.json").write_text(
         json.dumps(global_skus, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    (output_dir / "viewer_bundle.zip").write_bytes(viewer_bundle)
 
 
 if __name__ == "__main__":
