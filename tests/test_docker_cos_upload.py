@@ -7,7 +7,7 @@ import docker.cos_upload as cos_upload
 
 from docker.cos_upload import (
     CosUploadConfig,
-    upload_mapping_results,
+    upload_viewer_bundle,
     validate_taskid,
 )
 
@@ -33,7 +33,7 @@ def _write_env(path: Path, **values: str) -> Path:
     return path
 
 
-def test_from_env_reads_temp_file_and_uploads_prefixed_urls(
+def test_from_env_reads_temp_file_and_uploads_prefixed_viewer_bundle(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ):
     config = CosUploadConfig.from_env(
@@ -50,15 +50,9 @@ def test_from_env_reads_temp_file_and_uploads_prefixed_urls(
     client = FakeCosClient()
     monkeypatch.setattr(cos_upload, "CosS3Client", lambda _config: client)
 
-    result = upload_mapping_results("task-01", b"{}", b"PK", config)
+    result = upload_viewer_bundle("task-01", b"PK", config)
 
     assert client.calls == [
-        ("put_object", {
-            "Bucket": "bucket",
-            "Key": "mapping-artifacts/task-01/global_skus.json",
-            "Body": b"{}",
-            "ContentType": "application/json",
-        }),
         ("put_object", {
             "Bucket": "bucket",
             "Key": "mapping-artifacts/task-01/viewer_bundle.zip",
@@ -67,7 +61,6 @@ def test_from_env_reads_temp_file_and_uploads_prefixed_urls(
         }),
     ]
     assert result == {
-        "global_skus_url": "https://bucket.cos.region.myqcloud.com/mapping-artifacts/task-01/global_skus.json",
         "viewer_bundle_url": "https://bucket.cos.region.myqcloud.com/mapping-artifacts/task-01/viewer_bundle.zip",
     }
 
@@ -78,7 +71,7 @@ def test_from_env_reads_temp_file_and_uploads_prefixed_urls(
 def test_invalid_taskID_rejected_before_network(taskID):
     config = CosUploadConfig("id", "key", "bucket", "region", "prefix")
     with pytest.raises(ValueError):
-        upload_mapping_results(taskID, b"{}", b"PK", config)
+        upload_viewer_bundle(taskID, b"PK", config)
 
 
 def test_taskID_validation_accepts_allowed_pattern():
@@ -92,7 +85,7 @@ def test_cos_sdk_failure_propagates_to_caller(monkeypatch: pytest.MonkeyPatch):
         cos_upload, "CosS3Client", lambda _config: FakeCosClient(RuntimeError("SDK failed"))
     )
     with pytest.raises(RuntimeError, match="SDK failed"):
-        upload_mapping_results("task", b"{}", b"PK", config)
+        upload_viewer_bundle("task", b"PK", config)
 
 
 @pytest.mark.parametrize("missing_key", ["COS_SECRET_ID", "COS_SECRET_KEY", "COS_BUCKET", "COS_REGION", "COS_KEY_PREFIX"])

@@ -188,10 +188,9 @@ def test_process_directly_composes_request_pipeline_and_response(
             calls["config"] = True
             return cls()
 
-    def upload(taskid, global_skus, viewer_bundle, config):
-        calls["upload"] = (taskid, global_skus, viewer_bundle, config)
+    def upload(taskid, viewer_bundle, config):
+        calls["upload"] = (taskid, viewer_bundle, config)
         return {
-            "global_skus_url": "https://cos.example/task-01/global_skus.json",
             "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
         }
 
@@ -199,7 +198,7 @@ def test_process_directly_composes_request_pipeline_and_response(
     monkeypatch.setattr(processor, "run_mapping_request", run)
     monkeypatch.setattr(processor, "build_success_response", build)
     monkeypatch.setattr(processor, "CosUploadConfig", _CosUploadConfig, raising=False)
-    monkeypatch.setattr(processor, "upload_mapping_results", upload, raising=False)
+    monkeypatch.setattr(processor, "upload_viewer_bundle", upload, raising=False)
     matching_algorithms.PI3_SCENE_CACHE["old-scene"] = {"tensor": object()}
     sku_matching_system._DA3_IMAGE_CACHE["old-images"] = object()
     sku_matching_system._DA3_TRANSFORMS_CACHE["old-transforms"] = [object()]
@@ -222,16 +221,14 @@ def test_process_directly_composes_request_pipeline_and_response(
     assert calls["config"] is True
     assert calls["upload"] == (
         "task-01",
-        b'["{\\"objects\\":[]}"]',
         b"zip",
-        calls["upload"][3],
+        calls["upload"][2],
     )
     assert result == {
         "global_skus": ['{"objects":[]}'],
         "viewer_bundle": b"zip",
         "cos": {
             "taskID": "task-01",
-            "global_skus_url": "https://cos.example/task-01/global_skus.json",
             "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
         },
     }
@@ -329,7 +326,6 @@ def test_client_requires_task_id_and_validates_cos_response(
                 "viewer_bundle": bundle.getvalue(),
                 "cos": {
                     "taskID": "task-01",
-                    "global_skus_url": "https://cos.example/task-01/global_skus.json",
                     "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
                 },
             }
@@ -375,7 +371,6 @@ def test_api_round_trips_success_bson_and_returns_tracebacks(
             "viewer_bundle": b"zip",
             "cos": {
                 "taskID": inputs["taskID"],
-                "global_skus_url": "https://cos.example/task-01/global_skus.json",
                 "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
             },
         },
@@ -387,7 +382,6 @@ def test_api_round_trips_success_bson_and_returns_tracebacks(
         "viewer_bundle": b"zip",
         "cos": {
             "taskID": "task-01",
-            "global_skus_url": "https://cos.example/task-01/global_skus.json",
             "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
         },
     }
