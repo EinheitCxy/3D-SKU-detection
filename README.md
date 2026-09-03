@@ -97,6 +97,10 @@ BuildKit named contexts 装配最终镜像。运行时固定一份 `/app/.venv`�
 `DA3_VENV_PYTHON=/app/.venv/bin/python`、离线 Hugging Face/Transformers，并且 Uvicorn
 仅启动一个 worker；API 内的请求锁保证同一时刻只运行一个 fd。
 
+COS 上传使用官方 `cos-python-sdk-v5` 的 `CosS3Client.put_object`，该依赖已由根
+`uv.lock` 锁定。若当前 base image 尚未使用该 lock 构建，不能用 `build_code_update.sh`
+派生仅更新代码的镜像，必须运行完整 `build.sh`。
+
 `libX11` 与 `libGL` 仅用于满足 Open3D 的动态链接依赖；Docker 容器不会显示任何 UI。首次准备
 wheel 和上述 system `.deb` 后，后续构建始终使用 `--network=none`、冻结 lock 和项目
 `[tool.uv].find-links` flat index，不需要网络。`OPENCV_WHEEL_DIR` 与 `SYSTEM_DEB_DIR` 均可覆盖，
