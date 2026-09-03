@@ -98,8 +98,9 @@ BuildKit named contexts 装配最终镜像。运行时固定一份 `/app/.venv`�
 仅启动一个 worker；API 内的请求锁保证同一时刻只运行一个 fd。
 
 COS 上传使用官方 `cos-python-sdk-v5` 的 `CosS3Client.put_object`，该依赖已由根
-`uv.lock` 锁定。若当前 base image 尚未使用该 lock 构建，不能用 `build_code_update.sh`
-派生仅更新代码的镜像，必须运行完整 `build.sh`。
+`uv.lock` 锁定。`build_code_update.sh` 默认从本机高重叠的
+`global-id-mapping:4.0-traceback` 派生，并离线复制根 `.venv` 中的 COS SDK 运行时包；可用
+`BASE_IMAGE`、`CORE_REPO_ROOT`、`COS_SITE_PACKAGES` 和 `IMAGE_TAG` 覆盖这些输入。
 
 `libX11` 与 `libGL` 仅用于满足 Open3D 的动态链接依赖；Docker 容器不会显示任何 UI。首次准备
 wheel 和上述 system `.deb` 后，后续构建始终使用 `--network=none`、冻结 lock 和项目
