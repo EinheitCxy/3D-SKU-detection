@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import subprocess
 
+import qcloud_cos
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
@@ -133,6 +134,7 @@ done
 
 [ -n "$app_context" ]
 cmp "$app_context/processor.py" "$EXPECTED_PROCESSOR"
+cmp "$app_context/cos-sdk/qcloud_cos/__init__.py" "$EXPECTED_QCLOUD_INIT"
 printf '%s\\n' "$@" > "$DOCKER_ARGS_LOG"
 """
     )
@@ -142,6 +144,8 @@ printf '%s\\n' "$@" > "$DOCKER_ARGS_LOG"
         "TMPDIR": str(tmp_path),
         "IMAGE_TAG": "global-id-mapping:4.0-traceback-test",
         "EXPECTED_PROCESSOR": str(docker_root / "processor.py"),
+        "EXPECTED_QCLOUD_INIT": str(Path(qcloud_cos.__file__)),
+        "COS_SITE_PACKAGES": str(Path(qcloud_cos.__file__).parents[1]),
         "DOCKER_ARGS_LOG": str(args_log),
     }
 
@@ -157,7 +161,7 @@ printf '%s\\n' "$@" > "$DOCKER_ARGS_LOG"
     docker_args = args_log.read_text().splitlines()
     assert "--network=none" in docker_args
     assert "--pull=false" in docker_args
-    assert "BASE_IMAGE=harbor-cn.lingmouai.com/asu/global-id-mapping:4.0" in docker_args
+    assert "BASE_IMAGE=global-id-mapping:4.0-traceback" in docker_args
     assert any(arg.endswith("Dockerfile.code-update") for arg in docker_args)
 
 
