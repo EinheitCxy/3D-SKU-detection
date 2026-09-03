@@ -163,6 +163,11 @@ POST 到本机服务，并将响应写为 `global_skus.json` 与 `viewer_bundle.
 `viewer_bundle.zip`，并与 `global_skus.json` 一同上传 COS；BSON 成功响应中的 `cos.viewer_bundle_url`
 可供独立 Viewer 下载并渲染。
 
+可视化代码位于独立的 `visualization` 分支，且该分支只包含 `viewer/`。Viewer 从页面 URL 读取
+`recognition_task_id`，以它定位对应的 COS `viewer_bundle.zip` 后在浏览器渲染；其 `viewer/.env` 只配置
+公开的 COS 基址，不包含也不应包含 `COS_SECRET_ID` 或 `COS_SECRET_KEY`。Docker 镜像和该服务运行时均不依赖
+该前端目录或其配置。
+
 ```bash
 uv run python docker/test_api.py \
   --dataset /path/to/dataset \
