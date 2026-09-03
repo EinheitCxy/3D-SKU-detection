@@ -59,6 +59,7 @@ def test_prepare_request_converts_classifier_frames_in_object_order(
 ) -> None:
     prepared = prepare_request(
         {
+            "taskID": "task-01",
             "images": [_image_bytes(), _image_bytes()],
             "skus": [_frame(), _frame()],
         },
@@ -112,6 +113,7 @@ def test_prepare_request_preserves_two_object_order_and_detector_metadata(
     }
     prepared = prepare_request(
         {
+            "taskID": "task-01",
             "images": [_image_bytes()],
             "skus": [json.dumps(frame, ensure_ascii=False)],
         },
@@ -161,7 +163,7 @@ def test_prepare_request_preserves_two_object_order_and_detector_metadata(
 def test_prepare_request_rejects_malformed_input(
     mutator, message: str, tmp_path: Path
 ) -> None:
-    inputs = {"images": [_image_bytes()], "skus": [_frame()]}
+    inputs = {"taskID": "task-01", "images": [_image_bytes()], "skus": [_frame()]}
     mutator(inputs)
     with pytest.raises(ValueError, match=message):
         prepare_request(inputs, tmp_path)
@@ -176,6 +178,7 @@ def test_prepare_request_rejects_wrapper_features_and_extra_keys(
         {"skus": [{**frame, "features": []}]},
     ):
         inputs = {
+            "taskID": "task-01",
             "images": [_image_bytes()],
             "skus": [json.dumps(payload["skus"][0])],
         }
@@ -199,6 +202,7 @@ def test_prepare_request_ignores_top_level_features_and_metadata(tmp_path: Path)
 
     prepared = prepare_request(
         {
+            "taskID": "task-01",
             "images": [_image_bytes()],
             "skus": [_frame()],
             "features": ignored,
@@ -224,11 +228,12 @@ def test_prepare_request_ignores_top_level_features_and_metadata(tmp_path: Path)
 @pytest.mark.parametrize(
     "inputs",
     [
+        {"images": [_image_bytes()], "skus": [_frame()]},
         {"skus": [_frame()]},
         {"images": [_image_bytes()]},
     ],
 )
-def test_prepare_request_requires_images_and_skus(
+def test_prepare_request_requires_taskID_images_and_skus(
     inputs: dict[str, object], tmp_path: Path
 ) -> None:
     with pytest.raises(ValueError):
@@ -249,6 +254,7 @@ def test_prepare_request_uses_fixed_personalcare_domain(
 
     processor.prepare_request(
         {
+            "taskID": "task-01",
             "images": [_image_bytes()],
             "skus": [_frame()],
             "project_id": "ignored-request-value",
@@ -293,6 +299,7 @@ def test_prepare_request_rejects_missing_or_malformed_detector_fields(
         with pytest.raises(ValueError):
             prepare_request(
                 {
+                    "taskID": "task-01",
                     "images": [_image_bytes()],
                     "skus": [json.dumps(case)],
                 },

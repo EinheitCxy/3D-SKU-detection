@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+import subprocess
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
@@ -99,6 +101,64 @@ def test_offline_mapping_docker_build_contract() -> None:
     assert "--build-context sam3_checkpoint=" in build_script
 
 
+def test_mapping_code_update_build_derives_from_4_and_replaces_processor(
+    tmp_path: Path,
+) -> None:
+    """A code-only refresh must neither recreate the model layer nor change its path."""
+    docker_root = REPOSITORY_ROOT / "docker"
+    build_script = docker_root / "build_code_update.sh"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    args_log = tmp_path / "docker-args.txt"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+    exit 0
+fi
+
+[ "$1" = "build" ] || exit 1
+app_context=""
+for ((index = 1; index <= $#; index++)); do
+    if [ "${!index}" = "--build-context" ]; then
+        next_index=$((index + 1))
+        context="${!next_index}"
+        [ "${context#app=}" = "$context" ] || app_context="${context#app=}"
+    fi
+done
+
+[ -n "$app_context" ]
+cmp "$app_context/processor.py" "$EXPECTED_PROCESSOR"
+printf '%s\\n' "$@" > "$DOCKER_ARGS_LOG"
+"""
+    )
+    fake_docker.chmod(0o755)
+    environment = os.environ | {
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "TMPDIR": str(tmp_path),
+        "IMAGE_TAG": "global-id-mapping:4.0-traceback-test",
+        "EXPECTED_PROCESSOR": str(docker_root / "processor.py"),
+        "DOCKER_ARGS_LOG": str(args_log),
+    }
+
+    subprocess.run(
+        ["bash", str(build_script)],
+        check=True,
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+    )
+
+    docker_args = args_log.read_text().splitlines()
+    assert "--network=none" in docker_args
+    assert "--pull=false" in docker_args
+    assert "BASE_IMAGE=harbor-cn.lingmouai.com/asu/global-id-mapping:4.0" in docker_args
+    assert any(arg.endswith("Dockerfile.code-update") for arg in docker_args)
+
+
 def test_offline_mapping_docker_build_separates_wrapper_and_core_roots() -> None:
     docker_root = REPOSITORY_ROOT / "docker"
     build_script = (docker_root / "build.sh").read_text()
@@ -114,8 +174,9 @@ def test_offline_mapping_docker_build_separates_wrapper_and_core_roots() -> None
     assert 'cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"' in build_script
     assert '-v "$CORE_REPO_ROOT:/workspace:ro"' in build_script
     assert '--build-context sam3_checkpoint="$CORE_REPO_ROOT/sam3/checkpoints"' in build_script
-    for wrapper in ("__init__.py", "api.py", "processor.py"):
+    for wrapper in ("__init__.py", "api.py", "processor.py", "cos_upload.py"):
         assert f'"$SCRIPT_DIR/{wrapper}"' in build_script
+    assert "docker/cos_upload.py" in docker_root.joinpath("Dockerfile").read_text()
     assert '-f "$SCRIPT_DIR/Dockerfile"' in build_script
     assert '  "$SCRIPT_DIR"\n' in build_script
     assert "$REPO_ROOT" not in build_script

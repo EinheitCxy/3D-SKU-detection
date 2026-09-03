@@ -115,7 +115,7 @@ def test_processor_runs_da3_pipeline_and_exports_viewer(
     )
 
 
-def test_processor_propagates_pipeline_and_viewer_errors_directly(
+def test_processor_does_not_wrap_pipeline_status_as_stage_error(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     class _FailedPipeline(_Pipeline):
@@ -123,13 +123,27 @@ def test_processor_propagates_pipeline_and_viewer_errors_directly(
             return {"validation": True, "reconstruction": False}
 
     monkeypatch.setattr(processor, "SKUDetectionMain", _FailedPipeline)
-    with pytest.raises(RuntimeError, match="reconstruction"):
-        processor.run_mapping_request(
-            tmp_path / "dataset",
-            tmp_path / "outputs",
-            tmp_path / "viewer",
-            "/models/da3",
-        )
+    monkeypatch.setattr(
+        processor,
+        "export_web_viewer_bundle",
+        lambda **_kwargs: {
+            "manifest_path": str(tmp_path / "viewer" / "manifest.json")
+        },
+    )
+
+    result = processor.run_mapping_request(
+        tmp_path / "dataset",
+        tmp_path / "outputs",
+        tmp_path / "viewer",
+        "/models/da3",
+    )
+
+    assert result["viewer_dir"] == str(tmp_path / "viewer")
+
+
+def test_processor_propagates_viewer_errors_directly(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
 
     monkeypatch.setattr(processor, "SKUDetectionMain", _Pipeline)
     monkeypatch.setattr(
@@ -155,7 +169,7 @@ def test_process_directly_composes_request_pipeline_and_response(
     def prepare(inputs, work_root):
         calls["inputs"] = inputs
         calls["work_root"] = work_root
-        return SimpleNamespace(dataset_dir=work_root / "dataset")
+        return SimpleNamespace(dataset_dir=work_root / "dataset", taskid="task-01")
 
     def run(dataset_dir, output_root, viewer_root, model_path):
         calls["run"] = (dataset_dir, output_root, viewer_root, model_path)
@@ -168,14 +182,29 @@ def test_process_directly_composes_request_pipeline_and_response(
         calls["build"] = (global_skus_path, viewer_dir)
         return {"global_skus": ['{"objects":[]}'], "viewer_bundle": b"zip"}
 
+    class _CosUploadConfig:
+        @classmethod
+        def from_env(cls):
+            calls["config"] = True
+            return cls()
+
+    def upload(taskid, global_skus, viewer_bundle, config):
+        calls["upload"] = (taskid, global_skus, viewer_bundle, config)
+        return {
+            "global_skus_url": "https://cos.example/task-01/global_skus.json",
+            "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
+        }
+
     monkeypatch.setattr(processor, "prepare_request", prepare)
     monkeypatch.setattr(processor, "run_mapping_request", run)
     monkeypatch.setattr(processor, "build_success_response", build)
+    monkeypatch.setattr(processor, "CosUploadConfig", _CosUploadConfig, raising=False)
+    monkeypatch.setattr(processor, "upload_mapping_results", upload, raising=False)
     matching_algorithms.PI3_SCENE_CACHE["old-scene"] = {"tensor": object()}
     sku_matching_system._DA3_IMAGE_CACHE["old-images"] = object()
     sku_matching_system._DA3_TRANSFORMS_CACHE["old-transforms"] = [object()]
 
-    inputs = {"images": [b"image"], "skus": ["{}"]}
+    inputs = {"taskID": "task-01", "images": [b"image"], "skus": ["{}"]}
     result = processor.process(inputs)
 
     work_root = calls["work_root"]
@@ -190,7 +219,22 @@ def test_process_directly_composes_request_pipeline_and_response(
         work_root / "outputs" / "dataset" / "global_skus.json",
         work_root / "viewer" / "generation",
     )
-    assert result == {"global_skus": ['{"objects":[]}'], "viewer_bundle": b"zip"}
+    assert calls["config"] is True
+    assert calls["upload"] == (
+        "task-01",
+        b'["{\\"objects\\":[]}"]',
+        b"zip",
+        calls["upload"][3],
+    )
+    assert result == {
+        "global_skus": ['{"objects":[]}'],
+        "viewer_bundle": b"zip",
+        "cos": {
+            "taskID": "task-01",
+            "global_skus_url": "https://cos.example/task-01/global_skus.json",
+            "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
+        },
+    }
     assert matching_algorithms.PI3_SCENE_CACHE == {}
     assert sku_matching_system._DA3_IMAGE_CACHE == {}
     assert sku_matching_system._DA3_TRANSFORMS_CACHE == {}
@@ -257,19 +301,95 @@ def test_client_rejects_duplicate_or_nested_viewer_bundle_members(
         test_api._verify_viewer_bundle(bundle.getvalue())
 
 
+def test_client_requires_task_id_and_validates_cos_response(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    dataset = tmp_path / "dataset"
+    classifier_result = tmp_path / "classifier"
+    (dataset / "images").mkdir(parents=True)
+    classifier_result.mkdir()
+    (dataset / "images" / "0.jpg").write_bytes(b"image")
+    (classifier_result / "0.json").write_text("{}", encoding="utf-8")
+
+    bundle = io.BytesIO()
+    with zipfile.ZipFile(bundle, "w") as archive:
+        for name in (
+            "manifest.json",
+            "positions.f32.bin",
+            "colors.u8.bin",
+            "normals.i8.bin",
+            "objects.json",
+        ):
+            archive.writestr(name, b"x")
+
+    class _Response:
+        content = bson.dumps(
+            {
+                "global_skus": ['{"objects":[]}'],
+                "viewer_bundle": bundle.getvalue(),
+                "cos": {
+                    "taskID": "task-01",
+                    "global_skus_url": "https://cos.example/task-01/global_skus.json",
+                    "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
+                },
+            }
+        )
+
+        def raise_for_status(self) -> None:
+            pass
+
+    sent: dict[str, object] = {}
+
+    def post(_url, **kwargs):
+        sent.update(kwargs)
+        return _Response()
+
+    monkeypatch.setattr(test_api.requests, "post", post)
+    test_api.main(
+        [
+            "--dataset",
+            str(dataset),
+            "--classifier-result",
+            str(classifier_result),
+            "--taskID",
+            "task-01",
+        ]
+    )
+
+    assert bson.loads(sent["data"])["taskID"] == "task-01"
+    assert (dataset / "docker_mapping_response" / "global_skus.json").is_file()
+    with pytest.raises(SystemExit):
+        test_api.parse_args(
+            ["--dataset", str(dataset), "--classifier-result", str(classifier_result)]
+        )
+
+
 def test_api_round_trips_success_bson_and_returns_tracebacks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
         api,
         "process",
-        lambda _inputs: {"global_skus": ['{"skus":[]}'], "viewer_bundle": b"zip"},
+        lambda inputs: {
+            "global_skus": ['{"skus":[]}'],
+            "viewer_bundle": b"zip",
+            "cos": {
+                "taskID": inputs["taskID"],
+                "global_skus_url": "https://cos.example/task-01/global_skus.json",
+                "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
+            },
+        },
     )
-    response = _post_api(bson.dumps({"images": [], "skus": []}))
+    response = _post_api(bson.dumps({"taskID": "task-01", "images": [], "skus": []}))
     assert response.status_code == 200
     assert bson.loads(response.content) == {
         "global_skus": ['{"skus":[]}'],
         "viewer_bundle": b"zip",
+        "cos": {
+            "taskID": "task-01",
+            "global_skus_url": "https://cos.example/task-01/global_skus.json",
+            "viewer_bundle_url": "https://cos.example/task-01/viewer_bundle.zip",
+        },
     }
 
     monkeypatch.setattr(
@@ -277,7 +397,7 @@ def test_api_round_trips_success_bson_and_returns_tracebacks(
         "process",
         lambda _inputs: (_ for _ in ()).throw(RuntimeError("pipeline failed")),
     )
-    response = _post_api(bson.dumps({"images": [], "skus": []}))
+    response = _post_api(bson.dumps({"taskID": "task-01", "images": [], "skus": []}))
     assert response.status_code == 500
     assert "RuntimeError: pipeline failed" in response.text
 
