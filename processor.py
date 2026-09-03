@@ -23,6 +23,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from main import PROJECT_ROOT as MAIN_PROJECT_ROOT, SKUDetectionMain
+from docker.cos_upload import CosUploadConfig, upload_mapping_results, validate_taskid
 from src.web_viewer_export import export_web_viewer_bundle
 from utils.classification_aggregation import build_resolved_classification
 from utils.matching_algorithms import PI3_SCENE_CACHE
@@ -37,19 +38,10 @@ _VIEWER_FILES = (
     "normals.i8.bin",
     "objects.json",
 )
-_REQUIRED_STAGES = (
-    "validation",
-    "reconstruction",
-    "matching",
-    "improved_analysis",
-    "classification",
-    "dedup",
-)
-
-
 @dataclass(frozen=True)
 class PreparedRequest:
     dataset_dir: Path
+    taskid: str
 
 
 def process(inputs: Mapping[str, Any]) -> dict[str, Any]:
@@ -64,9 +56,21 @@ def process(inputs: Mapping[str, Any]) -> dict[str, Any]:
                 work_root / "viewer",
                 os.environ["DA3_MODEL_PATH"],
             )
-            return build_success_response(
+            response = build_success_response(
                 Path(result["global_skus_path"]), Path(result["viewer_dir"])
             )
+            upload_result = upload_mapping_results(
+                prepared.taskid,
+                json.dumps(
+                    response["global_skus"], ensure_ascii=False, separators=(",", ":")
+                ).encode("utf-8"),
+                response["viewer_bundle"],
+                CosUploadConfig.from_env(),
+            )
+            return {
+                **response,
+                "cos": {"taskID": prepared.taskid, **upload_result},
+            }
         finally:
             PI3_SCENE_CACHE.clear()
             _DA3_IMAGE_CACHE.clear()
@@ -80,10 +84,11 @@ def prepare_request(inputs: Mapping[str, Any], work_root: Path) -> PreparedReque
     if not isinstance(inputs, Mapping):
         raise ValueError("request must be an object")
     try:
+        taskid = validate_taskid(inputs["taskID"])
         images = inputs["images"]
         skus = inputs["skus"]
     except KeyError as error:
-        raise ValueError("request requires images and skus") from error
+        raise ValueError("request requires taskID, images and skus") from error
     if not isinstance(images, list) or not images:
         raise ValueError("images must be a non-empty list")
     if not isinstance(skus, list) or len(skus) != len(images):
@@ -107,7 +112,7 @@ def prepare_request(inputs: Mapping[str, Any], work_root: Path) -> PreparedReque
         (detections_dir / f"{index}.json").write_text(
             json.dumps(frame, ensure_ascii=False, allow_nan=False), encoding="utf-8"
         )
-    return PreparedRequest(dataset_dir=dataset_dir)
+    return PreparedRequest(dataset_dir=dataset_dir, taskid=taskid)
 
 
 def _validate_image(payload: Any, index: int) -> bytes:
@@ -293,12 +298,9 @@ def run_mapping_request(
     pipeline.classifier_enabled = False
     pipeline.config_path = MAIN_PROJECT_ROOT / "config.yaml"
 
-    summary = pipeline.run_complete_pipeline(
+    pipeline.run_complete_pipeline(
         str(dataset_dir), algorithm="3d", model_path=model_path
     )
-    for stage in _REQUIRED_STAGES:
-        if summary.get(stage) is not True:
-            raise RuntimeError(f"pipeline stage {stage} did not succeed")
 
     dataset_output = output_root / dataset_dir.name
     export_result = export_web_viewer_bundle(

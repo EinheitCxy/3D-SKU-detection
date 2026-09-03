@@ -27,6 +27,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", required=True, type=Path)
     parser.add_argument("--classifier-result", required=True, type=Path)
+    parser.add_argument("--taskID", required=True)
     parser.add_argument(
         "--output-dir", type=Path, help="default: <dataset>/docker_mapping_response"
     )
@@ -47,12 +48,15 @@ def _numeric_files(directory: Path, suffixes: frozenset[str]) -> list[Path]:
     return sorted(paths, key=lambda path: int(path.stem))
 
 
-def _load_request(dataset: Path, classifier_result: Path) -> dict[str, object]:
+def _load_request(
+    dataset: Path, classifier_result: Path, taskid: str
+) -> dict[str, object]:
     image_paths = _numeric_files(dataset / "images", _IMAGE_SUFFIXES)
     result_paths = _numeric_files(classifier_result, frozenset({".json"}))
     if [path.stem for path in image_paths] != [path.stem for path in result_paths]:
         raise ValueError("numeric image and classifier-result frame IDs must match")
     return {
+        "taskID": taskid,
         "images": [path.read_bytes() for path in image_paths],
         "skus": [path.read_text(encoding="utf-8") for path in result_paths],
     }
@@ -80,7 +84,7 @@ def _verify_viewer_bundle(bundle: bytes) -> None:
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = parse_args(argv)
-    payload = _load_request(args.dataset, args.classifier_result)
+    payload = _load_request(args.dataset, args.classifier_result, args.taskID)
     response = requests.post(
         args.url,
         data=bson.dumps(payload),
@@ -89,16 +93,32 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     response.raise_for_status()
     decoded = bson.loads(response.content)
-    if not isinstance(decoded, dict) or set(decoded) != {"global_skus", "viewer_bundle"}:
-        raise ValueError("mapping response must contain only global_skus and viewer_bundle")
+    if not isinstance(decoded, dict) or set(decoded) != {
+        "global_skus",
+        "viewer_bundle",
+        "cos",
+    }:
+        raise ValueError("mapping response must contain global_skus, viewer_bundle and cos")
     global_skus = decoded["global_skus"]
     viewer_bundle = decoded["viewer_bundle"]
+    cos = decoded["cos"]
     if not isinstance(global_skus, list) or not all(
         isinstance(item, str) for item in global_skus
     ):
         raise ValueError("global_skus must be a string list")
     if not isinstance(viewer_bundle, bytes):
         raise ValueError("viewer_bundle must be bytes")
+    if not isinstance(cos, dict) or set(cos) != {
+        "taskID",
+        "global_skus_url",
+        "viewer_bundle_url",
+    }:
+        raise ValueError("cos must contain taskID and both result URLs")
+    if cos["taskID"] != args.taskID or not all(
+        isinstance(cos[name], str)
+        for name in ("global_skus_url", "viewer_bundle_url")
+    ):
+        raise ValueError("cos response is invalid")
     _verify_viewer_bundle(viewer_bundle)
 
     output_dir = args.output_dir or args.dataset / "docker_mapping_response"

@@ -11,7 +11,7 @@ COPY --from=app main.py config.yaml /app/
 COPY --from=app src /app/src
 COPY --from=app utils /app/utils
 COPY --from=app viewer /app/viewer
-COPY --from=app docker/__init__.py docker/api.py docker/processor.py /app/docker/
+COPY --from=app docker/__init__.py docker/api.py docker/processor.py docker/cos_upload.py /app/docker/
 COPY --from=app Depth-Anything-3/src /app/Depth-Anything-3/src
 COPY --from=app sam3/sam3 /app/sam3/sam3
 

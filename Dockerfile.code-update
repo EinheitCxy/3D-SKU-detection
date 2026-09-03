@@ -1,0 +1,4 @@
+ARG BASE_IMAGE=harbor-cn.lingmouai.com/asu/global-id-mapping:4.0
+FROM ${BASE_IMAGE}
+
+COPY --from=app processor.py cos_upload.py /app/docker/

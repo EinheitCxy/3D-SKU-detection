@@ -98,7 +98,7 @@ cp -a "$CORE_REPO_ROOT/Depth-Anything-3/src" "$APP_CONTEXT/Depth-Anything-3/"
 cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"
 cp -a "$VIEWER_WEB_DIR/dist" "$APP_CONTEXT/viewer"
 cp -a "$SCRIPT_DIR/__init__.py" "$SCRIPT_DIR/api.py" \
-  "$SCRIPT_DIR/processor.py" "$APP_CONTEXT/docker/"
+  "$SCRIPT_DIR/processor.py" "$SCRIPT_DIR/cos_upload.py" "$APP_CONTEXT/docker/"
 find "$APP_CONTEXT" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$APP_CONTEXT" -type f -name '*.py[co]' -delete
 rm -rf "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/app"

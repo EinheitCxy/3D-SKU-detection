@@ -5,8 +5,8 @@
 输入数据或运行产物；调用方必须提供每帧的原图和外部 classifier 结果。
 
 请求链路保持为 `api.py -> processor.process()`：API 只做 BSON 解码/编码并用一个锁
-串行执行请求，processor 在临时目录中直接运行 pipeline 和 Viewer export。服务不再创建
-request 子进程或 Pipe；处理失败时 HTTP 500 直接返回 Python traceback。每次请求结束都会
+串行执行请求，processor 在临时目录中直接运行 pipeline、Viewer export 并上传两个结果到 COS。服务不再创建
+request 子进程或 Pipe，也不会根据 pipeline summary 伪造 stage 异常；未捕获的处理失败会以 HTTP 500 直接返回 Python traceback。每次请求结束都会
 清理按临时路径缓存的 DA3 image/transform/scene tensor，SAM3 model cache 则留在进程内供
 下一次请求复用。
 
@@ -25,6 +25,21 @@ SAM3 checkpoint，以及 builder 的 `/workspace` 挂载均从 `CORE_REPO_ROOT` 
 cd /path/to/3D_Recognization
 bash docker/build.sh
 ```
+
+## 仅更新 processor 代码
+
+如果本地已存在 `harbor-cn.lingmouai.com/asu/global-id-mapping:4.0`，且改动仅为
+`docker/processor.py`，可从该镜像派生一个小层镜像，不会重新装配 DA3 权重或 Python
+环境：
+
+```bash
+bash docker/build_code_update.sh
+```
+
+默认输出为 `global-id-mapping:4.0-traceback`，原 `4.0` 镜像和运行中的容器不会改变。
+可通过 `BASE_IMAGE` 与 `IMAGE_TAG` 覆盖输入和输出 tag。若 `main.py`、`src/`、`utils/`、
+DA3 或 SAM3 源码也有改动，必须改用完整的 `build.sh`。本派生镜像同时更新
+`processor.py` 与 `cos_upload.py`。
 
 在由 `git subtree split --prefix=docker` 得到的 standalone checkout 中，必须显式
 指向完整核心 checkout：
@@ -71,7 +86,9 @@ PREPARE_SYSTEM_DEPS_ONLY=1 bash docker/build.sh
 
 ```bash
 bash docker/build.sh
-docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
+docker run --rm --gpus all -p 8011:80 \
+  --mount type=bind,src="$(pwd)/docker/.env",dst=/app/docker/.env,readonly \
+  global-id-mapping:da3-self-contained
 ```
 
 `build.sh` 会先用离线 base container 从根 `uv.lock` 生成可搬迁的统一 `.venv`，只安装
@@ -97,28 +114,63 @@ bash docker/build.sh
 
 ```text
 {
+  taskID: "<taskID>",
   images: [<numeric-frame image bytes>, ...],
   skus: ["{classes: {det, cls}, objects: [...]}", ...]
 }
 ```
 
-`images` 必须是非空 bytes list；`skus` 必须是同帧数的 JSON-string list。顶层的
+`taskID` 必须是非空的 `[A-Za-z0-9][A-Za-z0-9._-]{0,127}` 字符串；它只能作为 COS
+对象 key 的前缀使用。`images` 必须是非空 bytes list；`skus` 必须是同帧数的 JSON-string list。顶层的
 `features`、`project_id` 及其他上游透传字段会被忽略：服务不会解析、校验、复制或落盘它们。
 Adapter 固定以 personalcare domain `51` 构建 object-level `classification`，请求不能改变该值。
 `skus[i]` 是 classifier 的逐帧 JSON，保留 `{classes, objects}`；每个 object 必须包含 det/cls
 索引、det/cls confidence 和 bbox；object 内的 `features` 仍会被拒绝。服务将它规范化为当前
 pipeline 所需的 object-level `classification`，不会在容器内执行分类器。
 
+在 pipeline 和 Viewer 成功后，服务只读取容器内 `/app/docker/.env`。部署主机的
+`docker/.env` 必须显式提供 `COS_SECRET_ID`、`COS_SECRET_KEY`、`COS_BUCKET`、`COS_REGION`
+和 `COS_KEY_PREFIX`，并以只读 bind mount 挂入；该文件受 `docker/.gitignore` 与
+`docker/Dockerfile.dockerignore` 排除，绝不能提交、复制进镜像或上传到 GitHub/Gitee。
+无法读取该文件时，服务保留底层的原生 OS 异常。
+
+当前 `COS_KEY_PREFIX=global-id-mapping`，因此上传 key 固定为
+`global-id-mapping/<taskID>/global_skus.json` 和
+`global-id-mapping/<taskID>/viewer_bundle.zip`，不会落在 bucket 根目录。成功 BSON 响应保留
+`global_skus` 和 `viewer_bundle`，并新增：
+
+```text
+cos: {
+  taskID: "<taskID>",
+  global_skus_url: "<COS URL>",
+  viewer_bundle_url: "<COS URL>"
+}
+```
+
 客户端从 `<dataset>/images/` 和 `--classifier-result` 中读取相同数字 frame ID 的文件，
 POST 到本机服务，并将响应写为 `global_skus.json` 与 `viewer_bundle.zip`。它会验证 BSON
-成功响应仅包含这两个字段，并验证扁平 Viewer ZIP 的根固定成员 `manifest.json`、
+成功响应的 `global_skus`、`viewer_bundle`、`cos` 三个字段，并验证扁平 Viewer ZIP 的根固定成员 `manifest.json`、
 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`、`objects.json` 与可选
 `thumbs/*.jpg`；ZIP 不包含 `CURRENT` 或 `runs/<run_id>/` 路径。
+
+## Docker Viewer
+
+镜像构建时会离线编译独立的 `docker/viewer_web/`，并在 `/viewer/` 提供静态页面：
+
+```text
+http://<host>:<port>/viewer/
+```
+
+该页面在浏览器本地选择上述 `viewer_bundle.zip` 后渲染，不上传 ZIP、也不在容器中保存结果。
+`docker/viewer_web` 是从 `modules/viewer_web` 独立复制的前端，原产品 Viewer 不会被 Docker
+接口修改。当前适配器仅接受 processor 生成的平铺、非加密 `ZIP_STORED` schema 3.0.0 文件；
+固定成员、二进制形状、缩略图路径与对象契约都会在页面加载前校验。
 
 ```bash
 uv run python docker/test_api.py \
   --dataset /path/to/dataset \
-  --classifier-result /path/to/classifier/detections
+  --classifier-result /path/to/classifier/detections \
+  --taskID task-01
 ```
 
 默认输出目录是 `<dataset>/docker_mapping_response/`；可用 `--output-dir` 指定其他路径。
