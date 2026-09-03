@@ -2,35 +2,30 @@ import re
 from pathlib import Path
 
 import pytest
-import requests
+
+import docker.cos_upload as cos_upload
 
 from docker.cos_upload import (
     CosUploadConfig,
-    _authorization,
     upload_mapping_results,
     validate_taskid,
 )
 
 
-class FakeResponse:
-    def __init__(self, status_code=200):
-        self.status_code = status_code
-        self.raise_calls = 0
-
-    def raise_for_status(self):
-        self.raise_calls += 1
-        if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
-
-
-class FakeSession:
-    def __init__(self, status_code=200):
+class FakeCosClient:
+    def __init__(self, failure: Exception | None = None):
         self.calls = []
-        self.status_code = status_code
+        self.failure = failure
 
-    def put(self, url, **kwargs):
-        self.calls.append((url, kwargs))
-        return FakeResponse(self.status_code)
+    def put_object(self, **kwargs):
+        self.calls.append(("put_object", kwargs))
+        if self.failure is not None:
+            raise self.failure
+        return {}
+
+    def get_presigned_url(self, **kwargs):
+        self.calls.append(("get_presigned_url", kwargs))
+        return "https://signed.example/viewer_bundle.zip"
 
 
 def _write_env(path: Path, **values: str) -> Path:
@@ -38,7 +33,9 @@ def _write_env(path: Path, **values: str) -> Path:
     return path
 
 
-def test_from_env_reads_temp_file_and_uploads_prefixed_urls(tmp_path):
+def test_from_env_reads_temp_file_and_uploads_prefixed_urls(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
     config = CosUploadConfig.from_env(
         _write_env(
             tmp_path / ".env",
@@ -50,32 +47,29 @@ def test_from_env_reads_temp_file_and_uploads_prefixed_urls(tmp_path):
             IGNORED="value",
         )
     )
-    session = FakeSession()
+    client = FakeCosClient()
+    monkeypatch.setattr(cos_upload, "CosS3Client", lambda _config: client)
 
-    result = upload_mapping_results(
-        "task-01", b"{}", b"PK", config, session=session, now=lambda: 1_700_000_000
-    )
+    result = upload_mapping_results("task-01", b"{}", b"PK", config)
 
-    assert len(session.calls) == 2
-    assert [call[0] for call in session.calls] == [
-        "https://bucket.cos.region.myqcloud.com/mapping-artifacts/task-01/global_skus.json",
-        "https://bucket.cos.region.myqcloud.com/mapping-artifacts/task-01/viewer_bundle.zip",
+    assert client.calls == [
+        ("put_object", {
+            "Bucket": "bucket",
+            "Key": "mapping-artifacts/task-01/global_skus.json",
+            "Body": b"{}",
+            "ContentType": "application/json",
+        }),
+        ("put_object", {
+            "Bucket": "bucket",
+            "Key": "mapping-artifacts/task-01/viewer_bundle.zip",
+            "Body": b"PK",
+            "ContentType": "application/zip",
+        }),
     ]
     assert result == {
-        "global_skus_url": session.calls[0][0],
-        "viewer_bundle_url": session.calls[1][0],
+        "global_skus_url": "https://bucket.cos.region.myqcloud.com/mapping-artifacts/task-01/global_skus.json",
+        "viewer_bundle_url": "https://bucket.cos.region.myqcloud.com/mapping-artifacts/task-01/viewer_bundle.zip",
     }
-    assert session.calls[0][1]["data"] == b"{}"
-    assert session.calls[0][1]["headers"]["Content-Type"] == "application/json"
-    assert session.calls[1][1]["data"] == b"PK"
-    assert session.calls[1][1]["headers"]["Content-Type"] == "application/zip"
-    for url, kwargs in session.calls:
-        assert "task-01/" in url
-        assert kwargs["timeout"] == (5, 30)
-        assert kwargs["allow_redirects"] is False
-        assert kwargs["headers"]["Authorization"]
-        assert "secret" not in kwargs["headers"]["Authorization"]
-        assert kwargs["headers"]["Host"] == "bucket.cos.region.myqcloud.com"
 
 
 @pytest.mark.parametrize(
@@ -83,10 +77,8 @@ def test_from_env_reads_temp_file_and_uploads_prefixed_urls(tmp_path):
 )
 def test_invalid_taskID_rejected_before_network(taskID):
     config = CosUploadConfig("id", "key", "bucket", "region", "prefix")
-    session = FakeSession()
     with pytest.raises(ValueError):
-        upload_mapping_results(taskID, b"{}", b"PK", config, session=session)
-    assert session.calls == []
+        upload_mapping_results(taskID, b"{}", b"PK", config)
 
 
 def test_taskID_validation_accepts_allowed_pattern():
@@ -94,30 +86,13 @@ def test_taskID_validation_accepts_allowed_pattern():
     assert re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", validate_taskid("abc"))
 
 
-def test_cos_failure_propagates_to_caller():
+def test_cos_sdk_failure_propagates_to_caller(monkeypatch: pytest.MonkeyPatch):
     config = CosUploadConfig("id", "secret", "bucket", "region", "prefix")
-    with pytest.raises(RuntimeError, match="HTTP 500"):
-        upload_mapping_results(
-            "task",
-            b"{}",
-            b"PK",
-            config,
-            session=FakeSession(500),
-            now=lambda: 1_700_000_000,
-        )
-
-
-def test_cos_v5_authorization_fixed_clock_regression():
-    config = CosUploadConfig(
-        "AKIDEXAMPLE", "example-secret-key", "examplebucket", "ap-shanghai", "prefix"
+    monkeypatch.setattr(
+        cos_upload, "CosS3Client", lambda _config: FakeCosClient(RuntimeError("SDK failed"))
     )
-    assert _authorization(
-        config, "/task/global_skus.json", "application/json", 1_700_000_000
-    ) == (
-        "q-sign-algorithm=sha1&q-ak=AKIDEXAMPLE&q-sign-time=1700000000;1700000900&"
-        "q-key-time=1700000000;1700000900&q-header-list=content-type;host&"
-        "q-url-param-list=&q-signature=18c2a91776162c925f7754f07437d7b53e88cd0e"
-    )
+    with pytest.raises(RuntimeError, match="SDK failed"):
+        upload_mapping_results("task", b"{}", b"PK", config)
 
 
 @pytest.mark.parametrize("missing_key", ["COS_SECRET_ID", "COS_SECRET_KEY", "COS_BUCKET", "COS_REGION", "COS_KEY_PREFIX"])
@@ -181,16 +156,3 @@ def test_invalid_key_prefix_is_rejected_before_network(tmp_path, prefix):
     )
     with pytest.raises(ValueError):
         CosUploadConfig.from_env(env_file)
-
-
-def test_redirect_is_a_failure():
-    config = CosUploadConfig("id", "key", "bucket", "region", "prefix")
-    with pytest.raises(requests.HTTPError, match="HTTP 302"):
-        upload_mapping_results(
-            "task",
-            b"{}",
-            b"PK",
-            config,
-            session=FakeSession(302),
-            now=lambda: 1_700_000_000,
-        )

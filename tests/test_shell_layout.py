@@ -81,6 +81,8 @@ def test_offline_mapping_docker_build_contract() -> None:
     assert "modules/personalcare_classifier" not in dockerfile
     assert "Pi3" not in dockerfile
     assert "vggt-main" not in dockerfile
+    assert "viewer_web" not in dockerfile + build_script
+    assert "/app/viewer" not in dockerfile
     assert "--network=none" in build_script
     assert "--pull=never" in build_script
     assert "--pull=false" in build_script
