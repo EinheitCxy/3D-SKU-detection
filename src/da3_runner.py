@@ -252,36 +252,41 @@ def main() -> None:
 
     out = Path(args.output_npz)
     out.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        out,
-        depth=depth[..., None].astype(np.float32),  # (N,H,W,1) - matcher 要求最后一维
-        depth_conf=conf.astype(np.float32),  # (N,H,W)
-        world_points=world_points.astype(np.float32),  # (N,H,W,3)
-        world_points_conf=conf.astype(np.float32),  # (N,H,W)
-        extrinsic=extrinsics.astype(
-            np.float32
-        ),  # (N,3,4) [R|t] w2c（保存原始非方阵；matcher 与 _depth_to_world_points 内部按需补齐）
-        intrinsic=intrinsics.astype(np.float32),  # (N,3,3)
-        images=images_np.astype(np.uint8),  # (N,H,W,3)
-        image_ids=image_ids_array,  # (N,)
-        source_image_sizes=np.asarray(source_image_sizes, dtype=np.int32),
-        source_to_processed_affine=source_to_processed_affine,
-        cache_schema_version=np.asarray(CACHE_SCHEMA_VERSION, dtype=np.int32),
-        source_model=np.asarray(
-            args.model_path, dtype=f"<U{max(1, len(args.model_path))}"
-        ),
-        source_image_sha256=source_image_sha256,
-        affine_convention=np.asarray(AFFINE_CONVENTION, dtype="<U15"),
-        preprocess_resolution=np.asarray(args.process_res, dtype=np.int32),
-        preprocess_method=np.asarray(PREPROCESS_METHOD, dtype="<U18"),
-        is_metric=np.asarray(is_metric, dtype=np.int32),
-        scale_factor=np.asarray(
-            scale_factor if scale_factor is not None else np.nan, dtype=np.float32
-        ),
-        frame_alignment_sorted_indices=sorted_indices,
-        frame_alignment_map_keys=map_keys,
-        frame_alignment_map_values=map_values,
-    )
+    # Passing a path ending in `.partial` makes NumPy append `.npz`; use a
+    # file object so the parent can atomically rename this exact sibling path.
+    with out.open("wb") as stream:
+        np.savez_compressed(
+            stream,
+            depth=depth[..., None].astype(
+                np.float32
+            ),  # (N,H,W,1) - matcher 要求最后一维
+            depth_conf=conf.astype(np.float32),  # (N,H,W)
+            world_points=world_points.astype(np.float32),  # (N,H,W,3)
+            world_points_conf=conf.astype(np.float32),  # (N,H,W)
+            extrinsic=extrinsics.astype(
+                np.float32
+            ),  # (N,3,4) [R|t] w2c（保存原始非方阵；matcher 与 _depth_to_world_points 内部按需补齐）
+            intrinsic=intrinsics.astype(np.float32),  # (N,3,3)
+            images=images_np.astype(np.uint8),  # (N,H,W,3)
+            image_ids=image_ids_array,  # (N,)
+            source_image_sizes=np.asarray(source_image_sizes, dtype=np.int32),
+            source_to_processed_affine=source_to_processed_affine,
+            cache_schema_version=np.asarray(CACHE_SCHEMA_VERSION, dtype=np.int32),
+            source_model=np.asarray(
+                args.model_path, dtype=f"<U{max(1, len(args.model_path))}"
+            ),
+            source_image_sha256=source_image_sha256,
+            affine_convention=np.asarray(AFFINE_CONVENTION, dtype="<U15"),
+            preprocess_resolution=np.asarray(args.process_res, dtype=np.int32),
+            preprocess_method=np.asarray(PREPROCESS_METHOD, dtype="<U18"),
+            is_metric=np.asarray(is_metric, dtype=np.int32),
+            scale_factor=np.asarray(
+                scale_factor if scale_factor is not None else np.nan, dtype=np.float32
+            ),
+            frame_alignment_sorted_indices=sorted_indices,
+            frame_alignment_map_keys=map_keys,
+            frame_alignment_map_values=map_values,
+        )
     logger.info(f"[da3_runner] saved {out} (total {time.time()-t0:.1f}s)")
 
 

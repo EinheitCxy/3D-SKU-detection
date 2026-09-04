@@ -19,6 +19,8 @@ import logging
 import os
 import sys
 import time
+import zipfile
+import gc
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -80,6 +82,46 @@ class DA33DReconstructor(ReconstructorBase):
             )
         if not self.DA3_RUNNER.exists():
             raise FileNotFoundError(f"DA3 runner 脚本不存在: {self.DA3_RUNNER}")
+        self._active_cache_dir: Optional[Path] = None
+
+    def reconstruct_from_directory(
+        self,
+        *,
+        input_dir: str,
+        output_path: str,
+        conf_thres: float = 50.0,
+        show_cam: bool = True,
+        save_predictions: bool = True,
+        **kwargs: Any,
+    ) -> Path:
+        """Run DA3 reconstruction while treating cache publication as mandatory."""
+        if not save_predictions:
+            raise ValueError("DA3 reconstruction requires save_predictions=True")
+        self._active_cache_dir = Path(output_path).parent
+        try:
+            if self.model is None:
+                self.load_model()
+            images = self.load_images(input_dir)
+            predictions = self.run_inference(images)
+            out_path = Path(output_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            if save_predictions:
+                self.save_predictions_cache(
+                    predictions, images, out_path.parent, input_dir=input_dir, **kwargs
+                )
+            self.export_glb(
+                predictions,
+                out_path,
+                conf_thres=conf_thres,
+                show_cam=show_cam,
+                **kwargs,
+            )
+            return out_path
+        finally:
+            self._active_cache_dir = None
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
 
     # ---- 模型加载（subprocess 模式下为 no-op，真实加载在子进程） ----
 
@@ -106,19 +148,22 @@ class DA33DReconstructor(ReconstructorBase):
     def run_inference(self, image_paths: List[str]) -> Dict[str, Any]:
         """subprocess 调统一宿主环境运行 da3_runner.py，返回与 Pi3 缓存兼容的 pred 字典。
 
-        子进程直接写出 da3_cache/predictions.npz（含正确 shape），父进程读回返回。
+        子进程直接写出最终 cache 同目录的 partial；父进程只验证后原子发布。
         """
         import subprocess
 
         if not image_paths:
             raise ValueError("run_inference: image_paths 为空")
 
-        # 缓存路径：约定 Output/<dataset>/da3_cache/predictions.npz
-        # 由基类模板传入的 out_dir 决定；run_inference 无 out_dir，故用临时目录，
-        # save_predictions_cache 会把它移到最终 da3_cache/。这里写到 tmp。
-        import tempfile
-
-        tmp_npz = Path(tempfile.mkdtemp(prefix="da3_inf_")) / "predictions.npz"
+        if self._active_cache_dir is None:
+            raise RuntimeError(
+                "DA3 inference requires reconstruct_from_directory cache context"
+            )
+        cache_dir = self._active_cache_dir
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / "predictions.npz"
+        tmp_npz = cache_path.with_name(f"{cache_path.name}.partial")
+        tmp_npz.unlink(missing_ok=True)
         input_dir = str(Path(image_paths[0]).parent)
 
         cmd = [
@@ -135,18 +180,20 @@ class DA33DReconstructor(ReconstructorBase):
         ]
         logger.info(f"DA3 subprocess: {' '.join(cmd)}")
         t0 = time.time()
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"DA3 runner 失败 (exit={proc.returncode}):\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-            )
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    f"DA3 runner 失败 (exit={proc.returncode}):\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+                )
+        except Exception:
+            tmp_npz.unlink(missing_ok=True)
+            raise
         if proc.stdout:
             logger.info(proc.stdout.strip())
         logger.info(f"DA3 推理完成，用时 {time.time() - t0:.2f}s")
 
-        data = np.load(tmp_npz, allow_pickle=True)
-        pred: Dict[str, Any] = {k: data[k] for k in data.files}
-        pred["_npz_path"] = tmp_npz  # 供 save_predictions_cache 直接复用
+        pred: Dict[str, Any] = {"_npz_path": tmp_npz}
         pred["_image_paths"] = image_paths
         return pred
 
@@ -179,85 +226,166 @@ class DA33DReconstructor(ReconstructorBase):
         input_dir: Optional[str] = None,
         **_: Any,
     ) -> None:
-        """保存 da3_cache/predictions.npz，格式与 Pi3 缓存完全兼容。"""
+        """Validate and atomically publish DA3 runner's complete schema-v3 cache."""
         cache_dir = out_dir
         cache_dir.mkdir(parents=True, exist_ok=True)
         cache_path = cache_dir / "predictions.npz"
-
-        save_kwargs: Dict[str, Any] = {}
-
-        for key in (
-            "depth",
-            "depth_conf",
-            "world_points",
-            "world_points_conf",
-            "images",
-            "source_to_processed_affine",
-        ):
-            val = predictions.get(key)
-            if val is not None and isinstance(val, np.ndarray):
-                save_kwargs[key] = val.astype(
-                    np.float32 if key != "images" else np.uint8, copy=False
-                )
-
-        source_image_sizes = predictions.get("source_image_sizes")
-        if source_image_sizes is not None and isinstance(
-            source_image_sizes, np.ndarray
-        ):
-            save_kwargs["source_image_sizes"] = source_image_sizes.astype(
-                np.int32, copy=False
+        partial_path = Path(predictions.get("_npz_path", ""))
+        expected_partial = cache_path.with_name(f"{cache_path.name}.partial")
+        if partial_path != expected_partial:
+            raise ValueError(
+                "DA3 cache publication requires the sibling predictions.npz.partial"
             )
+        try:
+            _validate_da3_runner_cache(partial_path)
+            os.replace(partial_path, cache_path)
+        except Exception:
+            partial_path.unlink(missing_ok=True)
+            raise
+        logger.info(f"原子发布 DA3 预测缓存: {cache_path}")
 
-        for key in ("extrinsic", "intrinsic"):
-            val = predictions.get(key)
-            if val is not None and isinstance(val, np.ndarray):
-                save_kwargs[key] = val.astype(np.float32, copy=False)
 
-        # conf → 作为 conf 字段（供 bbox 采样时使用）
-        conf_val = predictions.get("conf")
-        if conf_val is not None and isinstance(conf_val, np.ndarray):
-            save_kwargs["conf"] = conf_val.astype(np.float32, copy=False)
+_MATCHER_ARRAY_KEYS = {
+    "depth",
+    "depth_conf",
+    "world_points",
+    "world_points_conf",
+    "extrinsic",
+    "intrinsic",
+    "images",
+    "image_ids",
+    "source_image_sizes",
+    "source_to_processed_affine",
+}
+_SCHEMA_V3_KEYS = {
+    "cache_schema_version",
+    "source_model",
+    "source_image_sha256",
+    "affine_convention",
+    "preprocess_resolution",
+    "preprocess_method",
+    "is_metric",
+    "scale_factor",
+    "frame_alignment_sorted_indices",
+    "frame_alignment_map_keys",
+    "frame_alignment_map_values",
+}
+_EXACT_DTYPES = {
+    "depth": np.dtype(np.float32),
+    "depth_conf": np.dtype(np.float32),
+    "world_points": np.dtype(np.float32),
+    "world_points_conf": np.dtype(np.float32),
+    "extrinsic": np.dtype(np.float32),
+    "intrinsic": np.dtype(np.float32),
+    "images": np.dtype(np.uint8),
+    "image_ids": np.dtype(np.int32),
+    "source_image_sizes": np.dtype(np.int32),
+    "source_to_processed_affine": np.dtype(np.float32),
+    "cache_schema_version": np.dtype(np.int32),
+    "preprocess_resolution": np.dtype(np.int32),
+    "is_metric": np.dtype(np.int32),
+    "scale_factor": np.dtype(np.float32),
+    "frame_alignment_sorted_indices": np.dtype(np.intp),
+    "frame_alignment_map_keys": np.dtype(np.int32),
+    "frame_alignment_map_values": np.dtype(np.int32),
+}
+_UNICODE_DTYPE_KEYS = {
+    "source_model",
+    "source_image_sha256",
+    "affine_convention",
+    "preprocess_method",
+}
 
-        # image_ids
-        if image_names is not None:
-            image_ids = self.extract_image_ids(image_names)
-            save_kwargs["image_ids"] = np.asarray(image_ids, dtype=np.int32)
 
-        # source_model（优先从 da3_runner 写入的 pred 透传，否则用默认）
-        src = predictions.get("source_model")
-        if src is not None and isinstance(src, np.ndarray):
-            save_kwargs["source_model"] = src
+def _npy_header(archive: zipfile.ZipFile, key: str) -> tuple[tuple[int, ...], np.dtype]:
+    with archive.open(f"{key}.npy") as stream:
+        version = np.lib.format.read_magic(stream)
+        if version == (1, 0):
+            shape, _, dtype = np.lib.format.read_array_header_1_0(stream)
+        elif version == (2, 0):
+            shape, _, dtype = np.lib.format.read_array_header_2_0(stream)
+        elif version == (3, 0):
+            shape, _, dtype = np.lib.format.read_array_header_3_0(stream)
         else:
-            save_kwargs["source_model"] = np.asarray(
-                "depth-anything/DA3NESTED-GIANT-LARGE-1.1", dtype="<U64"
+            raise ValueError(f"unsupported npy version for {key}: {version}")
+    return tuple(shape), np.dtype(dtype)
+
+
+def _validate_da3_runner_cache(path: Path) -> None:
+    """Validate headers plus compact metric metadata without expanding dense arrays."""
+    if not path.is_file():
+        raise ValueError(f"DA3 runner partial cache is missing: {path}")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            keys = {
+                Path(name).stem for name in archive.namelist() if name.endswith(".npy")
+            }
+            missing = sorted((_MATCHER_ARRAY_KEYS | _SCHEMA_V3_KEYS) - keys)
+            if missing:
+                raise ValueError(f"DA3 runner cache missing fields: {missing}")
+            headers = {key: _npy_header(archive, key) for key in keys}
+    except (OSError, zipfile.BadZipFile, ValueError) as exc:
+        if isinstance(exc, ValueError):
+            raise
+        raise ValueError(f"invalid DA3 runner cache: {path}") from exc
+
+    for key, expected_dtype in _EXACT_DTYPES.items():
+        actual_dtype = headers[key][1]
+        if actual_dtype != expected_dtype:
+            raise ValueError(
+                f"DA3 runner cache {key} dtype {actual_dtype} != {expected_dtype}"
             )
+    for key in _UNICODE_DTYPE_KEYS:
+        if headers[key][1].kind != "U":
+            raise ValueError(f"DA3 runner cache {key} dtype must be Unicode")
 
-        # 帧对齐索引（对齐 pi3 schema，从 da3_runner 透传）
-        for fa_key in (
-            "frame_alignment_sorted_indices",
-            "frame_alignment_map_keys",
-            "frame_alignment_map_values",
-        ):
-            fa_val = predictions.get(fa_key)
-            if fa_val is not None and isinstance(fa_val, np.ndarray):
-                save_kwargs[fa_key] = fa_val
+    depth_shape, _ = headers["depth"]
+    if len(depth_shape) != 4 or depth_shape[-1] != 1:
+        raise ValueError("DA3 runner cache depth must have shape (N,H,W,1)")
+    n, height, width, _ = depth_shape
+    if min(n, height, width) <= 0:
+        raise ValueError("DA3 runner cache depth dimensions must be positive")
+    expected_shapes = {
+        "depth_conf": (n, height, width),
+        "world_points": (n, height, width, 3),
+        "world_points_conf": (n, height, width),
+        "images": (n, height, width, 3),
+        "image_ids": (n,),
+        "source_image_sizes": (n, 2),
+        "source_to_processed_affine": (n, 2, 3),
+        "intrinsic": (n, 3, 3),
+        "source_image_sha256": (n,),
+        "frame_alignment_sorted_indices": (n,),
+        "frame_alignment_map_keys": (n,),
+        "frame_alignment_map_values": (n,),
+    }
+    for key, expected_shape in expected_shapes.items():
+        if headers[key][0] != expected_shape:
+            raise ValueError(
+                f"DA3 runner cache {key} shape {headers[key][0]} != {expected_shape}"
+            )
+    extrinsic_shape = headers["extrinsic"][0]
+    if extrinsic_shape not in {(n, 3, 4), (n, 4, 4)}:
+        raise ValueError(
+            "DA3 runner cache extrinsic must have shape (N,3,4) or (N,4,4)"
+        )
+    for key in (
+        "cache_schema_version",
+        "source_model",
+        "affine_convention",
+        "preprocess_resolution",
+        "preprocess_method",
+        "is_metric",
+        "scale_factor",
+    ):
+        if headers[key][0] != ():
+            raise ValueError(f"DA3 runner cache {key} must be scalar")
 
-        # schema-v3 provenance 透传（da3_runner 写入；footprint 阶段要求，不能丢弃）
-        for prov_key in (
-            "cache_schema_version",
-            "source_image_sha256",
-            "affine_convention",
-            "preprocess_resolution",
-            "preprocess_method",
-            "is_metric",
-            "scale_factor",
-        ):
-            prov_val = predictions.get(prov_key)
-            if prov_val is not None and isinstance(prov_val, np.ndarray):
-                save_kwargs[prov_key] = prov_val
-
-        np.savez_compressed(cache_path, **save_kwargs)
-        logger.info(f"保存 DA3 预测缓存: {cache_path}")
+    with np.load(path, allow_pickle=False) as cache:
+        if int(cache["cache_schema_version"]) != 3:
+            raise ValueError("DA3 runner cache_schema_version must be 3")
+        if int(cache["is_metric"]) != 1:
+            raise ValueError("DA3 runner cache is_metric must be 1")
 
 
 # ---- CLI 入口 ----
