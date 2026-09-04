@@ -189,6 +189,44 @@ def test_matching_dispatch_enables_existing_stage_profiling(tmp_path: Path) -> N
     ]
 
 
+def test_reconstruction_dispatch_forwards_explicit_da3_model_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Cold perf must use an explicitly supplied local DA3 snapshot offline."""
+
+    class FakeApp:
+        def __init__(self) -> None:
+            self.calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+        def run_reconstruction(
+            self, *args: object, **kwargs: object
+        ) -> dict[str, object]:
+            self.calls.append((args, kwargs))
+            return {"success": True}
+
+    monkeypatch.setenv("DA3_MODEL_PATH", "/opt/models/da3/snapshot")
+    app = FakeApp()
+
+    result = dispatch_stage(
+        stage="reconstruction",
+        app=app,
+        dataset=tmp_path / "floor_display2",
+        save_root=tmp_path / "output",
+    )
+
+    assert result["success"] is True
+    assert app.calls == [
+        (
+            (str(tmp_path / "floor_display2"),),
+            {
+                "device": "cuda",
+                "backend": "da3",
+                "model_path": "/opt/models/da3/snapshot",
+            },
+        )
+    ]
+
+
 def test_stage_entry_resolves_the_root_core_service() -> None:
     repository_root = Path(__file__).resolve().parents[2]
 

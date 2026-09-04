@@ -22,6 +22,16 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.playwright" npm exec playwright install chromium
 uv run --offline python perf/benchmark.py --gpu-index 2
 ```
 
+若 DA3 权重以本地 Hugging Face snapshot 提供，必须显式传入该 snapshot 路径；
+`stage_entry` 会把 `DA3_MODEL_PATH` 传给 reconstruction，避免以 repo ID 触发 metadata
+请求。离线运行示例：
+
+```bash
+DA3_MODEL_PATH=/data/www/comfyui/3d-recognition-build/runtime/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7 \
+HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+uv run --offline python perf/benchmark.py --gpu-index 2
+```
+
 运行创建全新的 `perf/runs/<utc-run-id>/`。每个 `fdN/` 都有独立且初始为空的
 `save_root`。personalcare classification 在 case 开始时异步提交，与 reconstruction、matching
 重叠，并在 analysis/dedup 前 join；之后继续 footprint、bundle export 和一次 cache-disabled

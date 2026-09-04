@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,7 +51,11 @@ def dispatch_stage(
     if stage == "classification":
         return app.run_personalcare_classification(dataset_text)
     if stage == "reconstruction":
-        return app.run_reconstruction(dataset_text, device="cuda", backend="da3")
+        reconstruction_kwargs: dict[str, Any] = {"device": "cuda", "backend": "da3"}
+        model_path = os.environ.get("DA3_MODEL_PATH")
+        if model_path:
+            reconstruction_kwargs["model_path"] = model_path
+        return app.run_reconstruction(dataset_text, **reconstruction_kwargs)
     if stage == "matching":
         return app.run_sku_matching(
             dataset_text,
