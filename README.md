@@ -8,6 +8,16 @@
 浏览器也只导航一次；不调度、不保存、不汇总 warm-start case。classification 与
 reconstruction/matching 并行，并在 dedup 前 join；端到端统计使用真实 case wall time。
 
+## 性能与显存
+
+- ground-stack support-plane 的 deterministic RANSAC 以 16 个候选为一批计算距离，仍按原始
+  seed、triplet 顺序、严格 tie、trial count 与 gate 串行决定结果；批化只增加有限 CPU 临时空间，
+  不使用 GPU。
+- DA3 matching 使用零存储 image descriptor；RGB 仅在需要生成匹配可视化时在 CPU 解码。2D box
+  hit 以单次向量化计算复用给 Top-K，诊断性的 host 拷贝只在 DEBUG 开启。
+- DA3 runner 先写 `da3_cache/predictions.npz.partial`，父进程验证 schema-v3 metric 和 matcher
+  字段后以原子 replace 发布 `predictions.npz`；失败不会覆盖现有 cache。
+
 ## 当前布局
 
 ```text
@@ -95,8 +105,8 @@ image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 check
 不包含 detector/classifier、Pi3、VGGT、输入数据或运行输出。
 
 运行时采用直接同步链路 `docker/api.py -> docker/processor.py:process()`：单 worker 配合请求锁
-串行处理 fd，不创建 multiprocessing child 或 Pipe。API 成功返回 BSON；pipeline、输入或导出异常
-不做 stage 包装，直接以 HTTP 500 traceback 返回。每个 fd 完成后清除按临时路径持有的 DA3
+串行处理 fd，不创建 multiprocessing child 或 Pipe。processor 不会根据 pipeline summary 伪造
+stage 异常；API 成功返回 BSON，未捕获的 pipeline、输入或导出异常直接以 HTTP 500 traceback 返回。每个 fd 完成后清除按临时路径持有的 DA3
 request cache，SAM3 model cache 保留并跨请求复用。
 
 客户端只发送以下 BSON 输入，`images` 为非空 bytes list，`skus` 为同帧数的 classifier JSON-string
