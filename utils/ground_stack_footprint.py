@@ -424,32 +424,68 @@ def _adaptive_ransac_plane(
     minimum_trials = 128
     target_trials = 10_000
     trial = 0
-    offsets = np.empty_like(points)
-    distances = np.empty(len(points), dtype=points.dtype)
+    score_batch_size = 16
     while trial < target_trials:
-        indices = _sample_ransac_triplet(generator, population_size=len(points))
-        first, second, third = points[indices]
-        normal = np.cross(second - first, third - first)
-        norm = np.linalg.norm(normal)
-        if norm == 0:
-            trial += 1
-            continue
-        normal /= norm
-        np.subtract(points, first, out=offsets)
-        np.matmul(offsets, normal, out=distances)
-        np.abs(distances, out=distances)
-        count = int(np.count_nonzero(distances <= threshold_m))
-        if count > best_count:
-            best_count = count
-            best_candidate = (first, normal)
-            ratio = min(max(count / len(points), 1e-9), 1.0 - 1e-12)
-            target_trials = min(
-                10_000,
-                max(minimum_trials, int(np.ceil(np.log(1.0 - 0.999) / np.log(1.0 - ratio**3)))),
+        batch_size = min(score_batch_size, target_trials - trial)
+        firsts = np.empty((batch_size, 3), dtype=points.dtype)
+        normals = np.empty((batch_size, 3), dtype=points.dtype)
+        valid = np.zeros(batch_size, dtype=bool)
+        for batch_index in range(batch_size):
+            indices = _sample_ransac_triplet(generator, population_size=len(points))
+            first, second, third = points[indices]
+            normal = np.cross(second - first, third - first)
+            norm = np.linalg.norm(normal)
+            if norm == 0:
+                continue
+            normal /= norm
+            firsts[batch_index] = first
+            normals[batch_index] = normal
+            valid[batch_index] = True
+
+        counts = np.zeros(batch_size, dtype=np.intp)
+        valid_indices = np.flatnonzero(valid)
+        if len(valid_indices):
+            batch_firsts = firsts[valid_indices]
+            batch_normals = normals[valid_indices]
+            offsets = np.empty(
+                (len(valid_indices), len(points), 3), dtype=points.dtype
             )
-        trial += 1
-        if count == len(points):
-            return RansacOutcome(first, normal, trial, True)
+            distances = np.empty(
+                (len(valid_indices), len(points), 1), dtype=points.dtype
+            )
+            np.subtract(points, batch_firsts[:, np.newaxis, :], out=offsets)
+            np.matmul(offsets, batch_normals[..., np.newaxis], out=distances)
+            np.abs(distances, out=distances)
+            counts[valid_indices] = np.count_nonzero(
+                distances[..., 0] <= threshold_m, axis=1
+            )
+
+        for batch_index in range(batch_size):
+            count = int(counts[batch_index])
+            if valid[batch_index]:
+                if count > best_count:
+                    best_count = count
+                    best_candidate = (firsts[batch_index], normals[batch_index])
+                    ratio = min(max(count / len(points), 1e-9), 1.0 - 1e-12)
+                    target_trials = min(
+                        10_000,
+                        max(
+                            minimum_trials,
+                            int(
+                                np.ceil(
+                                    np.log(1.0 - 0.999)
+                                    / np.log(1.0 - ratio**3)
+                                )
+                            ),
+                        ),
+                    )
+            trial += 1
+            if valid[batch_index] and count == len(points):
+                return RansacOutcome(
+                    firsts[batch_index], normals[batch_index], trial, True
+                )
+            if trial >= target_trials:
+                break
     if best_candidate is None:
         raise FootprintError("support plane RANSAC found no non-collinear candidate")
     return RansacOutcome(*best_candidate, trial, False)

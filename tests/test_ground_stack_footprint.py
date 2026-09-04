@@ -75,6 +75,31 @@ def test_adaptive_ransac_workspace_matches_reference_candidate_exactly():
     assert actual.early_exit is False
 
 
+def test_adaptive_ransac_batches_distance_scoring_without_changing_scalar_outcome(
+    monkeypatch,
+):
+    """Batching must retain the legacy seeded winner while reducing N-point scores."""
+    points = np.random.default_rng(9).uniform(-2.0, 2.0, (64, 3))
+    expected, expected_trials = _reference_adaptive_ransac(points, 1e-9, 13)
+    real_matmul = footprint_geometry.np.matmul
+    operand_shapes: list[tuple[tuple[int, ...], tuple[int, ...]]] = []
+
+    def record_matmul(left, right, *args, **kwargs):
+        operand_shapes.append((left.shape, right.shape))
+        return real_matmul(left, right, *args, **kwargs)
+
+    monkeypatch.setattr(footprint_geometry.np, "matmul", record_matmul)
+    actual = _adaptive_ransac_plane(points, 1e-9, 13)
+
+    np.testing.assert_array_equal(actual.point, expected[0])
+    np.testing.assert_array_equal(actual.normal, expected[1])
+    assert actual.trial_count == expected_trials
+    assert actual.trial_count == 10_000
+    assert actual.early_exit is False
+    assert len(operand_shapes) < actual.trial_count
+    assert any(len(left_shape) == 3 for left_shape, _ in operand_shapes)
+
+
 def test_perfect_candidate_returns_on_first_non_degenerate_trial():
     points = np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]])
 
