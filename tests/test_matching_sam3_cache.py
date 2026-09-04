@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import random
+import sys
+import types
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -74,6 +76,74 @@ def _assert_rng_equal(
     assert np.array_equal(before[1][1], after[1][1])
     assert before[1][2:] == after[1][2:]
     assert torch.equal(before[2], after[2])
+
+
+def test_vectorized_projection_preselection_keeps_counts_and_stable_ties() -> None:
+    """Top-K preselection must retain the old inclusive hit and tie ordering."""
+    from utils.matching_algorithms import rank_projected_bbox_hits
+
+    projected_points = torch.tensor(
+        [[0.0, 0.0], [1.0, 1.0], [5.0, 5.0]], dtype=torch.float32
+    )
+    bboxes = [
+        [0.0, 0.0, 1.0, 1.0],
+        [0.0, 0.0, 1.0, 1.0],
+        [4.0, 4.0, 4.0, 4.0],
+    ]
+
+    counts, ranked_indices = rank_projected_bbox_hits(projected_points, bboxes)
+
+    assert counts == [2, 2, 0]
+    assert ranked_indices == [0, 1, 2]
+
+
+def test_da3_matching_descriptor_keeps_shape_without_rgb_pixels() -> None:
+    """DA3 matching must not retain a resident RGB tensor for cache reuse."""
+    from utils.sku_matching_system import build_da3_matching_image_descriptor
+
+    descriptor = build_da3_matching_image_descriptor(
+        image_count=3, target_width=4, target_height=2
+    )
+
+    assert descriptor.shape == (3, 3, 2, 4)
+    assert descriptor.device.type == "meta"
+    assert descriptor.is_meta
+
+
+def test_sam3_batch_components_configure_cpu_postprocessing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SAM3 postprocessing must release GPU masks by returning CPU results."""
+    from utils import sam3_utils
+
+    class FakeModel:
+        def to(self, _device):
+            return self
+
+        def eval(self):
+            return self
+
+    class FakePostProcessImage:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    fake_sam3 = types.ModuleType("sam3")
+    fake_sam3.build_sam3_image_model = lambda **_kwargs: FakeModel()
+    fake_eval = types.ModuleType("sam3.eval")
+    fake_postprocessors = types.ModuleType("sam3.eval.postprocessors")
+    fake_postprocessors.PostProcessImage = FakePostProcessImage
+    monkeypatch.setitem(sys.modules, "sam3", fake_sam3)
+    monkeypatch.setitem(sys.modules, "sam3.eval", fake_eval)
+    monkeypatch.setitem(sys.modules, "sam3.eval.postprocessors", fake_postprocessors)
+    monkeypatch.setattr(sam3_utils, "_ensure_sam3_in_path", lambda: Path("/tmp/sam3"))
+    monkeypatch.setattr(sam3_utils, "_build_sam3_batch_transform", lambda **_kwargs: object())
+    sam3_utils._SAM3_BATCH_API_CACHE.clear()
+
+    _model, _transform, postprocessor = sam3_utils._get_sam3_batch_components(
+        checkpoint_path="unused.pt", device="cpu"
+    )
+
+    assert postprocessor.kwargs["to_cpu"] is True
 
 
 def test_removed_self_exemplar_key_is_rejected(tmp_path: Path) -> None:

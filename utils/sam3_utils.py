@@ -399,7 +399,7 @@ def _get_sam3_batch_components(
         use_original_sizes_mask=True,  # Resize masks to original image size
         convert_mask_to_rle=False,  # Keep binary masks for easy processing
         detection_threshold=detection_threshold,
-        to_cpu=False,  # Keep on GPU for faster processing
+        to_cpu=True,  # Masks are consumed as NumPy immediately; release GPU results.
     )
 
     _SAM3_BATCH_API_CACHE[cache_key] = (model, transform, postprocessor)
@@ -1081,6 +1081,7 @@ def sam3_masks_from_bboxes_batch_api(
 
     # Postprocess results
     processed_results = postprocessor.process_results(output, batch.find_metadatas)
+    del output
 
     # Extract masks from results
     if query_id not in processed_results:
@@ -1117,6 +1118,7 @@ def sam3_masks_from_bboxes_batch_api(
         out_masks.append(mask)
 
     logger.info(f"Batch inference returned {len(out_masks)} masks")
+    del processed_results
     return out_masks
 
 
@@ -1500,6 +1502,7 @@ def sam3_masks_self_exemplar(
 
         # Postprocess results
         processed_results = postprocessor.process_results(output, batch.find_metadatas)
+        del output
 
         # 提取当前批次的结果
         batch_result_masks: List[np.ndarray] = [
@@ -1549,6 +1552,7 @@ def sam3_masks_self_exemplar(
 
         # 将当前批次的结果添加到总结果中
         all_result_masks.extend(batch_result_masks)
+        del processed_results
 
         # 批次间清理GPU缓存（仅清理临时tensors，不清理模型）
         if (
@@ -1559,17 +1563,13 @@ def sam3_masks_self_exemplar(
             import gc
 
             # 显式删除所有批次临时变量（从大到小的顺序）
-            # 1. processed_results 包含GPU tensor，必须先删除
-            del processed_results
-            # 2. batch 是输入的GPU tensor
+            # 1. batch 是输入的GPU tensor
             del batch
-            # 3. output 是模型输出的GPU tensor
-            del output
-            # 4. datapoint 包含transform后的数据
+            # 2. datapoint 包含transform后的数据
             del datapoint
-            # 5. batch_result_masks 包含numpy数组（虽然在CPU但也占内存）
+            # 3. batch_result_masks 包含numpy数组（虽然在CPU但也占内存）
             del batch_result_masks
-            # 6. 其他辅助变量
+            # 4. 其他辅助变量
             del query_id_to_local_idx, batch_bboxes
 
             # 强制垃圾回收

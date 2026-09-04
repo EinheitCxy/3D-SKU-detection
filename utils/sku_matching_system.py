@@ -23,15 +23,21 @@ from .profiling import StageTimer
 
 logger = logging.getLogger(__name__)
 
-# DA3 图像 tensor 模块级缓存：images 在 da3 路径只读（仅用 shape/device/供 transforms/可视化，
-# vggt_model 不调用因 backend=da3），跨 ref 复用避免每 ref 重复 PIL open+resize+to_tensor。
-# key = (image_paths 排序 str tuple) :: TW :: TH :: device，不同 dataset/尺寸/device 各自缓存。
-_DA3_IMAGE_CACHE: Dict[str, torch.Tensor] = {}
+# DA3 matching only needs image shape; never retain RGB pixels on GPU across refs.
+# key = (image_paths 排序 str tuple) :: TW :: TH, value = (S, C, H, W).
+_DA3_IMAGE_CACHE: Dict[str, tuple[int, int, int, int]] = {}
 
 # DA3 transforms_info 模块级缓存：transforms_info 是纯只读数据对象（w,h,TARGET_W,TARGET_H,image_id），
 # build_da3_transforms 仅 PIL open 读尺寸无副作用；跨 ref 复用省 N×len(image_paths) 次 PIL 解码。
 # key = (image_paths 排序 str tuple) :: model_type :: process_res。
 _DA3_TRANSFORMS_CACHE: Dict[str, list] = {}
+
+
+def build_da3_matching_image_descriptor(
+    image_count: int, target_width: int, target_height: int
+) -> torch.Tensor:
+    """Return a zero-storage image descriptor for DA3 geometry-only matching."""
+    return torch.empty((image_count, 3, target_height, target_width), device="meta")
 
 
 class SKUMatchingSystem:
@@ -169,25 +175,20 @@ class SKUMatchingSystem:
                             **self.config.transform_kwargs
                         )
                         _DA3_TRANSFORMS_CACHE[_tcache_key] = transforms_info
-                # images resize 到 transforms target 尺寸（float [0,1]，与 pi3 的 ToTensor 格式一致）
+                # DA3 matching reads only image shape. Keep a meta descriptor and
+                # decode CPU RGB pixels only when a visualization is actually needed.
                 TW = transforms_info[0].target_width
                 TH = transforms_info[0].target_height
-                # 模块级缓存：images 在 da3 路径只读（find_correspondences_3d_mapping 仅用 shape/device，
-                # vggt_model 不调用因 backend=da3），跨 ref 复用避免每 ref 重复 PIL open+resize+to_tensor。
-                cache_key = f"{tuple(sorted(str(p) for p in image_paths))}::{TW}::{TH}::{self.config.device}"
-                with StageTimer("image_load_resize"):
-                    cached = _DA3_IMAGE_CACHE.get(cache_key)
-                    if cached is not None:
-                        images = cached  # 命中缓存，耗时近 0
-                    else:
-                        from torchvision import transforms as _TF
-                        to_tensor = _TF.ToTensor()
-                        imgs = []
-                        for p in image_paths:
-                            im = Image.open(p).convert("RGB").resize((TW, TH))
-                            imgs.append(to_tensor(im))
-                        images = torch.stack(imgs, dim=0).to(self.config.device)
-                        _DA3_IMAGE_CACHE[cache_key] = images
+                cache_key = f"{tuple(sorted(str(p) for p in image_paths))}::{TW}::{TH}"
+                image_shape = _DA3_IMAGE_CACHE.get(cache_key)
+                if image_shape is None:
+                    image_shape = (len(image_paths), 3, TH, TW)
+                    _DA3_IMAGE_CACHE[cache_key] = image_shape
+                images = build_da3_matching_image_descriptor(
+                    image_count=image_shape[0],
+                    target_width=image_shape[3],
+                    target_height=image_shape[2],
+                )
                 logger.info(f"DA3 加载图像: {len(image_paths)} 张, 尺寸: ({TW}, {TH})")
             else:
                 # VGGT: 先构建 transforms（固定 518×518），再加载图像
@@ -399,6 +400,8 @@ class SKUMatchingSystem:
         """后处理结果：可视化和保存"""
         _post_t0 = time.perf_counter()
         if correspondences:
+            if images.device.type == "meta":
+                images = self._load_da3_visualization_images(image_paths, transforms_info)
             visualize_results(
                 images, reference_image_idx, points_per_object,
                 correspondences, self.config, detections, transforms_info
@@ -453,6 +456,26 @@ class SKUMatchingSystem:
             logger.warning(f"No object correspondences found for reference image {reference_image_idx}")
 
         StageTimer.record("post_process", time.perf_counter() - _post_t0)
+
+    @staticmethod
+    def _load_da3_visualization_images(
+        image_paths: List[str], transforms_info: List
+    ) -> torch.Tensor:
+        """Decode DA3 RGB data on CPU only for the visualization consumer."""
+        from torchvision import transforms as _TF
+
+        target_width = transforms_info[0].target_width
+        target_height = transforms_info[0].target_height
+        to_tensor = _TF.ToTensor()
+        images = []
+        for path in image_paths:
+            with Image.open(path) as image:
+                images.append(
+                    to_tensor(
+                        image.convert("RGB").resize((target_width, target_height))
+                    )
+                )
+        return torch.stack(images, dim=0)
 
     def _print_results_summary(self, correspondences: Dict[int, List[Dict]]) -> None:
         """打印结果摘要"""

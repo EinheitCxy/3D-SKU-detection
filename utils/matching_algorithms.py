@@ -37,6 +37,30 @@ logger = logging.getLogger(__name__)
 PI3_SCENE_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
+def rank_projected_bbox_hits(
+    projected_points: torch.Tensor, bboxes_xyxy: List[List[float]]
+) -> Tuple[List[int], List[int]]:
+    """Return inclusive 2D hit counts and the legacy-stable ranking for boxes."""
+    if not bboxes_xyxy:
+        return [], []
+
+    bboxes = torch.as_tensor(
+        bboxes_xyxy, dtype=projected_points.dtype, device=projected_points.device
+    )
+    x = projected_points[:, 0:1]
+    y = projected_points[:, 1:2]
+    counts = (
+        (x >= bboxes[:, 0])
+        & (x <= bboxes[:, 2])
+        & (y >= bboxes[:, 1])
+        & (y <= bboxes[:, 3])
+    ).sum(dim=0)
+    hit_counts = [int(value) for value in counts.tolist()]
+    return hit_counts, sorted(
+        range(len(hit_counts)), key=lambda index: hit_counts[index], reverse=True
+    )
+
+
 def _matching_sam3_masks(
     config: SKUMatchingConfig,
     *,
@@ -319,7 +343,9 @@ def find_correspondences_3d_mapping(
     try:
         S = images.shape[0]
         _, _, H, W = images.shape
-        device = images.device
+        # DA3 matching keeps only a meta shape descriptor for RGB images. 3D cache
+        # tensors still belong on config.device for projection and validation.
+        device = torch.device(config.device) if config.backend == "da3" else images.device
 
         # 验证输入参数
         if reference_image_idx >= S:
@@ -556,58 +582,58 @@ def find_correspondences_3d_mapping(
                     )
 
                 _t_proj_post = time.perf_counter()
-                if len(projected_points) > 0:
-                    px = projected_points[:, 0].float().cpu().numpy()
-                    py = projected_points[:, 1].float().cpu().numpy()
-                    hits=[]
-                    for bi,binfo in enumerate(target_bboxes):
-                        bx1,by1,bx2,by2=target_transform.map_bbox_to_final(binfo['bbox'])
-                        cnt=int(((px>=bx1)&(px<=bx2)&(py>=by1)&(py<=by2)).sum())
-                        h=cnt/max(len(px),1)
-                        if h>0.1: hits.append((bi,h,cnt))
-                    hits.sort(key=lambda x:-x[1])
-                    top3=hits[:3]
-                    logger.debug(f"[DIAG] ref{reference_image_idx} obj{ref_obj_id}: 采样={len(points_3d)} 投影={len(projected_points)} Top3框={[(t[0],f'{t[1]:.0%}',t[2]) for t in top3]}")
+                if len(projected_points) < 5 and not logger.isEnabledFor(logging.DEBUG):
+                    StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
+                    continue
+
+                # Map target boxes once: both debug diagnostics and Top-K screening
+                # consume the same batched 2D hit counts.
+                target_bboxes_vggt = []
+                for bbox_info in target_bboxes:
+                    bbox_info_copy = dict(bbox_info)
+                    bbox_info_copy['bbox'] = target_transform.map_bbox_to_final(
+                        bbox_info['bbox']
+                    )
+                    target_bboxes_vggt.append(bbox_info_copy)
+
+                hit_counts: Optional[List[int]] = None
+                ranked_indices: Optional[List[int]] = None
+                if len(projected_points) > 0 and (
+                    logger.isEnabledFor(logging.DEBUG)
+                    or len(target_bboxes_vggt) > config.max_3d_validation_candidates
+                ):
+                    hit_counts, ranked_indices = rank_projected_bbox_hits(
+                        projected_points,
+                        [bbox_info['bbox'] for bbox_info in target_bboxes_vggt],
+                    )
+
+                if logger.isEnabledFor(logging.DEBUG) and hit_counts is not None:
+                    top3 = [
+                        (index, hit_counts[index] / len(projected_points), hit_counts[index])
+                        for index in ranked_indices or []
+                        if hit_counts[index] / len(projected_points) > 0.1
+                    ][:3]
+                    logger.debug(
+                        f"[DIAG] ref{reference_image_idx} obj{ref_obj_id}: "
+                        f"采样={len(points_3d)} 投影={len(projected_points)} "
+                        f"Top3框={[(item[0], f'{item[1]:.0%}', item[2]) for item in top3]}"
+                    )
 
                 if len(projected_points) < 5:
                     StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
                     continue
 
-                # 将目标图像的检出框映射到VGGT坐标
-                target_bboxes_vggt = []
-                for bbox_info in target_bboxes:
-                    vggt_bbox = target_transform.map_bbox_to_final(bbox_info['bbox'])
-                    bbox_info_copy = dict(bbox_info)
-                    bbox_info_copy['bbox'] = vggt_bbox
-                    target_bboxes_vggt.append(bbox_info_copy)
-
                 # 性能优化：预筛选候选框，只对Top-K个最有希望的框进行昂贵的3D验证
                 # 策略：先快速计算所有框的2D投影命中率，然后只对Top-K进行3D采样和验证
                 if len(target_bboxes_vggt) > config.max_3d_validation_candidates:
-                    # 快速计算所有框的2D投影命中率（仅GPU向量化操作，无3D采样）
-                    candidate_scores = []
-                    for idx, bbox_info in enumerate(target_bboxes_vggt):
-                        bbox = bbox_info['bbox']
-                        x1, y1, x2, y2 = bbox
-
-                        # 计算投影点落入框内的数量（GPU并行）
-                        points_in_bbox = (
-                            (projected_points[:, 0] >= x1) &
-                            (projected_points[:, 0] <= x2) &
-                            (projected_points[:, 1] >= y1) &
-                            (projected_points[:, 1] <= y2)
-                        ).sum().item()
-
-                        match_ratio = points_in_bbox / len(projected_points)
-                        candidate_scores.append((idx, match_ratio, bbox_info))
-
-                    # 按命中率降序排序，取Top-K
-                    candidate_scores.sort(key=lambda x: x[1], reverse=True)
-                    top_candidates = [item[2] for item in candidate_scores[:config.max_3d_validation_candidates]]
+                    assert hit_counts is not None and ranked_indices is not None
+                    top_indices = ranked_indices[:config.max_3d_validation_candidates]
+                    top_candidates = [target_bboxes_vggt[index] for index in top_indices]
 
                     logger.debug(
                         f"3D预筛选: {len(target_bboxes_vggt)}个候选框 → {len(top_candidates)}个进入3D验证 "
-                        f"(Top-{len(top_candidates)}命中率: {[f'{s[1]:.2f}' for s in candidate_scores[:len(top_candidates)]]})"
+                        f"(Top-{len(top_candidates)}命中率: "
+                        f"{[f'{hit_counts[index] / len(projected_points):.2f}' for index in top_indices]})"
                     )
 
                     target_bboxes_for_validation = top_candidates
