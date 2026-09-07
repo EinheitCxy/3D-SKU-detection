@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
+from src.sku_masterdata import load_sku_masterdata_csv
 from utils.da3_cache_validation import validate_affine_linear_parts
 from utils.global_id_mapper import GlobalIDMapper
 from utils.global_object_index import build_global_object_index
@@ -66,6 +67,7 @@ def export_web_viewer_bundle(
     output_dir: Path,
     source_images_dir: Path,
     sam3_mask_cache_root: Path,
+    sku_masterdata_csv: Path,
     voxel_size_m: float = 0.01,
     max_points: int = 500_000,
     filter_config: PointCloudFilterConfig | None = None,
@@ -103,10 +105,20 @@ def export_web_viewer_bundle(
             ).reshape(-1)
         ],
     }
+    minimal_objects = _minimal_objects(objects, point_count=len(sampled["positions"]))
+    sku_masterdata = load_sku_masterdata_csv(
+        Path(sku_masterdata_csv),
+        {
+            sku["sku_id"]
+            for entry in minimal_objects.values()
+            for sku in entry["ordered_skus"]
+        },
+    )
     generation = _publish_bundle(
         Path(output_dir),
         manifest,
-        _minimal_objects(objects, point_count=len(sampled["positions"])),
+        minimal_objects,
+        sku_masterdata,
         sampled,
         thumbnails,
     )
@@ -116,6 +128,54 @@ def export_web_viewer_bundle(
         "point_count": int(len(sampled["positions"])),
         "thumbnail_count": len(thumbnails),
     }
+
+
+def publish_sku_masterdata_for_current_bundle(
+    output_dir: Path, sku_masterdata_csv: Path
+) -> Path:
+    """Clone the current complete bundle and atomically add its SKU metadata."""
+    root = Path(output_dir)
+    try:
+        pointer = json.loads((root / "CURRENT").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WebViewerExportError("Viewer bundle CURRENT is invalid") from error
+    run_id = pointer.get("run_id") if isinstance(pointer, dict) else None
+    if not isinstance(run_id, str) or not run_id or Path(run_id).name != run_id:
+        raise WebViewerExportError("Viewer bundle CURRENT run_id is invalid")
+    source = root / "runs" / run_id
+    if not source.is_dir():
+        raise WebViewerExportError("Viewer bundle CURRENT run is missing")
+    try:
+        objects = json.loads((source / "objects.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WebViewerExportError("Viewer bundle objects.json is invalid") from error
+    if not isinstance(objects, dict):
+        raise WebViewerExportError("Viewer bundle objects.json is invalid")
+    sku_ids: set[str] = set()
+    for entry in objects.values():
+        candidates = entry.get("ordered_skus") if isinstance(entry, dict) else None
+        if not isinstance(candidates, list):
+            raise WebViewerExportError("Viewer bundle ordered_skus is invalid")
+        for candidate in candidates:
+            sku_id = candidate.get("sku_id") if isinstance(candidate, dict) else None
+            if not isinstance(sku_id, str):
+                raise WebViewerExportError("Viewer bundle SKU ID is invalid")
+            sku_ids.add(sku_id)
+    sku_masterdata = load_sku_masterdata_csv(Path(sku_masterdata_csv), sku_ids)
+    runs_root = root / "runs"
+    next_run_id = uuid.uuid4().hex
+    temporary = Path(tempfile.mkdtemp(prefix=f".{next_run_id}.", dir=runs_root))
+    generation = runs_root / next_run_id
+    try:
+        shutil.copytree(source, temporary, dirs_exist_ok=True)
+        _write_json(temporary / "sku_masterdata.json", sku_masterdata)
+        os.rename(temporary, generation)
+        _atomic_replace_current(root / "CURRENT", {"run_id": next_run_id})
+        return generation
+    except BaseException:
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        raise
 
 
 def _validate_export_options(voxel_size_m: float, max_points: int) -> float:
@@ -731,6 +791,7 @@ def _publish_bundle(
     output_dir: Path,
     manifest: dict[str, Any],
     objects: dict[str, Any],
+    sku_masterdata: dict[str, dict[str, str | bool | None]],
     arrays: dict[str, np.ndarray],
     thumbnails: dict[str, bytes],
 ) -> Path:
@@ -749,6 +810,7 @@ def _publish_bundle(
         (temporary / "colors.u8.bin").write_bytes(arrays["colors"].tobytes(order="C"))
         (temporary / "normals.i8.bin").write_bytes(arrays["normals"].tobytes(order="C"))
         _write_json(temporary / "objects.json", objects)
+        _write_json(temporary / "sku_masterdata.json", sku_masterdata)
         thumbs_dir = temporary / _THUMB_DIR
         thumbs_dir.mkdir()
         for relative, payload in thumbnails.items():

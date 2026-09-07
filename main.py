@@ -1784,6 +1784,12 @@ def main() -> None:
         help="viewer-web: bundle输出目录（默认：modules/viewer_web/public/data）",
     )
     parser.add_argument(
+        "--viewer-web-sku-masterdata-csv",
+        type=str,
+        default=str(PROJECT_ROOT / "runtime" / "sku_masterdata.csv"),
+        help="viewer-web: 窄SKU主数据CSV（默认：runtime/sku_masterdata.csv）",
+    )
+    parser.add_argument(
         "--viewer-web-voxel-size",
         type=float,
         default=0.005,
@@ -1907,6 +1913,9 @@ def main() -> None:
             if args.viewer_web_output
             else PROJECT_ROOT / "modules" / "viewer_web" / "public" / "data"
         )
+        sku_masterdata_csv = Path(args.viewer_web_sku_masterdata_csv).expanduser()
+        if not sku_masterdata_csv.is_absolute():
+            sku_masterdata_csv = PROJECT_ROOT / sku_masterdata_csv
 
         from src.web_viewer_export import export_web_viewer_bundle
 
@@ -1919,6 +1928,7 @@ def main() -> None:
             output_dir=viewer_web_output,
             source_images_dir=dataset / "images",
             sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
+            sku_masterdata_csv=sku_masterdata_csv,
             voxel_size_m=float(args.viewer_web_voxel_size),
             max_points=int(args.viewer_web_max_points),
         )

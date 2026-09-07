@@ -65,3 +65,7 @@ Viewer 不包含 footprint、source provenance、hash/filter metadata 或 confid
 npm test -- --run
 npm run build
 ```
+
+## SKU master data
+
+Convert Excel with `uv run python scripts/convert_sku_maindata.py --input sku-maindata.xlsx --output runtime/sku_masterdata.csv`. Export requires `--viewer-web-sku-masterdata-csv runtime/sku_masterdata.csv` and publishes only referenced SKUs in `sku_masterdata.json`. Existing bundles can be updated using `scripts/publish_viewer_masterdata.py`.

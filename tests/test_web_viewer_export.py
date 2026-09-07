@@ -175,6 +175,12 @@ def exporter_inputs(tmp_path: Path) -> dict[str, Path | str]:
     source_images_dir = tmp_path / "images"
     source_images_dir.mkdir()
     Image.new("RGB", (512, 512), (25, 50, 75)).save(source_images_dir / "7.JPG")
+    sku_masterdata_csv = tmp_path / "sku_masterdata.csv"
+    sku_masterdata_csv.write_text(
+        "sku_id,manufacturer,brand,category,is_posm\n"
+        "430085,百事,冲劲,饮料酒水,0\n",
+        encoding="utf-8",
+    )
     return {
         "dataset_name": "floor_display6",
         "da3_cache_path": cache_path,
@@ -182,6 +188,7 @@ def exporter_inputs(tmp_path: Path) -> dict[str, Path | str]:
         "output_dir": tmp_path / "bundle",
         "source_images_dir": source_images_dir,
         "sam3_mask_cache_root": masks_root,
+        "sku_masterdata_csv": sku_masterdata_csv,
     }
 
 
@@ -210,6 +217,7 @@ def test_export_publishes_schema3_bundle_with_product_thumbnails(
         "colors.u8.bin",
         "normals.i8.bin",
         "objects.json",
+        "sku_masterdata.json",
         "thumbs",
     }
     assert json.loads((exporter_inputs["output_dir"] / "CURRENT").read_text()) == {
@@ -274,6 +282,14 @@ def test_export_publishes_schema3_bundle_with_product_thumbnails(
                     "thumbnail": "thumbs/11_3.jpg",
                 },
             ],
+        }
+    }
+    assert json.loads((generation / "sku_masterdata.json").read_text()) == {
+        "430085": {
+            "manufacturer": "百事",
+            "brand": "冲劲",
+            "category": "饮料酒水",
+            "is_posm": False,
         }
     }
     thumbnails = sorted((generation / "thumbs").iterdir())
@@ -433,6 +449,7 @@ def test_viewer_web_cli_routes_minimal_exporter_arguments(
         "output_dir": output_dir.resolve(),
         "source_images_dir": dataset / "images",
         "sam3_mask_cache_root": dataset_output / "sam3_mask_cache" / "v2",
+        "sku_masterdata_csv": main_module.PROJECT_ROOT / "runtime" / "sku_masterdata.csv",
         "voxel_size_m": 0.005,
         "max_points": 1500000,
     }
