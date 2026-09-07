@@ -1,1 +1,4 @@
 .env
+
+# Local tests are kept outside version control.
+/test/

@@ -142,6 +142,10 @@ pipeline 所需的 object-level `classification`，不会在容器内执行分�
 当前 `COS_KEY_PREFIX=global-id-mapping`，因此上传 key 固定为
 `global-id-mapping/<taskID>/viewer_bundle.zip`，不会落在 bucket 根目录。成功 BSON 响应只返回
 `global_skus`；Viewer 依据请求中的 `taskID` 直接从 COS 定位 ZIP。
+`global_skus` 仍是逐帧 JSON 字符串数组，每帧保留 `{classes, objects}`。返回的 object
+保留原始字段及 `global_id`、`is_deduplicated`，不返回内部生成的 `classification`。
+调用方通过帧级 `classes.cls` 和 object 的 `classes.cls` 索引读取原始分类标签，通过
+`confidences.cls` 读取分类置信度。此响应投影不修改内部结果文件或 Viewer ZIP。
 
 客户端从 `<dataset>/images/` 和 `--classifier-result` 中读取相同数字 frame ID 的文件，
 POST 到本机服务，并将响应中的 `global_skus` 写为 `global_skus.json`。Viewer ZIP 不经 BSON 返回，
@@ -159,10 +163,12 @@ POST 到本机服务，并将响应中的 `global_skus` 写为 `global_skus.json
 该前端目录或其配置。
 
 ```bash
-uv run python docker/test_api.py \
+uv run python docker/test/test_api.py \
   --dataset /path/to/dataset \
   --classifier-result /path/to/classifier/detections \
   --taskID task-01
 ```
 
 默认输出目录是 `<dataset>/docker_mapping_response/`；可用 `--output-dir` 指定其他路径。
+
+本地测试统一保存在 `test/` 并由 `.gitignore` 忽略，不再纳入 Git；新克隆不包含测试文件。

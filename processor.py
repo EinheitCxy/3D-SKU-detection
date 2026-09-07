@@ -256,7 +256,7 @@ def pack_viewer_bundle(generation_dir: Path) -> bytes:
 def build_success_response(
     global_skus_path: Path, generation_dir: Path
 ) -> dict[str, Any]:
-    """Read published global SKU strings and return the exact success envelope."""
+    """Project published SKU strings for HTTP without internal classification."""
     global_skus = json.loads(
         Path(global_skus_path).read_text(encoding="utf-8"),
         parse_constant=_reject_nonfinite,
@@ -269,6 +269,11 @@ def build_success_response(
         decoded = json.loads(item, parse_constant=_reject_nonfinite)
         if not isinstance(decoded, dict):
             raise ValueError(f"global_skus[{index}] must decode to an object")
+        for obj in decoded["objects"]:
+            obj.pop("classification", None)
+        global_skus[index] = json.dumps(
+            decoded, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        )
     return {
         "global_skus": global_skus,
         "viewer_bundle": pack_viewer_bundle(generation_dir),
