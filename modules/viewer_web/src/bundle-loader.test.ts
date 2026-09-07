@@ -18,6 +18,9 @@ const objects = {
     observations: [{ image_id: 0, object_id: 3, removed: false, thumbnail: "thumbs/1_0.jpg" }],
   },
 };
+const skuMasterData = {
+  "123": { manufacturer: "百事", brand: "冲劲", category: "饮料酒水", is_posm: false },
+};
 
 function bufferOf<T extends ArrayBufferView>(array: T): ArrayBuffer {
   return array.buffer.slice(array.byteOffset, array.byteOffset + array.byteLength) as ArrayBuffer;
@@ -32,6 +35,7 @@ function makeFetcher(
     [`${baseUrl}CURRENT`]: current,
     [`${runUrl}manifest.json`]: manifest,
     [`${runUrl}objects.json`]: objects,
+    [`${runUrl}sku_masterdata.json`]: skuMasterData,
     ...overrides,
   };
   const binary: Record<string, ArrayBuffer> = {
@@ -65,8 +69,10 @@ describe("loadViewerBundle", () => {
     expect(bundle.colors).toBeInstanceOf(Uint8Array);
     expect(bundle.normals).toBeInstanceOf(Int8Array);
     expect(bundle.objects).toEqual(objects);
+    expect(bundle.skuMasterData).toEqual({ "123": { ...skuMasterData["123"], brand: "其他" } });
     expect(bundle.generationUrl).toBe(`${baseUrl}runs/${current.run_id}/`);
-    expect(Object.keys(bundle)).toEqual(["manifest", "objects", "positions", "colors", "normals", "pointCount", "generationUrl"]);
+    expect(bundle.resolveAssetUrl("thumbs/1_0.jpg")).toBe(`${baseUrl}runs/${current.run_id}/thumbs/1_0.jpg`);
+    expect(Object.keys(bundle)).toEqual(["manifest", "objects", "skuMasterData", "positions", "colors", "normals", "pointCount", "generationUrl", "resolveAssetUrl"]);
   });
 
   it("validates the manifest before fetching objects or binary arrays", async () => {

@@ -39,6 +39,17 @@ describe("minimal presentation", () => {
     expect(listGlobalIds(objects)).toEqual(["2", "11"]);
   });
 
+  it("uses the supplied asset resolver for local thumbnail URLs", () => {
+    expect(buildSelectedObjectView(
+      objects,
+      "11",
+      (relativePath) => `blob:local-viewer/${relativePath}`,
+    )?.observations.map((observation) => observation.thumbnailUrl)).toEqual([
+      "blob:local-viewer/thumbs/11_0.jpg",
+      "blob:local-viewer/thumbs/11_1.jpg",
+    ]);
+  });
+
   it("derives total and visible counts from the object index and current visible IDs", () => {
     expect(summarizeObjectCounts(objects, new Set(["11"]))).toEqual({ total: 2, visible: 1 });
     expect(summarizeObjectCounts(objects, new Set(["11", "missing"]))).toEqual({ total: 2, visible: 1 });

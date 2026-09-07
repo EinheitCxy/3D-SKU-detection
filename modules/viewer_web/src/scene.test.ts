@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DynamicDrawUsage, Matrix4, ShaderMaterial, Uint8BufferAttribute } from "three";
-import { createPoints, isPointClickRelease, selectionRangesForGlobalIds } from "./scene";
+import { viewPresetDirection, createPoints, isPointClickRelease, selectionRangesForGlobalIds } from "./scene";
 
 describe("point-only scene", () => {
   it("accepts only a short primary point click", () => {
@@ -26,4 +26,14 @@ describe("point-only scene", () => {
       expect(lines.some((line) => line.includes(include) && line.trim() !== include)).toBe(false);
     }
   });
+});
+
+it("separates front, top, and diagonal preset angles", () => {
+  const front = viewPresetDirection("fit");
+  const top = viewPresetDirection("top");
+  const iso = viewPresetDirection("isometric");
+  expect(front.toArray()).toEqual([0, 0, 1]);
+  expect(top.toArray()).toEqual([0, 1, 0]);
+  expect(iso.y).toBeCloseTo(Math.SQRT1_2);
+  expect(iso.x).toBeCloseTo(iso.z);
 });

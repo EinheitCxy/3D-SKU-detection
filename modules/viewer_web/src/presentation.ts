@@ -60,7 +60,7 @@ export function summarizeObservationCounts(
 export function buildSelectedObjectView(
   objects: ObjectIndex,
   globalId: string,
-  generationUrl: string,
+  assetSource: string | ((relativePath: string) => string),
 ): SelectedObjectView | null {
   const object = objects[globalId];
   if (object === undefined) return null;
@@ -71,7 +71,9 @@ export function buildSelectedObjectView(
       imageId: observation.image_id,
       objectId: observation.object_id,
       removed: observation.removed,
-      thumbnailUrl: new URL(observation.thumbnail, generationUrl).toString(),
+      thumbnailUrl: typeof assetSource === "string"
+        ? new URL(observation.thumbnail, assetSource).toString()
+        : assetSource(observation.thumbnail),
     })),
   };
 }

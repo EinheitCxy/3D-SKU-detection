@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateCurrent, validateManifest, validateObjectIndex } from "./contracts";
+import { validateCurrent, validateManifest, validateObjectIndex, validateSkuMasterData } from "./contracts";
 
 const validManifest = {
   schema_version: "3.0.0",
@@ -98,5 +98,25 @@ describe("minimal viewer contracts", () => {
       "1": validObjects["1"],
       "2": { ...validObjects["2"], point_ranges: [[1, 3]] },
     }, 3)).toThrow(/overlap/);
+  });
+
+  it("requires known SKU keys with nullable names and a boolean POSM marker", () => {
+    expect(validateSkuMasterData({
+      "123": { manufacturer: "百事", brand: null, category: "饮料酒水", is_posm: false },
+    }, new Set(["123"]))).toEqual({
+      "123": { manufacturer: "百事", brand: null, category: "饮料酒水", is_posm: false },
+    });
+    expect(() => validateSkuMasterData({
+      "456": { manufacturer: "百事", brand: null, category: "饮料酒水", is_posm: false },
+    }, new Set(["123"]))).toThrow(/SKU ID/);
+  });
+});
+
+describe("master data display normalization", () => {
+  it("groups Chongjin manufacturer and brand aliases as other", () => {
+    for (const alias of ["冲劲", "沖劲", "100沖劲", "100冲劲"]) {
+      const result = validateSkuMasterData({"56642": {manufacturer: alias, brand: alias, category: "其他", is_posm: false}}, new Set(["56642"]));
+      expect(result["56642"]).toEqual({manufacturer: "其他", brand: "其他", category: "其他", is_posm: false});
+    }
   });
 });

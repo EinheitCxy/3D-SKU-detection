@@ -7,7 +7,6 @@ import {
   DynamicDrawUsage,
   Float32BufferAttribute,
   Fog,
-  GridHelper,
   Group,
   Int8BufferAttribute,
   Matrix3,
@@ -47,7 +46,7 @@ import {
 const CLICK_THRESHOLD_PX = 6;
 const MIN_POINT_SIZE = 0.004;
 const MAX_POINT_SIZE = 0.07;
-const DEFAULT_POINT_SIZE = 0.015;
+export const DEFAULT_POINT_SIZE = 0.005;
 const MAX_SPLAT_PIXELS = 64;
 const FOG_NEAR_RADII = 1;
 const FOG_FAR_RADII = 8;
@@ -101,9 +100,15 @@ export function selectionRangesForGlobalIds(objects: ObjectIndex, globalIds: Rea
     .sort((left, right) => left[0] - right[0] || left[1] - right[1]);
 }
 
+export function viewPresetDirection(preset: "fit" | "top" | "isometric"): Vector3 {
+  if (preset === "top") return new Vector3(0, 1, 0);
+  if (preset === "isometric") return new Vector3(1, Math.SQRT2, 1).normalize();
+  return new Vector3(0, 0, 1);
+}
+
 export function createViewerScene(container: HTMLElement, bundle: ViewerBundle): ViewerSceneController {
   const scene = new Scene();
-  const background = new Color("#071015");
+  const background = new Color("#ffffff");
   scene.background = background;
   const camera = new PerspectiveCamera(50, 1, 0.01, 10000);
   const renderer = new WebGLRenderer({
@@ -143,9 +148,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   const sceneCenter = worldBox.getCenter(new Vector3());
   const sceneSpan = Math.max(worldBox.getSize(new Vector3()).length(), 1);
   const sceneRadius = Math.max(sceneSpan * 0.5, 1);
-  const grid = new GridHelper(sceneSpan * 2, 20, "#294550", "#18313a");
-  grid.position.y = box.max.y;
-  worldGroup.add(grid, new AxesHelper(sceneSpan * 0.2));
+  worldGroup.add(new AxesHelper(sceneSpan * 0.2));
   camera.far = Math.max(sceneRadius * 20, 100);
   camera.updateProjectionMatrix();
   scene.fog = new Fog(background, sceneRadius * FOG_NEAR_RADII, sceneRadius * FOG_FAR_RADII);
@@ -347,20 +350,12 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       : computeSelectionBox(selectedGlobalIdForCamera)
         ?.applyMatrix4(worldGroup.matrix)
         .getCenter(new Vector3()) ?? sceneCenter;
-    const direction = preset === "top"
-      ? new Vector3(0, 1, 0)
-      : preset === "isometric"
-        ? new Vector3(1, 1, 0.6)
-        : new Vector3(1, 0.7, 1);
+    const direction = viewPresetDirection(preset);
     const distance = Math.max(
       sceneRadius / Math.tan((camera.fov * Math.PI) / 360) * (preset === "top" ? 1.15 : 1.5),
       1,
     );
     const offset = direction.normalize().multiplyScalar(distance);
-    if (direction.y > 0.99) {
-      offset.x = sceneSpan * 0.01;
-      offset.z = sceneSpan * 0.01;
-    }
     const position = target.clone().add(offset);
     if (animateView) animateToView(position, target, VIEW_TRANSITION_MS);
     else {

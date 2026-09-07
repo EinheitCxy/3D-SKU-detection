@@ -7,9 +7,16 @@ export interface SkuFacet {
 }
 
 export function buildSkuFacets(objects: ObjectIndex): readonly SkuFacet[] {
+  return buildSkuFacetsForGlobalIds(objects, Object.keys(objects));
+}
+
+export function buildSkuFacetsForGlobalIds(
+  objects: ObjectIndex,
+  globalIds: readonly string[],
+): readonly SkuFacet[] {
   const counts = new Map<string, { skuName: string; count: number }>();
-  for (const entry of Object.values(objects)) {
-    const primary: OrderedSku | undefined = entry.ordered_skus[0];
+  for (const globalId of new Set(globalIds)) {
+    const primary: OrderedSku | undefined = objects[globalId]?.ordered_skus[0];
     if (primary === undefined) continue;
     const current = counts.get(primary.sku_id);
     counts.set(primary.sku_id, { skuName: primary.sku_name, count: (current?.count ?? 0) + 1 });

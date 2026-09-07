@@ -35,6 +35,15 @@ export interface ObjectIndexEntry {
 
 export type ObjectIndex = Readonly<Record<string, ObjectIndexEntry>>;
 
+export interface SkuMasterData {
+  readonly manufacturer: string | null;
+  readonly brand: string | null;
+  readonly category: string | null;
+  readonly is_posm: boolean;
+}
+
+export type SkuMasterDataIndex = Readonly<Record<string, SkuMasterData>>;
+
 const GLOBAL_ID = /^(0|[1-9][0-9]*)$/;
 
 export function validateCurrent(value: unknown): CurrentPointer {
@@ -84,6 +93,36 @@ export function validateObjectIndex(value: unknown, pointCount: number): ObjectI
     result[globalId] = { ordered_skus: orderedSkus, point_ranges: pointRanges, observations };
   }
   assertNonOverlappingRanges(nonEmptyRanges);
+  return result;
+}
+
+function normalizeMasterDataLabel(value: string | null): string | null {
+  return value !== null && /^(?:100)?[冲沖]劲$/.test(value) ? "其他" : value;
+}
+
+export function validateSkuMasterData(
+  value: unknown,
+  knownSkuIds: ReadonlySet<string>,
+): SkuMasterDataIndex {
+  const record = asRecord(value, "sku_masterdata");
+  const result: Record<string, SkuMasterData> = {};
+  for (const [skuId, rawData] of Object.entries(record)) {
+    if (!knownSkuIds.has(skuId)) {
+      throw contractError(`sku_masterdata SKU ID is not in objects: ${skuId}`);
+    }
+    const data = asRecord(rawData, `sku_masterdata[${skuId}]`);
+    result[skuId] = {
+      manufacturer: normalizeMasterDataLabel(asNullableString(data.manufacturer, `sku_masterdata[${skuId}].manufacturer`)),
+      brand: normalizeMasterDataLabel(asNullableString(data.brand, `sku_masterdata[${skuId}].brand`)),
+      category: asNullableString(data.category, `sku_masterdata[${skuId}].category`),
+      is_posm: asBoolean(data.is_posm, `sku_masterdata[${skuId}].is_posm`),
+    };
+  }
+  for (const skuId of knownSkuIds) {
+    if (result[skuId] === undefined) {
+      throw contractError(`sku_masterdata missing SKU ID: ${skuId}`);
+    }
+  }
   return result;
 }
 
@@ -170,6 +209,11 @@ function asNonEmptyString(value: unknown, label: string): string {
     throw contractError(`${label} must be a non-empty string`);
   }
   return value;
+}
+
+function asNullableString(value: unknown, label: string): string | null {
+  if (value === null) return null;
+  return asNonEmptyString(value, label);
 }
 
 function asNonNegativeInteger(value: unknown, label: string): number {

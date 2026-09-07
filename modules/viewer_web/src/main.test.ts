@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bootstrap, candidateLabel, configureViewControlsState, disabledFacetLabels, selectionModeTransition, selectionStateAfterCanvasPick, visibleGlobalIdsForFilters } from "./main";
+import { bootstrap, candidateLabel, configureViewControlsState, displayPosmValue, selectionModeLabels, selectionModeTransition, selectionSummaryLabels, selectionStateAfterCanvasPick, skuFacetResultLabel, visibleGlobalIdsForFilters } from "./main";
 
 class FakeElement {
   constructor(readonly tagName: string) {}
@@ -91,11 +91,15 @@ describe("SKU viewer labels and filters", () => {
   });
 
   it("switches a canvas point pick into Global ID mode", () => {
-    expect(selectionStateAfterCanvasPick("sku", "A", "11")).toEqual({ mode: "global", selectedSkuId: null, selectedGlobalId: "11" });
+    expect(selectionStateAfterCanvasPick("sku", "A", "11")).toEqual({ mode: "global", selectedFacetId: null, selectedGlobalId: "11" });
   });
 
   it("formats a minimal ordered SKU label", () => {
     expect(candidateLabel({ sku_id: "430085", sku_name: "产品A" })).toBe("430085 · 产品A");
+  });
+
+  it("formats the label used before a matched SKU count", () => {
+    expect(skuFacetResultLabel({ skuId: "430085", skuName: "产品A" })).toBe("430085 · 产品A");
   });
 
   it("filters the supplied global ID order by search and primary SKU", () => {
@@ -128,15 +132,27 @@ describe("View Controls state", () => {
   });
 });
 
-describe("disabled product facets", () => {
-  it("keeps the six product metadata placeholders disabled", () => {
-    expect(disabledFacetLabels).toEqual([
-      "厂商：主数据待接入",
-      "品牌：主数据待接入",
-      "品类：主数据待接入",
-      "POSM：检测能力待接入",
-      "价签：检测能力待接入",
-      "空缺位：检测能力待接入",
+describe("selection modes", () => {
+  it("exposes manufacturer, brand, category, SKU, and Global ID modes", () => {
+    expect(selectionModeLabels).toEqual([
+      "Manufacturer",
+      "Brand",
+      "Category",
+      "SKU",
+      "Global ID",
     ]);
+  });
+});
+
+describe("POSM display", () => {
+  it("always shows N/A regardless of the source marker", () => {
+    expect(displayPosmValue(false)).toBe("N/A");
+    expect(displayPosmValue(true)).toBe("N/A");
+  });
+});
+
+describe("selection summary", () => {
+  it("shows only total and removed observations", () => {
+    expect(selectionSummaryLabels).toEqual(["Total", "Removed"]);
   });
 });

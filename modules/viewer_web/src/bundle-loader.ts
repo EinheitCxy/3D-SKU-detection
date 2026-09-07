@@ -1,19 +1,23 @@
 import {
   type Manifest,
   type ObjectIndex,
+  type SkuMasterDataIndex,
   validateCurrent,
   validateManifest,
   validateObjectIndex,
+  validateSkuMasterData,
 } from "./contracts";
 
 export interface ViewerBundle {
   readonly manifest: Manifest;
   readonly objects: ObjectIndex;
+  readonly skuMasterData: SkuMasterDataIndex;
   readonly positions: Float32Array;
   readonly colors: Uint8Array;
   readonly normals: Int8Array;
   readonly pointCount: number;
   readonly generationUrl: string;
+  readonly resolveAssetUrl: (relativePath: string) => string;
 }
 
 export function isLittleEndian(): boolean {
@@ -34,8 +38,9 @@ export async function loadViewerBundle(
   const current = validateCurrent(await fetchJson(`${baseUrl}CURRENT`, fetcher, { cache: "no-store" }));
   const generationUrl = `${baseUrl}runs/${current.run_id}/`;
   const manifest = validateManifest(await fetchJson(`${generationUrl}manifest.json`, fetcher));
-  const [objectsValue, positionsBuffer, colorsBuffer, normalsBuffer] = await Promise.all([
+  const [objectsValue, skuMasterDataValue, positionsBuffer, colorsBuffer, normalsBuffer] = await Promise.all([
     fetchJson(`${generationUrl}objects.json`, fetcher),
+    fetchJson(`${generationUrl}sku_masterdata.json`, fetcher),
     fetchBinary(`${generationUrl}positions.f32.bin`, fetcher),
     fetchBinary(`${generationUrl}colors.u8.bin`, fetcher),
     fetchBinary(`${generationUrl}normals.i8.bin`, fetcher),
@@ -45,7 +50,21 @@ export async function loadViewerBundle(
   const colors = decodeColors(colorsBuffer, pointCount);
   const normals = decodeNormals(normalsBuffer, pointCount);
   const objects = validateObjectIndex(objectsValue, pointCount);
-  return { manifest, objects, positions, colors, normals, pointCount, generationUrl };
+  const skuMasterData = validateSkuMasterData(
+    skuMasterDataValue,
+    new Set(Object.values(objects).flatMap((object) => object.ordered_skus.map((sku) => sku.sku_id))),
+  );
+  return {
+    manifest,
+    objects,
+    skuMasterData,
+    positions,
+    colors,
+    normals,
+    pointCount,
+    generationUrl,
+    resolveAssetUrl: (relativePath) => new URL(relativePath, generationUrl).toString(),
+  };
 }
 
 async function fetchJson(url: string, fetcher: typeof fetch, init?: RequestInit): Promise<unknown> {
