@@ -114,3 +114,5 @@ input[type="range"] { accent-color: var(--accent); }
 .sku-global-ids .object-item { font-size: .68rem; padding: .3rem .5rem; }
 
 .sku-global-ids .object-item.selected { background: #fff0df; border-color: var(--accent); color: var(--accent); }
+
+.backend-badge { position: absolute; right: .8rem; bottom: .7rem; margin: 0; padding: .35rem .55rem; border: 1px solid var(--line); border-radius: 8px; background: rgb(255 255 255 / 90%); color: #78858f; font-size: .62rem; pointer-events: none; }

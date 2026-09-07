@@ -212,7 +212,9 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
     <div class="preset-buttons"><button data-preset="fit" type="button">Fit</button><button data-preset="top" type="button">Top</button><button data-preset="isometric" type="button">Iso</button></div>
     <label>Point size <input type="range" min="0.004" max="0.07" step="0.001" value="${DEFAULT_POINT_SIZE.toFixed(3)}" data-control="point-size" /><span class="control-value">${DEFAULT_POINT_SIZE.toFixed(3)}</span></label>`;
   viewControls.append(controlsToggle, controlsPanel);
-  sceneStage.append(canvasHost, hint, viewControls);
+  const backendBadge = text("p", `Backend · ${bundle.manifest.backend === "DA3" ? "Depth Anything 3" : bundle.manifest.backend}`);
+  backendBadge.className = "backend-badge";
+  sceneStage.append(canvasHost, hint, viewControls, backendBadge);
 
   const selectedPanel = document.createElement("aside");
   selectedPanel.className = "selected-panel";

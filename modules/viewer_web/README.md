@@ -88,3 +88,18 @@ Manufacturer / Brand display normalization: `冲劲`, `沖劲`, `100冲劲`, and
 SKU Breakdown rows are clickable: expand a SKU to show its Global IDs in numeric ascending order within the selected Manufacturer / Brand / Category. Click an ID to highlight it in orange and select its scene points while keeping the SKU breakdown visible. Clicking the expanded SKU again collapses it.
 
 View controls: Fit frames the scene from the front at eye level, Top looks straight down along +Y, and Iso views from a diagonal side at 45° elevation.
+
+画布右下角显示数据包实际 backend：DA3 显示为 Depth Anything 3，Pi3X 显示为 Pi3X。
+
+## Pi3X 对比
+
+已有 Pi3X reconstruction 和 matching 后，从仓库根执行：
+
+```bash
+uv run python scripts/export_pi3x_viewer.py --dataset imdata/floor_display6
+npm --prefix modules/viewer_web run dev -- --host 0.0.0.0 --port 5175
+```
+
+DA3 打开 `/`，Pi3X 打开 `/?data=/data-pi3x/`。导出使用 Pi3X 原生点云和 transforms.json，独立生成 `Output/floor_display6/dedup_detections_pi3x/`，发布到 `public/data-pi3x/`，保留现有 DA3 bundle。两者使用相同过滤和采样设置；Pi3X 坐标使用模型原始尺度，不承诺 DA3 的米制尺度。
+
+Pi3X 导出脚本读取 `personalcare_classification/CURRENT` 指向的完整分类检测，保留 SKU 元数据；不会使用缺少 classification 的原始检测。

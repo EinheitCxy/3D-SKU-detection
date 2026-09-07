@@ -68,6 +68,7 @@ def export_web_viewer_bundle(
     source_images_dir: Path,
     sam3_mask_cache_root: Path,
     sku_masterdata_csv: Path,
+    backend: str = "DA3",
     voxel_size_m: float = 0.01,
     max_points: int = 500_000,
     filter_config: PointCloudFilterConfig | None = None,
@@ -76,7 +77,12 @@ def export_web_viewer_bundle(
     if not isinstance(dataset_name, str) or not dataset_name.strip():
         raise WebViewerExportError("dataset_name must be a non-empty string")
     voxel_size = _validate_export_options(voxel_size_m, max_points)
-    cache = _load_da3_cache(Path(da3_cache_path))
+    if backend not in {"DA3", "Pi3X"}:
+        raise WebViewerExportError(f"Unsupported viewer backend: {backend}")
+    cache = (
+        _load_pi3x_cache(Path(da3_cache_path), Path(source_images_dir))
+        if backend == "Pi3X" else _load_da3_cache(Path(da3_cache_path))
+    )
     objects = build_global_object_index(GlobalIDMapper(str(Path(global_mapping_path))))
     thumbnails = _generate_thumbnails(
         objects, _resolve_source_images(Path(source_images_dir))
@@ -94,7 +100,7 @@ def export_web_viewer_bundle(
     )
     manifest = {
         "schema_version": "3.0.0",
-        "backend": "DA3",
+        "backend": backend,
         "dataset_name": dataset_name,
         "frame_count": int(len(cache["image_ids"])),
         "display_bounds": _robust_display_bounds(sampled["positions"]),
@@ -196,6 +202,37 @@ def _validate_export_options(voxel_size_m: float, max_points: int) -> float:
     ):
         raise WebViewerExportError("max_points must be a positive integer")
     return voxel_size
+
+
+def _load_pi3x_cache(path: Path, source_images_dir: Path) -> dict[str, Any]:
+    """Read native Pi3X coordinates and its recorded resize/crop transforms."""
+    with np.load(path, allow_pickle=False) as loaded:
+        cache = {key: loaded[key] for key in (
+            "image_ids", "world_points", "world_points_conf", "images", "extrinsic"
+        )}
+    transforms = json.loads(path.with_name("transforms.json").read_text())
+    frames = {int(frame["image_id"]): frame for frame in transforms["frames"]}
+    sources = _resolve_source_images(source_images_dir)
+    affine, sizes = [], []
+    for image_id in cache["image_ids"]:
+        frame = frames[int(image_id)]
+        sx, sy = frame["scales"]
+        left, top = frame["batch_padding"]
+        affine.append([[sx, 0, left], [0, sy, top - frame["crop_start_y"]]])
+        with Image.open(sources[int(image_id)]) as image:
+            sizes.append(image.size)
+    points = cache["world_points"]
+    if points.ndim != 4 or points.shape[-1] != 3 or cache["images"].shape != points.shape or cache["world_points_conf"].shape != points.shape[:3]:
+        raise WebViewerExportError("Pi3X points, colors and confidence must share a frame grid")
+    if tuple(transforms["padded_size"]) != (points.shape[2], points.shape[1]):
+        raise WebViewerExportError("Pi3X transforms do not match the cache grid")
+    return {
+        "image_ids": cache["image_ids"], "points": points,
+        "confidence": cache["world_points_conf"], "images": cache["images"],
+        "extrinsic": cache["extrinsic"][:, :3, :4].astype(np.float64),
+        "affine": np.asarray(affine, dtype=np.float64),
+        "source_image_sizes": np.asarray(sizes, dtype=np.int32),
+    }
 
 
 def _load_da3_cache(path: Path) -> dict[str, Any]:

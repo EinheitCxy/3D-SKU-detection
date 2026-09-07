@@ -226,3 +226,7 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 上面的 Python 命令是已验证的 owned gate。仓库根的裸 `uv run --offline pytest -q` 会收集未跟踪 nested checkout、`frame_sampler` 的 BSON client 与 legacy SAM3 tests，不能当作成功门。
 
 个人护理分类器的精简使用说明见 [modules/personalcare_classifier/README.md](modules/personalcare_classifier/README.md)。
+
+### Viewer backend 对比
+
+画布右下角显示实际 backend。已有 Pi3X 缓存与匹配结果可运行 `uv run python scripts/export_pi3x_viewer.py --dataset imdata/floor_display6`，生成独立 Pi3X bundle；本地 Viewer 使用 `/?data=/data-pi3x/` 查看，默认 `/` 保留 DA3。详见 [Viewer README](modules/viewer_web/README.md)。
