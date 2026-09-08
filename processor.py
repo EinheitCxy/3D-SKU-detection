@@ -309,6 +309,7 @@ def run_mapping_request(
         output_dir=viewer_root,
         source_images_dir=dataset_dir / "images",
         sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
+        sku_masterdata_csv=Path("/app/runtime/sku_masterdata.csv"),
     )
     return {
         "global_skus_path": str(

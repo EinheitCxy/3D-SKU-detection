@@ -62,6 +62,8 @@ CORE_REPO_ROOT=/path/to/3D_Recognization bash build.sh
 - DA3 Hugging Face cache（`refs/`、`blobs/` 和 snapshot
   `b2359bdf726fb44ef62acca04d629dcf158053e7`）；
 - `$CORE_REPO_ROOT/sam3/checkpoints/sam3.pt`。
+- `$CORE_REPO_ROOT/runtime/sku_masterdata.csv`；完整镜像会将其复制到
+  `/app/runtime/sku_masterdata.csv`，供 Viewer bundle 导出时生成 SKU 主数据索引。
 
 默认 DA3 cache 是
 `/home/xingyu/.cache/huggingface/hub/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1`。
@@ -172,3 +174,9 @@ uv run python docker/test/test_api.py \
 默认输出目录是 `<dataset>/docker_mapping_response/`；可用 `--output-dir` 指定其他路径。
 
 本地测试统一保存在 `test/` 并由 `.gitignore` 忽略，不再纳入 Git；新克隆不包含测试文件。
+
+## 本次完整重建验证（2026-09-08）
+
+使用当前核心工作区源码与服务端 docker 分支代码完整构建 `global-id-mapping:da3-self-contained`，冻结 lock 离线安装 162 个包且依赖检查通过。构建缺少的锁定包先补齐到标准 uv cache，没有复制其他虚拟环境的 site-packages。
+
+镜像内导入、SKU 主数据存在性、服务端调用与当前 exporter 签名的适配检查通过。CPU API smoke 覆盖坏 BSON、缺少请求字段的 500 traceback，以及 stub 成功响应仅含 global_skus 的 BSON 封装。未执行真实 GPU mapping 或 COS 上传，未替换运行中的容器；当前服务端仍生成普通 points ZIP。

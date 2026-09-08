@@ -11,6 +11,7 @@ COPY --from=app main.py config.yaml /app/
 COPY --from=app src /app/src
 COPY --from=app utils /app/utils
 COPY --from=app api.py processor.py cos_upload.py /app/
+COPY --from=app runtime/sku_masterdata.csv /app/runtime/sku_masterdata.csv
 COPY --from=app Depth-Anything-3/src /app/Depth-Anything-3/src
 COPY --from=app sam3/sam3 /app/sam3/sam3
 

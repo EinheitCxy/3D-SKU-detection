@@ -73,6 +73,7 @@ grep -Fx "$DA3_SNAPSHOT" "$DA3_MODEL_CACHE/refs/main" >/dev/null
 test -f "$SAM3_CHECKPOINT"
 test -f "$CORE_REPO_ROOT/pyproject.toml"
 test -f "$CORE_REPO_ROOT/uv.lock"
+test -f "$CORE_REPO_ROOT/runtime/sku_masterdata.csv"
 test -d "$BUILD_WORK_ROOT"
 test -w "$BUILD_WORK_ROOT"
 test -f "$OPENCV_WHEEL_DIR/$OPENCV_HEADLESS_WHEEL"
@@ -84,8 +85,9 @@ trap 'rm -rf "$BUILD_ROOT"' EXIT
 APP_CONTEXT="$BUILD_ROOT/app"
 VENV_CONTEXT="$BUILD_ROOT/venv"
 # 最小应用 context：只保留 Mapping API 所需源码。
-mkdir -p "$APP_CONTEXT/Depth-Anything-3" "$APP_CONTEXT/sam3" "$VENV_CONTEXT"
+mkdir -p "$APP_CONTEXT/Depth-Anything-3" "$APP_CONTEXT/sam3" "$APP_CONTEXT/runtime" "$VENV_CONTEXT"
 cp -a "$CORE_REPO_ROOT/main.py" "$CORE_REPO_ROOT/config.yaml" "$APP_CONTEXT/"
+cp -a "$CORE_REPO_ROOT/runtime/sku_masterdata.csv" "$APP_CONTEXT/runtime/"
 cp -a "$CORE_REPO_ROOT/src" "$CORE_REPO_ROOT/utils" "$APP_CONTEXT/"
 cp -a "$CORE_REPO_ROOT/Depth-Anything-3/src" "$APP_CONTEXT/Depth-Anything-3/"
 cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"
