@@ -34,9 +34,13 @@ _CLASS_KEYS = frozenset({"det", "cls"})
 _VIEWER_FILES = (
     "manifest.json",
     "positions.f32.bin",
-    "colors.u8.bin",
     "normals.i8.bin",
     "objects.json",
+    "surfel.json",
+    "surfel-u.f16.bin",
+    "surfel-v.f16.bin",
+    "surfel-frame.u8.bin",
+    "surfel-depth.f16.bin",
 )
 @dataclass(frozen=True)
 class PreparedRequest:
@@ -239,15 +243,16 @@ def _reject_nonfinite(value: str) -> None:
 
 
 def pack_viewer_bundle(generation_dir: Path) -> bytes:
-    """Pack one selected Viewer generation with flat archive member names."""
+    """Pack a textured Surfel generation with flat archive member names."""
     generation_dir = Path(generation_dir)
-    paths = [generation_dir / name for name in _VIEWER_FILES]
+    surfel = json.loads((generation_dir / "surfel.json").read_text(encoding="utf-8"))
+    names = [*_VIEWER_FILES, *(frame["texture"] for frame in surfel["frames"])]
     thumbs = sorted((generation_dir / "thumbs").glob("*.jpg"))
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
-        for path, name in zip(paths, _VIEWER_FILES):
-            archive.writestr(name, path.read_bytes())
+        for name in names:
+            archive.writestr(name, (generation_dir / name).read_bytes())
         for path in thumbs:
             archive.writestr(f"thumbs/{path.name}", path.read_bytes())
     return buffer.getvalue()
@@ -298,7 +303,7 @@ def run_mapping_request(
     pipeline.config_path = MAIN_PROJECT_ROOT / "config.yaml"
 
     pipeline.run_complete_pipeline(
-        str(dataset_dir), algorithm="3d", model_path=model_path
+        str(dataset_dir), algorithm="3d", model_path=model_path, evaluate_accuracy=False
     )
 
     dataset_output = output_root / dataset_dir.name
@@ -310,6 +315,7 @@ def run_mapping_request(
         source_images_dir=dataset_dir / "images",
         sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
         sku_masterdata_csv=Path("/app/runtime/sku_masterdata.csv"),
+        surfel_texture_edge=1920,
     )
     return {
         "global_skus_path": str(

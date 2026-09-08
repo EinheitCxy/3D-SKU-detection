@@ -155,6 +155,13 @@ POST 到本机服务，并将响应中的 `global_skus` 写为 `global_skus.json
 
 ## Viewer Bundle
 
+服务端显式调用 `run_complete_pipeline(..., evaluate_accuracy=False)`，不对没有人工标注的线上任务执行离线准确率评估；核心研究流水线默认仍评估。
+
+服务端默认调用 `export_web_viewer_bundle(..., surfel_texture_edge=1920)`，生成 Surfel v2 纹理数据。ZIP 包含 `manifest.json`、`positions.f32.bin`、`normals.i8.bin`、`objects.json`、`surfel.json`、`surfel-u.f16.bin`、`surfel-v.f16.bin`、`surfel-frame.u8.bin`、`surfel-depth.f16.bin`、metadata 引用的全部 `surfel-texture-N.jpg` 和商品 `thumbs/*.jpg`，不包含 `colors.u8.bin`。引用纹理缺失时打包直接失败，不上传不完整包。
+
+原图等比缩小到最长边 1920、短边 1080 的上限；请求格式仍是 `taskID/images/skus`，响应仍仅有 `global_skus`，COS key 保持不变。前端 visualization 分支默认以 Surfel 加载，因此 `/?recognition_task_id=<taskID>` 即可查看新任务。旧普通点云任务需显式使用 `&render=points`；服务端不自动生成两份数据。Surfel 支持 1..32 个来源帧，GPU 资源上限仍取决于查看设备。
+
+
 此 Docker 服务不构建、携带或托管可视化页面。它只生成平铺、非加密 `ZIP_STORED` schema 3.0.0 的
 `viewer_bundle.zip` 并上传 COS；`global_skus` 只保留在 BSON 成功响应中，不写入 COS。独立 Viewer
 依据 `taskID` 直接定位并下载该 ZIP。
@@ -179,4 +186,6 @@ uv run python docker/test/test_api.py \
 
 使用当前核心工作区源码与服务端 docker 分支代码完整构建 `global-id-mapping:da3-self-contained`，冻结 lock 离线安装 162 个包且依赖检查通过。构建缺少的锁定包先补齐到标准 uv cache，没有复制其他虚拟环境的 site-packages。
 
-镜像内导入、SKU 主数据存在性、服务端调用与当前 exporter 签名的适配检查通过。CPU API smoke 覆盖坏 BSON、缺少请求字段的 500 traceback，以及 stub 成功响应仅含 global_skus 的 BSON 封装。未执行真实 GPU mapping 或 COS 上传，未替换运行中的容器；当前服务端仍生成普通 points ZIP。
+镜像内导入、SKU 主数据存在性、服务端调用与当前 exporter 签名的适配检查通过。CPU API smoke 覆盖坏 BSON、缺少请求字段的 500 traceback，以及 stub 成功响应仅含 global_skus 的 BSON 封装。未执行真实 GPU mapping 或 COS 上传，未替换运行中的容器；该次重建时服务端仍生成普通 points ZIP；本节为启用 Surfel 前的历史验证。
+
+端到端验证（2026-09-08）：两张真实图片经 API 推理、Surfel 导出和 COS 上传成功，API/COS 均返回 200；结果为 247,673 点、56 个全局id，ZIP 9,677,757 bytes。Chromium 直接下载该任务，无 render 参数即可显示；全局id选择、中文界面和静止停绘通过，未见页面/控制台错误。浏览器使用软件 WebGL，此结果不代表硬件 GPU 帧率。
