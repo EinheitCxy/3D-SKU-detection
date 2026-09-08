@@ -181,7 +181,7 @@ DA3 bbox 的 source→processed 映射唯一权威是 `predictions.npz` 中每�
 
 ## Minimal Viewer 与点云策略
 
-Surfel 独立导出入口为 `uv run --no-sync python scripts/export_surfel_viewer.py --help`。提供已有 DA3 缓存、原图目录、global mapping、同网格 SAM3 v2 mask 和 SKU 主数据后，可生成独立 Surfel v2 sidecar：保留采样点顺序，附加 Float16 切向量/来源深度、Uint8 帧编号及最长边 1920、短边 1080 上限的 JPEG 纹理。此数据需要 Surfel 渲染入口，不能作为普通 points bundle 使用。
+Surfel 使用已有 DA3 缓存、原图和同网格 SAM3 mask 导出独立纹理表面数据；浏览器通过 `/?data=/data-surfel/&render=surfel` 显式启用，默认 points 入口保持独立。后端导出、Float16 sidecar、逐片元投影与深度融合、商品交互和按需重绘的代码说明见 [Surfel 集成说明](docs/surfel_implementation.md)，命令与限制见 [Viewer README](modules/viewer_web/README.md#深度约束-surfel)。当前只接入 `modules/viewer_web`，未接入 `docker/viewer` 的 COS ZIP 流程。
 
 Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。`CURRENT` 只包含 `run_id`；run 内的 `manifest.json` 固定为 schema `3.0.0`，包含轻量 `backend: "DA3"`、真实 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不携带 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。导出器从 dataset `images/` 中按数字文件名解析原图，为每个 active 与 removed observation 按 bbox（保留 10% padding）写入 `thumbs/*.jpg`：JPEG 始终为精确 `128×128`，crop 等比缩放并居中补深色背景，不拉伸或中心裁掉商品；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
 

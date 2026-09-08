@@ -1,5 +1,6 @@
 import { loadViewerBundle, type ViewerBundle } from "./bundle-loader";
 import { loadSurfels } from "./surfel-loader";
+import { progressFetch } from "./loading-progress";
 import { dataCandidates } from "./data-candidates";
 import { navigationState, stepVisibleId } from "./navigation";
 import { buildSelectedObjectView, canFocusGlobalId, entryHasGeometry, listGlobalIds, summarizeObservationCounts } from "./presentation";
@@ -102,7 +103,9 @@ if (typeof document !== "undefined") {
 }
 
 export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDependencies): Promise<void> {
-  root.replaceChildren(loadingMessage("Loading ViewerBundle…"));
+  const loading = loadingMessage("正在连接点云数据…");
+  root.replaceChildren(loading);
+  const fetchWithProgress = progressFetch(globalThis.fetch, message => { loading.textContent = message; });
   try {
     const href = dependencies?.href ?? window.location.href;
     const renderMode = new URL(href).searchParams.get("render") ?? "points";
@@ -115,7 +118,7 @@ export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDepen
     for (const baseUrl of dataCandidates(href)) {
       attempts.push(baseUrl);
       try {
-        bundle = await load(baseUrl, globalThis.fetch, renderMode);
+        bundle = await load(baseUrl, fetchWithProgress, renderMode);
         break;
       } catch (error) {
         errors.push(`${baseUrl} => ${error instanceof Error ? error.message : String(error)}`);
@@ -125,8 +128,9 @@ export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDepen
       throw new Error(`Tried ${attempts.length} data roots but none succeeded.\n${errors.join("\n")}`);
     }
     if (renderMode === "surfel") {
-      bundle = { ...bundle, surfels: await loadSurfels(bundle, globalThis.fetch) };
+      bundle = { ...bundle, surfels: await loadSurfels(bundle, fetchWithProgress) };
     }
+    loading.textContent = "数据已就绪，正在初始化三维画面…";
     mount(root, bundle);
   } catch (error) {
     const failure = document.createElement("section");

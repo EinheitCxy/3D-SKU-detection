@@ -106,7 +106,7 @@ Pi3X 导出脚本读取 `personalcare_classification/CURRENT` 指向的完整分
 
 ## 深度约束 Surfel
 
-Surfel 使用已有 DA3 缓存和原图，为每个保留的点附加局部表面切向量及来源相机；浏览器在表面圆盘上逐片元采样原图，并按深度约束融合重叠圆盘。
+Surfel 使用已有 DA3 缓存和原图，为每个保留的点附加局部表面切向量及来源相机；浏览器在表面圆盘上逐片元采样原图，并按深度约束融合重叠圆盘。详细数据流、数组形状、shader 和交互说明见 [Surfel 集成说明](../../docs/surfel_implementation.md)。
 
 ```bash
 uv run --no-sync python scripts/export_surfel_viewer.py \
@@ -134,5 +134,7 @@ npm --prefix modules/viewer_web run dev
 Point size 的默认值为 0.004；Surfel 将其映射为 1.05 个源网格像素的覆盖半径，最大为 2，不改变中心点几何。商品选择通过独立标记显示紫色；取消选择恢复纹理颜色。GPU 拾取与颜色渲染使用相同的圆盘、来源图有效域和来源深度检查，再通过原有 `point_ranges` 找到全局id。Focus 和批量高亮保留原有接口。
 
 Surfel 按需重绘：相机变化、阻尼、Focus/视角动画、选择/隐藏、point size 和窗口大小变化会请求下一帧，静止时停止绘制。普通 points 保持连续绘制。该机制减少空闲绘制，不代表拖动单帧更快。
+
+加载界面显示实际接收 MB、完成文件数和待完成文件名，区分下载等待与解析；不会添加超时、重试或自动降级。
 
 需要 WebGL2 和 `EXT_color_buffer_float`，能力不足直接报错。该渲染不叠加普通点云的 Lambert/EDL/fog，也没有训练或完整 EWA 滤波；原图改善表面外观，不能补出新几何。薄物体、深度断层、跨视角几何误差和曝光差异仍可能产生孔洞、接缝或重影。尚无本次审查的硬件 GPU 帧率测量。
