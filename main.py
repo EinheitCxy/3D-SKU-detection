@@ -1247,8 +1247,9 @@ class SKUDetectionMain:
         dataset_path: str,
         algorithm: str = "point_tracking",
         model_path: str | None = None,
+        evaluate_accuracy: bool = True,
     ) -> Dict[str, bool]:
-        """运行完整的SKU计数流水线（包含3D重建），返回每步是否成功的摘要。"""
+        """运行 SKU 计数流水线；无人工标注的服务请求可显式关闭准确率评估。"""
         logger.info("开始完整的SKU计数流水线（包含3D重建）")
         summary: Dict[str, bool] = {}
 
@@ -1431,10 +1432,11 @@ class SKUDetectionMain:
                 summary["dedup_visualization"] = False
 
             # 6. 准确性评估 (可选)
-            acc = self.run_accuracy_evaluation(
-                dataset_path, backend=match_backend if "3d" in algorithm else "pt"
-            )
-            summary["accuracy_evaluation"] = bool(acc.get("success", False))
+            if evaluate_accuracy:
+                acc = self.run_accuracy_evaluation(
+                    dataset_path, backend=match_backend if "3d" in algorithm else "pt"
+                )
+                summary["accuracy_evaluation"] = bool(acc.get("success", False))
 
             logger.info("=== 流水线执行结果 ===")
             for step, ok in summary.items():

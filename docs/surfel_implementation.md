@@ -1,6 +1,6 @@
 # Surfel 集成说明
 
-本文以当前代码为准。Surfel 接入已有 DA3 缓存导出与 `modules/viewer_web`，不重新推理 DA3/SAM3，不改变 SKU 匹配、去重或计数。`docker/viewer` 的 COS ZIP 查看器尚未接入此渲染路径。此前各版的场景测试记录见 [历史实施报告](surfel_implementation_report.md)，不作为本次验证结果。
+本文以当前代码为准。Surfel 接入已有 DA3 缓存导出与 `modules/viewer_web`，不重新推理 DA3/SAM3，不改变 SKU 匹配、去重或计数。`docker/viewer` 的 COS ZIP 查看器已接入此渲染路径，默认读取 Surfel v2；服务端跳过无人工标注的离线评估，导出并打包纹理后上传 COS。此前各版的场景测试记录见 [历史实施报告](surfel_implementation_report.md)，不作为本次验证结果。
 
 ## 入口和数据流
 
