@@ -181,6 +181,8 @@ DA3 bbox 的 source→processed 映射唯一权威是 `predictions.npz` 中每�
 
 ## Minimal Viewer 与点云策略
 
+Surfel 独立导出入口为 `uv run --no-sync python scripts/export_surfel_viewer.py --help`。提供已有 DA3 缓存、原图目录、global mapping、同网格 SAM3 v2 mask 和 SKU 主数据后，可生成独立 Surfel v2 sidecar：保留采样点顺序，附加 Float16 切向量/来源深度、Uint8 帧编号及最长边 1920、短边 1080 上限的 JPEG 纹理。此数据需要 Surfel 渲染入口，不能作为普通 points bundle 使用。
+
 Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。`CURRENT` 只包含 `run_id`；run 内的 `manifest.json` 固定为 schema `3.0.0`，包含轻量 `backend: "DA3"`、真实 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不携带 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。导出器从 dataset `images/` 中按数字文件名解析原图，为每个 active 与 removed observation 按 bbox（保留 10% padding）写入 `thumbs/*.jpg`：JPEG 始终为精确 `128×128`，crop 等比缩放并居中补深色背景，不拉伸或中心裁掉商品；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
 
 canonical “其他品类”是 `sku_id=56642`、`sku_name=其他品类`。只要存在任一具体 SKU，具体 SKU 按既有 confidence/support 顺序排在 56642 之前；只有全部有效观测都是其他品类时，56642 才能排在首位。Viewer 只消费已排序的 SKU ID/名称，不接收或显示 confidence。

@@ -72,6 +72,7 @@ def export_web_viewer_bundle(
     voxel_size_m: float = 0.01,
     max_points: int = 500_000,
     filter_config: PointCloudFilterConfig | None = None,
+    surfel_texture_edge: int | None = None,
 ) -> dict[str, object]:
     """Publish point cloud arrays and selection data in an atomic schema-3 run."""
     if not isinstance(dataset_name, str) or not dataset_name.strip():
@@ -95,6 +96,12 @@ def export_web_viewer_bundle(
         max_points=max_points,
         filter_config=filter_config or PointCloudFilterConfig(),
     )
+    if surfel_texture_edge is not None:
+        from src.surfel_export import prepare_surfels
+        sampled["surfel_files"] = prepare_surfels(
+            cache, sampled["source_indices"], Path(da3_cache_path),
+            Path(source_images_dir), surfel_texture_edge,
+        )
     _attach_point_index_ranges(
         objects, sampled["instance_labels"], sampled["label_keys"]
     )
@@ -392,6 +399,7 @@ def _sample_points(
         "label_keys": label_keys,
         "filtered_points": filtered_points,
         "level_rotation": level_rotation,
+        "source_indices": valid_indices[keep_filter][keep][order],
     }
 
 
@@ -840,11 +848,14 @@ def _publish_bundle(
     generation = runs_root / run_id
     temporary = Path(tempfile.mkdtemp(prefix=f".{run_id}.", dir=runs_root))
     try:
+        for relative, payload in arrays.get("surfel_files", {}).items():
+            (temporary / relative).write_bytes(payload)
         _write_json(temporary / "manifest.json", manifest)
         (temporary / "positions.f32.bin").write_bytes(
             arrays["positions"].tobytes(order="C")
         )
-        (temporary / "colors.u8.bin").write_bytes(arrays["colors"].tobytes(order="C"))
+        if "surfel_files" not in arrays:
+            (temporary / "colors.u8.bin").write_bytes(arrays["colors"].tobytes(order="C"))
         (temporary / "normals.i8.bin").write_bytes(arrays["normals"].tobytes(order="C"))
         _write_json(temporary / "objects.json", objects)
         _write_json(temporary / "sku_masterdata.json", sku_masterdata)
