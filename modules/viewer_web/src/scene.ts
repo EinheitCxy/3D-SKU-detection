@@ -26,6 +26,7 @@ import {
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { createSurfelRenderer } from "./surfel-renderer";
+import { createRenderLoop } from "./render-loop";
 import type { ViewerBundle } from "./bundle-loader";
 import type { ObjectIndex } from "./contracts";
 import { POINTS_LAYER, createViewerPipeline } from "./edl";
@@ -167,7 +168,8 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   let previousVisibleGlobalIds = new Set(visibleGlobalIds);
   let primaryPointerPress: PointPointerPress | null = null;
   let focusAnimation: FocusAnimation | null = null;
-  let animationFrame = 0;
+  const renderLoop = createRenderLoop(animate);
+  controls.addEventListener("change", renderLoop.request);
   let previousTintedRanges: readonly PointRange[] = [];
   let currentPointSize = DEFAULT_POINT_SIZE;
   const pointRangeLookup = buildPointRangeLookup(bundle.objects);
@@ -191,6 +193,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     pointMaterial?.uniforms.uResolution.value.copy(renderer.getDrawingBufferSize(new Vector2()));
     const physicalSize = renderer.getDrawingBufferSize(new Vector2());
     surfels?.setSize(physicalSize.x, physicalSize.y);
+    renderLoop.request();
   };
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(container);
@@ -236,7 +239,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     focusAnimation = null;
   });
 
-  function animate(time: number): void {
+  function animate(time: number): boolean {
     if (focusAnimation !== null) {
       const progress = Math.min((time - focusAnimation.startedAt) / focusAnimation.durationMs, 1);
       const eased = 1 - (1 - progress) ** 3;
@@ -247,9 +250,9 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     controls.update();
     if (surfels) surfels.render();
     else pipeline?.composer.render();
-    animationFrame = requestAnimationFrame(animate);
+    return !surfels || focusAnimation !== null;
   }
-  animationFrame = requestAnimationFrame(animate);
+  renderLoop.request();
   setViewPreset("fit", false);
 
   return {
@@ -285,6 +288,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       if (pointMaterial) pointMaterial.uniforms.uSize.value = currentPointSize;
       surfels?.setRadius(currentPointSize);
       updateRaycasterThreshold();
+      renderLoop.request();
     },
     setVisibleGlobalIds(ids) {
       const next = new Set(ids);
@@ -296,6 +300,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       queueVisibilityAttributeUpdates(pointVisibilityAttribute, changedRanges);
       previousVisibleGlobalIds = next;
       visibleGlobalIds = next;
+      renderLoop.request();
     },
     setViewPreset(preset) {
       setViewPreset(preset, true);
@@ -304,7 +309,8 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       pickHandler = handler;
     },
     dispose() {
-      cancelAnimationFrame(animationFrame);
+      renderLoop.dispose();
+      controls.removeEventListener("change", renderLoop.request);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
@@ -360,6 +366,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       previousTintedRanges = ranges;
       queueSelectionAttributeUpdates(pointColorAttribute, changed);
     }
+    renderLoop.request();
   }
 
   function setViewPreset(preset: "fit" | "top" | "isometric", animateView: boolean): void {
@@ -393,6 +400,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       fromTarget: controls.target.clone(),
       toTarget: target.clone(),
     };
+    renderLoop.request();
   }
 }
 
