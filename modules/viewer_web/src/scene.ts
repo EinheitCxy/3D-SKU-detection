@@ -25,6 +25,7 @@ import {
   WebGLRenderer,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { createSurfelRenderer } from "./surfel-renderer";
 import type { ViewerBundle } from "./bundle-loader";
 import type { ObjectIndex } from "./contracts";
 import { POINTS_LAYER, createViewerPipeline } from "./edl";
@@ -46,7 +47,7 @@ import {
 const CLICK_THRESHOLD_PX = 6;
 const MIN_POINT_SIZE = 0.004;
 const MAX_POINT_SIZE = 0.07;
-export const DEFAULT_POINT_SIZE = 0.005;
+export const DEFAULT_POINT_SIZE = 0.004;
 const MAX_SPLAT_PIXELS = 64;
 const FOG_NEAR_RADII = 1;
 const FOG_FAR_RADII = 8;
@@ -133,12 +134,18 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   worldGroup.matrixAutoUpdate = false;
   scene.add(worldGroup);
 
-  const points = createPoints(bundle, worldGroup.matrix);
-  points.layers.set(POINTS_LAYER);
-  worldGroup.add(points);
-  const pointMaterial = points.material as ShaderMaterial;
-  const pointColorAttribute = points.geometry.getAttribute("aColor") as Uint8BufferAttribute;
-  const pointVisibilityAttribute = points.geometry.getAttribute("aVisible") as Uint8BufferAttribute;
+  const points = bundle.surfels ? null : createPoints(bundle, worldGroup.matrix);
+  if (points) {
+    points.layers.set(POINTS_LAYER);
+    worldGroup.add(points);
+  }
+  const pointMaterial = points?.material as ShaderMaterial | undefined;
+  const pointColorAttribute = points?.geometry.getAttribute("aColor") as Uint8BufferAttribute | undefined;
+  const pointVisibilityAttribute = points
+    ? points.geometry.getAttribute("aVisible") as Uint8BufferAttribute
+    : new Uint8BufferAttribute(new Uint8Array(bundle.pointCount).fill(1), 1).setUsage(DynamicDrawUsage);
+  const surfels = bundle.surfels ? createSurfelRenderer(renderer, camera, bundle, worldGroup.matrix,
+    pointVisibilityAttribute) : null;
   const bounds = bundle.manifest.display_bounds;
   const box = new Box3(
     new Vector3(bounds[0], bounds[1], bounds[2]),
@@ -152,7 +159,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   camera.far = Math.max(sceneRadius * 20, 100);
   camera.updateProjectionMatrix();
   scene.fog = new Fog(background, sceneRadius * FOG_NEAR_RADII, sceneRadius * FOG_FAR_RADII);
-  const pipeline = createViewerPipeline(renderer, scene, camera);
+  const pipeline = surfels ? null : createViewerPipeline(renderer, scene, camera);
 
   let selectedGlobalIdForCamera: string | null = null;
   let pickHandler: ((globalId: string) => void) | null = null;
@@ -179,9 +186,11 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
-    pipeline.setPixelRatio(renderer.getPixelRatio());
-    pipeline.setSize(width, height);
-    pointMaterial.uniforms.uResolution.value.copy(renderer.getDrawingBufferSize(new Vector2()));
+    pipeline?.setPixelRatio(renderer.getPixelRatio());
+    pipeline?.setSize(width, height);
+    pointMaterial?.uniforms.uResolution.value.copy(renderer.getDrawingBufferSize(new Vector2()));
+    const physicalSize = renderer.getDrawingBufferSize(new Vector2());
+    surfels?.setSize(physicalSize.x, physicalSize.y);
   };
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(container);
@@ -210,8 +219,11 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
+    const surfelHit = surfels?.pick((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
+    const hitIndices = surfels ? (surfelHit == null ? [] : [surfelHit])
+      : points ? raycaster.intersectObject(points, false).flatMap((hit) => hit.index === undefined ? [] : [hit.index]) : [];
     const globalId = firstVisiblePointGlobalId(
-      raycaster.intersectObject(points, false).flatMap((hit) => hit.index === undefined ? [] : [hit.index]),
+      hitIndices,
       pointRangeLookup,
       visibleGlobalIds,
     );
@@ -224,7 +236,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     focusAnimation = null;
   });
 
-  const animate = (time: number) => {
+  function animate(time: number): void {
     if (focusAnimation !== null) {
       const progress = Math.min((time - focusAnimation.startedAt) / focusAnimation.durationMs, 1);
       const eased = 1 - (1 - progress) ** 3;
@@ -233,9 +245,10 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       if (progress === 1) focusAnimation = null;
     }
     controls.update();
-    pipeline.composer.render();
+    if (surfels) surfels.render();
+    else pipeline?.composer.render();
     animationFrame = requestAnimationFrame(animate);
-  };
+  }
   animationFrame = requestAnimationFrame(animate);
   setViewPreset("fit", false);
 
@@ -269,7 +282,8 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     },
     setPointSize(size) {
       currentPointSize = clamp(size, MIN_POINT_SIZE, MAX_POINT_SIZE);
-      pointMaterial.uniforms.uSize.value = currentPointSize;
+      if (pointMaterial) pointMaterial.uniforms.uSize.value = currentPointSize;
+      surfels?.setRadius(currentPointSize);
       updateRaycasterThreshold();
     },
     setVisibleGlobalIds(ids) {
@@ -296,7 +310,8 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
       renderer.domElement.removeEventListener("pointercancel", onPointerCancel);
       controls.dispose();
-      pipeline.dispose();
+      pipeline?.dispose();
+      surfels?.dispose();
       scene.traverse((object) => {
         (object as { geometry?: BufferGeometry }).geometry?.dispose();
         const material = (object as { material?: unknown }).material;
@@ -334,14 +349,17 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
 
   function updateSelectionPointTint(globalIds: ReadonlySet<string>): void {
     const ranges = selectionRangesForGlobalIds(bundle.objects, globalIds);
-    const changed = applySelectionColors(
-      pointColorAttribute.array as Uint8Array,
-      bundle.colors,
-      previousTintedRanges,
-      ranges,
-    );
-    previousTintedRanges = ranges;
-    queueSelectionAttributeUpdates(pointColorAttribute, changed);
+    surfels?.select(ranges);
+    if (pointColorAttribute && bundle.colors) {
+      const changed = applySelectionColors(
+        pointColorAttribute.array as Uint8Array,
+        bundle.colors,
+        previousTintedRanges,
+        ranges,
+      );
+      previousTintedRanges = ranges;
+      queueSelectionAttributeUpdates(pointColorAttribute, changed);
+    }
   }
 
   function setViewPreset(preset: "fit" | "top" | "isometric", animateView: boolean): void {
@@ -398,6 +416,7 @@ void main() { if (vVisible < 0.5) discard; vec2 centered = gl_PointCoord - vec2(
 `;
 
 export function createPoints(bundle: ViewerBundle, worldMatrix: Matrix4): Points {
+  if (bundle.colors === null) throw new Error("Points mode requires per-point RGB");
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(bundle.positions, 3));
   geometry.setAttribute(

@@ -69,7 +69,7 @@ canonical “其他品类”是 `sku_id=56642`、`sku_name=其他品类`。只�
 - 选择栏只用更小的统计卡片显示 Total 和从 observations 派生的 Removed。
 - 选择模式提供 Manufacturer、Brand、Category、SKU 和 Global ID。前四类按对象的主 SKU 聚合计数并高亮全部匹配 Global ID；canvas 点选自动切换到 Global ID。
 - 点击 Manufacturer、Brand、Category 或 SKU 的某一项后，右栏显示该维度和值、匹配 SKU/Global ID 总数，以及每个主 SKU 的名称、独立次级编号和对应 Global ID 数量；维度、已选值、汇总和 SKU 行使用不同层级的文字与计数标记。
-- `View Controls` 默认折叠；展开后只提供 Fit、Top、Iso 和 Point size，默认点大小为 `0.005`，可按 `0.001` 调整，范围为 `0.004–0.070`；折叠时不会遮挡 canvas。
+- `View Controls` 默认折叠；展开后只提供 Fit、Top、Iso 和 Point size，默认点大小为 `0.004`，可按 `0.001` 调整，范围为 `0.004–0.070`；折叠时不会遮挡 canvas。
 - Global ID 面板的搜索、匹配计数、列表与导航控件使用较小字号；左栏只显示 `Total` / `Removed`。Selected Object 为主 SKU 显示厂商、品牌、品类，POSM 固定显示 `N/A`。
 - 右栏标题为 `Selected Object`，显示 Global ID、该对象由 observations 派生的 Observations / Active / Removed、按发布顺序排列的 SKU，以及紧凑的三列优先 observation thumbnail grid；每张图片都是导出器生成的精确 `128×128` 等比补深色背景 JPEG，卡片仍显示 image/object ID，removed 卡片灰化。
 - Focus 始终使用对象的 `point_ranges`，不会复制点云 geometry。
@@ -103,3 +103,34 @@ npm --prefix modules/viewer_web run dev -- --host 0.0.0.0 --port 5175
 DA3 打开 `/`，Pi3X 打开 `/?data=/data-pi3x/`。导出使用 Pi3X 原生点云和 transforms.json，独立生成 `Output/floor_display6/dedup_detections_pi3x/`，发布到 `public/data-pi3x/`，保留现有 DA3 bundle。两者使用相同过滤和采样设置；Pi3X 坐标使用模型原始尺度，不承诺 DA3 的米制尺度。
 
 Pi3X 导出脚本读取 `personalcare_classification/CURRENT` 指向的完整分类检测，保留 SKU 元数据；不会使用缺少 classification 的原始检测。
+
+## 深度约束 Surfel
+
+Surfel 使用已有 DA3 缓存和原图，为每个保留的点附加局部表面切向量及来源相机；浏览器在表面圆盘上逐片元采样原图，并按深度约束融合重叠圆盘。
+
+```bash
+uv run --no-sync python scripts/export_surfel_viewer.py \
+  --dataset imdata/floor_display6 \
+  --cache Output/floor_display6/da3_cache/predictions.npz \
+  --mapping Output/floor_display6/dedup_detections/global_mapping.json \
+  --mask-cache-root /path/to/matching-sam3-cache/v2 \
+  --sku-masterdata runtime/sku_masterdata.csv \
+  --output modules/viewer_web/public/data-surfel
+
+npm --prefix modules/viewer_web run dev
+```
+
+`--mask-cache-root` 必须替换为与当前 DA3 processed grid 对齐的现有 v2 mask 缓存目录。导出在 CPU 上完成，不重跑 DA3/SAM3，也不修改匹配和计数结果。独立脚本默认使用 0.005 体素尺寸、150 万点上限。
+
+| URL | 数据与渲染方式 |
+|---|---|
+| `/?data=/data/&render=points` | 普通点云，使用逐点 RGB |
+| `/?data=/data-surfel/&render=surfel` | 独立 Surfel 数据，逐片元原图纹理 |
+
+普通入口默认 `points`；Surfel 不导出或读取 `colors.u8.bin`，不创建隐藏 Points geometry。`render=surfel-rgb` 无效。Sidecar 仅支持 v2：U/V 和来源深度为 little-endian Float16，帧编号为 Uint8，支持 1..32 帧；GPU 保持半精度属性和深度纹理。旧 Surfel 数据需重新导出，静态部署需同时发布新前端和新数据。
+
+`--texture-edge` 默认为 1920，仅允许 256..1920；短边上限为 `min(texture-edge, 1080)`。横图最多 1920×1080、竖图最多 1080×1920，等比缩小、不放大小图，JPEG 质量 95。只调整导出纹理，不改变原图、深度网格或商品缩略图。混合横竖图的纹理阵列按最大宽高补齐，CPU/GPU 各持有 RGBA 数据，显存不等于 JPEG 文件大小。
+
+Point size 的默认值为 0.004；Surfel 将其映射为 1.05 个源网格像素的覆盖半径，最大为 2，不改变中心点几何。商品选择通过独立标记显示紫色；取消选择恢复纹理颜色。GPU 拾取与颜色渲染使用相同的圆盘、来源图有效域和来源深度检查，再通过原有 `point_ranges` 找到全局id。Focus 和批量高亮保留原有接口。
+
+需要 WebGL2 和 `EXT_color_buffer_float`，能力不足直接报错。该渲染不叠加普通点云的 Lambert/EDL/fog，也没有训练或完整 EWA 滤波；原图改善表面外观，不能补出新几何。薄物体、深度断层、跨视角几何误差和曝光差异仍可能产生孔洞、接缝或重影。尚无本次审查的硬件 GPU 帧率测量。

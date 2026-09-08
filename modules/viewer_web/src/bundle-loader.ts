@@ -7,13 +7,15 @@ import {
   validateObjectIndex,
   validateSkuMasterData,
 } from "./contracts";
+import type { SurfelData } from "./surfel-loader";
 
 export interface ViewerBundle {
+  readonly surfels?: SurfelData;
   readonly manifest: Manifest;
   readonly objects: ObjectIndex;
   readonly skuMasterData: SkuMasterDataIndex;
   readonly positions: Float32Array;
-  readonly colors: Uint8Array;
+  readonly colors: Uint8Array | null;
   readonly normals: Int8Array;
   readonly pointCount: number;
   readonly generationUrl: string;
@@ -32,6 +34,7 @@ export function assertLittleEndian(): void {
 export async function loadViewerBundle(
   baseUrl: string,
   fetcher: typeof fetch = globalThis.fetch,
+  mode: "points" | "surfel" = "points",
 ): Promise<ViewerBundle> {
   if (!baseUrl.endsWith("/")) throw new Error("Viewer bundle baseUrl must end with a slash");
   assertLittleEndian();
@@ -42,12 +45,12 @@ export async function loadViewerBundle(
     fetchJson(`${generationUrl}objects.json`, fetcher),
     fetchJson(`${generationUrl}sku_masterdata.json`, fetcher),
     fetchBinary(`${generationUrl}positions.f32.bin`, fetcher),
-    fetchBinary(`${generationUrl}colors.u8.bin`, fetcher),
+    mode === "points" ? fetchBinary(`${generationUrl}colors.u8.bin`, fetcher) : null,
     fetchBinary(`${generationUrl}normals.i8.bin`, fetcher),
   ]);
   const positions = decodePositions(positionsBuffer);
   const pointCount = positions.length / 3;
-  const colors = decodeColors(colorsBuffer, pointCount);
+  const colors = colorsBuffer === null ? null : decodeColors(colorsBuffer, pointCount);
   const normals = decodeNormals(normalsBuffer, pointCount);
   const objects = validateObjectIndex(objectsValue, pointCount);
   const skuMasterData = validateSkuMasterData(

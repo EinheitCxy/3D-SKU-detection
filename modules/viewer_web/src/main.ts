@@ -1,4 +1,5 @@
 import { loadViewerBundle, type ViewerBundle } from "./bundle-loader";
+import { loadSurfels } from "./surfel-loader";
 import { dataCandidates } from "./data-candidates";
 import { navigationState, stepVisibleId } from "./navigation";
 import { buildSelectedObjectView, canFocusGlobalId, entryHasGeometry, listGlobalIds, summarizeObservationCounts } from "./presentation";
@@ -104,6 +105,8 @@ export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDepen
   root.replaceChildren(loadingMessage("Loading ViewerBundle…"));
   try {
     const href = dependencies?.href ?? window.location.href;
+    const renderMode = new URL(href).searchParams.get("render") ?? "points";
+    if (renderMode !== "points" && renderMode !== "surfel") throw new Error(`Unknown render mode: ${renderMode}`);
     const load = dependencies?.load ?? loadViewerBundle;
     const mount = dependencies?.mount ?? mountViewer;
     let bundle: ViewerBundle | null = null;
@@ -112,7 +115,7 @@ export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDepen
     for (const baseUrl of dataCandidates(href)) {
       attempts.push(baseUrl);
       try {
-        bundle = await load(baseUrl);
+        bundle = await load(baseUrl, globalThis.fetch, renderMode);
         break;
       } catch (error) {
         errors.push(`${baseUrl} => ${error instanceof Error ? error.message : String(error)}`);
@@ -120,6 +123,9 @@ export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDepen
     }
     if (bundle === null) {
       throw new Error(`Tried ${attempts.length} data roots but none succeeded.\n${errors.join("\n")}`);
+    }
+    if (renderMode === "surfel") {
+      bundle = { ...bundle, surfels: await loadSurfels(bundle, globalThis.fetch) };
     }
     mount(root, bundle);
   } catch (error) {
