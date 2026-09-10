@@ -234,3 +234,9 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 ### Viewer backend 对比
 
 画布右下角显示实际 backend。已有 Pi3X 缓存与匹配结果可运行 `uv run python scripts/export_pi3x_viewer.py --dataset imdata/floor_display6`，生成独立 Pi3X bundle；本地 Viewer 使用 `/?data=/data-pi3x/` 查看，默认 `/` 保留 DA3。详见 [Viewer README](modules/viewer_web/README.md)。
+
+## DA3 默认推理尺寸
+
+默认长边统一为 `da3_defaults.py` 中的 896：9:16 竖屏 504×896、16:9 横屏 896×504；其他比例按比例缩放并对齐到 14 像素网格。同一任务混合横屏、竖屏或方形输入在加载模型前报错。推理、匹配及完整 pipeline 缓存复用使用同一默认值；旧 504 或缺少预处理设置的缓存不再被完整 pipeline 复用。已有 Viewer 包需重新推理并导出。
+
+验证：实际 CPU 预处理覆盖横屏、竖屏和4:3；旧缓存重建、896缓存复用与生产参数透传检查通过。896增加显存需求，31帧在本地实际运行时需要充足空闲显存。

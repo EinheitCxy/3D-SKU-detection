@@ -14,6 +14,8 @@ from re import T
 from time import perf_counter
 from typing import Any, Dict, Optional, TypedDict
 
+from da3_defaults import DEFAULT_PROCESS_RES, PREPROCESS_METHOD
+
 import colorlog
 import numpy as np
 
@@ -120,11 +122,13 @@ def _resolve_save_root(value: str | None) -> Path:
 
 
 def _is_reusable_da3_cache(cache_path: Path) -> bool:
-    """Return whether a DA3 cache has the minimum schema-v3 metric contract."""
+    """Return whether a DA3 cache has the schema-v3 metric contract and current preprocessing settings."""
     try:
         with np.load(cache_path, allow_pickle=False) as cache:
             schema = cache["cache_schema_version"]
             is_metric = cache["is_metric"]
+            resolution = cache["preprocess_resolution"]
+            method = cache["preprocess_method"]
             return (
                 schema.shape == ()
                 and schema.dtype.kind in "iu"
@@ -132,6 +136,11 @@ def _is_reusable_da3_cache(cache_path: Path) -> bool:
                 and is_metric.shape == ()
                 and is_metric.dtype.kind in "iu"
                 and int(is_metric.item()) == 1
+                and resolution.shape == ()
+                and resolution.dtype.kind in "iu"
+                and int(resolution.item()) == DEFAULT_PROCESS_RES
+                and method.shape == ()
+                and str(method.item()) == PREPROCESS_METHOD
             )
     except (KeyError, OSError, ValueError):
         return False

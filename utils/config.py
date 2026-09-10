@@ -1,4 +1,6 @@
 import os
+from da3_defaults import DEFAULT_PROCESS_RES
+
 import torch
 import logging
 from dataclasses import dataclass
@@ -326,12 +328,12 @@ class SKUMatchingConfig:
         """根据 backend 自动推导 transform 构建参数
 
         Returns:
-            DA3: {"process_res": 504}（upper_bound_resize 算法派生目标尺寸）
+            DA3: {"process_res": DEFAULT_PROCESS_RES}（upper_bound_resize 算法派生目标尺寸）
             Pi3: {"pixel_limit": 255000}
             VGGT: {"target_size": 518}
         """
         if self.backend == "da3":
-            return {"process_res": 504}
+            return {"process_res": DEFAULT_PROCESS_RES}
         if self.backend == "pi3":
             return {"pixel_limit": 255000}
         return {"target_size": 518}

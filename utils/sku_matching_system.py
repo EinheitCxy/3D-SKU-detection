@@ -4,6 +4,8 @@ SKU匹配系统主模块
 封装完整的SKU匹配流程，提供高级接口
 """
 
+from da3_defaults import DEFAULT_PROCESS_RES
+
 import os
 import json
 import time
@@ -162,7 +164,7 @@ class SKUMatchingSystem:
                 # 目标尺寸与 da3_cache 一致（504×378 等），确保投影点与 cache/world_points 同坐标系。
                 # transforms_info 是纯只读数据对象（w,h,TARGET_W,TARGET_H,image_id），跨 ref 复用
                 # 省 N×len(image_paths) 次 PIL open 解码；build_da3_transforms 无副作用，缓存位级等价。
-                _da3_pr = self.config.transform_kwargs.get("process_res", 504)
+                _da3_pr = self.config.transform_kwargs.get("process_res", DEFAULT_PROCESS_RES)
                 _tcache_key = f"{tuple(sorted(str(p) for p in image_paths))}::{self.config.model_type}::{_da3_pr}"
                 with StageTimer("build_transforms"):
                     _tcached = _DA3_TRANSFORMS_CACHE.get(_tcache_key)

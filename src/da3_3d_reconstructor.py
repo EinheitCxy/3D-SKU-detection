@@ -44,6 +44,8 @@ if str(DA3_SRC) not in sys.path:
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from da3_defaults import DEFAULT_PROCESS_RES
+
 from .reconstructor_base import ReconstructorBase, register_reconstructor  # noqa: E402
 
 # ---- DA3 重建器 ----
@@ -177,6 +179,8 @@ class DA33DReconstructor(ReconstructorBase):
             self.model_path or self.DEFAULT_HF_REPO,
             "--device",
             self.device,
+            "--process_res",
+            str(DEFAULT_PROCESS_RES),
         ]
         logger.info(f"DA3 subprocess: {' '.join(cmd)}")
         t0 = time.time()

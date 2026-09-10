@@ -22,6 +22,9 @@ from pathlib import Path
 # ---- 路径注入：DA3 源码 ----
 # 本脚本位于 src/da3_runner.py，仓库根为 parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+from da3_defaults import DEFAULT_PROCESS_RES, PREPROCESS_METHOD
+
 DA3_SRC = REPO_ROOT / "Depth-Anything-3" / "src"
 if str(DA3_SRC) not in sys.path:
     sys.path.insert(0, str(DA3_SRC))
@@ -37,7 +40,6 @@ IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 PATCH_SIZE = 14
 CACHE_SCHEMA_VERSION = 3  # v3: + is_metric / scale_factor 米制证据（硬门）
 AFFINE_CONVENTION = "pixel_center_v1"
-PREPROCESS_METHOD = "upper_bound_resize"
 SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
 
 
@@ -153,7 +155,13 @@ def _validate_model_id(model_id: str) -> str:
     return model_id
 
 
-def main() -> None:
+def _validate_image_orientations(image_sizes: list[tuple[int, int]]) -> None:
+    orientations = {"横屏" if w > h else "竖屏" if h > w else "方形" for w, h in image_sizes}
+    if len(orientations) > 1:
+        raise ValueError("同一任务不能混合横屏、竖屏或方形图片，请按拍摄方向分别提交")
+
+
+def _parse_args(argv=None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="DA3 推理 -> predictions.npz")
     ap.add_argument("--input_dir", required=True, help="图片目录")
     ap.add_argument("--output_npz", required=True, help="输出 npz 路径")
@@ -164,9 +172,14 @@ def main() -> None:
     )
     ap.add_argument("--device", default="cuda", help="推理设备（默认 cuda）")
     ap.add_argument(
-        "--process_res", type=int, default=504, help="推理分辨率（默认 504）"
+        "--process_res", type=int, default=DEFAULT_PROCESS_RES,
+        help="推理长边（默认 896）；16:9 横屏 896×504，9:16 竖屏 504×896"
     )
-    args = ap.parse_args()
+    return ap.parse_args(argv)
+
+
+def main() -> None:
+    args = _parse_args()
     args.model_path = _validate_model_id(args.model_path)
 
     from depth_anything_3.api import DepthAnything3
@@ -185,6 +198,10 @@ def main() -> None:
         raise SystemExit(f"目录中未找到图片: {input_dir}")
     logger.info(f"[da3_runner] {len(paths)} imgs from {input_dir}")
 
+    pil_images = [Image.open(p).convert("RGB") for p in paths]
+    source_image_sizes = [(image.width, image.height) for image in pil_images]
+    _validate_image_orientations(source_image_sizes)
+
     if "cuda" in args.device and not torch.cuda.is_available():
         raise SystemExit("CUDA device requested but unavailable; refusing CPU fallback")
     device = torch.device(args.device)
@@ -193,8 +210,6 @@ def main() -> None:
     model.eval()
     logger.info(f"[da3_runner] model loaded on {device} ({time.time()-t0:.1f}s)")
 
-    pil_images = [Image.open(p).convert("RGB") for p in paths]
-    source_image_sizes = [(image.width, image.height) for image in pil_images]
     source_image_sha256 = np.asarray(
         [_sha256_file(Path(path)) for path in paths], dtype="<U64"
     )

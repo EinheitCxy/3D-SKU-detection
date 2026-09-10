@@ -4,6 +4,8 @@ SKU匹配系统坐标变换模块
 包含VGGT图像变换类和坐标映射功能
 """
 
+from da3_defaults import DEFAULT_PROCESS_RES
+
 import math
 import numpy as np
 import torch
@@ -293,7 +295,7 @@ def build_pi3_transforms(
 
 
 def build_da3_transforms(
-    image_paths: List[str], process_res: int = 504
+    image_paths: List[str], process_res: int = DEFAULT_PROCESS_RES
 ) -> List[DA3ImageTransform]:
     """构建 DA3 变换列表，目标尺寸用 DA3 upper_bound_resize 算法从 process_res 派生。
 
@@ -302,7 +304,7 @@ def build_da3_transforms(
 
     Args:
         image_paths: 图像路径列表
-        process_res: DA3 处理分辨率（默认504，须与 da3_runner 的 --process_res 一致）
+        process_res: DA3 处理分辨率（默认896，须与 da3_runner 的 --process_res 一致）
 
     Returns:
         Pi3 变换对象列表（target 尺寸 = DA3 cache 尺寸）
@@ -600,7 +602,7 @@ def build_transforms(
         pixel_limit = kwargs.get("pixel_limit", 255000)
         return build_pi3_transforms(image_paths, pixel_limit=pixel_limit)
     elif model_type == "da3":
-        process_res = kwargs.get("process_res", 504)
+        process_res = kwargs.get("process_res", DEFAULT_PROCESS_RES)
         return build_da3_transforms(image_paths, process_res=process_res)
     else:
         raise ValueError(
