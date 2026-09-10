@@ -52,6 +52,8 @@ _THUMB_SIZE = 128
 _THUMB_PADDING = 0.10
 _THUMB_JPEG_QUALITY = 85
 _THUMB_BACKGROUND = (16, 31, 39)
+MAX_BACKGROUND_POINTS = 800_000
+MAX_PRODUCT_POINTS = 2_000_000
 logger = logging.getLogger(__name__)
 
 
@@ -69,15 +71,14 @@ def export_web_viewer_bundle(
     sam3_mask_cache_root: Path,
     sku_masterdata_csv: Path,
     backend: str = "DA3",
-    voxel_size_m: float = 0.01,
-    max_points: int = 500_000,
+    voxel_size_m: float = 0.005,
     filter_config: PointCloudFilterConfig | None = None,
     surfel_texture_edge: int | None = None,
 ) -> dict[str, object]:
-    """Publish point cloud arrays and selection data in an atomic schema-3 run."""
+    """Publish up to 2M product points, balanced by global ID, plus 800K background."""
     if not isinstance(dataset_name, str) or not dataset_name.strip():
         raise WebViewerExportError("dataset_name must be a non-empty string")
-    voxel_size = _validate_export_options(voxel_size_m, max_points)
+    voxel_size = _validate_export_options(voxel_size_m)
     if backend not in {"DA3", "Pi3X"}:
         raise WebViewerExportError(f"Unsupported viewer backend: {backend}")
     cache = (
@@ -93,7 +94,6 @@ def export_web_viewer_bundle(
         objects,
         mask_cache_root=Path(sam3_mask_cache_root),
         voxel_size=voxel_size,
-        max_points=max_points,
         filter_config=filter_config or PointCloudFilterConfig(),
     )
     if surfel_texture_edge is not None:
@@ -191,7 +191,7 @@ def publish_sku_masterdata_for_current_bundle(
         raise
 
 
-def _validate_export_options(voxel_size_m: float, max_points: int) -> float:
+def _validate_export_options(voxel_size_m: float) -> float:
     if isinstance(voxel_size_m, bool):
         raise WebViewerExportError("voxel_size_m must be a positive finite number")
     try:
@@ -202,12 +202,6 @@ def _validate_export_options(voxel_size_m: float, max_points: int) -> float:
         ) from error
     if not math.isfinite(voxel_size) or voxel_size <= 0:
         raise WebViewerExportError("voxel_size_m must be a positive finite number")
-    if (
-        isinstance(max_points, bool)
-        or not isinstance(max_points, int)
-        or max_points <= 0
-    ):
-        raise WebViewerExportError("max_points must be a positive integer")
     return voxel_size
 
 
@@ -334,13 +328,48 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
     }
 
 
+def _sample_product_points(
+    indices: np.ndarray, labels: np.ndarray, label_keys: list[tuple[str, int]]
+) -> np.ndarray:
+    """Share a fixed point budget equally across nonempty global IDs.
+
+    Multiple frame observations belong to the same group. Small groups retain
+    every point; unused quotas are redistributed. Sampling is uniform without
+    replacement within each global ID, with a fixed seed for reproducibility.
+    """
+    if len(indices) <= MAX_PRODUCT_POINTS:
+        return indices
+    label_gids = np.asarray([int(gid) for gid, _ in label_keys], dtype=np.int64)
+    gids = label_gids[labels[indices]]
+    order = np.argsort(gids, kind="stable")
+    _, counts = np.unique(gids[order], return_counts=True)
+    quotas = np.zeros(len(counts), dtype=np.int64)
+    remaining = MAX_PRODUCT_POINTS
+    while remaining:
+        active = np.flatnonzero(quotas < counts)
+        share, extra = divmod(remaining, len(active))
+        if share == 0:
+            quotas[active[:extra]] += 1
+            break
+        grants = np.minimum(counts[active] - quotas[active], share)
+        quotas[active] += grants
+        remaining -= int(grants.sum())
+    offsets = np.concatenate([[0], np.cumsum(counts)])
+    rng = np.random.default_rng(42)
+    selected = []
+    for i, quota in enumerate(quotas):
+        group = indices[order[offsets[i]:offsets[i + 1]]]
+        selected.append(group if quota == len(group) else rng.choice(group, size=int(quota), replace=False))
+    return np.sort(np.concatenate(selected))
+
+
+
 def _sample_points(
     cache: dict[str, Any],
     objects: dict[str, Any],
     *,
     mask_cache_root: Path,
     voxel_size: float,
-    max_points: int,
     filter_config: PointCloudFilterConfig,
 ) -> dict[str, Any]:
     flat_points = cache["points"].reshape(-1, 3)
@@ -354,17 +383,22 @@ def _sample_points(
     valid_indices = np.flatnonzero(valid)
     valid_points = flat_points[valid].astype(np.float64, copy=False)
     level_rotation = _fit_level_rotation(valid_points, cache["extrinsic"])
-    keep_filter = filter_scene_points(valid_points, filter_config)
+    labels, label_keys = _instance_labels_v2(
+        cache, objects, valid_indices, len(flat_points), mask_cache_root
+    )
+    keep_filter = filter_scene_points(
+        valid_points, filter_config, protect_mask=labels >= 0
+    )
     filtered_points = valid_points[keep_filter]
     if len(filtered_points) == 0:
         raise WebViewerExportError("DA3 point filtering removed every valid point")
-    labels, label_keys = _instance_labels_v2(
-        cache, objects, valid_indices[keep_filter], len(flat_points), mask_cache_root
-    )
+    labels = labels[keep_filter]
     points = valid_points[keep_filter]
     confidence = flat_confidence[valid][keep_filter]
     colors = flat_colors[valid][keep_filter]
-    scaled = np.floor(points / voxel_size)
+    protected = np.flatnonzero(labels >= 0)
+    background = np.flatnonzero(labels < 0)
+    scaled = np.floor(points[background] / voxel_size)
     limits = np.iinfo(np.int64)
     if (
         not np.isfinite(scaled).all()
@@ -373,16 +407,25 @@ def _sample_points(
     ):
         raise WebViewerExportError("DA3 voxel keys exceed int64 representation")
     selected: dict[tuple[int, int, int], int] = {}
-    for index, values in enumerate(scaled.astype(np.int64)):
+    for index, values in zip(background, scaled.astype(np.int64)):
         voxel = tuple(int(value) for value in values)
         previous = selected.get(voxel)
         if previous is None or confidence[index] > confidence[previous]:
             selected[voxel] = index
-    keep = np.fromiter(selected.values(), dtype=np.int64, count=len(selected))
-    if len(keep) > max_points:
-        keep = np.sort(
-            np.random.default_rng(42).choice(keep, size=max_points, replace=False)
+    background_keep = np.fromiter(selected.values(), dtype=np.int64, count=len(selected))
+    background_budget = MAX_BACKGROUND_POINTS
+    if len(background_keep) > background_budget:
+        background_keep = np.sort(
+            np.random.default_rng(42).choice(
+                background_keep, size=background_budget, replace=False
+            )
         )
+    product_keep = _sample_product_points(protected, labels, label_keys)
+    keep = np.sort(np.concatenate([product_keep, background_keep]))
+    logger.info(
+        "Viewer retained %d/%d valid SAM points (product budget %d, equal per global ID) and %d background points (background budget %d)",
+        len(product_keep), len(protected), MAX_PRODUCT_POINTS, len(background_keep), background_budget,
+    )
     points, colors, labels_final = points[keep], colors[keep], labels[keep]
     normals = _estimate_scene_normals(points, cache["extrinsic"])
     order = np.argsort(labels_final, kind="stable")
@@ -415,7 +458,7 @@ def _instance_labels_v2(
     flat_count: int,
     mask_cache_root: Path,
 ) -> tuple[np.ndarray, list[tuple[str, int]]]:
-    """Propagate canonical SAM3 masks into filtered DA3 point labels."""
+    """Label valid points from canonical SAM3 masks before geometric filtering."""
     frame_count, height, width, _ = cache["points"].shape
     frame_for_image = {
         int(image_id): frame for frame, image_id in enumerate(cache["image_ids"])

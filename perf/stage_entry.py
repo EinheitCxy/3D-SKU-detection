@@ -119,7 +119,6 @@ def dispatch_stage(
             source_images_dir=dataset / "images",
             sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
             voxel_size_m=0.005,
-            max_points=1_500_000,
         )
         return {**result, "success": True}
     raise ValueError(f"unknown benchmark stage: {stage}")

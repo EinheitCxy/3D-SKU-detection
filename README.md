@@ -246,3 +246,9 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 `uv run python main.py --mode pipeline --dataset <目录> --algorithm 3d --quiet_outputs` 关闭原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON 与最终 Viewer 数据仍按流程需要生成；日志保留。
 
 Docker 服务接入可显式传入 `quiet_outputs=True`。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不新增持久 outputs。普通本地 pipeline 默认保留调试输出。
+
+## 商品点预算更新（2026-09-10）
+
+当前固定保留 **最多 200 万商品点 + 最多 80 万背景点**，取代此前商品 mask 全量输出规则。SAM 内有效点仍先受几何过滤保护；之后按非空 `global_id` 均分商品预算，将同一商品的多帧观测合并抽样。点数不足配额的商品全部保留，剩余配额再分给其他商品；组内使用固定随机种子、不放回均匀抽样。总商品点不足 200 万时不抽样。空 SAM 掩码不能产生商品点。
+
+位置、颜色、Surfel U/V、源帧和点击范围使用相同点索引。此上限由导出端控制，Viewer 不再独立截断点数组；旧包需重新导出才生效。

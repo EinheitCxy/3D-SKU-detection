@@ -18,7 +18,6 @@ def main():
     parser.add_argument("--sku-masterdata", type=Path, default=Path("runtime/sku_masterdata.csv"))
     parser.add_argument("--texture-edge", type=int, default=1920,
                         help="Texture longest edge in [256, 1920]; short edge capped at 1080, no upscaling")
-    parser.add_argument("--max-points", type=int, default=1_500_000)
     parser.add_argument("--voxel-size", type=float, default=0.005)
     args = parser.parse_args()
     print(json.dumps(export_web_viewer_bundle(
@@ -26,7 +25,7 @@ def main():
         global_mapping_path=args.mapping, output_dir=args.output,
         source_images_dir=args.dataset / "images", sam3_mask_cache_root=args.mask_cache_root,
         sku_masterdata_csv=args.sku_masterdata, surfel_texture_edge=args.texture_edge,
-        max_points=args.max_points, voxel_size_m=args.voxel_size,
+        voxel_size_m=args.voxel_size,
     ), indent=2))
 
 

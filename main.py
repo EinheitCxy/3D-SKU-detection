@@ -1819,12 +1819,6 @@ def main() -> None:
         default=0.005,
         help="viewer-web: 点云voxel大小（默认0.005）",
     )
-    parser.add_argument(
-        "--viewer-web-max-points",
-        type=int,
-        default=1500000,
-        help="viewer-web: 点云最大点数（默认1500000）",
-    )
 
     args = parser.parse_args()
 
@@ -1955,7 +1949,6 @@ def main() -> None:
             sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
             sku_masterdata_csv=sku_masterdata_csv,
             voxel_size_m=float(args.viewer_web_voxel_size),
-            max_points=int(args.viewer_web_max_points),
         )
         logger.info(
             "viewer-web export: output_dir=%s manifest_path=%s point_count=%s thumbnails=%s",

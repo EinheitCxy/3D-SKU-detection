@@ -34,7 +34,7 @@ def main():
         output_dir=args.viewer_output, source_images_dir=args.dataset / 'images',
         sam3_mask_cache_root=output / 'sam3_mask_cache/v2',
         sku_masterdata_csv=args.sku_masterdata_csv,
-        voxel_size_m=0.005, max_points=1500000,
+        voxel_size_m=0.005,
     )
     print(json.dumps(result, ensure_ascii=False))
 
