@@ -401,7 +401,7 @@ class SKUMatchingSystem:
     ) -> None:
         """后处理结果：可视化和保存"""
         _post_t0 = time.perf_counter()
-        if correspondences:
+        if correspondences and not self.config.quiet_outputs:
             if images.device.type == "meta":
                 images = self._load_da3_visualization_images(image_paths, transforms_info)
             visualize_results(
@@ -413,7 +413,7 @@ class SKUMatchingSystem:
         save_visualization_summary(correspondences, self.config, reference_image_idx)
 
         # 保存JSON结果（如果启用）
-        if self.config.save_json and correspondences:
+        if self.config.save_json and correspondences and not self.config.quiet_outputs:
             # 计算机器可解析的 per-image 统计信息
             per_image_summary: Dict[int, Dict[str, float]] = {}
             total_matches = 0

@@ -410,6 +410,7 @@ class SKUDetectionMain:
         parallel_refs: int = 1,
         match_overrides: dict = None,
         enable_profiling: bool = False,
+        quiet_outputs: bool = False,
     ) -> StepResult:
         """运行SKU匹配推理，支持批量将每张图片作为参考图像运行。
 
@@ -502,6 +503,7 @@ class SKUDetectionMain:
                             backend,
                             match_overrides,
                             enable_profiling=enable_profiling,
+                            quiet_outputs=quiet_outputs,
                         )
 
                     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -532,6 +534,7 @@ class SKUDetectionMain:
                                 backend,
                                 match_overrides,
                                 enable_profiling=enable_profiling,
+                                quiet_outputs=quiet_outputs,
                             )
                         except Exception as exc:
                             logger.error(f"参考图片 {filename_idx} 处理失败: {exc}")
@@ -573,6 +576,7 @@ class SKUDetectionMain:
                     backend,
                     match_overrides,
                     enable_profiling=enable_profiling,
+                    quiet_outputs=quiet_outputs,
                 )
 
         except (
@@ -616,6 +620,7 @@ class SKUDetectionMain:
         backend: str = "vggt",
         match_overrides: dict = None,
         enable_profiling: bool = False,
+        quiet_outputs: bool = False,
     ) -> StepResult:
         """运行单个参考图片的SKU匹配推理（内部使用）。
 
@@ -656,7 +661,9 @@ class SKUDetectionMain:
                 "--backend",
                 backend,
             ]
-            if save_json:
+            if quiet_outputs:
+                argv.append("--quiet_outputs")
+            if save_json and not quiet_outputs:
                 argv.append("--save_json")
             if enable_profiling:
                 argv.append("--enable_profiling")
@@ -1257,6 +1264,7 @@ class SKUDetectionMain:
         algorithm: str = "point_tracking",
         model_path: str | None = None,
         evaluate_accuracy: bool = True,
+        quiet_outputs: bool = False,
     ) -> Dict[str, bool]:
         """运行 SKU 计数流水线；无人工标注的服务请求可显式关闭准确率评估。"""
         logger.info("开始完整的SKU计数流水线（包含3D重建）")
@@ -1365,15 +1373,17 @@ class SKUDetectionMain:
                 summary["reconstruction"] = True  # 标记为成功（不需要）
 
             # 2. 原始检测框可视化
-            logger.info("步骤2: 原始检测框可视化")
-            viz = self.run_detection_visualization(dataset_path)
-            summary["visualization"] = bool(viz.get("success", False))
+            if not quiet_outputs:
+                logger.info("步骤2: 原始检测框可视化")
+                viz = self.run_detection_visualization(dataset_path)
+                summary["visualization"] = bool(viz.get("success", False))
 
             # 3. SKU匹配推理
             logger.info(f"步骤3: SKU匹配推理 (algorithm: {algorithm})")
             match_backend = self.match_backend if "3d" in algorithm else "vggt"
             match = self.run_sku_matching(
-                dataset_path, algorithm, batch_all_refs=True, backend=match_backend
+                dataset_path, algorithm, batch_all_refs=True, backend=match_backend,
+                quiet_outputs=quiet_outputs,
             )
             summary["matching"] = bool(match.get("success", False))
             if not summary["matching"]:
@@ -1386,10 +1396,11 @@ class SKUDetectionMain:
                 return summary
 
             # 3. SKU计数分析
-            analysis = self.run_improved_sku_analysis(
-                dataset_path, algorithm=algorithm, backend=match_backend
-            )
-            summary["improved_analysis"] = bool(analysis.get("success", False))
+            if not quiet_outputs:
+                analysis = self.run_improved_sku_analysis(
+                    dataset_path, algorithm=algorithm, backend=match_backend
+                )
+                summary["improved_analysis"] = bool(analysis.get("success", False))
 
             classification = join_classification()
             summary["classification"] = bool(classification.get("success", False))
@@ -1412,36 +1423,37 @@ class SKUDetectionMain:
             )
             summary["dedup"] = bool(dedup.get("success", False))
 
-            # 5. 去重后的检测框可视化
-            if summary["dedup"]:
-                dataset = Path(dataset_path)
-                dataset_name = dataset.name
-                output_base = (
-                    self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
-                )
-                # deduplicate_sequence 输出到 output_base/dataset_name/dedup_detections/
-                dedup_detection_dir = output_base / dataset_name / "dedup_detections"
+            if not quiet_outputs:
+                # 5. 去重后的检测框可视化
+                if summary["dedup"]:
+                    dataset = Path(dataset_path)
+                    dataset_name = dataset.name
+                    output_base = (
+                        self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
+                    )
+                    # deduplicate_sequence 输出到 output_base/dataset_name/dedup_detections/
+                    dedup_detection_dir = output_base / dataset_name / "dedup_detections"
 
-                if dedup_detection_dir.exists() and any(
-                    dedup_detection_dir.glob("*.json")
-                ):
-                    logger.info("开始可视化去重后的检测框...")
-                    dedup_viz = self.run_detection_visualization(
-                        dataset_path,
-                        detection_dir=str(dedup_detection_dir),
-                        output_suffix="dedup_imgs_w_bboxes",
-                    )
-                    summary["dedup_visualization"] = bool(
-                        dedup_viz.get("success", False)
-                    )
+                    if dedup_detection_dir.exists() and any(
+                        dedup_detection_dir.glob("*.json")
+                    ):
+                        logger.info("开始可视化去重后的检测框...")
+                        dedup_viz = self.run_detection_visualization(
+                            dataset_path,
+                            detection_dir=str(dedup_detection_dir),
+                            output_suffix="dedup_imgs_w_bboxes",
+                        )
+                        summary["dedup_visualization"] = bool(
+                            dedup_viz.get("success", False)
+                        )
+                    else:
+                        logger.warning(f"去重检测目录为空或不存在: {dedup_detection_dir}")
+                        summary["dedup_visualization"] = False
                 else:
-                    logger.warning(f"去重检测目录为空或不存在: {dedup_detection_dir}")
                     summary["dedup_visualization"] = False
-            else:
-                summary["dedup_visualization"] = False
 
             # 6. 准确性评估 (可选)
-            if evaluate_accuracy:
+            if evaluate_accuracy and not quiet_outputs:
                 acc = self.run_accuracy_evaluation(
                     dataset_path, backend=match_backend if "3d" in algorithm else "pt"
                 )
@@ -1698,6 +1710,7 @@ def main() -> None:
         default=True,
         help="运行本地分类；--no-classifier 使用外部 enriched detections",
     )
+    parser.add_argument("--quiet_outputs", action="store_true", help="完整pipeline关闭额外调试图片和辅助报告")
     parser.add_argument(
         "--save_json",
         action="store_true",
@@ -1842,7 +1855,8 @@ def main() -> None:
         app.interactive_mode()
     elif args.mode == "pipeline":
         app.run_complete_pipeline(
-            args.dataset, args.algorithm, model_path=args.recon_model_path
+            args.dataset, args.algorithm, model_path=args.recon_model_path,
+            quiet_outputs=args.quiet_outputs,
         )
     elif args.mode == "concise":
         # 在精简流水线中，先匹配后评估；匹配透传关键参数

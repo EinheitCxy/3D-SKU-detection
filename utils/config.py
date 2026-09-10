@@ -131,6 +131,7 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
         "min_hit_ratio",
         "seed",
         "save_json",
+        "quiet_outputs",
         "output_dir",
         "max_bboxes",
         "max_total_points",
@@ -291,6 +292,7 @@ class SKUMatchingConfig:
     
     # === 输出配置参数 ===
     output_dir: str = ""                   # 输出目录
+    quiet_outputs: bool = False                 # 禁用辅助图片和JSON，保留必要匹配摘要
     save_json: bool = False                      # 是否保存JSON结果
     json_filename: str = "correspondences.json"  # JSON文件名
     

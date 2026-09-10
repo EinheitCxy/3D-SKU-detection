@@ -98,7 +98,8 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         "min_confident_points": args.min_confident_points,
         "min_hit_ratio": args.min_hit_ratio,
         "seed": args.seed,
-        "save_json": args.save_json,
+        "quiet_outputs": args.quiet_outputs,
+        "save_json": args.save_json and not args.quiet_outputs,
         "output_dir": output_dir,
         "sam3_mask_cache_root": str(
             Path(args.sam3_mask_cache_root)
@@ -131,7 +132,8 @@ def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
     )
     # Override a few runtime knobs from CLI
     cfg.device = args.device
-    cfg.save_json = bool(args.save_json)
+    cfg.quiet_outputs = cfg.quiet_outputs or args.quiet_outputs
+    cfg.save_json = bool(args.save_json) and not cfg.quiet_outputs
     cfg.seed = args.seed
     # 可选 3D 阈值覆盖（网格扫描用，None=保留 YAML/默认值）
     # 注：main.py concise 路径总是传 --config，本函数是实际生效路径
@@ -341,6 +343,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     # 系统参数
     parser.add_argument("--device", type=str, default="cuda", help="计算设备 (cuda/cpu)")
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
+    parser.add_argument("--quiet_outputs", action="store_true", help="不生成调试图片和可选JSON；保留去重需要的匹配摘要")
     parser.add_argument("--save_json", action="store_true", help="保存结果为JSON文件")
     # 匹配参数
     parser.add_argument("--max_points_per_bbox", type=int, default=30, help="每个检测框最大采样点数")
