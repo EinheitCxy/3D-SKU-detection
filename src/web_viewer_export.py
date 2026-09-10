@@ -181,8 +181,7 @@ def publish_sku_masterdata_for_current_bundle(
     generation = runs_root / next_run_id
     try:
         shutil.copytree(source, temporary, dirs_exist_ok=True)
-        if sku_masterdata is not None:
-            _write_json(temporary / "sku_masterdata.json", sku_masterdata)
+        _write_json(temporary / "sku_masterdata.json", sku_masterdata)
         os.rename(temporary, generation)
         _atomic_replace_current(root / "CURRENT", {"run_id": next_run_id})
         return generation
@@ -362,7 +361,6 @@ def _sample_product_points(
         group = indices[order[offsets[i]:offsets[i + 1]]]
         selected.append(group if quota == len(group) else rng.choice(group, size=int(quota), replace=False))
     return np.sort(np.concatenate(selected))
-
 
 
 def _sample_points(
@@ -901,7 +899,8 @@ def _publish_bundle(
         (temporary / "colors.u8.bin").write_bytes(arrays["colors"].tobytes(order="C"))
         (temporary / "normals.i8.bin").write_bytes(arrays["normals"].tobytes(order="C"))
         _write_json(temporary / "objects.json", objects)
-        _write_json(temporary / "sku_masterdata.json", sku_masterdata)
+        if sku_masterdata is not None:
+            _write_json(temporary / "sku_masterdata.json", sku_masterdata)
         thumbs_dir = temporary / _THUMB_DIR
         thumbs_dir.mkdir()
         for relative, payload in thumbnails.items():
