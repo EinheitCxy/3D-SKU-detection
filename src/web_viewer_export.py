@@ -69,7 +69,7 @@ def export_web_viewer_bundle(
     output_dir: Path,
     source_images_dir: Path,
     sam3_mask_cache_root: Path,
-    sku_masterdata_csv: Path,
+    sku_masterdata_csv: Path | None = None,
     backend: str = "DA3",
     voxel_size_m: float = 0.005,
     filter_config: PointCloudFilterConfig | None = None,
@@ -119,7 +119,7 @@ def export_web_viewer_bundle(
         ],
     }
     minimal_objects = _minimal_objects(objects, point_count=len(sampled["positions"]))
-    sku_masterdata = load_sku_masterdata_csv(
+    sku_masterdata = None if sku_masterdata_csv is None else load_sku_masterdata_csv(
         Path(sku_masterdata_csv),
         {
             sku["sku_id"]
@@ -181,7 +181,8 @@ def publish_sku_masterdata_for_current_bundle(
     generation = runs_root / next_run_id
     try:
         shutil.copytree(source, temporary, dirs_exist_ok=True)
-        _write_json(temporary / "sku_masterdata.json", sku_masterdata)
+        if sku_masterdata is not None:
+            _write_json(temporary / "sku_masterdata.json", sku_masterdata)
         os.rename(temporary, generation)
         _atomic_replace_current(root / "CURRENT", {"run_id": next_run_id})
         return generation
@@ -879,7 +880,7 @@ def _publish_bundle(
     output_dir: Path,
     manifest: dict[str, Any],
     objects: dict[str, Any],
-    sku_masterdata: dict[str, dict[str, str | bool | None]],
+    sku_masterdata: dict[str, dict[str, str | bool | None]] | None,
     arrays: dict[str, np.ndarray],
     thumbnails: dict[str, bytes],
 ) -> Path:
@@ -897,8 +898,7 @@ def _publish_bundle(
         (temporary / "positions.f32.bin").write_bytes(
             arrays["positions"].tobytes(order="C")
         )
-        if "surfel_files" not in arrays:
-            (temporary / "colors.u8.bin").write_bytes(arrays["colors"].tobytes(order="C"))
+        (temporary / "colors.u8.bin").write_bytes(arrays["colors"].tobytes(order="C"))
         (temporary / "normals.i8.bin").write_bytes(arrays["normals"].tobytes(order="C"))
         _write_json(temporary / "objects.json", objects)
         _write_json(temporary / "sku_masterdata.json", sku_masterdata)
