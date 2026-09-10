@@ -1,6 +1,10 @@
 ARG BASE_IMAGE=harbor-cn.lingmouai.com/asu/global-id-mapping:4.0
 FROM ${BASE_IMAGE}
 
+RUN rm -rf /app/src /app/utils /app/__pycache__
+COPY --from=app main.py config.yaml da3_defaults.py /app/
+COPY --from=app src /app/src
+COPY --from=app utils /app/utils
 COPY --from=app api.py processor.py cos_upload.py /app/
 COPY --from=app cos-sdk /app/.venv/lib/python3.11/site-packages/
 

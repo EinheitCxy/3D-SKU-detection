@@ -34,6 +34,7 @@ _CLASS_KEYS = frozenset({"det", "cls"})
 _VIEWER_FILES = (
     "manifest.json",
     "positions.f32.bin",
+    "colors.u8.bin",
     "normals.i8.bin",
     "objects.json",
     "surfel.json",
@@ -303,7 +304,8 @@ def run_mapping_request(
     pipeline.config_path = MAIN_PROJECT_ROOT / "config.yaml"
 
     pipeline.run_complete_pipeline(
-        str(dataset_dir), algorithm="3d", model_path=model_path, evaluate_accuracy=False
+        str(dataset_dir), algorithm="3d", model_path=model_path, evaluate_accuracy=False,
+        quiet_outputs=True
     )
 
     dataset_output = output_root / dataset_dir.name
@@ -314,7 +316,6 @@ def run_mapping_request(
         output_dir=viewer_root,
         source_images_dir=dataset_dir / "images",
         sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
-        sku_masterdata_csv=Path("/app/runtime/sku_masterdata.csv"),
         surfel_texture_edge=1920,
     )
     return {

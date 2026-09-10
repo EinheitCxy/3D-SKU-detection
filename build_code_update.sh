@@ -19,6 +19,10 @@ BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/global-id-mapping-code-update.XXXXXX")"
 trap 'rm -rf "$BUILD_ROOT"' EXIT
 APP_CONTEXT="$BUILD_ROOT/app"
 mkdir -p "$APP_CONTEXT/cos-sdk"
+cp -a "$CORE_REPO_ROOT/main.py" "$CORE_REPO_ROOT/config.yaml" "$CORE_REPO_ROOT/da3_defaults.py" "$APP_CONTEXT/"
+cp -a "$CORE_REPO_ROOT/src" "$CORE_REPO_ROOT/utils" "$APP_CONTEXT/"
+find "$APP_CONTEXT" -type d -name __pycache__ -prune -exec rm -rf {} +
+find "$APP_CONTEXT" -type f -name '*.py[co]' -delete
 cp "$SCRIPT_DIR/api.py" "$APP_CONTEXT/api.py"
 cp "$SCRIPT_DIR/processor.py" "$APP_CONTEXT/processor.py"
 cp "$SCRIPT_DIR/cos_upload.py" "$APP_CONTEXT/cos_upload.py"
