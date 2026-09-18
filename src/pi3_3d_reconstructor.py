@@ -254,6 +254,8 @@ def _save_predictions_npz(
     cache_path: Path,
     *,
     image_ids: Optional[List[int]] = None,
+    source_model: str = "pi3",
+    extra_arrays: Optional[Dict[str, Any]] = None,
 ) -> Path:
     """保存与 viewer 兼容的 predictions 缓存。
 
@@ -262,6 +264,9 @@ def _save_predictions_npz(
         image_tensor: 图像张量
         cache_path: 缓存文件的完整路径（如 <out_dir>/pi3_cache/predictions.npz）
         image_ids: 可选的图像ID列表
+        source_model: 来源模型标识（写入 npz 的 source_model 字段）
+        extra_arrays: 可选的附加数组（如 da3 schema-v3 的 source_image_sizes /
+            source_to_processed_affine 等），原样并入 npz
 
     Returns:
         保存的缓存文件路径
@@ -372,7 +377,7 @@ def _save_predictions_npz(
         save_kwargs["local_points"] = local_points_np.astype(np.float32, copy=False)
 
     # 标注来源模型，便于下游判断
-    save_kwargs["source_model"] = np.array(["pi3"], dtype=object)
+    save_kwargs["source_model"] = np.array([source_model], dtype=object)
 
     # 方案2优化：预计算帧对齐索引，避免运行时重复计算
     if image_ids is not None:
@@ -391,6 +396,9 @@ def _save_predictions_npz(
         save_kwargs["frame_alignment_map_values"] = map_values
 
         logger.info(f"已预计算帧对齐索引: {len(image_ids)} 帧 (image_ids: {image_ids[:5]}...)")
+
+    if extra_arrays:
+        save_kwargs.update(extra_arrays)
 
     np.savez_compressed(cache_path, **save_kwargs)
     logger.info(f"保存Pi3预测缓存: {cache_path}")

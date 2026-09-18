@@ -68,6 +68,33 @@ class ReconstructorBase:
     def run_inference(self, images: Any) -> Dict[str, Any]:
         raise NotImplementedError
 
+    def prepare_export_data(
+        self, predictions: Dict[str, Any], images: Any
+    ) -> tuple[Dict[str, Any], Any]:
+        """准备缓存与导出的数据；GPU 后端可在此转为 CPU 数据。"""
+        return predictions, images
+
+    def prepare_reconstruction(
+        self, *, output_path: Path, save_predictions: bool
+    ) -> None:
+        """初始化本次重建需要的后端状态。"""
+
+    def finish_reconstruction(self) -> None:
+        """释放本次重建的后端状态，保留可复用模型。"""
+
+    def close(self) -> None:
+        """显式释放模型及不再使用的设备内存。"""
+        self.model = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    def __enter__(self) -> ReconstructorBase:
+        return self
+
+    def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> None:
+        self.close()
+
     def export_glb(
         self,
         predictions: Dict[str, Any],
@@ -122,67 +149,68 @@ class ReconstructorBase:
     ) -> Path:
         """执行完整重建流程：加载 → 推理 → (可选)缓存 → 导出 GLB。
 
-        子类如需自定义流程，可覆盖本方法；否则实现各抽象接口即可。
+        单次数据无论成功失败都会释放；模型保留到 close() 或退出上下文。
         """
         total_t0 = time.time()
-        if self.model is None:
-            t0 = time.time()
-            self.load_model()
-            logger.info(f"模型加载耗时: {time.time() - t0:.2f}s")
-
-        t0 = time.time()
-        images = self.load_images(input_dir)
-        logger.info(f"图像加载/预处理耗时: {time.time() - t0:.2f}s")
-
-        # 记录输入顺序（日志用，按文件名数字数值序避免≥10图时字典序错位如1,10,11,2）
-        import re as _re
+        images = predictions = None
+        out_path = Path(output_path)
         try:
+            self.prepare_reconstruction(
+                output_path=out_path, save_predictions=save_predictions
+            )
+            if self.model is None:
+                t0 = time.time()
+                self.load_model()
+                logger.info(f"模型加载耗时: {time.time() - t0:.2f}s")
+
+            t0 = time.time()
+            images = self.load_images(input_dir)
+            logger.info(f"图像加载/预处理耗时: {time.time() - t0:.2f}s")
+
+            # 按文件名数字顺序记录输入图片。
+            import re as _re
             image_names = sorted(
                 [p for p in os.listdir(input_dir) if p.lower().endswith((".jpg", ".jpeg", ".png"))],
-                key=lambda p: int(_re.search(r"(\d+)", os.path.splitext(p)[0]).group(1)) if _re.search(r"(\d+)", os.path.splitext(p)[0]) else p
+                key=lambda p: (0, int(_re.search(r"(\d+)", os.path.splitext(p)[0]).group(1))) if _re.search(r"(\d+)", os.path.splitext(p)[0]) else (1, p)
             )
             logger.info(f"处理图片: {image_names}")
-        except Exception:
-            image_names = None
 
-        t0 = time.time()
-        predictions = self.run_inference(images)
-        logger.info(f"推理耗时: {time.time() - t0:.2f}s")
+            t0 = time.time()
+            predictions = self.run_inference(images)
+            logger.info(f"推理耗时: {time.time() - t0:.2f}s")
+            t0 = time.time()
+            predictions, images = self.prepare_export_data(predictions, images)
+            logger.info(f"CPU导出准备耗时: {time.time() - t0:.2f}s")
 
-        out_path = Path(output_path)
-        out_dir = out_path.parent
-        out_dir.mkdir(parents=True, exist_ok=True)
+            out_dir = out_path.parent
+            out_dir.mkdir(parents=True, exist_ok=True)
+            if save_predictions:
+                try:
+                    t0 = time.time()
+                    self.save_predictions_cache(
+                        predictions, images, out_dir, image_names=image_names, input_dir=input_dir, **kwargs
+                    )
+                    logger.info(f"缓存保存耗时: {time.time() - t0:.2f}s")
+                except Exception as e:  # noqa: BLE001 - 容忍缓存失败不影响 GLB
+                    logger.warning(f"保存预测缓存失败（不影响GLB导出）：{e}")
 
-        if save_predictions:
-            try:
-                t0 = time.time()
-                self.save_predictions_cache(
-                    predictions, images, out_dir, image_names=image_names, input_dir=input_dir, **kwargs
-                )
-                logger.info(f"缓存保存耗时: {time.time() - t0:.2f}s")
-            except Exception as e:  # noqa: BLE001 - 容忍缓存失败不影响 GLB
-                logger.warning(f"保存预测缓存失败（不影响GLB导出）：{e}")
-
-        # 导出 GLB
-        t0 = time.time()
-        self.export_glb(
-            predictions,
-            out_path,
-            conf_thres=conf_thres,
-            show_cam=show_cam,
-            **kwargs,
-        )
-        logger.info(f"GLB导出耗时: {time.time() - t0:.2f}s")
-
-        # 资源清理（不抛异常）
-        try:
-            torch.cuda.empty_cache()
-        except Exception:
-            pass
-        gc.collect()
-
-        logger.info(f"总流程耗时: {time.time() - total_t0:.2f}s")
-        return out_path
+            t0 = time.time()
+            self.export_glb(
+                predictions,
+                out_path,
+                conf_thres=conf_thres,
+                show_cam=show_cam,
+                **kwargs,
+            )
+            logger.info(f"GLB导出耗时: {time.time() - t0:.2f}s")
+            logger.info(f"总流程耗时: {time.time() - total_t0:.2f}s")
+            return out_path
+        finally:
+            images = predictions = None
+            self.finish_reconstruction()
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
 
 # ---- 后端注册表 ----

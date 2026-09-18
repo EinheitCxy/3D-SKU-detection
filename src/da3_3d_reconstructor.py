@@ -20,12 +20,10 @@ import os
 import sys
 import time
 import zipfile
-import gc
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-import torch
 
 logger = logging.getLogger(__name__)
 if not logger.handlers and not logging.getLogger().handlers:
@@ -86,44 +84,16 @@ class DA33DReconstructor(ReconstructorBase):
             raise FileNotFoundError(f"DA3 runner 脚本不存在: {self.DA3_RUNNER}")
         self._active_cache_dir: Optional[Path] = None
 
-    def reconstruct_from_directory(
-        self,
-        *,
-        input_dir: str,
-        output_path: str,
-        conf_thres: float = 50.0,
-        show_cam: bool = True,
-        save_predictions: bool = True,
-        **kwargs: Any,
-    ) -> Path:
-        """Run DA3 reconstruction while treating cache publication as mandatory."""
+    def prepare_reconstruction(
+        self, *, output_path: Path, save_predictions: bool
+    ) -> None:
+        """缓存必须发布；为 runner 设置本次输出目录。"""
         if not save_predictions:
             raise ValueError("DA3 reconstruction requires save_predictions=True")
-        self._active_cache_dir = Path(output_path).parent
-        try:
-            if self.model is None:
-                self.load_model()
-            images = self.load_images(input_dir)
-            predictions = self.run_inference(images)
-            out_path = Path(output_path)
-            out_path.parent.mkdir(parents=True, exist_ok=True)
-            if save_predictions:
-                self.save_predictions_cache(
-                    predictions, images, out_path.parent, input_dir=input_dir, **kwargs
-                )
-            self.export_glb(
-                predictions,
-                out_path,
-                conf_thres=conf_thres,
-                show_cam=show_cam,
-                **kwargs,
-            )
-            return out_path
-        finally:
-            self._active_cache_dir = None
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            gc.collect()
+        self._active_cache_dir = output_path.parent
+
+    def finish_reconstruction(self) -> None:
+        self._active_cache_dir = None
 
     # ---- 模型加载（subprocess 模式下为 no-op，真实加载在子进程） ----
 
