@@ -121,6 +121,18 @@ def _resolve_save_root(value: str | None) -> Path:
     return path.resolve()
 
 
+def _check_geometry_refinement_report(output_dir: Path, reusable: bool) -> None:
+    """A rejected refinement must not silently trigger an ordinary reconstruction."""
+    report_path = output_dir / "geometry_refinement.json"
+    if not report_path.exists():
+        return
+    report = json.loads(report_path.read_text())
+    if report["accepted"] is not True or report["cache_published"] is not True or not reusable:
+        raise ValueError(
+            f"几何优化未通过验收或优化缓存不可复用，拒绝重建覆盖：{report_path}"
+        )
+
+
 def _is_reusable_da3_cache(cache_path: Path) -> bool:
     """Return whether a DA3 cache has the schema-v3 metric contract and current preprocessing settings."""
     try:
@@ -1350,12 +1362,11 @@ class SKUDetectionMain:
                 if match_backend == "da3":
                     expected_result = cache_dir / "predictions.npz"
                     reusable = _is_reusable_da3_cache(expected_result)
+                    _check_geometry_refinement_report(output_dir, reusable)
                 else:
                     base_output = Path("reconstruction.glb")
                     if match_backend not in base_output.stem:
-                        filename = (
-                            f"{base_output.stem}_{match_backend}{base_output.suffix}"
-                        )
+                        filename = f"{base_output.stem}_{match_backend}{base_output.suffix}"
                         expected_result = cache_dir / filename
                     else:
                         expected_result = cache_dir / base_output
