@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/browser-benchmark.test.mjs",
+    "test": "node --test ../test/perf/browser-benchmark.test.mjs",
     "browser": "node browser-benchmark.mjs"
   },
   "devDependencies": {

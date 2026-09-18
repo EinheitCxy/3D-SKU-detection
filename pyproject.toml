@@ -123,3 +123,6 @@ line_length = 88
 
 [project.scripts]
 sku-detection = "main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["test"]

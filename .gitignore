@@ -80,3 +80,6 @@ auto-research-loop/
 # Local archival and research notes; keep out of commits.
 legacy/
 knowledge/
+
+# Local tests are kept outside version control.
+/test/
