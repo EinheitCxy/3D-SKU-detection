@@ -17,91 +17,31 @@ logger = logging.getLogger(__name__)
 
 
 def load_detections(detection_dir: str, return_index_map: bool = False) -> List[Dict]:
-    """加载检测结果文件
-    
-    Args:
-        detection_dir: 检测结果目录路径，包含按数字命名的JSON文件(1.json, 2.json, ...)
-        return_index_map: 若为True，按 [(file_number, processed_data), ...] 返回，便于对齐图像编号
-        
-    Returns:
-        - 当 return_index_map=False: 检测结果列表，按文件名数字顺序排列
-        - 当 return_index_map=True: [(文件编号, 检测结果)] 列表
-        
-    Raises:
-        FileNotFoundError: 目录不存在时抛出
-        ValueError: 文件格式不正确时抛出
-    """
+    """按数字文件名加载检测，保留合法空帧；单个坏文件跳过记日志，不中断整批。"""
     detection_path = Path(detection_dir)
-    if not detection_path.exists():
-        raise FileNotFoundError(f"Detection directory not found: {detection_dir}")
-    
     if not detection_path.is_dir():
-        raise ValueError(f"Path is not a directory: {detection_dir}")
-    
-    try:
-        # 获取所有JSON文件并按数字顺序排序
-        json_files = []
-        skipped_non_numeric = 0
-        for file_path in detection_path.glob("*.json"):
-            try:
-                # 尝试提取文件名中的数字
-                file_number = int(file_path.stem)
-                json_files.append((file_number, file_path))
-            except ValueError:
-                skipped_non_numeric += 1
-                logger.debug(f"Skipping non-numeric JSON file: {file_path.name}")
-                continue
-        
-        # 按数字顺序排序
-        json_files.sort(key=lambda x: x[0])
-        
-        if not json_files:
-            raise ValueError(f"No valid JSON files found in {detection_dir}")
-        
-        detections: List[Dict] = []
-        detections_with_numbers: List[tuple[int, Dict]] = []
-        empty_objects_count = 0
-        for file_number, file_path in json_files:
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    file_detections = json.load(f)
-                
-                try:
-                    processed_data = {"objects": flatten_detection_objects(file_detections)}
-                except ValueError:
-                    logger.debug(f"Invalid format in file {file_path.name}, skipping")
-                    continue
-                
-                # 验证处理后的数据是否包含必要字段
-                if processed_data and 'objects' in processed_data:
-                    # 即使 objects 为空，也保留该检测文件，用于帧对齐
-                    detections.append(processed_data)
-                    detections_with_numbers.append((file_number, processed_data))
-                    if processed_data['objects']:
-                        logger.debug(f"Loaded {len(processed_data['objects'])} objects from {file_path.name}")
-                    else:
-                        logger.debug(f"No objects found in {file_path.name}, keeping empty detection entry")
-                        empty_objects_count += 1
-                else:
-                    logger.debug(f"No 'objects' field found in {file_path.name}, skipping")
-                    empty_objects_count += 1
-                    continue
-                    
-            except (FileNotFoundError, json.JSONDecodeError, KeyError, UnicodeDecodeError) as e:
-                logger.error(f"Failed to load detection from {file_path.name}: {e}")
-                continue
-        
-        logger.info(f"Loaded {len(detections)} detection files")
-        logger.debug(
-            f"load_detections summary: skipped_non_numeric={skipped_non_numeric} empty_objects={empty_objects_count}"
-        )
-        if return_index_map:
-            return detections_with_numbers
-        return detections
-        
-    except (FileNotFoundError, PermissionError) as e:
-        logger.error(f"Failed to load detections from directory {detection_dir}: {e}")
-        raise
+        raise FileNotFoundError(f"Detection directory not found: {detection_dir}")
+    json_files = sorted(
+        (int(path.stem), path)
+        for path in detection_path.glob("*.json")
+        if path.stem.isdigit()
+    )
+    if not json_files:
+        raise ValueError(f"No valid JSON files found in {detection_dir}")
+    indexed_detections = []
+    for file_number, file_path in json_files:
+        try:
+            with file_path.open(encoding="utf-8") as stream:
+                payload = json.load(stream)
+            objects = flatten_detection_objects(payload)
+        except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
+            logger.error(f"Failed to load detection from {file_path.name}: {error}")
+            continue
+        indexed_detections.append((file_number, {"objects": objects}))
+    logger.info("Loaded %d detection files", len(indexed_detections))
+    if return_index_map:
+        return indexed_detections
+    return [data for _, data in indexed_detections]
 
 
 def extract_bboxes_from_detections(detections: List[Dict], image_idx: int, config: SKUMatchingConfig) -> List[Dict]:
@@ -195,7 +135,7 @@ def save_correspondences_json(
     meta: Dict = None,
 ) -> Path:
     """将匹配结果保存为 JSON 文件
-    
+
     Args:
         correspondences: 匹配结果
         points_per_object: 参考图像对象点信息
@@ -204,18 +144,14 @@ def save_correspondences_json(
     Returns:
         保存文件路径
     """
-    try:
-        result = {
-            "correspondences": correspondences,
-            "reference_points": points_per_object if points_per_object is not None else {},
-            "meta": meta or {},
-        }
-        out_path = Path(config.output_dir) / config.json_filename
-        out_path.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
-        with open(out_path, 'w', encoding='utf-8') as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved correspondences JSON to '{out_path}'")
-        return out_path
-    except (FileNotFoundError, PermissionError, json.JSONEncodeError, UnicodeEncodeError) as e:
-        logger.error(f"Failed to save correspondences JSON: {e}")
-        raise
+    result = {
+        "correspondences": correspondences,
+        "reference_points": points_per_object if points_per_object is not None else {},
+        "meta": meta or {},
+    }
+    out_path = Path(config.output_dir) / config.json_filename
+    out_path.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    logger.info(f"Saved correspondences JSON to '{out_path}'")
+    return out_path

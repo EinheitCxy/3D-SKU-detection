@@ -68,8 +68,6 @@ def dispatch_stage(
         analysis = app.run_improved_sku_analysis(
             dataset_text, algorithm="3d", backend="da3"
         )
-        if not analysis.get("success", False):
-            return {"success": False, "analysis": analysis}
         detection_dir = _classification_detection_dir(classification_result_path)
         dedup = app.run_dedup_sequence(
             dataset_text,
@@ -78,7 +76,7 @@ def dispatch_stage(
             detection_dir=detection_dir,
         )
         return {
-            "success": bool(dedup.get("success", False)),
+            "success": True,
             "analysis": analysis,
             "dedup": dedup,
         }

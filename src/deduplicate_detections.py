@@ -4,7 +4,7 @@ uv run python src/deduplicate_detections.py --dataset imdata/floor_display2
 
 用途
 - 读取数据集的检测结果（detections_results/ 数字命名的 JSON）
-- 解析 DA3 产出的 matching_summary.txt（参考 0-based → 目标 0-based 的对应关系）
+- 解析 DA3 产出的 matching_summary.txt（参考/目标均为源图片文件 ID）
 - 依据同一参考物体(ref_id)在早期图片中已出现的情况，去除指定图片中的重复检出框
 
 默认策略（序列去重）
@@ -174,7 +174,7 @@ def parse_all_matches(summary_root: Path) -> List[Dict]:
     返回列表元素示例：
       { 'ref_idx': 0, 'ref_id': 12, 'target_idx': 2, 'target_id': 7,
         'hit_ratio': 0.85, 'matched_points': 34, 'total_points': 40 }
-    注：ref_idx/target_idx 为 0-based，与 matching_summary 一致。
+    注：ref_idx/target_idx 为源图片文件 ID，与 matching_summary 组头一致。
     """
     matches_all: List[Dict] = []
     if not summary_root.exists():
@@ -182,31 +182,36 @@ def parse_all_matches(summary_root: Path) -> List[Dict]:
 
     # 允许保留“最后一帧 -> 第一帧”的环形配对（仅一条反向边）
     allow_reverse_pairs: Set[Tuple[int, int]] = set()
-    ref_indices = sorted(
-        int(p.name) for p in summary_root.iterdir() if p.is_dir() and p.name.isdigit()
-    )
+    re_group = re.compile(r"^Matching objects between reference image (\d+) and target image (\d+)")
+    summaries = {
+        p: (p / "matching_summary.txt").read_text(encoding="utf-8").splitlines()
+        for p in summary_root.iterdir()
+        if p.is_dir() and p.name.isdigit() and (p / "matching_summary.txt").is_file()
+    }
+    ref_indices = sorted({
+        int(value) for lines in summaries.values() for line in lines
+        if (match := re_group.search(line)) is not None
+        for value in match.groups()
+    })
     if len(ref_indices) >= 2:
         allow_reverse_pairs.add((ref_indices[-1], ref_indices[0]))
 
     re_match = re.compile(r"Matched ref\s+(\d+)\s*.*?target\s+(\d+)\s+\(hit ratio:\s+([\d.]+)\s+(\d+)/(\d+)\)")
     re_found = re.compile(r"^Found\s+(\d+)\s+matches\s+in\s+image\s+(\d+)")
 
-    for p in sorted(summary_root.iterdir(), key=lambda x: x.name):
-        if not (p.is_dir() and p.name.isdigit()):
-            continue
-        ref_idx = int(p.name)
+    for p, lines in sorted(summaries.items(), key=lambda item: item[0].name):
+        ref_idx = None
+        group_target = None
         sf = p / "matching_summary.txt"
-        if not sf.exists():
-            continue
-        try:
-            lines = sf.read_text(encoding='utf-8', errors='ignore').splitlines()
-        except (FileNotFoundError, UnicodeDecodeError):
-            lines = sf.read_text(errors='ignore').splitlines()
 
         # 缓存本文件中尚未分配 target 的匹配行
         pending: List[Tuple[int, int, float, int, int]] = []  # (ref_id, target_id, hit_ratio, mp, tp)
 
         for line in lines:
+            group = re_group.search(line)
+            if group:
+                ref_idx, group_target = map(int, group.groups())
+                continue
             m = re_match.search(line)
             if m:
                 try:
@@ -224,6 +229,10 @@ def parse_all_matches(summary_root: Path) -> List[Dict]:
                     continue
                 if n <= 0:
                     continue
+                if ref_idx is None or group_target != tgt_idx:
+                    raise ValueError(f"{sf}: match group must identify its source and target file IDs")
+                if len(pending) != n:
+                    raise ValueError(f"{sf}: expected {n} matches, received {len(pending)}")
 
                 # 只保留 ref_idx < target_idx 的匹配，避免重复
                 # 但允许保留“最后一帧 -> 第一帧”的环形配对
@@ -231,9 +240,6 @@ def parse_all_matches(summary_root: Path) -> List[Dict]:
                     pending = []  # 清空pending，跳过这些匹配
                     continue
 
-                if len(pending) < n:
-                    logger.warning(f"[{sf}] Found {n} but only {len(pending)} pending matches; assigning all pending")
-                    n = len(pending)
                 # 取最近的 n 条匹配行归属给该 target
                 block = pending[-n:]
                 pending = pending[:-n]
@@ -248,7 +254,8 @@ def parse_all_matches(summary_root: Path) -> List[Dict]:
                         'total_points': tp,
                     })
 
-        # 若文件末尾仍有 pending 未分配（缺少 Found 行），则无法确定 target_idx，跳过
+        if pending:
+            raise ValueError(f"{sf}: unmatched summary rows lack a target group")
 
     return matches_all
 
@@ -356,43 +363,23 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
     if not indices:
         raise FileNotFoundError(f"No detection JSON found in {paths.detections_dir}")
 
-    if all_matches:
-        det_set = set(indices)
-        cov0 = sum(
-            1 for m in all_matches
-            if int(m.get('ref_idx', 0)) in det_set and int(m.get('target_idx', 0)) in det_set
-        )
-        cov1 = sum(
-            1 for m in all_matches
-            if (int(m.get('ref_idx', 0)) + 1) in det_set and (int(m.get('target_idx', 0)) + 1) in det_set
-        )
-        offset = 1 if cov1 > cov0 else 0
-        if cov1 == cov0:
-            min_det = min(det_set)
-            min_match = min(
-                min(int(m.get('ref_idx', 0)), int(m.get('target_idx', 0))) for m in all_matches
-            )
-            if min_det == 1 and min_match == 0:
-                offset = 1
-        if offset:
-            all_matches = [
-                {**m, "ref_idx": int(m.get("ref_idx", 0)) + 1, "target_idx": int(m.get("target_idx", 0)) + 1}
-                for m in all_matches
-            ]
-        logger.info(f"[DEBUG] index_offset={offset} (coverage offset0={cov0}, offset1={cov1})")
+    det_set = set(indices)
+    for match in all_matches:
+        if match["ref_idx"] not in det_set or match["target_idx"] not in det_set:
+            raise ValueError("matching summary file IDs do not match detection files; rerun matching")
 
     if min_hit_ratio > 0 and all_matches:
         all_matches = [m for m in all_matches if float(m.get('hit_ratio', 0.0)) >= min_hit_ratio]
 
-    # 选择去重策略：'any' 使用所有匹配；'best' 使用一对一过滤
-    # 全局ID构建使用更保守的"一对一"匹配，避免将同一张图片的多个框误并为一个全局ID
-    matches_for_dedup: List[Dict]
+    # 选择去重策略：'any' 使用所有匹配；'best' 使用一对一过滤。
+    # 全局ID与去重使用同一匹配集合：'any' 下被顺序去重淘汰的近重复检测
+    # 经同一并查集边合并进已有组件，不再拆成独立全局ID重复计数；
+    # 'best' 则保持一对一保守建边，避免同一图片多个框被误并为一个全局ID。
     if dedup_mode == 'best':
         matches_for_dedup = filter_best_matches(all_matches) if all_matches else []
-        matches_for_gid = matches_for_dedup
     else:
         matches_for_dedup = all_matches
-        matches_for_gid: List[Dict] = filter_best_matches(all_matches) if all_matches else []
+    matches_for_gid: List[Dict] = matches_for_dedup
 
     # === 调试：检查去重和全局ID使用的匹配数量差异 ===
     logger.info(f"[DEBUG] 去重使用的匹配数(matches_for_dedup): {len(matches_for_dedup)}")
@@ -430,25 +417,23 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
     # 记录每张图保留下来的对象索引（基于原始 objects 下标）与其对象信息
     survivors_by_image: Dict[int, Set[int]] = {}
     objects_by_image: Dict[int, List[Dict]] = {}
-    originals_by_image: Dict[int, Dict] = {}
 
     for i in indices:
         src = paths.detections_dir / f"{i}.json"
         if not src.exists():
             logger.warning(f"Detection JSON missing for image {i}: {src}")
             continue
-
-        original, objects = load_detection_objects(src)
-        originals_by_image[i] = original
+        try:
+            original, objects = load_detection_objects(src)
+        except (OSError, ValueError) as error:
+            logger.warning(f"Image {i}: 读取检测JSON失败，跳过（{error}）")
+            continue
 
         # 判断是否为第一张图片（支持从0或1开始的编号）
         is_first_image = (i == indices[0])
 
         if is_first_image:
             # 第一张图片保留原样，不进行去重
-            dst = out_dir / (f"{i}.json" if same_names else f"{i}_dedup.json")
-            save_detection_objects(dst, original, objects)
-            outputs[i] = dst
             survivors_by_image[i] = set(range(len(objects)))
             objects_by_image[i] = objects
         else:
@@ -456,16 +441,25 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
             drop_from_targets = drop_target_map.get(i, set())
             drop_from_refs = drop_ref_map.get(i, set())
             drop_ids = set(drop_from_targets) | set(drop_from_refs)
-            new_objects = [obj for idx, obj in enumerate(objects) if idx not in drop_ids]
             survivors_by_image[i] = set(idx for idx in range(len(objects)) if idx not in drop_ids)
             objects_by_image[i] = objects
             logger.debug(
                 f"Image {i}: drop {len(drop_ids)} boxes from {len(objects)} "
                 f"(targets:{len(drop_from_targets)}, refs:{len(drop_from_refs)})"
             )
-            dst = out_dir / (f"{i}.json" if same_names else f"{i}_dedup.json")
-            save_detection_objects(dst, original, new_objects)
-            outputs[i] = dst
+
+        # 逐图写出（时序去重结果），单图失败只跳过该图，不影响其余图；
+        # 全局 pair 的构建与发布在其后独立完成。
+        dst = out_dir / (f"{i}.json" if same_names else f"{i}_dedup.json")
+        try:
+            save_detection_objects(
+                dst, original,
+                [obj for index, obj in enumerate(objects) if index in survivors_by_image[i]],
+            )
+        except Exception as error:  # noqa: BLE001 - 单图写入失败不影响整批去重
+            logger.warning(f"Image {i}: 逐图去重JSON写入失败，跳过（{error}）")
+            continue
+        outputs[i] = dst
 
     logger.info(f"Sequence dedup finished for images {indices[0]}..{indices[-1]} (total {len(indices)})")
     mapping_path = out_dir / 'global_mapping.json'
@@ -586,8 +580,8 @@ def build_global_mapping(
     """根据匹配关系与去重结果，为保留的检出框分配全局唯一ID。
 
     规则
-    - 节点: (image_id_1based, object_idx) 仅包含去重后保留的对象
-    - 边: 使用匹配关系中连接的两节点（仅当两端都在保留集合中）
+    - 节点: (源图片文件 ID, 原始 object_idx)，包含全部原始检测
+    - 边: 使用可信匹配连接两节点；拒绝同一图片不同对象被并入同一组件
     - 组件: 使用并查集聚类；按图像顺序(1..N)和对象索引顺序为首次出现的组件分配自增ID(从1开始)
     - 值: 每个全局ID下是多个子字典，包含 image_id、object_id、bbox 等原始信息
     """
@@ -632,7 +626,7 @@ def build_global_mapping(
     logger.info(f"[DEBUG] 匹配关系数量: {len(matches)}")
     logger.info(f"[DEBUG] 有匹配关系的节点数: {len(nodes_with_matches)}")
 
-    # 初始化节点（保留的对象 + 有匹配关系的对象）
+    # 初始化全部原始检测，未连接的检测保留独立组件
     total_survivors = 0
     survivor_nodes = 0
     match_only_nodes = 0
@@ -643,14 +637,13 @@ def build_global_mapping(
         total_survivors += img_survivor_count
         logger.info(f"[DEBUG] 图片{img_id}: 原始物体={len(objs)}, 保留物体={img_survivor_count}")
         for obj_idx in range(len(objs)):
-            # 保留的对象或有匹配关系的对象
-            if obj_idx in survivors or (img_id, obj_idx) in nodes_with_matches:
-                parent[(img_id, obj_idx)] = (img_id, obj_idx)
-                rank[(img_id, obj_idx)] = 0
-                if obj_idx in survivors:
-                    survivor_nodes += 1
-                else:
-                    match_only_nodes += 1
+            # 每个原始检测都必须进入全局映射；没有可信边的对象成为独立组件。
+            parent[(img_id, obj_idx)] = (img_id, obj_idx)
+            rank[(img_id, obj_idx)] = 0
+            if obj_idx in survivors:
+                survivor_nodes += 1
+            else:
+                match_only_nodes += 1
 
     logger.info(f"[DEBUG] 保留物体总数: {total_survivors}")
     logger.info(f"[DEBUG] 初始化节点数(parent): {len(parent)}")
@@ -671,7 +664,7 @@ def build_global_mapping(
         t_id = int(m.get('target_id', -1))
         r_node, t_node = (r_img, r_id), (t_img, t_id)
         if r_node not in parent or t_node not in parent:
-            continue
+            raise ValueError(f"Matching edge references an unknown detection: {r_node} -> {t_node}")
         ra, rb = find(r_node), find(t_node)
         if ra == rb:
             union_count += 1

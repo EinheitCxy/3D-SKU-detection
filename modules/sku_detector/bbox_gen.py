@@ -42,36 +42,32 @@ def main() -> None:
 
     total = 0
     for img in imgs:
-        try:
-            r = model.predict(
-                str(img),
-                conf=a.conf,
-                iou=a.iou,
-                device=a.device,
-                verbose=False,
-                save=False,
-            )[0]
-            objs, names = [], []
-            if len(r.boxes):
-                b = r.boxes
-                for box, c, cf in zip(
-                    b.xyxy.cpu().numpy().round().astype(int),
-                    b.cls.cpu().numpy().astype(int),
-                    b.conf.cpu().numpy(),
-                ):
-                    objs.append(
-                        {
-                            "position": box.tolist(),
-                            "classes": {"det": int(c)},
-                            "confidences": {"det": float(cf)},
-                        }
-                    )
-                    if (n := model.names.get(int(c), str(int(c)))) not in names:
-                        names.append(n)
-            sku = {"skus": [{"classes": {"det": names}, "objects": objs}]}
-        except Exception as e:
-            sku, objs = {"skus": [{"classes": {"det": []}, "objects": []}]}, []
-            print(f"  ⚠️ {img.name}: 检测失败，写空占位：{e}")
+        r = model.predict(
+            str(img),
+            conf=a.conf,
+            iou=a.iou,
+            device=a.device,
+            verbose=False,
+            save=False,
+        )[0]
+        objs, names = [], []
+        if len(r.boxes):
+            b = r.boxes
+            for box, c, cf in zip(
+                b.xyxy.cpu().numpy().round().astype(int),
+                b.cls.cpu().numpy().astype(int),
+                b.conf.cpu().numpy(),
+            ):
+                objs.append(
+                    {
+                        "position": box.tolist(),
+                        "classes": {"det": int(c)},
+                        "confidences": {"det": float(cf)},
+                    }
+                )
+                if (n := model.names.get(int(c), str(int(c)))) not in names:
+                    names.append(n)
+        sku = {"skus": [{"classes": {"det": names}, "objects": objs}]}
         (json_dir / f"{img.stem}.json").write_text(
             json.dumps(sku, ensure_ascii=False, indent=2), encoding="utf-8"
         )

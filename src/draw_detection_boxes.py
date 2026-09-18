@@ -53,12 +53,10 @@ def main():
     
     # 检查输入目录
     if not image_dir.exists():
-        logger.error(f"Image directory not found: {image_dir}")
-        return
+        raise FileNotFoundError(f"Image directory not found: {image_dir}")
     
     if not detection_dir.exists():
-        logger.error(f"Detection directory not found: {detection_dir}")
-        return
+        raise FileNotFoundError(f"Detection directory not found: {detection_dir}")
     
     # 创建输出目录
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -82,16 +80,11 @@ def main():
     numeric_images.sort(key=lambda x: x[0])
     logger.info(f"Found {len(numeric_images)} numeric images in {image_dir}")
     
-    if not image_files:
-        logger.error("No images found!")
-        return
+    if not numeric_images:
+        raise ValueError(f"No numeric images found: {image_dir}")
     
     # 加载检测结果并建立编号映射
-    try:
-        detections_indexed = load_detections(str(detection_dir), return_index_map=True)
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as e:
-        logger.error(f"Failed to load detections: {e}")
-        return
+    detections_indexed = load_detections(str(detection_dir), return_index_map=True)
 
     det_map = {num: det for num, det in detections_indexed}
 
@@ -109,21 +102,15 @@ def main():
         total_count += 1
 
         if num not in det_map:
-            logger.warning(f"Detection file not found for image index: {num}")
-            continue
+            raise FileNotFoundError(f"Detection file not found for image index: {num}")
 
         # 读取图片
         image = cv2.imread(str(image_path))
         if image is None:
-            logger.error(f"Failed to load image: {image_path}")
-            continue
+            raise ValueError(f"Failed to load image: {image_path}")
 
         # 提取边界框（使用统一逻辑）
-        try:
-            bboxes = extract_bboxes_from_detections([det_map[num]], 0, cfg)
-        except (ValueError, KeyError, IndexError) as e:
-            logger.error(f"Failed to extract bboxes for {image_path.name}: {e}")
-            continue
+        bboxes = extract_bboxes_from_detections([det_map[num]], 0, cfg)
 
         if not bboxes:
             logger.info(f"No boxes above threshold for {image_path.name}")
@@ -144,10 +131,9 @@ def main():
 
         # 保存结果
         output_path = output_dir / f"{image_path.stem}_with_boxes.{args.image_format}"
-        if cv2.imwrite(str(output_path), image):
-            success_count += 1
-        else:
-            logger.error(f"Failed to save image to: {output_path}")
+        if not cv2.imwrite(str(output_path), image):
+            raise OSError(f"Failed to save image to: {output_path}")
+        success_count += 1
     
     # 统计结果
     logger.info(f"\n=== 处理完成 ===")

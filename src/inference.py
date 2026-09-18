@@ -13,18 +13,14 @@ if not logger.handlers and not logging.getLogger().handlers:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
-try:
-    # 添加父目录到路径以便导入utils模块
-    sys.path.insert(0, str(Path(__file__).parent.parent))
-    from utils import (
-        SKUMatchingConfig,
-        SKUMatchingSystem
-    )
-    from utils.profiling import set_enabled, StageTimer
-except ImportError as e:
-    logger.error(f"模块导入错误: {e}")
-    logger.error("请确保VGGT模块已正确安装和配置")
-    sys.exit(1)
+# 添加父目录到路径以便导入utils模块
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from utils import (
+    SKUMatchingConfig,
+    SKUMatchingSystem
+)
+from utils.config import default_sam3_mask_cache_root
+from utils.profiling import set_enabled, StageTimer
 
 
 def _compute_output_dir(base: str, algorithm_type: str, ref_idx: int, backend: str | None = None) -> str:
@@ -71,19 +67,19 @@ def _count_images_and_detections(image_folder: str, detection_dir: str) -> tuple
 
 def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKUMatchingConfig:
     """根据命令行参数创建 SKUMatchingConfig 配置实例。
-    
+
     此函数将命令行参数与预设配置模板相结合，生成适合
     指定算法类型的完整配置对象。
-    
+
     Args:
         args: argparse.Namespace 命令行参数对象，包含用户输入的所有配置参数
         algorithm_type: 算法类型，'point_tracking' 或 '3d_mapping'，
             决定使用哪个预设配置模板
-    
+
     Returns:
         SKUMatchingConfig: 配置好的 SKUMatchingConfig 实例，包含了
             用户参数和默认配置的组合
-    
+
     Note:
         点追踪算法使用点追踪匹配，3D算法使用3D-2D投影匹配。
     """
@@ -146,23 +142,23 @@ def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
 
 def run_point_tracking_algorithm(args) -> dict:
     """执行传统点追踪SKU匹配算法。
-    
+
     使用VGGT模型的点追踪功能，基于2D特征点的可见性和连续性
     进行SKU物体匹配。适合视角变化不大的场景。
-    
+
     Args:
         args: 命令行参数对象，包含:
             - image_folder: 图像文件夹路径
             - detection_dir: 检测结果目录路径
             - reference_idx: 参考图像的索引
             - max_images: 最大处理图像数量
-    
+
     Returns:
         dict: 匹配结果字典，格式为 {target_image_idx: [match_objects]}
-    
+
     Raises:
         Exception: 当模型初始化、数据加载或匹配计算失败时
-    
+
     Note:
         传统算法速度快、内存消耗低，但在大视角变化时可能不够稳定。
     """
@@ -187,30 +183,30 @@ def run_point_tracking_algorithm(args) -> dict:
     logger.info(
         f"matched_total={total_matches} saved_json={bool(config.save_json)} output_dir={config.output_dir} duration={duration:.2f}s"
     )
-    
+
     system.cleanup()
     return correspondences
 
 
 def run_3d_mapping_algorithm(args) -> dict:
     """执行3D-2D投影SKU匹配算法。
-    
+
     基于VGGT模型的深度估计和相机姿态信息，将参考3D点投影到
     目标图像中进行匹配。提供更高的匹配精度和稳定性。
-    
+
     Args:
         args: 命令行参数对象，包含:
             - image_folder: 图像文件夹路径
             - detection_dir: 检测结果目录路径
             - reference_idx: 参考图像的索引
             - max_images: 最大处理图像数量
-    
+
     Returns:
         dict: 匹配结果字典，包含额外3D几何验证信息
-    
+
     Raises:
         Exception: 当模型初始化、深度估计或投影计算失败时
-    
+
     Note:
         3D算法计算复杂度更高，但在复杂场景和大视角变化下
         表现更优。需要更多的GPU内存和计算时间。
@@ -236,7 +232,7 @@ def run_3d_mapping_algorithm(args) -> dict:
     logger.info(
         f"matched_total={total_matches} saved_json={bool(config.save_json)} output_dir={config.output_dir} duration={duration:.2f}s"
     )
-    
+
     system.cleanup()
     return correspondences
 
@@ -296,10 +292,10 @@ def run_3d_mapping(args) -> dict:
 
 def main(argv: Sequence[str] | None = None) -> None:
     """主函数，处理命令行参数并执行相应的SKU匹配算法。
-    
+
     解析命令行参数，验证输入路径，并根据用户选择执行相应的
     匹配算法(点追踪、3D-2D投影、两者对比或演示模式)。
-    
+
     支持的命令行参数:
         --algorithm: 算法选择 (point_tracking/3d/both)
         --image_folder: 图像文件夹路径
@@ -308,22 +304,22 @@ def main(argv: Sequence[str] | None = None) -> None:
         --visibility_threshold: 可见性阈值
         --device: 计算设备 (cuda/cpu)
         --save_json: 是否保存JSON结果
-    
+
     Returns:
         None: 直接在控制台输出结果或退出程序
-    
+
     Raises:
         FileNotFoundError: 当指定的图像文件夹或检测结果目录不存在时
-        SystemExit: 当发生不可恢复的错误时退出程序
-    
+        RuntimeError, ValueError, OSError: 输入、推理或写入失败时直接传播
+
     Example:
         基本使用:
         >>> python inference.py --algorithm both
-        
+
         使用3D算法处理指定数据集:
         >>> python inference.py --algorithm 3d --image_folder /path/to/images
-        
-        
+
+
     """
     parser = argparse.ArgumentParser(description="SKU匹配系统 - 物体跨图像匹配")
     parser.add_argument("--config", type=str, default=None, help="YAML 配置文件路径（可选）")
@@ -360,50 +356,44 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--enable_profiling", action="store_true", default=False,
                        help="启用 per-stage 计时 instrumentation（默认关闭，零开销 no-op）")
     args = parser.parse_args(argv)
-    
-    try:
-        if not Path(args.image_folder).exists():
-            raise FileNotFoundError(f"图像文件夹不存在: {args.image_folder}")
-        if not Path(args.detection_dir).exists():
-            raise FileNotFoundError(f"检测结果目录不存在: {args.detection_dir}")
-        
-        logger.info("=== SKU匹配系统 ===")
-        logger.info(f"图像文件夹: {args.image_folder}")
-        logger.info(f"检测结果目录: {args.detection_dir}")
-        logger.info(f"参考图像索引: {args.reference_idx}")
-        logger.info(f"算法选择: {args.algorithm}")
-        logger.info("==================")
 
-        set_enabled(args.enable_profiling)
+    if not Path(args.image_folder).exists():
+        raise FileNotFoundError(f"图像文件夹不存在: {args.image_folder}")
+    if not Path(args.detection_dir).exists():
+        raise FileNotFoundError(f"检测结果目录不存在: {args.detection_dir}")
 
-        correspondences_point_tracking = None
-        correspondences_3d = None
-        
-        # 根据选择运行算法
-        if args.algorithm in ["point_tracking", "both"]:
-            correspondences_point_tracking = run_point_tracking(args)
-            logger.info("")
-        
-        if args.algorithm in ["3d", "both"]:
-            correspondences_3d = run_3d_mapping(args)
-            logger.info("")
-        
-        # 总结比较结果
-        if args.algorithm == "both" and correspondences_point_tracking and correspondences_3d:
-            point_tracking_total = sum(len(matches) for matches in correspondences_point_tracking.values())
-            projection_total = sum(len(matches) for matches in correspondences_3d.values())
-            
-            logger.info("=== 算法比较结果 ===")
-            logger.info(f"点追踪算法: {point_tracking_total} 个匹配")
-            logger.info(f"3D-2D投影算法: {projection_total} 个匹配")
-            logger.info(f"差异: {abs(point_tracking_total - projection_total)} 个匹配")        
-        logger.info("=== 处理完成 ===")
-            
-    except (RuntimeError, ValueError, FileNotFoundError, ImportError) as e:
-        logger.error(f"执行过程中发生错误: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+    logger.info("=== SKU匹配系统 ===")
+    logger.info(f"图像文件夹: {args.image_folder}")
+    logger.info(f"检测结果目录: {args.detection_dir}")
+    logger.info(f"参考图像索引: {args.reference_idx}")
+    logger.info(f"算法选择: {args.algorithm}")
+    logger.info("==================")
+
+    set_enabled(args.enable_profiling)
+
+    correspondences_point_tracking = None
+    correspondences_3d = None
+
+    # 根据选择运行算法
+    if args.algorithm in ["point_tracking", "both"]:
+        correspondences_point_tracking = run_point_tracking(args)
+        logger.info("")
+
+    if args.algorithm in ["3d", "both"]:
+        correspondences_3d = run_3d_mapping(args)
+        logger.info("")
+
+    # 总结比较结果
+    if args.algorithm == "both" and correspondences_point_tracking and correspondences_3d:
+        point_tracking_total = sum(len(matches) for matches in correspondences_point_tracking.values())
+        projection_total = sum(len(matches) for matches in correspondences_3d.values())
+
+        logger.info("=== 算法比较结果 ===")
+        logger.info(f"点追踪算法: {point_tracking_total} 个匹配")
+        logger.info(f"3D-2D投影算法: {projection_total} 个匹配")
+        logger.info(f"差异: {abs(point_tracking_total - projection_total)} 个匹配")
+    logger.info("=== 处理完成 ===")
+
 
 if __name__ == '__main__':
     main()

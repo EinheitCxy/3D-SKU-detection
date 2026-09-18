@@ -102,8 +102,10 @@ def _estimate_intrinsics_from_local_points(
 
     intrinsics = torch.zeros((bsz, num_views, 3, 3), device=device, dtype=dtype)
 
-    # 默认K（当样本不足或拟合失败时退化使用）
-    f_default = float(max(height, width))
+    image_scale = float(max(height, width))
+
+    # 默认K（当样本不足或拟合失败时退化使用，避免单帧坏图中断整批重建）
+    f_default = image_scale
     cx_default = (width - 1) / 2.0
     cy_default = (height - 1) / 2.0
     default_K = torch.tensor(
@@ -131,6 +133,7 @@ def _estimate_intrinsics_from_local_points(
                 valid_mask = valid_mask & (conf[b, n] > 0.05)
 
             if not valid_mask.any():
+                logger.warning(f"Pi3 内参拟合无有效点 (batch={b}, view={n}) → 使用默认内参")
                 intrinsics[b, n] = default_K
                 continue
 
@@ -141,6 +144,7 @@ def _estimate_intrinsics_from_local_points(
 
             num_samples = a_u.numel()
             if num_samples < 10:
+                logger.warning(f"Pi3 内参拟合样本不足 (batch={b}, view={n}): {num_samples} → 使用默认内参")
                 intrinsics[b, n] = default_K
                 continue
 
@@ -157,93 +161,88 @@ def _estimate_intrinsics_from_local_points(
             A_u = torch.stack([a_u, torch.ones_like(a_u)], dim=1)  # (M, 2)
             A_v = torch.stack([a_v, torch.ones_like(a_v)], dim=1)  # (M, 2)
 
-            try:
-                ATA_u = A_u.T @ A_u
-                ATA_v = A_v.T @ A_v
+            ATA_u = A_u.T @ A_u
+            ATA_v = A_v.T @ A_v
 
-                # 检查条件数，避免病态矩阵求解
-                cond_u = torch.linalg.cond(ATA_u).item()
-                cond_v = torch.linalg.cond(ATA_v).item()
-                max_cond = max(cond_u, cond_v)
+            # 检查条件数，避免病态矩阵求解
+            cond_u = torch.linalg.cond(ATA_u).item()
+            cond_v = torch.linalg.cond(ATA_v).item()
+            max_cond = max(cond_u, cond_v)
 
-                if max_cond > 1e6:
-                    # 条件数过大，矩阵接近奇异
-                    intrinsics[b, n] = default_K
-                    continue
-
-                ATu = A_u.T @ u
-                theta_u = torch.linalg.solve(ATA_u, ATu)  # (2,)
-
-                ATv = A_v.T @ v
-                theta_v = torch.linalg.solve(ATA_v, ATv)  # (2,)
-
-                fx, cx = theta_u[0].item(), theta_u[1].item()
-                fy, cy = theta_v[0].item(), theta_v[1].item()
-
-                # 图像尺寸（用于范围检查）
-                W = float(width)
-                H = float(height)
-
-                # === 必要检查（硬性条件）===
-                # 1. 焦距必须为正
-                if fx <= 0 or fy <= 0:
-                    logger.warning(f"Pi3 内参拟合失败 (batch={b}, view={n}): 焦距非正 (fx={fx:.1f}, fy={fy:.1f}) → 使用默认内参")
-                    intrinsics[b, n] = default_K
-                    continue
-
-                # 2. 计算拟合残差（主判据）
-                u_pred = fx * a_u + cx
-                v_pred = fy * a_v + cy
-                residual_u = torch.abs(u - u_pred).mean().item()
-                residual_v = torch.abs(v - v_pred).mean().item()
-                max_residual = max(residual_u, residual_v)
-
-                # 主判据：残差过大 → 拟合质量差 → 使用默认内参
-                RESIDUAL_THRESHOLD = 50.0  # 平均误差阈值（像素）
-                if max_residual > RESIDUAL_THRESHOLD:
-                    logger.warning(
-                        f"Pi3 内参拟合质量差 (batch={b}, view={n}):\n"
-                        f"   残差: u={residual_u:.1f}px, v={residual_v:.1f}px (阈值={RESIDUAL_THRESHOLD}px)\n"
-                        f"   拟合结果: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}\n"
-                        f"   → 使用默认内参 (fx={f_default:.1f}, cx={W/2:.1f}, cy={H/2:.1f})"
-                    )
-                    intrinsics[b, n] = default_K
-                    continue
-
-                # === 启发式检查（仅警告，不影响采用）===
-                warnings = []
-                if not (0.1 * f_default <= fx <= 10 * f_default):
-                    warnings.append(f"fx={fx:.1f} 超出合理范围 [{0.1*f_default:.1f}, {10*f_default:.1f}]")
-                if not (0.1 * f_default <= fy <= 10 * f_default):
-                    warnings.append(f"fy={fy:.1f} 超出合理范围 [{0.1*f_default:.1f}, {10*f_default:.1f}]")
-                if not (-0.2 * W <= cx <= 1.2 * W):
-                    warnings.append(f"cx={cx:.1f} 超出图像范围 [{-0.2*W:.1f}, {1.2*W:.1f}]")
-                if not (-0.2 * H <= cy <= 1.2 * H):
-                    warnings.append(f"cy={cy:.1f} 超出图像范围 [{-0.2*H:.1f}, {1.2*H:.1f}]")
-
-                # 防止除零
-                aspect_ratio = fx / fy if abs(fy) > 1e-6 else float("inf")
-                if not (0.7 <= aspect_ratio <= 1.3):
-                    warnings.append(f"焦距比例 fx/fy={aspect_ratio:.3f} 异常（预期接近1.0）")
-
-                if warnings:
-                    logger.warning(
-                        f"Pi3 内参拟合异常 (batch={b}, view={n})，但残差可接受 ({max_residual:.1f}px):\n" +
-                        "\n".join(f"   - {w}" for w in warnings) +
-                        f"\n   → 仍采用拟合结果"
-                    )
-
-                # 采用拟合结果
-                K = torch.zeros((3, 3), device=device, dtype=dtype)
-                K[0, 0] = fx
-                K[1, 1] = fy
-                K[0, 2] = cx
-                K[1, 2] = cy
-                K[2, 2] = 1.0
-                intrinsics[b, n] = K
-            except RuntimeError:
-                # 矩阵奇异等情况，退化为默认K
+            if not np.isfinite(max_cond) or max_cond > 1e6:
+                logger.warning(f"Pi3 内参拟合矩阵病态 (batch={b}, view={n}): {max_cond} → 使用默认内参")
                 intrinsics[b, n] = default_K
+                continue
+
+            ATu = A_u.T @ u
+            theta_u = torch.linalg.solve(ATA_u, ATu)  # (2,)
+
+            ATv = A_v.T @ v
+            theta_v = torch.linalg.solve(ATA_v, ATv)  # (2,)
+
+            fx, cx = theta_u[0].item(), theta_u[1].item()
+            fy, cy = theta_v[0].item(), theta_v[1].item()
+
+            # 图像尺寸（用于范围检查）
+            W = float(width)
+            H = float(height)
+
+            # === 必要检查（硬性条件）===
+            # 1. 焦距必须为正
+            if not np.isfinite([fx, fy, cx, cy]).all() or fx <= 0 or fy <= 0:
+                logger.warning(f"Pi3 内参拟合焦距非正 (batch={b}, view={n}): fx={fx}, fy={fy} → 使用默认内参")
+                intrinsics[b, n] = default_K
+                continue
+
+            # 2. 计算拟合残差（主判据）
+            u_pred = fx * a_u + cx
+            v_pred = fy * a_v + cy
+            residual_u = torch.abs(u - u_pred).mean().item()
+            residual_v = torch.abs(v - v_pred).mean().item()
+            max_residual = max(residual_u, residual_v)
+
+            # 主判据：残差过大时直接拒绝拟合结果
+            RESIDUAL_THRESHOLD = 50.0  # 平均误差阈值（像素）
+            if not np.isfinite(max_residual) or max_residual > RESIDUAL_THRESHOLD:
+                logger.warning(
+                    f"Pi3 内参拟合质量差 (batch={b}, view={n}):"
+                    f" 残差 u={residual_u:.1f}px, v={residual_v:.1f}px (阈值={RESIDUAL_THRESHOLD}px)"
+                    f" → 使用默认内参"
+                )
+                intrinsics[b, n] = default_K
+                continue
+
+            # === 启发式检查（仅警告，不影响采用）===
+            warnings = []
+            if not (0.1 * image_scale <= fx <= 10 * image_scale):
+                warnings.append(f"fx={fx:.1f} 超出合理范围 [{0.1*image_scale:.1f}, {10*image_scale:.1f}]")
+            if not (0.1 * image_scale <= fy <= 10 * image_scale):
+                warnings.append(f"fy={fy:.1f} 超出合理范围 [{0.1*image_scale:.1f}, {10*image_scale:.1f}]")
+            if not (-0.2 * W <= cx <= 1.2 * W):
+                warnings.append(f"cx={cx:.1f} 超出图像范围 [{-0.2*W:.1f}, {1.2*W:.1f}]")
+            if not (-0.2 * H <= cy <= 1.2 * H):
+                warnings.append(f"cy={cy:.1f} 超出图像范围 [{-0.2*H:.1f}, {1.2*H:.1f}]")
+
+            # 防止除零
+            aspect_ratio = fx / fy if abs(fy) > 1e-6 else float("inf")
+            if not (0.7 <= aspect_ratio <= 1.3):
+                warnings.append(f"焦距比例 fx/fy={aspect_ratio:.3f} 异常（预期接近1.0）")
+
+            if warnings:
+                logger.warning(
+                    f"Pi3 内参拟合异常 (batch={b}, view={n})，但残差可接受 ({max_residual:.1f}px):\n" +
+                    "\n".join(f"   - {w}" for w in warnings) +
+                    f"\n   → 仍采用拟合结果"
+                )
+
+            # 采用拟合结果
+            K = torch.zeros((3, 3), device=device, dtype=dtype)
+            K[0, 0] = fx
+            K[1, 1] = fy
+            K[0, 2] = cx
+            K[1, 2] = cy
+            K[2, 2] = 1.0
+            intrinsics[b, n] = K
 
     return intrinsics
 
@@ -419,12 +418,7 @@ class PI33DReconstructor(ReconstructorBase):
         super().__init__(device=device, model_path=model_path, backend_name="pi3")
 
         # 延迟导入，以便路径注入生效
-        try:
-            from pi3.models.pi3 import Pi3  # noqa: F401
-        except Exception as e:  # pragma: no cover
-            raise ImportError(
-                f"无法导入 Pi3 包，请检查子模块或路径。Pi3路径: {PI3_ROOT}. 错误: {e}"
-            )
+        from pi3.models.pi3 import Pi3  # noqa: F401
 
     # ---- 加载 ----
     def load_model(self) -> None:
@@ -469,48 +463,26 @@ class PI33DReconstructor(ReconstructorBase):
         from pi3.utils.geometry import depth_edge
 
         # 置信度后处理：sigmoid + 深度边缘抑制
-        if "conf" in pred:
-            pred["conf"] = torch.sigmoid(pred["conf"])
-            try:
-                edge = depth_edge(pred["local_points"][..., 2], rtol=0.03)
-                pred["conf"][edge] = 0.0
-            except Exception as e:  # pragma: no cover - 仅日志，不中断流程
-                logger.warning(f"depth_edge 处理失败，跳过边缘抑制: {e}")
+        pred["conf"] = torch.sigmoid(pred["conf"])
+        edge = depth_edge(pred["local_points"][..., 2], rtol=0.03)
+        pred["conf"][edge] = 0.0
 
         # Extrinsic：由 C2W 的 camera_poses 反求 W2C
-        if "camera_poses" in pred:
-            try:
-                pred["extrinsic"] = torch.linalg.inv(pred["camera_poses"])
-            except RuntimeError as e:
-                logger.warning(f"无法从 camera_poses 反求外参矩阵: {e}")
+        pred["extrinsic"] = torch.linalg.inv(pred["camera_poses"])
 
         # Depth / depth_conf / world_points_conf：
         # 直接使用相机坐标系下的 Z 分量作为深度，并复用点置信度
-        if "local_points" in pred:
-            # (B, N, H, W, 1)
-            pred["depth"] = pred["local_points"][..., 2:3]
-        if "conf" in pred:
-            # (B, N, H, W)
-            depth_conf = pred["conf"]
-            if depth_conf.ndim == 5 and depth_conf.shape[-1] == 1:
-                depth_conf = depth_conf[..., 0]
-            pred["depth_conf"] = depth_conf
-            pred["world_points_conf"] = depth_conf
+        pred["depth"] = pred["local_points"][..., 2:3]
+        depth_conf = pred["conf"]
+        if depth_conf.ndim == 5 and depth_conf.shape[-1] == 1:
+            depth_conf = depth_conf[..., 0]
+        pred["depth_conf"] = depth_conf
+        pred["world_points_conf"] = depth_conf
 
         # Intrinsic：基于 local_points 估计每帧内参矩阵
-        if "local_points" in pred:
-            try:
-                pred["intrinsic"] = _estimate_intrinsics_from_local_points(
-                    pred["local_points"],
-                    conf=pred.get("conf"),
-                    max_points_per_view=50000,
-                )
-            except Exception as e:
-                logger.warning(f"估计相机内参失败，将在后续流程中回退默认K: {e}")
-
-        # 保留 local_points 用于 SKU 匹配（包含相机坐标系深度）
-        # if 'local_points' in pred:
-        #     del pred['local_points']
+        pred["intrinsic"] = _estimate_intrinsics_from_local_points(
+            pred["local_points"], conf=pred["conf"], max_points_per_view=50000,
+        )
 
         # 存储原始图像 (BNHWC，0-1范围) 以兼容 Pi3 viewer
         pred["images"] = x.permute(0, 1, 3, 4, 2)  # BNCHW->BNHWC（0-1范围）
@@ -519,20 +491,14 @@ class PI33DReconstructor(ReconstructorBase):
         elapsed = time.time() - t0
         logger.info(f"Pi3 推理完成，用时 {elapsed:.2f}s")
         logger.info(f"返回的键: {list(pred.keys())}")
-        if 'camera_poses' not in pred:
-            logger.warning("Pi3 模型输出缺少 'camera_poses'，相机将不会显示在 GLB 中")
-        else:
-            logger.info(f"camera_poses 形状: {pred['camera_poses'].shape}")
+        logger.info(f"camera_poses 形状: {pred['camera_poses'].shape}")
         return pred  # tensors（带batch维）
 
     # ---- 导出 ----
     def export_glb(self, pred: Dict[str, Any], output_path: Path, *, conf_thres: float = 50.0, show_cam: bool = True) -> None:
         """将 Pi3 预测结果导出为 GLB 文件。"""
-        try:
-            # 直接复用 Pi3/demo_gradio.py 中的 predictions_to_glb（不修改vendor，仅导入）
-            from demo_gradio import predictions_to_glb  # type: ignore
-        except Exception as e:  # pragma: no cover
-            raise ImportError(f"无法从 Pi3/demo_gradio 导入 predictions_to_glb: {e}")
+        # 直接复用 Pi3/demo_gradio.py 中的 predictions_to_glb（不修改vendor，仅导入）
+        from demo_gradio import predictions_to_glb  # type: ignore
 
         # 将 torch.Tensor 转为 numpy 以用于 trimesh
         pred_np: Dict[str, Any] = {}
@@ -583,38 +549,35 @@ class PI33DReconstructor(ReconstructorBase):
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         # 1) 保存 transforms.json（Pi3 仅包含缩放，无裁剪/填充）
-        try:
-            if image_paths:
-                from utils.transforms import build_transforms
-                transforms = build_transforms(image_paths, model_type="pi3", pixel_limit=255000)
-                # 取统一目标尺寸
-                first_info = transforms[0].get_transform_info()
-                tw, th = int(first_info["target_size"][0]), int(first_info["target_size"][1])
-                tf_path = cache_dir / "transforms.json"
+        if image_paths:
+            from utils.transforms import build_transforms
+            transforms = build_transforms(image_paths, model_type="pi3", pixel_limit=255000)
+            # 取统一目标尺寸
+            first_info = transforms[0].get_transform_info()
+            tw, th = int(first_info["target_size"][0]), int(first_info["target_size"][1])
+            tf_path = cache_dir / "transforms.json"
 
-                frames = []
-                for idx, (name, t) in enumerate(zip(image_names or [], transforms)):
-                    info = t.get_transform_info()
-                    sx, sy = float(info["scales"][0]), float(info["scales"][1])
-                    frames.append({
-                        "frame_idx": int(idx),
-                        "image_id": int(image_ids[idx]) if image_ids else int(idx),
-                        "source_path": str(Path(input_dir or "") / name) if input_dir and name else "",
-                        "scales": [sx, sy],
-                        "crop_start_y": 0,
-                        "batch_padding": [0, 0],
-                    })
+            frames = []
+            for idx, (name, t) in enumerate(zip(image_names or [], transforms)):
+                info = t.get_transform_info()
+                sx, sy = float(info["scales"][0]), float(info["scales"][1])
+                frames.append({
+                    "frame_idx": int(idx),
+                    "image_id": int(image_ids[idx]) if image_ids else int(idx),
+                    "source_path": str(Path(input_dir or "") / name) if input_dir and name else "",
+                    "scales": [sx, sy],
+                    "crop_start_y": 0,
+                    "batch_padding": [0, 0],
+                })
 
-                import json
-                payload = {
-                    "target_size": [tw, th],
-                    "padded_size": [tw, th],
-                    "frames": frames,
-                }
-                with tf_path.open("w", encoding="utf-8") as f:
-                    json.dump(payload, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.warning(f"保存 Pi3 transforms.json 失败（不影响GLB/NPZ）：{e}")
+            import json
+            payload = {
+                "target_size": [tw, th],
+                "padded_size": [tw, th],
+                "frames": frames,
+            }
+            with tf_path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
 
         # 2) 保存 predictions.npz（直接保存到 cache_dir，避免嵌套）
         cache_path = cache_dir / "predictions.npz"

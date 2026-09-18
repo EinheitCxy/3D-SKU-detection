@@ -254,9 +254,9 @@ def build_pi3_transforms(
     if not image_paths:
         return []
 
-    # 基于第一张图片计算统一的目标尺寸
-    first_img = Image.open(image_paths[0]).convert("RGB")
-    W_orig, H_orig = first_img.size
+    # 基于第一张图片计算统一的目标尺寸（PIL 懒读取：仅需 (W,H) 尺寸，不触发完整解码）
+    with Image.open(image_paths[0]) as first_img:
+        W_orig, H_orig = first_img.size
 
     # Pi3的resize逻辑
     scale = math.sqrt(pixel_limit / (W_orig * H_orig)) if W_orig * H_orig > 0 else 1.0
@@ -278,8 +278,8 @@ def build_pi3_transforms(
     # 为每张图片创建变换对象（统一目标尺寸）
     transforms = []
     for img_path in image_paths:
-        img = Image.open(img_path).convert("RGB")
-        w, h = img.size
+        with Image.open(img_path) as img:
+            w, h = img.size
         t = Pi3ImageTransform(w, h, TARGET_W, TARGET_H)
 
         # 尝试从文件名解析数值 ID，便于与 Pi3 缓存中的 image_ids 对齐

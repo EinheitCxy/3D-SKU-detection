@@ -435,202 +435,73 @@ class SKUDetectionMain:
         match_overrides: dict = None,
         enable_profiling: bool = False,
         quiet_outputs: bool = False,
+        sam3_mask_cache_root: Optional[str] = None,
     ) -> StepResult:
-        """运行SKU匹配推理，支持批量将每张图片作为参考图像运行。
+        """匹配全部或单个参考帧；任一参考帧失败直接传播，保留 profiling 清理。"""
+        from concurrent.futures import as_completed
+        from utils.data_utils import load_detections
+        from utils.profiling import StageTimer, dump_stages, log_stages_sorted, set_enabled
 
-        - 当 batch_all_refs=True 时：遍历 images/ 中数字命名且在 detections_results/ 有有效 objects 的每个图片，依次作为参考图运行。
-        - 否则：仅以 reference_idx 指定的单张图片作为参考图运行。
-        - backend: 3D重建模型后端 (vggt/pi3/da3)，用于3D算法时选择数据源
-        - parallel_refs: 并行处理的参考图片数（>1 时启用线程池；推荐 pi3/da3 后端使用，vggt 不支持）
-        - enable_profiling: 启用 per-stage 计时 instrumentation（默认 False，零开销）
-        """
-        from utils.profiling import StageTimer as _StageTimer
-        from utils.profiling import dump_stages as _dump_prof
-        from utils.profiling import log_stages_sorted as _log_prof
-        from utils.profiling import set_enabled as _set_prof_enabled
-
-        _set_prof_enabled(enable_profiling)
+        set_enabled(enable_profiling)
         start = perf_counter()
-        try:
-            logger.info("开始SKU匹配推理")
-            if batch_all_refs:
-                # 批量处理所有有效图片作为参考图片
-                # 使用 utils.data_utils.load_detections 作为唯一标准源
-                from utils.data_utils import load_detections
 
-                dataset = Path(dataset_path)
-                detection_dir = dataset / "detections_results"
-
-                # 使用标准load_detections获取有效检测文件索引
-                try:
-                    detections_with_index = load_detections(
-                        str(detection_dir), return_index_map=True
-                    )
-                    # 提取文件编号（即图片索引）
-                    valid_indices = sorted(
-                        [file_num for file_num, _ in detections_with_index]
-                    )
-                    logger.info(f"找到 {len(valid_indices)} 个有效参考图片")
-                except (FileNotFoundError, ValueError) as e:
-                    logger.error(f"无法加载检测结果: {e}")
-                    return {
-                        "success": False,
-                        "error": str(e),
-                        "duration_s": perf_counter() - start,
-                    }
-
-                # 构建参数列表（list of (system_ref_idx, filename_idx)）
-                tasks = [(i, fn_idx) for i, fn_idx in enumerate(valid_indices)]
-                failed_references: list[dict[str, object]] = []
-
-                def record_failure(
-                    task: tuple[int, int],
-                    result: StepResult | None = None,
-                    error: Exception | None = None,
-                ) -> None:
-                    reference_idx, image_index = task
-                    if error is not None:
-                        message = str(error)
-                    else:
-                        message = str(
-                            result.get("error", "matching returned success=False")
-                        )
-                    failed_references.append(
-                        {
-                            "reference_idx": reference_idx,
-                            "image_index": image_index,
-                            "error": message,
-                        }
-                    )
-
-                if parallel_refs > 1:
-                    # 并行处理：适合 pi3/da3 缓存后端（3D 数据只读，线程安全）
-                    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-                    workers = min(parallel_refs, len(tasks))
-                    logger.info(
-                        f"并行处理 {len(tasks)} 个参考图片（worker 数: {workers}）"
-                    )
-
-                    def _task(args):
-                        sys_idx, fn_idx = args
-                        logger.debug(
-                            f"[并行] 处理参考图片 {fn_idx} -> 系统索引: {sys_idx}"
-                        )
-                        return self._run_single_matching(
-                            dataset_path,
-                            algorithm,
-                            sys_idx,
-                            max_images,
-                            device,
-                            save_json,
-                            backend,
-                            match_overrides,
-                            enable_profiling=enable_profiling,
-                            quiet_outputs=quiet_outputs,
-                        )
-
-                    with ThreadPoolExecutor(max_workers=workers) as executor:
-                        futures = {executor.submit(_task, t): t for t in tasks}
-                        for fut in as_completed(futures):
-                            t = futures[fut]
-                            try:
-                                result = fut.result()
-                                if not result.get("success", False):
-                                    record_failure(t, result=result)
-                            except Exception as exc:
-                                logger.error(f"参考图片 {t[1]} 处理失败: {exc}")
-                                record_failure(t, error=exc)
-                else:
-                    # 串行处理（默认）
-                    for i, filename_idx in tasks:
-                        logger.debug(
-                            f"处理参考图片 {filename_idx} ({i+1}/{len(valid_indices)}) -> 系统索引: {i}"
-                        )
-                        try:
-                            result = self._run_single_matching(
-                                dataset_path,
-                                algorithm,
-                                i,
-                                max_images,
-                                device,
-                                save_json,
-                                backend,
-                                match_overrides,
-                                enable_profiling=enable_profiling,
-                                quiet_outputs=quiet_outputs,
-                            )
-                        except Exception as exc:
-                            logger.error(f"参考图片 {filename_idx} 处理失败: {exc}")
-                            record_failure((i, filename_idx), error=exc)
-                            continue
-                        if not result.get("success", False):
-                            record_failure((i, filename_idx), result=result)
-
-                duration = perf_counter() - start
-                _StageTimer.record("batch_all_refs_total", duration)
-                failed_references.sort(key=lambda item: int(item["reference_idx"]))
-                if failed_references:
-                    logger.error(
-                        f"匹配失败 - 耗时 {duration:.2f}s，{len(failed_references)}/"
-                        f"{len(valid_indices)} 个参考图片失败"
-                    )
-                    return {
-                        "success": False,
-                        "duration_s": duration,
-                        "failed_references": failed_references,
-                    }
-                logger.info(
-                    f"匹配完成 - 耗时 {duration:.2f}s，处理 {len(valid_indices)} 个参考图片"
-                )
-                return {
-                    "success": True,
-                    "duration_s": duration,
-                    "failed_references": failed_references,
-                }
-            else:
-                # 单个参考图片处理
-                return self._run_single_matching(
-                    dataset_path,
-                    algorithm,
-                    reference_idx,
-                    max_images,
-                    device,
-                    save_json,
-                    backend,
-                    match_overrides,
-                    enable_profiling=enable_profiling,
-                    quiet_outputs=quiet_outputs,
-                )
-
-        except (
-            ImportError,
-            ModuleNotFoundError,
-            OSError,
-            RuntimeError,
-            ValueError,
-        ) as e:
-            duration = perf_counter() - start
-            _StageTimer.record("batch_all_refs_total", duration)
-            logger.error(
-                f"END matching duration={duration:.2f}s result=fail error={e}",
-                exc_info=True,
+        def run_reference(index):
+            return self._run_single_matching(
+                dataset_path,
+                algorithm,
+                index,
+                max_images,
+                device,
+                save_json,
+                backend,
+                match_overrides,
+                enable_profiling=enable_profiling,
+                quiet_outputs=quiet_outputs,
+                sam3_mask_cache_root=sam3_mask_cache_root,
             )
-            return {"success": False, "error": str(e), "duration_s": duration}
+
+        try:
+            if not batch_all_refs:
+                return run_reference(reference_idx)
+            detections = load_detections(
+                str(Path(dataset_path) / "detections_results"),
+                return_index_map=True,
+            )
+            reference_count = len(detections)
+            logger.info("开始匹配 %d 个参考图片", reference_count)
+            if parallel_refs > 1:
+                with ThreadPoolExecutor(
+                    max_workers=min(parallel_refs, reference_count)
+                ) as executor:
+                    futures = [
+                        executor.submit(run_reference, index)
+                        for index in range(reference_count)
+                    ]
+                    for future in as_completed(futures):
+                        future.result()
+            else:
+                for index in range(reference_count):
+                    run_reference(index)
+            duration = perf_counter() - start
+            logger.info(
+                "匹配完成 - 耗时 %.2fs，处理 %d 个参考图片", duration, reference_count
+            )
+            return {"success": True, "duration_s": duration}
         finally:
+            StageTimer.record("batch_all_refs_total", perf_counter() - start)
             if enable_profiling:
-                _prof_dir = (
-                    (self.save_root / Path(dataset_path).name)
+                profile_dir = (
+                    self.save_root / Path(dataset_path).name
                     if self.save_root
                     else Path(dataset_path)
                 )
-                _prof_path = (
-                    _prof_dir
+                profile_path = (
+                    profile_dir
                     / f"profiling_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                 )
-                _dump_prof(str(_prof_path))
-                _log_prof(logger)
-                logger.info(f"[PROF] dumped to {_prof_path}")
+                dump_stages(str(profile_path))
+                log_stages_sorted(logger)
+                logger.info("[PROF] dumped to %s", profile_path)
 
     @_serialize_matching_inference
     def _run_single_matching(
@@ -653,70 +524,57 @@ class SKUDetectionMain:
             backend: 3D重建模型后端 (vggt/pi3)
         """
         start = perf_counter()
-        try:
-            logger.debug(
-                f"单次匹配 - 算法: {algorithm}, 后端: {backend}, 参考索引: {reference_idx}"
-            )
+        logger.debug(
+            f"单次匹配 - 算法: {algorithm}, 后端: {backend}, 参考索引: {reference_idx}"
+        )
 
-            from src.inference import main as inference_main
+        from src.inference import main as inference_main
+        from utils.config import default_sam3_mask_cache_root
 
-            dataset = Path(dataset_path)
-            image_folder = dataset / "images"
-            detection_dir = dataset / "detections_results"
-            # 输出根目录：优先使用 save_root，其次使用数据集目录
-            output_dir = (self.save_root / dataset.name) if self.save_root else dataset
+        dataset = Path(dataset_path)
+        image_folder = dataset / "images"
+        detection_dir = dataset / "detections_results"
+        # 输出根目录：优先使用 save_root，其次使用数据集目录
+        output_dir = (self.save_root / dataset.name) if self.save_root else dataset
 
-            argv = [
-                "--image_folder",
-                str(image_folder),
-                "--detection_dir",
-                str(detection_dir),
-                "--output_dir",
-                str(output_dir),
-                "--sam3_mask_cache_root",
-                str(output_dir / "sam3_mask_cache" / "v2"),
-                "--algorithm",
-                algorithm,
-                "--reference_idx",
-                str(reference_idx),
-                "--max_images",
-                str(max_images),
-                "--device",
-                device,
-                "--backend",
-                backend,
-            ]
-            if quiet_outputs:
-                argv.append("--quiet_outputs")
-            if save_json and not quiet_outputs:
-                argv.append("--save_json")
-            if enable_profiling:
-                argv.append("--enable_profiling")
-            if self.config_path is not None:
-                argv.extend(["--config", str(self.config_path)])
-            # 透传 3D 阈值覆盖（网格扫描用）
-            if match_overrides:
-                for _k, _v in match_overrides.items():
-                    argv.extend([f"--{_k}", str(_v)])
+        argv = [
+            "--image_folder",
+            str(image_folder),
+            "--detection_dir",
+            str(detection_dir),
+            "--output_dir",
+            str(output_dir),
+            "--sam3_mask_cache_root",
+            str(sam3_mask_cache_root or default_sam3_mask_cache_root(output_dir)),
+            "--algorithm",
+            algorithm,
+            "--reference_idx",
+            str(reference_idx),
+            "--max_images",
+            str(max_images),
+            "--device",
+            device,
+            "--backend",
+            backend,
+        ]
+        if quiet_outputs:
+            argv.append("--quiet_outputs")
+        if save_json and not quiet_outputs:
+            argv.append("--save_json")
+        if enable_profiling:
+            argv.append("--enable_profiling")
+        if self.config_path is not None:
+            argv.extend(["--config", str(self.config_path)])
+        # 透传 3D 阈值覆盖（网格扫描用）
+        if match_overrides:
+            for _k, _v in match_overrides.items():
+                argv.extend([f"--{_k}", str(_v)])
 
-            inference_main(argv)
+        inference_main(argv)
 
-            duration = perf_counter() - start
-            logger.debug(f"单次匹配完成 - 耗时 {duration:.2f}s")
-            return {"success": True, "duration_s": duration}
-        except (
-            ImportError,
-            ModuleNotFoundError,
-            OSError,
-            RuntimeError,
-            ValueError,
-        ) as e:
-            duration = perf_counter() - start
-            logger.error(
-                f"END matching_single duration={duration:.2f}s result=fail error={e}",
-                exc_info=True,
-            )
-            return {"success": False, "error": str(e), "duration_s": duration}
+        duration = perf_counter() - start
+        logger.debug(f"单次匹配完成 - 耗时 {duration:.2f}s")
+        return {"success": True, "duration_s": duration}
 
     def run_detection_visualization(
         self,
@@ -777,19 +635,6 @@ class SKUDetectionMain:
                 "duration_s": duration,
                 "details": {"output_dir": str(output_viz_dir)},
             }
-        except (
-            ImportError,
-            ModuleNotFoundError,
-            OSError,
-            RuntimeError,
-            ValueError,
-        ) as e:
-            duration = perf_counter() - start
-            logger.error(
-                f"END visualization duration={duration:.2f}s result=fail error={e}",
-                exc_info=True,
-            )
-            return {"success": False, "error": str(e), "duration_s": duration}
         finally:
             sys.argv = original_argv
 
@@ -801,196 +646,140 @@ class SKUDetectionMain:
     ) -> StepResult:
         """运行改进的SKU计数分析 (去重优化)，报告写入 <dataset_name>/output_reports/report_*.txt（或 --save_root）"""
         start = perf_counter()
-        try:
-            logger.info("开始SKU计数分析")
+        logger.info("开始SKU计数分析")
 
-            from src.improved_sku_analyzer import ImprovedSKUCountAnalyzer
+        from src.improved_sku_analyzer import ImprovedSKUCountAnalyzer
 
-            dataset = Path(dataset_path)
-            detection_dir = dataset / "detections_results"
+        dataset = Path(dataset_path)
+        detection_dir = dataset / "detections_results"
 
-            # 根据算法类型动态选择匹配结果目录
-            base_dir = self.save_root / dataset.name if self.save_root else dataset
-            if algorithm == "point_tracking":
-                summary_dir = base_dir / "output_pt"
-            elif algorithm in ("3d", "3d_mapping"):
-                if backend:
-                    summary_dir = base_dir / f"output_3dmapping_{backend}"
-                else:
-                    summary_dir = base_dir / "output_3dmapping"
+        # 根据算法类型动态选择匹配结果目录
+        base_dir = self.save_root / dataset.name if self.save_root else dataset
+        if algorithm == "point_tracking":
+            summary_dir = base_dir / "output_pt"
+        elif algorithm in ("3d", "3d_mapping"):
+            if backend:
+                summary_dir = base_dir / f"output_3dmapping_{backend}"
             else:
-                summary_dir = base_dir / "output_pt"
+                summary_dir = base_dir / "output_3dmapping"
+        else:
+            summary_dir = base_dir / "output_pt"
 
-            if not summary_dir.exists():
-                msg = f"匹配结果目录不存在: {summary_dir}，请先运行SKU匹配推理"
-                logger.warning(msg)
-                duration = perf_counter() - start
-                return {"success": False, "error": msg, "duration_s": duration}
-
-            # 检测使用的算法
-            algorithm_name = (
-                "Point Tracking" if "output_pt" in str(summary_dir) else "3D Mapping"
-            )
-
-            analyzer = ImprovedSKUCountAnalyzer(str(detection_dir), str(summary_dir))
-            result = analyzer.analyze_with_filtering()
-
-            # 计算统计信息
-            pairs = result["pairs"]
-            hit_ratios = [p["hit_ratio"] for p in pairs]
-            avg_hit_ratio = sum(hit_ratios) / len(hit_ratios) if hit_ratios else 0
-            ref_images = len(set(p["ref_idx"] for p in pairs))
-            target_images = len(set(p["target_idx"] for p in pairs))
-
-            # 报告目录：若指定 save_root，则保存到 save_root/output_reports/<dataset_name>
-            reports_dir = (
-                self.save_root / dataset.name / "output_reports"
-                if self.save_root
-                else DEFAULT_SAVE_ROOT / dataset.name / "output_reports"
-            )
-            reports_dir.mkdir(parents=True, exist_ok=True)
-            report_file = (
-                reports_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            )
-
-            with report_file.open("w", encoding="utf-8") as f:
-                f.write("=" * 70 + "\n")
-                f.write("SKU 计数分析报告\n")
-                f.write("=" * 70 + "\n")
-                f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                f.write(f"数据集: {dataset_path}\n")
-                f.write(f"匹配算法: {algorithm_name}\n")
-                f.write("-" * 70 + "\n\n")
-
-                f.write("【匹配统计】\n")
-                f.write(f"  原始匹配数: {result['original_matches']}\n")
-                f.write(f"  过滤后匹配数: {result['filtered_matches']}\n")
-                f.write(
-                    f"  去重减少: {result['original_matches'] - result['filtered_matches']} 个冗余匹配 "
-                    f"({(result['original_matches'] - result['filtered_matches']) / result['original_matches'] * 100:.1f}%)\n"
-                )
-                f.write(f"  平均 Hit Ratio: {avg_hit_ratio:.3f}\n")
-                f.write(
-                    f"  涉及图片: {ref_images} 个参考图片, {target_images} 个目标图片\n\n"
-                )
-
-                f.write("【详细匹配结果】\n")
-                for i, pair in enumerate(pairs, 1):
-                    f.write(
-                        f"{i:3d}. Ref({pair['ref_idx']},{pair['ref_id']}) → "
-                        f"Target({pair['target_idx']},{pair['target_id']}) "
-                        f"hit_ratio={pair['hit_ratio']:.3f}\n"
-                    )
-                f.write("\n" + "=" * 70 + "\n")
-
+        if not summary_dir.exists():
+            msg = f"匹配结果目录不存在: {summary_dir}，请先运行SKU匹配推理"
+            logger.warning(msg)
             duration = perf_counter() - start
-            logger.info(
-                f"SKU分析完成 - 最终匹配数: {result['filtered_matches']}, 耗时 {duration:.2f}s"
+            raise RuntimeError(msg)
+
+        # 检测使用的算法
+        algorithm_name = (
+            "Point Tracking" if "output_pt" in str(summary_dir) else "3D Mapping"
+        )
+
+        analyzer = ImprovedSKUCountAnalyzer(str(detection_dir), str(summary_dir))
+        result = analyzer.analyze_with_filtering()
+
+        # 计算统计信息
+        removed = result["original_matches"] - result["filtered_matches"]
+        reduction_suffix = (
+            f"({removed / result['original_matches'] * 100:.1f}%)"
+            if result["original_matches"]
+            else ""
+        )
+        pairs = result["pairs"]
+        hit_ratios = [p["hit_ratio"] for p in pairs]
+        avg_hit_ratio = sum(hit_ratios) / len(hit_ratios) if hit_ratios else 0
+        ref_images = len(set(p["ref_idx"] for p in pairs))
+        target_images = len(set(p["target_idx"] for p in pairs))
+
+        # 报告目录：若指定 save_root，则保存到 save_root/output_reports/<dataset_name>
+        reports_dir = (
+            self.save_root / dataset.name / "output_reports"
+            if self.save_root
+            else DEFAULT_SAVE_ROOT / dataset.name / "output_reports"
+        )
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        report_file = reports_dir / f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
+        with report_file.open("w", encoding="utf-8") as f:
+            f.write("=" * 70 + "\n")
+            f.write("SKU 计数分析报告\n")
+            f.write("=" * 70 + "\n")
+            f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"数据集: {dataset_path}\n")
+            f.write(f"匹配算法: {algorithm_name}\n")
+            f.write("-" * 70 + "\n\n")
+
+            f.write("【匹配统计】\n")
+            f.write(f"  原始匹配数: {result['original_matches']}\n")
+            f.write(f"  过滤后匹配数: {result['filtered_matches']}\n")
+            f.write(
+                f"  去重减少: {result['original_matches'] - result['filtered_matches']} 个冗余匹配 "
+                f"{reduction_suffix}\n"
             )
-            logger.debug(f"报告文件: {report_file}")
-            return {
-                "success": True,
-                "duration_s": duration,
-                "details": {"report_file": str(report_file)},
-            }
-        except (
-            ImportError,
-            ModuleNotFoundError,
-            OSError,
-            RuntimeError,
-            ValueError,
-            KeyError,
-        ) as e:
-            duration = perf_counter() - start
-            logger.error(
-                f"END improved_analysis duration={duration:.2f}s result=fail error={e}",
-                exc_info=True,
-            )
-            return {"success": False, "error": str(e), "duration_s": duration}
+            f.write(f"  平均 Hit Ratio: {avg_hit_ratio:.3f}\n")
+            f.write(f"  涉及图片: {ref_images} 个参考图片, {target_images} 个目标图片\n\n")
+
+            f.write("【详细匹配结果】\n")
+            for i, pair in enumerate(pairs, 1):
+                f.write(
+                    f"{i:3d}. Ref({pair['ref_idx']},{pair['ref_id']}) → "
+                    f"Target({pair['target_idx']},{pair['target_id']}) "
+                    f"hit_ratio={pair['hit_ratio']:.3f}\n"
+                )
+            f.write("\n" + "=" * 70 + "\n")
+
+        duration = perf_counter() - start
+        logger.info(
+            f"SKU分析完成 - 最终匹配数: {result['filtered_matches']}, 耗时 {duration:.2f}s"
+        )
+        logger.debug(f"报告文件: {report_file}")
+        return {
+            "success": True,
+            "duration_s": duration,
+            "details": {"report_file": str(report_file)},
+        }
 
     def run_accuracy_evaluation(
         self, dataset_path: str, *, backend: str = "pt"
     ) -> StepResult:
-        """Evaluate this run's backend-specific matching output."""
+        """评估当前后端的匹配结果；输入缺失或评估失败直接报错。"""
         start = perf_counter()
-        try:
-            logger.info("开始准确性评估")
-
-            benchmark_csv = PROJECT_ROOT / "imdata" / "picture_mapping_benchmark.csv"
-            if not benchmark_csv.exists():
-                msg = f"基准数据文件不存在: {benchmark_csv}"
-                logger.error(msg)
-                duration = perf_counter() - start
-                return {"success": False, "error": msg, "duration_s": duration}
-
-            dataset = Path(dataset_path)
-            output_root = (
-                self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
+        benchmark_csv = PROJECT_ROOT / "imdata" / "picture_mapping_benchmark.csv"
+        if not benchmark_csv.is_file():
+            raise FileNotFoundError(f"基准数据文件不存在: {benchmark_csv}")
+        output_root = self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
+        normalized_backend = "pt" if backend == "point_tracking" else backend
+        output_subdir = (
+            "output_pt"
+            if normalized_backend == "pt"
+            else f"output_3dmapping_{normalized_backend}"
+        )
+        output_dir = output_root / Path(dataset_path).name / output_subdir
+        if not output_dir.is_dir():
+            raise FileNotFoundError(f"匹配结果目录不存在: {output_dir}")
+        script_path = PROJECT_ROOT / "scripts/3d/evaluation/accuracy_evaluation.sh"
+        if not script_path.is_file():
+            raise FileNotFoundError(f"准确性评估脚本不存在: {script_path}")
+        result = subprocess.run(
+            [
+                "bash",
+                str(script_path),
+                Path(dataset_path).name,
+                "--backend",
+                normalized_backend,
+                "--save-root",
+                str(output_root),
+            ],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode:
+            raise RuntimeError(
+                f"准确性评估失败 ({result.returncode}): {result.stderr}\n{result.stdout}"
             )
-            normalized_backend = "pt" if backend == "point_tracking" else backend
-            output_subdir = (
-                "output_pt"
-                if normalized_backend == "pt"
-                else f"output_3dmapping_{normalized_backend}"
-            )
-            output_dir = output_root / dataset.name / output_subdir
-            if not output_dir.exists():
-                msg = "匹配结果目录不存在，请先运行SKU匹配推理"
-                logger.warning(msg)
-                duration = perf_counter() - start
-                return {"success": False, "error": msg, "duration_s": duration}
-
-            script_path = (
-                PROJECT_ROOT
-                / "scripts"
-                / "3d"
-                / "evaluation"
-                / "accuracy_evaluation.sh"
-            )
-            if script_path.exists():
-                import subprocess
-
-                result = subprocess.run(
-                    [
-                        "bash",
-                        str(script_path),
-                        dataset.name,
-                        "--backend",
-                        normalized_backend,
-                        "--save-root",
-                        str(output_root),
-                    ],
-                    cwd=str(PROJECT_ROOT),
-                    capture_output=True,
-                    text=True,
-                )
-                if result.returncode == 0:
-                    duration = perf_counter() - start
-                    logger.info(f"评估完成 - 耗时 {duration:.2f}s")
-                    return {"success": True, "duration_s": duration}
-                else:
-                    duration = perf_counter() - start
-                    logger.error(f"评估失败: {result.stderr}")
-                    return {
-                        "success": False,
-                        "error": result.stderr,
-                        "duration_s": duration,
-                    }
-
-            msg = f"准确性评估脚本不存在: {script_path}"
-            logger.error(msg)
-            return {
-                "success": False,
-                "error": msg,
-                "duration_s": perf_counter() - start,
-            }
-        except (OSError, subprocess.SubprocessError, RuntimeError) as e:
-            duration = perf_counter() - start
-            logger.error(
-                f"END evaluation duration={duration:.2f}s result=fail error={e}",
-                exc_info=True,
-            )
-            return {"success": False, "error": str(e), "duration_s": duration}
+        return {"success": True, "duration_s": perf_counter() - start}
 
     def run_reconstruction(
         self,
@@ -1013,60 +802,57 @@ class SKUDetectionMain:
         - 后端实例化走 RECONSTRUCTOR_REGISTRY（src/__init__.py 注册），新增后端无需改本方法。
         """
         start = perf_counter()
-        try:
-            from src import RECONSTRUCTOR_REGISTRY, get_reconstructor
+        from src import RECONSTRUCTOR_REGISTRY, get_reconstructor
 
-            use_backend = (backend or "vggt").lower()
-            if use_backend not in RECONSTRUCTOR_REGISTRY:
-                available = ", ".join(sorted(RECONSTRUCTOR_REGISTRY)) or "(无)"
-                hint = (
-                    "（如需启用 vggt，请恢复 src/__init__.py 中 VGGT3DReconstructor 的注册）"
-                    if use_backend == "vggt"
-                    else ""
-                )
-                raise ValueError(
-                    f"未知/未启用的重建后端: {backend}. 已注册: {available}{hint}"
-                )
+        use_backend = (backend or "vggt").lower()
+        if use_backend not in RECONSTRUCTOR_REGISTRY:
+            available = ", ".join(sorted(RECONSTRUCTOR_REGISTRY)) or "(无)"
+            hint = (
+                "（如需启用 vggt，请恢复 src/__init__.py 中 VGGT3DReconstructor 的注册）"
+                if use_backend == "vggt"
+                else ""
+            )
+            raise ValueError(f"未知/未启用的重建后端: {backend}. 已注册: {available}{hint}")
 
-            dataset = Path(dataset_path)
-            if not dataset.exists():
-                raise ValueError(f"数据集路径不存在: {dataset_path}")
-            image_dir = dataset / "images"
-            if not image_dir.exists():
-                msg = f"图片目录不存在: {image_dir}"
-                logger.error(msg)
-                return {"success": False, "error": msg, "duration_s": 0.0}
+        dataset = Path(dataset_path)
+        if not dataset.exists():
+            raise ValueError(f"数据集路径不存在: {dataset_path}")
+        image_dir = dataset / "images"
+        if not image_dir.exists():
+            msg = f"图片目录不存在: {image_dir}"
+            logger.error(msg)
+            raise RuntimeError(msg)
 
-            # 选择输出位置：GLB文件放到对应的cache目录中
-            output_dir = (self.save_root / dataset.name) if self.save_root else dataset
-            cache_dir = output_dir / f"{use_backend}_cache"
-            cache_dir.mkdir(parents=True, exist_ok=True)
+        # 选择输出位置：GLB文件放到对应的cache目录中
+        output_dir = (self.save_root / dataset.name) if self.save_root else dataset
+        cache_dir = output_dir / f"{use_backend}_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
 
-            # 自动在文件名中添加模型名称（如果文件名中还没有）
-            output_path = Path(output_filename)
-            if (
-                use_backend not in output_path.stem
-            ):  # 检查文件名（不含扩展名）中是否已包含模型名
-                # 在扩展名前插入模型名称：reconstruction.glb -> reconstruction_vggt.glb
-                new_filename = f"{output_path.stem}_{use_backend}{output_path.suffix}"
-                output_file = cache_dir / new_filename
-            else:
-                output_file = cache_dir / output_filename
+        # 自动在文件名中添加模型名称（如果文件名中还没有）
+        output_path = Path(output_filename)
+        if (
+            use_backend not in output_path.stem
+        ):  # 检查文件名（不含扩展名）中是否已包含模型名
+            # 在扩展名前插入模型名称：reconstruction.glb -> reconstruction_vggt.glb
+            new_filename = f"{output_path.stem}_{use_backend}{output_path.suffix}"
+            output_file = cache_dir / new_filename
+        else:
+            output_file = cache_dir / output_filename
 
-            logger.info(f"开始3D重建[{use_backend}]: {image_dir} → {output_file}")
+        logger.info(f"开始3D重建[{use_backend}]: {image_dir} → {output_file}")
 
-            # 通过注册表获取后端类（新增后端只需 @register_reconstructor + 在 src/__init__.py 导入）
-            recon_cls = get_reconstructor(use_backend)
-            recon = recon_cls(device=device, model_path=model_path)
-            # vggt 的 export_glb 需要 mask_* 参数（经 reconstruct_from_directory 的 **kwargs 透传）；
-            # da3/pi3 无此参数，忽略即可。
-            extra_kwargs: dict = {}
-            if use_backend == "vggt":
-                extra_kwargs = {
-                    "mask_black_bg": mask_black_bg,
-                    "mask_white_bg": mask_white_bg,
-                    "mask_sky": mask_sky,
-                }
+        # 通过注册表获取后端类（新增后端只需 @register_reconstructor + 在 src/__init__.py 导入）
+        recon_cls = get_reconstructor(use_backend)
+        # vggt 的 export_glb 需要 mask_* 参数（经 reconstruct_from_directory 的 **kwargs 透传）；
+        # da3/pi3 无此参数，忽略即可。
+        extra_kwargs: dict = {}
+        if use_backend == "vggt":
+            extra_kwargs = {
+                "mask_black_bg": mask_black_bg,
+                "mask_white_bg": mask_white_bg,
+                "mask_sky": mask_sky,
+            }
+        with recon_cls(device=device, model_path=model_path) as recon:
             result_path = recon.reconstruct_from_directory(
                 input_dir=str(image_dir),
                 output_path=str(output_file),
@@ -1076,26 +862,13 @@ class SKUDetectionMain:
                 **extra_kwargs,
             )
 
-            duration = perf_counter() - start
-            logger.info(f"3D重建完成 - 耗时 {duration:.2f}s")
-            return {
-                "success": True,
-                "duration_s": duration,
-                "details": {"output_file": str(result_path)},
-            }
-        except (
-            ImportError,
-            ModuleNotFoundError,
-            OSError,
-            RuntimeError,
-            ValueError,
-        ) as e:
-            duration = perf_counter() - start
-            logger.error(
-                f"END reconstruct duration={duration:.2f}s result=fail error={e}",
-                exc_info=True,
-            )
-            return {"success": False, "error": str(e), "duration_s": duration}
+        duration = perf_counter() - start
+        logger.info(f"3D重建完成 - 耗时 {duration:.2f}s")
+        return {
+            "success": True,
+            "duration_s": duration,
+            "details": {"output_file": str(result_path)},
+        }
 
     def run_dedup_sequence(
         self,
@@ -1113,78 +886,56 @@ class SKUDetectionMain:
             detection_dir: 已完成 personalcare 分类的检测目录；省略时使用原始输入
         """
         start = perf_counter()
-        try:
-            logger.info(f"开始顺序去重 (algorithm: {algorithm}, backend: {backend})")
-            from src.deduplicate_detections import (
-                deduplicate_sequence,
-                resolve_dataset_paths,
-            )
+        logger.info(f"开始顺序去重 (algorithm: {algorithm}, backend: {backend})")
+        from src.deduplicate_detections import (
+            deduplicate_sequence,
+            resolve_dataset_paths,
+        )
 
-            dataset_dir = Path(dataset_path)
-            if not dataset_dir.exists():
-                raise ValueError(f"数据集路径不存在: {dataset_path}")
+        dataset_dir = Path(dataset_path)
+        if not dataset_dir.exists():
+            raise ValueError(f"数据集路径不存在: {dataset_path}")
 
-            classified_detection_dir = (
-                Path(detection_dir) if detection_dir is not None else None
-            )
-            if (
-                classified_detection_dir is not None
-                and not classified_detection_dir.is_dir()
-            ):
-                raise ValueError(f"分类检测目录不存在: {classified_detection_dir}")
-            paths = resolve_dataset_paths(dataset_dir, classified_detection_dir)
-            dataset_name = dataset_dir.name
+        classified_detection_dir = (
+            Path(detection_dir) if detection_dir is not None else None
+        )
+        if classified_detection_dir is not None and not classified_detection_dir.is_dir():
+            raise ValueError(f"分类检测目录不存在: {classified_detection_dir}")
+        paths = resolve_dataset_paths(dataset_dir, classified_detection_dir)
+        dataset_name = dataset_dir.name
 
-            # 输出目录：Output/<dataset_name>/dedup_detections/
-            output_base = (
-                self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
-            )
+        # 输出目录：Output/<dataset_name>/dedup_detections/
+        output_base = self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
 
-            result = deduplicate_sequence(
-                paths,
-                output_root=output_base,  # 模块内部会追加 dataset_name
-                max_image=None,  # 处理所有图片
-                same_names=True,  # 默认同名输出 (1.json, 2.json, ...)
-                dedup_mode="any",  # 默认使用所有匹配进行去重
-                min_hit_ratio=0.0,  # 默认不过滤命中率
-                output_subdir="dedup_detections",  # 指定子目录名
-                algorithm=algorithm,  # 传递算法类型
-                backend=backend,  # 传递后端类型
-                detections_dir=paths.detections_dir,
-            )
+        result = deduplicate_sequence(
+            paths,
+            output_root=output_base,  # 模块内部会追加 dataset_name
+            max_image=None,  # 处理所有图片
+            same_names=True,  # 默认同名输出 (1.json, 2.json, ...)
+            dedup_mode="any",  # 默认使用所有匹配进行去重
+            min_hit_ratio=0.0,  # 默认不过滤命中率
+            output_subdir="dedup_detections",  # 指定子目录名
+            algorithm=algorithm,  # 传递算法类型
+            backend=backend,  # 传递后端类型
+            detections_dir=paths.detections_dir,
+        )
 
-            # 实际输出路径是 output_base/dataset_name/dedup_detections/
-            actual_output_dir = output_base / dataset_name / "dedup_detections"
-            duration = perf_counter() - start
-            logger.info(f"去重完成 - 处理 {len(result)} 个文件, 耗时 {duration:.2f}s")
-            logger.debug(f"输出目录: {actual_output_dir}")
-            return {
-                "success": True,
-                "duration_s": duration,
-                "details": {"count": len(result), "output_dir": str(actual_output_dir)},
-            }
-        except (
-            ImportError,
-            ModuleNotFoundError,
-            OSError,
-            RuntimeError,
-            ValueError,
-            KeyError,
-        ) as e:
-            duration = perf_counter() - start
-            logger.error(
-                f"END dedup_sequence duration={duration:.2f}s result=fail error={e}",
-                exc_info=True,
-            )
-            return {"success": False, "error": str(e), "duration_s": duration}
+        # 实际输出路径是 output_base/dataset_name/dedup_detections/
+        actual_output_dir = output_base / dataset_name / "dedup_detections"
+        duration = perf_counter() - start
+        logger.info(f"去重完成 - 处理 {len(result)} 个文件, 耗时 {duration:.2f}s")
+        logger.debug(f"输出目录: {actual_output_dir}")
+        return {
+            "success": True,
+            "duration_s": duration,
+            "details": {"count": len(result), "output_dir": str(actual_output_dir)},
+        }
 
     def run_personalcare_classification(self, dataset_path: str) -> StepResult:
         """Run the isolated personalcare classifier and accept only a published result."""
         start = perf_counter()
         dataset = Path(dataset_path)
-        output_root = (
-            self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
-        )
+        output_root = self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
         command = [
             "uv",
             "run",
@@ -1199,44 +950,24 @@ class SKUDetectionMain:
             "--device",
             self.classifier_device,
         ]
-        try:
-            completed = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-        except OSError as error:
-            duration = perf_counter() - start
-            logger.error("personalcare classification could not start: %s", error)
-            return {
-                "success": False,
-                "error": str(error),
-                "duration_s": duration,
-            }
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
         duration = perf_counter() - start
         stderr = completed.stderr.strip()
         if completed.returncode != 0:
-            return {
-                "success": False,
-                "error": f"personalcare classifier exited {completed.returncode}: {stderr}",
-                "duration_s": duration,
-            }
-        try:
-            payload = json.loads(completed.stdout)
-        except json.JSONDecodeError as error:
-            return {
-                "success": False,
-                "error": f"personalcare classifier did not emit one JSON object: {error}; stderr: {stderr}",
-                "duration_s": duration,
-            }
+            raise RuntimeError(
+                f"personalcare classifier exited {completed.returncode}: {stderr}"
+            )
+        payload = json.loads(completed.stdout)
         if not _is_valid_classifier_payload(payload):
-            return {
-                "success": False,
-                "error": f"personalcare classifier emitted an invalid payload; stderr: {stderr}",
-                "duration_s": duration,
-            }
+            raise RuntimeError(
+                f"personalcare classifier emitted an invalid payload; stderr: {stderr}"
+            )
         run_id = payload["run_id"]
         assert isinstance(run_id, str)
         run_dir = (
@@ -1250,32 +981,21 @@ class SKUDetectionMain:
             or result_path.resolve() != run_dir / "result.json"
             or not result_path.is_file()
         ):
-            return {
-                "success": False,
-                "error": f"personalcare classifier published unexpected paths; stderr: {stderr}",
-                "duration_s": duration,
-            }
-        try:
-            published_payload = json.loads(result_path.read_text(encoding="utf-8"))
-            current_payload = json.loads(
-                (run_dir.parents[1] / "CURRENT").read_text(encoding="utf-8")
+            raise RuntimeError(
+                f"personalcare classifier published unexpected paths; stderr: {stderr}"
             )
-        except (OSError, json.JSONDecodeError) as error:
-            return {
-                "success": False,
-                "error": f"personalcare classifier publication is unreadable: {error}; stderr: {stderr}",
-                "duration_s": duration,
-            }
+        published_payload = json.loads(result_path.read_text(encoding="utf-8"))
+        current_payload = json.loads(
+            (run_dir.parents[1] / "CURRENT").read_text(encoding="utf-8")
+        )
         if (
             not _is_valid_classifier_payload(published_payload)
             or not _same_typed_classifier_payload(published_payload, payload)
             or not _is_complete_classifier_current(current_payload, run_id)
         ):
-            return {
-                "success": False,
-                "error": f"personalcare classifier publication does not match stdout; stderr: {stderr}",
-                "duration_s": duration,
-            }
+            raise RuntimeError(
+                f"personalcare classifier publication does not match stdout; stderr: {stderr}"
+            )
         return {
             "success": True,
             "duration_s": duration,
@@ -1296,20 +1016,16 @@ class SKUDetectionMain:
         summary: Dict[str, bool] = {}
 
         if not self.validate_dataset(dataset_path):
-            return {"validation": False}
+            raise ValueError(f"数据集验证失败: {dataset_path}")
         summary["validation"] = True
 
         classifier_future: Future[StepResult] | None = None
         classification_result: StepResult | None = None
 
         if not self.classifier_enabled:
-            try:
-                external_detection_dir = validate_external_classification_directory(
-                    Path(dataset_path)
-                )
-            except (OSError, ValueError, json.JSONDecodeError) as error:
-                logger.error("external classification validation failed: %s", error)
-                return {"validation": True, "classification": False}
+            external_detection_dir = validate_external_classification_directory(
+                Path(dataset_path)
+            )
             classification_result = {
                 "success": True,
                 "detection_dir": str(external_detection_dir),
@@ -1317,27 +1033,14 @@ class SKUDetectionMain:
 
         def join_classification() -> StepResult:
             nonlocal classification_result
-            if classification_result is not None:
-                return classification_result
-            if classifier_future is None:
-                classification_result = {
-                    "success": False,
-                    "error": "personalcare classification was not submitted",
-                }
-                return classification_result
-            try:
-                result = classifier_future.result()
-            except Exception as error:
-                logger.error("personalcare classification crashed: %s", error)
-                classification_result = {"success": False, "error": str(error)}
-                return classification_result
-            if not isinstance(result, dict):
-                classification_result = {
-                    "success": False,
-                    "error": "personalcare classification returned an invalid result",
-                }
-                return classification_result
-            classification_result = result
+            if classification_result is None:
+                if classifier_future is None:
+                    raise RuntimeError("personalcare classification was not submitted")
+                classification_result = classifier_future.result()
+            if not isinstance(classification_result, dict) or not isinstance(
+                classification_result.get("detection_dir"), str
+            ):
+                raise ValueError("personalcare classification returned an invalid result")
             return classification_result
 
         classifier_executor: ThreadPoolExecutor | None = None
@@ -1380,145 +1083,78 @@ class SKUDetectionMain:
                     summary["reconstruction"] = True
                 else:
                     logger.info(f"步骤1: 3D重建 (backend: {match_backend})")
-                    recon = self.run_reconstruction(
+                    self.run_reconstruction(
                         dataset_path, backend=match_backend, model_path=model_path
                     )
-                    summary["reconstruction"] = bool(recon.get("success", False))
-
-                    if not summary["reconstruction"]:
-                        logger.error("3D重建失败，无法继续3D匹配流程")
-                        classification = join_classification()
-                        summary["classification"] = bool(
-                            classification.get("success", False)
-                        )
-                        return summary
+                    summary["reconstruction"] = True
             else:
                 logger.info("步骤1: 跳过3D重建（使用 Point Tracking 算法）")
                 summary["reconstruction"] = True  # 标记为成功（不需要）
 
-            # 2. 原始检测框可视化
             if not quiet_outputs:
-                logger.info("步骤2: 原始检测框可视化")
-                viz = self.run_detection_visualization(dataset_path)
-                summary["visualization"] = bool(viz.get("success", False))
+                self.run_detection_visualization(dataset_path)
+                summary["visualization"] = True
 
-            # 3. SKU匹配推理
-            logger.info(f"步骤3: SKU匹配推理 (algorithm: {algorithm})")
             match_backend = self.match_backend if "3d" in algorithm else "vggt"
-            match = self.run_sku_matching(
+            self.run_sku_matching(
                 dataset_path, algorithm, batch_all_refs=True, backend=match_backend,
                 quiet_outputs=quiet_outputs,
             )
-            summary["matching"] = bool(match.get("success", False))
-            if not summary["matching"]:
-                classification = join_classification()
-                summary["classification"] = bool(classification.get("success", False))
-                summary["improved_analysis"] = False
-                summary["dedup"] = False
-                summary["dedup_visualization"] = False
-                summary["accuracy_evaluation"] = False
-                return summary
-
-            # 3. SKU计数分析
+            summary["matching"] = True
             if not quiet_outputs:
-                analysis = self.run_improved_sku_analysis(
+                self.run_improved_sku_analysis(
                     dataset_path, algorithm=algorithm, backend=match_backend
                 )
-                summary["improved_analysis"] = bool(analysis.get("success", False))
+                summary["improved_analysis"] = True
 
             classification = join_classification()
-            summary["classification"] = bool(classification.get("success", False))
-            classified_detection_dir = classification.get("detection_dir")
-            if not summary["classification"] or not isinstance(
-                classified_detection_dir, str
-            ):
-                logger.error("personalcare 分类失败，停止去重与后续发布")
-                summary["dedup"] = False
-                summary["dedup_visualization"] = False
-                summary["accuracy_evaluation"] = False
-                return summary
-
-            # 4. 顺序去重（默认包含以便一键产出去重JSON）
-            dedup = self.run_dedup_sequence(
+            summary["classification"] = True
+            self.run_dedup_sequence(
                 dataset_path,
                 algorithm=algorithm,
                 backend=match_backend,
-                detection_dir=classified_detection_dir,
+                detection_dir=classification["detection_dir"],
             )
-            summary["dedup"] = bool(dedup.get("success", False))
-
+            summary["dedup"] = True
             if not quiet_outputs:
-                # 5. 去重后的检测框可视化
-                if summary["dedup"]:
-                    dataset = Path(dataset_path)
-                    dataset_name = dataset.name
-                    output_base = (
-                        self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
-                    )
-                    # deduplicate_sequence 输出到 output_base/dataset_name/dedup_detections/
-                    dedup_detection_dir = output_base / dataset_name / "dedup_detections"
-
-                    if dedup_detection_dir.exists() and any(
-                        dedup_detection_dir.glob("*.json")
-                    ):
-                        logger.info("开始可视化去重后的检测框...")
-                        dedup_viz = self.run_detection_visualization(
-                            dataset_path,
-                            detection_dir=str(dedup_detection_dir),
-                            output_suffix="dedup_imgs_w_bboxes",
-                        )
-                        summary["dedup_visualization"] = bool(
-                            dedup_viz.get("success", False)
-                        )
-                    else:
-                        logger.warning(f"去重检测目录为空或不存在: {dedup_detection_dir}")
-                        summary["dedup_visualization"] = False
-                else:
-                    summary["dedup_visualization"] = False
-
-            # 6. 准确性评估 (可选)
+                output_base = (
+                    self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
+                )
+                dedup_detection_dir = output_base / Path(dataset_path).name / "dedup_detections"
+                self.run_detection_visualization(
+                    dataset_path,
+                    detection_dir=str(dedup_detection_dir),
+                    output_suffix="dedup_imgs_w_bboxes",
+                )
+                summary["dedup_visualization"] = True
             if evaluate_accuracy and not quiet_outputs:
-                acc = self.run_accuracy_evaluation(
+                self.run_accuracy_evaluation(
                     dataset_path, backend=match_backend if "3d" in algorithm else "pt"
                 )
-                summary["accuracy_evaluation"] = bool(acc.get("success", False))
-
-            logger.info("=== 流水线执行结果 ===")
-            for step, ok in summary.items():
-                status = "成功" if ok else "失败"
-                logger.info(f"{step:20s}: {status}")
-
+                summary["accuracy_evaluation"] = True
+            logger.info("流水线全部阶段完成")
             return summary
         finally:
             if classifier_executor is not None:
                 classifier_executor.shutdown(wait=True)
 
     def run_concise_pipeline(
-        self, dataset_path: str, algorithm: str = "point_tracking"
+        self,
+        dataset_path: str,
+        algorithm: str = "point_tracking",
+        **matching_options,
     ) -> Dict[str, bool]:
-        """运行精简流水线 - 仅SKU匹配和准确性评估"""
-        logger.info("开始精简流水线 - SKU Matching + Accuracy evaluation")
-        summary: Dict[str, bool] = {}
-
+        """CLI 与交互菜单共享的匹配、评估流程；匹配失败不执行评估。"""
         if not self.validate_dataset(dataset_path):
-            return {"validation": False}
-        summary["validation"] = True
-
+            raise ValueError(f"数据集验证失败: {dataset_path}")
         match_backend = self.match_backend if "3d" in algorithm else "vggt"
-        match = self.run_sku_matching(dataset_path, algorithm, backend=match_backend)
-        summary["matching"] = bool(match.get("success", False))
-
-        acc = self.run_accuracy_evaluation(
-            dataset_path, backend=backend if "3d" in algorithm else "pt"
+        self.run_sku_matching(
+            dataset_path, algorithm, backend=match_backend, **matching_options
         )
-        summary["accuracy_evaluation"] = bool(acc.get("success", False))
-
-        logger.info("=== 精简流水线执行结果 ===")
-        for step, ok in summary.items():
-            status = "成功" if ok else "失败"
-            logger.info(f"{step:20s}: {status}")
-
-        return summary
+        self.run_accuracy_evaluation(
+            dataset_path, backend=match_backend if "3d" in algorithm else "pt"
+        )
+        return {"validation": True, "matching": True, "accuracy_evaluation": True}
 
     def interactive_mode(self) -> None:
         """交互模式"""
@@ -1917,20 +1553,17 @@ def main() -> None:
             _v = getattr(args, _k, None)
             if _v is not None:
                 _ov[_k] = _v
-        app.run_sku_matching(
+        app.run_concise_pipeline(
             args.dataset,
             args.algorithm,
             reference_idx=args.reference_idx,
             max_images=args.max_images,
             device=args.device,
             save_json=args.save_json,
-            backend=(args.match_backend if "3d" in args.algorithm else "vggt"),
             parallel_refs=args.parallel_refs,
             match_overrides=_ov,
             enable_profiling=args.enable_profiling,
-        )
-        app.run_accuracy_evaluation(
-            args.dataset, backend=args.match_backend if "3d" in args.algorithm else "pt"
+            sam3_mask_cache_root=args.sam3_mask_cache_root,
         )
     elif args.mode == "analyzer":
         # 仅执行改进的SKU计数分析

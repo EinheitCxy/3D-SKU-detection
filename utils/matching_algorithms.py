@@ -137,138 +137,134 @@ def _process_single_ref_object(
     Returns:
         匹配结果列表
     """
-    try:
-        start_idx, end_idx = ref_data["point_indices"]
+    start_idx, end_idx = ref_data["point_indices"]
         
-        # 获取该物体在目标图像中的对应点
-        ref_tracks_in_target = tracks[target_image_idx, start_idx:end_idx, :]  # (N_points, 2)
-        ref_confidence_in_target = confidence[target_image_idx, start_idx:end_idx]  # (N_points,)
+    # 获取该物体在目标图像中的对应点
+    ref_tracks_in_target = tracks[target_image_idx, start_idx:end_idx, :]  # (N_points, 2)
+    ref_confidence_in_target = confidence[target_image_idx, start_idx:end_idx]  # (N_points,)
         
-        # 过滤置信度高且有效的点
-        confident_mask = ref_confidence_in_target > config.confidence_threshold
-        valid_points = ref_tracks_in_target[confident_mask]
-        valid_points_count = int(valid_points.shape[0]) if valid_points.ndim == 2 else int(valid_points.numel() // 2)
+    # 过滤置信度高且有效的点
+    confident_mask = ref_confidence_in_target > config.confidence_threshold
+    valid_points = ref_tracks_in_target[confident_mask]
+    valid_points_count = int(valid_points.shape[0]) if valid_points.ndim == 2 else int(valid_points.numel() // 2)
 
-        if valid_points.numel() == 0:
-            return [], _empty_stats(ref_object_id, 0, len(target_bboxes))
-            
-        # 过滤非有限值
-        finite_mask = torch.isfinite(valid_points).all(dim=1)
-        valid_points = valid_points[finite_mask]
-        valid_points_count = int(valid_points.shape[0])
-
-        if len(valid_points) == 0:
-            return [], _empty_stats(ref_object_id, 0, len(target_bboxes))
-            
-        # 检查是否达到最小置信点数要求
-        if len(valid_points) < config.min_confident_points:
-            logger.debug(f"参考对象 {ref_object_id}: 只有 {len(valid_points)} 个置信点，低于最小值 {config.min_confident_points}")
-            return [], _empty_stats(ref_object_id, valid_points_count, len(target_bboxes))
-        
-        # 收集所有符合条件的匹配（向量化点落框统计）
-        all_candidates = []
-
-        top_hit_ratio = 0.0
-        if len(target_bboxes) > 0:
-            # 组装 boxes 张量 [M, 4]
-            boxes_list = [tb['bbox'] for tb in target_bboxes]
-            boxes = torch.as_tensor(boxes_list, dtype=valid_points.dtype, device=valid_points.device)
-
-            # 点坐标 [N]
-            X = valid_points[:, 0]
-            Y = valid_points[:, 1]
-
-            # 框坐标 [M]
-            X1 = boxes[:, 0]
-            Y1 = boxes[:, 1]
-            X2 = boxes[:, 2]
-            Y2 = boxes[:, 3]
-
-            # 广播判断 [M, N]
-            in_x = (X1[:, None] <= X[None, :]) & (X[None, :] <= X2[:, None])
-            in_y = (Y1[:, None] <= Y[None, :]) & (Y[None, :] <= Y2[:, None])
-            in_mask = in_x & in_y
-
-            # 每个框命中点数与比例 [M]
-            counts = in_mask.sum(dim=1)
-            total_pts = max(1, len(valid_points))
-            ratios = counts.float() / float(total_pts)
-
-            # 保留满足阈值的框索引
-            keep_mask = ratios >= min_hit_ratio
-            kept_indices = torch.nonzero(keep_mask, as_tuple=False).flatten().tolist()
-            below_mask = (ratios > 0) & (ratios < min_hit_ratio)
-            num_below_threshold = int(below_mask.sum().item())
-
-            for idx in kept_indices:
-                target_bbox_info = target_bboxes[idx]
-                vggt_box = boxes[idx].tolist()
-
-                # 将VGGT坐标映射回原图坐标
-                if transforms_info and target_image_idx < len(transforms_info):
-                    original_bbox = transforms_info[target_image_idx].map_bbox_to_original(vggt_box)
-                else:
-                    original_bbox = vggt_box
-
-                overlap_ratio = float(ratios[idx].item())
-                if overlap_ratio > top_hit_ratio:
-                    top_hit_ratio = overlap_ratio
-                points_in_bbox = int(counts[idx].item())
-
-                logger.debug(
-                    f"目标框 {target_bbox_info['object_id']}: {points_in_bbox}/{total_pts} 点在内 ({overlap_ratio:.3f})"
-                )
-
-                match = {
-                    'object_id': ref_object_id,
-                    'target_obj_id': target_bbox_info['object_id'],
-                    'box': original_bbox,
-                    'vggt_box': vggt_box,
-                    'correspondence_ratio': overlap_ratio,
-                    'matched_points': points_in_bbox,
-                    'total_points': total_pts,
-                    'target_confidence': target_bbox_info.get('confidence', 0.0),
-                    'reference_confidence': ref_data['confidence']
-                }
-                all_candidates.append(match)
-
-        # 去重逻辑 - 移除包含其他框的较大框
-        if len(all_candidates) > 1:
-            to_remove = set()
-            for i in range(len(all_candidates)):
-                if i in to_remove:
-                    continue
-                for j in range(i + 1, len(all_candidates)):
-                    if j in to_remove:
-                        continue
-                    bbox_i, bbox_j = all_candidates[i]['vggt_box'], all_candidates[j]['vggt_box']
-                    if _bbox_contains(bbox_i, bbox_j):
-                        to_remove.add(i)
-                        break
-                    elif _bbox_contains(bbox_j, bbox_i):
-                        to_remove.add(j)
-            filtered_candidates = [m for i, m in enumerate(all_candidates) if i not in to_remove]
-        else:
-            filtered_candidates = all_candidates
-
-        # 按overlap_ratio降序排序，取前2个最好的匹配
-        filtered_candidates.sort(key=lambda x: x['correspondence_ratio'], reverse=True)
-        matches = filtered_candidates[:2]
-
-        return matches, {
-            'ref_object_id': ref_object_id,
-            'valid_points': valid_points_count,
-            'below_min_conf_points': False,
-            'num_target_bboxes': len(target_bboxes),
-            'num_candidates': len(all_candidates),
-            'num_below_threshold': int(num_below_threshold) if len(target_bboxes) > 0 else 0,
-            'top_hit_ratio': float(top_hit_ratio),
-            'produced_matches': len(matches),
-        }
-        
-    except (KeyError, IndexError, ValueError, AttributeError) as e:
-        logger.error(f"处理参考对象 {ref_object_id} 失败: {e}")
+    if valid_points.numel() == 0:
         return [], _empty_stats(ref_object_id, 0, len(target_bboxes))
+            
+    # 过滤非有限值
+    finite_mask = torch.isfinite(valid_points).all(dim=1)
+    valid_points = valid_points[finite_mask]
+    valid_points_count = int(valid_points.shape[0])
+
+    if len(valid_points) == 0:
+        return [], _empty_stats(ref_object_id, 0, len(target_bboxes))
+            
+    # 检查是否达到最小置信点数要求
+    if len(valid_points) < config.min_confident_points:
+        logger.debug(f"参考对象 {ref_object_id}: 只有 {len(valid_points)} 个置信点，低于最小值 {config.min_confident_points}")
+        return [], _empty_stats(ref_object_id, valid_points_count, len(target_bboxes))
+        
+    # 收集所有符合条件的匹配（向量化点落框统计）
+    all_candidates = []
+
+    top_hit_ratio = 0.0
+    if len(target_bboxes) > 0:
+        # 组装 boxes 张量 [M, 4]
+        boxes_list = [tb['bbox'] for tb in target_bboxes]
+        boxes = torch.as_tensor(boxes_list, dtype=valid_points.dtype, device=valid_points.device)
+
+        # 点坐标 [N]
+        X = valid_points[:, 0]
+        Y = valid_points[:, 1]
+
+        # 框坐标 [M]
+        X1 = boxes[:, 0]
+        Y1 = boxes[:, 1]
+        X2 = boxes[:, 2]
+        Y2 = boxes[:, 3]
+
+        # 广播判断 [M, N]
+        in_x = (X1[:, None] <= X[None, :]) & (X[None, :] <= X2[:, None])
+        in_y = (Y1[:, None] <= Y[None, :]) & (Y[None, :] <= Y2[:, None])
+        in_mask = in_x & in_y
+
+        # 每个框命中点数与比例 [M]
+        counts = in_mask.sum(dim=1)
+        total_pts = max(1, len(valid_points))
+        ratios = counts.float() / float(total_pts)
+
+        # 保留满足阈值的框索引
+        keep_mask = ratios >= min_hit_ratio
+        kept_indices = torch.nonzero(keep_mask, as_tuple=False).flatten().tolist()
+        below_mask = (ratios > 0) & (ratios < min_hit_ratio)
+        num_below_threshold = int(below_mask.sum().item())
+
+        for idx in kept_indices:
+            target_bbox_info = target_bboxes[idx]
+            vggt_box = boxes[idx].tolist()
+
+            # 将VGGT坐标映射回原图坐标
+            if transforms_info and target_image_idx < len(transforms_info):
+                original_bbox = transforms_info[target_image_idx].map_bbox_to_original(vggt_box)
+            else:
+                original_bbox = vggt_box
+
+            overlap_ratio = float(ratios[idx].item())
+            if overlap_ratio > top_hit_ratio:
+                top_hit_ratio = overlap_ratio
+            points_in_bbox = int(counts[idx].item())
+
+            logger.debug(
+                f"目标框 {target_bbox_info['object_id']}: {points_in_bbox}/{total_pts} 点在内 ({overlap_ratio:.3f})"
+            )
+
+            match = {
+                'object_id': ref_object_id,
+                'target_obj_id': target_bbox_info['object_id'],
+                'box': original_bbox,
+                'vggt_box': vggt_box,
+                'correspondence_ratio': overlap_ratio,
+                'matched_points': points_in_bbox,
+                'total_points': total_pts,
+                'target_confidence': target_bbox_info.get('confidence', 0.0),
+                'reference_confidence': ref_data['confidence']
+            }
+            all_candidates.append(match)
+
+    # 去重逻辑 - 移除包含其他框的较大框
+    if len(all_candidates) > 1:
+        to_remove = set()
+        for i in range(len(all_candidates)):
+            if i in to_remove:
+                continue
+            for j in range(i + 1, len(all_candidates)):
+                if j in to_remove:
+                    continue
+                bbox_i, bbox_j = all_candidates[i]['vggt_box'], all_candidates[j]['vggt_box']
+                if _bbox_contains(bbox_i, bbox_j):
+                    to_remove.add(i)
+                    break
+                elif _bbox_contains(bbox_j, bbox_i):
+                    to_remove.add(j)
+        filtered_candidates = [m for i, m in enumerate(all_candidates) if i not in to_remove]
+    else:
+        filtered_candidates = all_candidates
+
+    # 按overlap_ratio降序排序，取前2个最好的匹配
+    filtered_candidates.sort(key=lambda x: x['correspondence_ratio'], reverse=True)
+    matches = filtered_candidates[:2]
+
+    return matches, {
+        'ref_object_id': ref_object_id,
+        'valid_points': valid_points_count,
+        'below_min_conf_points': False,
+        'num_target_bboxes': len(target_bboxes),
+        'num_candidates': len(all_candidates),
+        'num_below_threshold': int(num_below_threshold) if len(target_bboxes) > 0 else 0,
+        'top_hit_ratio': float(top_hit_ratio),
+        'produced_matches': len(matches),
+    }
+        
 
 
 def find_object_correspondences(
@@ -340,355 +336,351 @@ def find_correspondences_3d_mapping(
 ) -> Tuple[Dict[int, List[Dict]], Optional[Dict[int, Dict]]]:
     """基于3D-2D投影的物体匹配算法"""
 
-    try:
-        S = images.shape[0]
-        _, _, H, W = images.shape
-        # DA3 matching keeps only a meta shape descriptor for RGB images. 3D cache
-        # tensors still belong on config.device for projection and validation.
-        device = torch.device(config.device) if config.backend == "da3" else images.device
+    S = images.shape[0]
+    _, _, H, W = images.shape
+    # Matching keeps only a meta shape descriptor for RGB images (da3/pi3/pi3x).
+    # 3D cache tensors still belong on config.device for projection and validation.
+    device = torch.device(config.device) if images.device.type == "meta" else images.device
 
-        # 验证输入参数
-        if reference_image_idx >= S:
-            raise ValueError(f"Reference image index {reference_image_idx} out of range for {S} images")
+    # 验证输入参数
+    if reference_image_idx >= S:
+        raise ValueError(f"Reference image index {reference_image_idx} out of range for {S} images")
 
-        # 1. 全局3D场景重建（根据backend选择数据源）
-        logger.info(f"使用 {config.backend} 后端进行3D场景重建...")
+    # 1. 全局3D场景重建（根据backend选择数据源）
+    logger.info(f"使用 {config.backend} 后端进行3D场景重建...")
 
-        if config.backend in ("pi3", "da3"):
-            # 从缓存加载预先重建的数据
-            # 路径: Output/<dataset>/<backend>_cache/predictions.npz
-            # output_dir格式: Output/<dataset>/output_3dmapping_<backend>/<ref_idx>
-            output_path = Path(config.output_dir)
-            cache_path = output_path.parent.parent / f"{config.backend}_cache" / "predictions.npz"
+    if config.backend in ("pi3", "pi3x", "da3", "mapanything"):
+        # 从缓存加载预先重建的数据
+        # 路径: Output/<dataset>/<backend>_cache/predictions.npz
+        # output_dir格式: Output/<dataset>/output_3dmapping_<backend>/<ref_idx>
+        output_path = Path(config.output_dir)
+        cache_path = output_path.parent.parent / f"{config.backend}_cache" / "predictions.npz"
 
-            if not cache_path.exists():
-                raise FileNotFoundError(f"{config.backend.upper()} 缓存文件不存在: {cache_path}")
+        if not cache_path.exists():
+            raise FileNotFoundError(f"{config.backend.upper()} 缓存文件不存在: {cache_path}")
 
-            cache_key = f"{str(cache_path)}::{str(device)}"
-            scene_data = PI3_SCENE_CACHE.get(cache_key)
+        if transforms_info is None or len(transforms_info) != S:
+            raise ValueError(f"{config.backend} matching requires one transform per image")
+        desired_ids = tuple(int(transform.image_id) for transform in transforms_info)
+        cache_key = f"{cache_path}::{device}::{desired_ids}"
+        scene_data = PI3_SCENE_CACHE.get(cache_key)
 
-            if scene_data is None:
-                with StageTimer("cache_npz_load"):
-                    data = np.load(cache_path, allow_pickle=True)
+        if scene_data is None:
+            with StageTimer("cache_npz_load"):
+                data = np.load(cache_path, allow_pickle=True)
 
-                # 验证必需字段
-                required_keys = ["depth", "depth_conf", "world_points", "world_points_conf", "extrinsic", "intrinsic"]
-                if config.backend == "da3":
-                    required_keys.extend(
-                        [
-                            "image_ids",
-                            "source_image_sizes",
-                            "source_to_processed_affine",
-                        ]
+            # 验证必需字段
+            required_keys = ["depth", "depth_conf", "world_points", "world_points_conf", "extrinsic", "intrinsic", "image_ids"]
+            if config.backend in ("da3", "mapanything"):
+                required_keys.extend(
+                    [
+                        "source_image_sizes",
+                        "source_to_processed_affine",
+                    ]
+                )
+            missing = [k for k in required_keys if k not in data]
+            if missing:
+                raise ValueError(f"Pi3缓存缺少字段: {missing}")
+
+            # 提取数据
+            depth_np = data["depth"]
+            world_np = data["world_points"]
+            extr_np = data["extrinsic"]
+            intr_np = data["intrinsic"]
+            S_cache, H_pi3, W_pi3 = depth_np.shape[:3]
+
+            if S_cache < S:
+                raise ValueError(f"Pi3缓存帧数({S_cache})少于当前图像数({S})")
+
+            depth_conf_np = data["depth_conf"]
+            world_conf_np = data["world_points_conf"]
+            # 帧对齐：根据image_ids重排数据
+            image_ids_cache = data["image_ids"]
+            id_to_idx = {int(img_id): i for i, img_id in enumerate(image_ids_cache)}
+            index_map = np.array([id_to_idx[img_id] for img_id in desired_ids])
+            depth_np, depth_conf_np = depth_np[index_map], depth_conf_np[index_map]
+            world_np, world_conf_np = world_np[index_map], world_conf_np[index_map]
+            extr_np, intr_np = extr_np[index_map], intr_np[index_map]
+            if config.backend in ("da3", "mapanything"):
+                source_sizes_np = data["source_image_sizes"][index_map]
+                affine_np = data["source_to_processed_affine"][index_map]
+                image_ids_np = data["image_ids"][index_map]
+
+            # 构建scene_data
+            _t_scene = time.perf_counter()
+            scene_data = {
+                "depth": torch.from_numpy(depth_np).to(device),
+                "depth_conf": torch.from_numpy(depth_conf_np).to(device),
+                "world_points": torch.from_numpy(world_np).to(device),
+                "world_points_conf": torch.from_numpy(world_conf_np).to(device),
+                "extrinsic": torch.from_numpy(extr_np).to(device),
+                "intrinsic": torch.from_numpy(intr_np).to(device),
+            }
+            if config.backend in ("da3", "mapanything"):
+                scene_data.update(
+                    {
+                        "source_image_sizes": source_sizes_np,
+                        "source_to_processed_affine": affine_np,
+                        "image_ids": image_ids_np,
+                        "processed_shape_hw": (int(H_pi3), int(W_pi3)),
+                    }
+                )
+            StageTimer.record("scene_data_build", time.perf_counter() - _t_scene)
+            PI3_SCENE_CACHE[cache_key] = scene_data
+            logger.info(f"加载{config.backend.upper()}缓存: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})")
+        else:
+            logger.info(f"复用 {config.backend.upper()} 场景缓存: {cache_path}")
+
+        if config.backend in ("da3", "mapanything"):
+            if transforms_info is None:
+                raise ValueError("DA3 matching requires transforms")
+            bind_da3_transforms_from_cache(
+                transforms_info,
+                image_ids=scene_data["image_ids"],
+                source_image_sizes=scene_data["source_image_sizes"],
+                source_to_processed_affine=scene_data["source_to_processed_affine"],
+                processed_shape_hw=scene_data["processed_shape_hw"],
+            )
+        elif config.backend == "pi3x":
+            if transforms_info is None:
+                raise ValueError("Pi3X matching requires transforms")
+            # Pi3X 是纯缩放变换，affine 可直接由 transform 的 scale 构造
+            # （SAM3 v2 mask 缓存契约要求显式 affine + processed shape）
+            for _t in transforms_info:
+                _t.source_to_processed_affine = np.array(
+                    [[_t.scale_x, 0.0, 0.0], [0.0, _t.scale_y, 0.0]],
+                    dtype=np.float64,
+                )
+                _t.processed_shape_hw = (int(_t.target_height), int(_t.target_width))
+
+    else:  # backend == "vggt"
+        # 原有VGGT逻辑
+        from vggt.utils.pose_enc import pose_encoding_to_extri_intri
+
+        logger.info("Performing global 3D scene reconstruction...")
+        with torch.no_grad():
+            predictions = vggt_model(images)  # 不提供query_points
+
+        # 转换姿态编码为相机参数
+        extrinsic, intrinsic = pose_encoding_to_extri_intri(
+            predictions["pose_enc"],
+            images.shape[-2:]
+        )
+
+        scene_data = {
+            'depth': predictions["depth"].squeeze(0),  # (S, H, W, 1)
+            'depth_conf': predictions["depth_conf"].squeeze(0),  # (S, H, W)
+            'world_points': predictions["world_points"].squeeze(0),  # (S, H, W, 3)
+            'world_points_conf': predictions["world_points_conf"].squeeze(0),  # (S, H, W)
+            'extrinsic': extrinsic.squeeze(0),  # (S, 4, 4)
+            'intrinsic': intrinsic.squeeze(0),  # (S, 3, 3)
+        }
+        logger.info("Global 3D scene reconstruction complete")
+        
+    # 2. 获取参考图像的检出框
+    ref_bboxes = extract_bboxes_from_detections([detections[reference_image_idx]], 0, config)
+    if not ref_bboxes and not config.enable_sam3_mask_sampling:
+        logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
+        return {}, None
+
+    if not transforms_info or reference_image_idx >= len(transforms_info):
+        raise ValueError("transforms_info missing")
+
+    ref_transform = transforms_info[reference_image_idx]
+
+    sam_masks_by_obj_id: Dict[int, "np.ndarray"] = {}
+    with StageTimer("sam3_mask"):
+        sam_masks_by_obj_id = _matching_sam3_masks(
+            config=config,
+            detections=detections,
+            reference_image_idx=reference_image_idx,
+            image_paths=image_paths,
+            ref_bboxes=ref_bboxes,
+            transform=ref_transform,
+        )
+    _t_mask_post = time.perf_counter()
+    StageTimer.record("mask_postprocess", time.perf_counter() - _t_mask_post)
+
+    if not ref_bboxes:
+        logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
+        return {}, None
+
+    correspondences = {}
+    points_per_object = {}
+        
+    # 构建points_per_object用于可视化
+    for bbox_info in ref_bboxes:
+        obj_id = bbox_info['object_id']
+        vggt_bbox = ref_transform.map_bbox_to_final(bbox_info['bbox'])
+        points_per_object[obj_id] = {
+            'bbox': vggt_bbox,
+            'center': [(vggt_bbox[0] + vggt_bbox[2]) / 2, (vggt_bbox[1] + vggt_bbox[3]) / 2],
+            'confidence': bbox_info['confidence']
+        }
+        
+    # 3. 对每个目标图像进行3D-2D投影匹配（添加唯一性约束和3D几何验证）
+    target_set = None
+    if target_indices is not None:
+        target_set = {int(i) for i in target_indices}
+    for target_img_idx, target_detection in enumerate(detections):
+        if target_set is not None and target_img_idx not in target_set:
+            continue
+        if target_img_idx == reference_image_idx:
+            continue
+                
+        target_bboxes = extract_bboxes_from_detections([target_detection], 0, config)
+        if not target_bboxes or target_img_idx >= len(transforms_info):
+            continue
+                
+        target_transform = transforms_info[target_img_idx]
+            
+        # 目标框只依赖目标图变换，供全部参考物体复用。
+        target_bboxes_vggt = [
+            {**bbox, 'bbox': target_transform.map_bbox_to_final(bbox['bbox'])}
+            for bbox in target_bboxes
+        ]
+
+        # 存储所有候选匹配，用于后续优化选择
+        candidate_matches = []
+            
+        # 对参考图像的每个检出框进行匹配
+        for ref_bbox_info in ref_bboxes:
+            ref_obj_id = ref_bbox_info['object_id']
+                
+            # 从参考图像的检出框采样3D点（使用非重合区域）
+            other_ref_bboxes = [other['bbox'] for other in ref_bboxes if other['object_id'] != ref_obj_id]
+            with StageTimer("ref_point_sampling"):
+                if int(ref_obj_id) in sam_masks_by_obj_id:
+                    points_3d = sample_3d_points_from_mask(
+                        scene_data=scene_data,
+                        img_idx=reference_image_idx,
+                        mask=sam_masks_by_obj_id[int(ref_obj_id)],
+                        transform=ref_transform,
+                        config=config,
+                        mask_space="final",
+                        bbox_xyxy=ref_bbox_info['bbox'],
                     )
-                missing = [k for k in required_keys if k not in data]
-                if missing:
-                    raise ValueError(f"Pi3缓存缺少字段: {missing}")
-
-                # 提取数据
-                depth_np = data["depth"]
-                world_np = data["world_points"]
-                extr_np = data["extrinsic"]
-                intr_np = data["intrinsic"]
-                S_cache, H_pi3, W_pi3 = depth_np.shape[:3]
-
-                if S_cache < S:
-                    raise ValueError(f"Pi3缓存帧数({S_cache})少于当前图像数({S})")
-
-                depth_conf_np = data["depth_conf"]
-                world_conf_np = data["world_points_conf"]
-                # 帧对齐：根据image_ids重排数据
-                image_ids_cache = data.get("image_ids")
-                if image_ids_cache is not None and transforms_info is not None:
-                    try:
-                        desired_ids = [int(getattr(t, "image_id")) for t in transforms_info]
-                        id_to_idx = {int(img_id): i for i, img_id in enumerate(image_ids_cache)}
-                        index_map = np.array([id_to_idx[img_id] for img_id in desired_ids])
-                        depth_np, depth_conf_np = depth_np[index_map], depth_conf_np[index_map]
-                        world_np, world_conf_np = world_np[index_map], world_conf_np[index_map]
-                        extr_np, intr_np = extr_np[index_map], intr_np[index_map]
-                        if config.backend == "da3":
-                            source_sizes_np = data["source_image_sizes"][index_map]
-                            affine_np = data["source_to_processed_affine"][index_map]
-                            image_ids_np = data["image_ids"][index_map]
-                    except (AttributeError, KeyError) as e:
-                        if config.backend == "da3":
-                            raise ValueError("DA3 cache/image frame alignment failed") from e
-                        logger.warning(f"帧对齐失败，使用原始顺序: {e}")
-                elif config.backend == "da3":
-                    raise ValueError("DA3 cache requires image IDs and matching transforms")
-
-                # 构建scene_data
-                _t_scene = time.perf_counter()
-                scene_data = {
-                    "depth": torch.from_numpy(depth_np).to(device),
-                    "depth_conf": torch.from_numpy(depth_conf_np).to(device),
-                    "world_points": torch.from_numpy(world_np).to(device),
-                    "world_points_conf": torch.from_numpy(world_conf_np).to(device),
-                    "extrinsic": torch.from_numpy(extr_np).to(device),
-                    "intrinsic": torch.from_numpy(intr_np).to(device),
-                }
-                if config.backend == "da3":
-                    scene_data.update(
-                        {
-                            "source_image_sizes": source_sizes_np,
-                            "source_to_processed_affine": affine_np,
-                            "image_ids": image_ids_np,
-                            "processed_shape_hw": (int(H_pi3), int(W_pi3)),
-                        }
+                else:
+                    points_3d = sample_3d_points_from_non_overlap_regions(
+                        scene_data, reference_image_idx, ref_bbox_info['bbox'],
+                        ref_transform, config, other_ref_bboxes
                     )
-                StageTimer.record("scene_data_build", time.perf_counter() - _t_scene)
-                PI3_SCENE_CACHE[cache_key] = scene_data
-                logger.info(f"加载{config.backend.upper()}缓存: {cache_path} (S={S_cache}, H={H_pi3}, W={W_pi3})")
-            else:
-                logger.info(f"复用 {config.backend.upper()} 场景缓存: {cache_path}")
+                
+            if points_3d is None or len(points_3d) < config.min_3d_sample_points:
+                continue
 
-            if config.backend == "da3":
-                if transforms_info is None:
-                    raise ValueError("DA3 matching requires transforms")
-                bind_da3_transforms_from_cache(
-                    transforms_info,
-                    image_ids=scene_data["image_ids"],
-                    source_image_sizes=scene_data["source_image_sizes"],
-                    source_to_processed_affine=scene_data["source_to_processed_affine"],
-                    processed_shape_hw=scene_data["processed_shape_hw"],
+            # 计算参考3D点的统计信息用于几何验证
+            ref_3d_center = points_3d.mean(dim=0)  # (3,)
+            # 使用参考相机坐标系的Z作为深度（extrinsic为world->camera）
+            _t_w2c = time.perf_counter()
+            E = scene_data['extrinsic'][reference_image_idx].to(points_3d.device)
+            points_cam = transform_world_to_camera(points_3d, E)
+            ref_depth_mean = points_cam[:, 2].mean().item()  # 相机坐标系的Z才是深度
+            StageTimer.record("world_to_camera", time.perf_counter() - _t_w2c)
+
+            # 投影到目标图像
+            with StageTimer("projection_3d_to_2d"):
+                projected_points = project_3d_to_2d(
+                    points_3d,
+                    scene_data['extrinsic'][target_img_idx],
+                    scene_data['intrinsic'][target_img_idx]
                 )
 
-        else:  # backend == "vggt"
-            # 原有VGGT逻辑
-            from vggt.utils.pose_enc import pose_encoding_to_extri_intri
-
-            logger.info("Performing global 3D scene reconstruction...")
-            with torch.no_grad():
-                predictions = vggt_model(images)  # 不提供query_points
-
-            # 转换姿态编码为相机参数
-            extrinsic, intrinsic = pose_encoding_to_extri_intri(
-                predictions["pose_enc"],
-                images.shape[-2:]
-            )
-
-            scene_data = {
-                'depth': predictions["depth"].squeeze(0),  # (S, H, W, 1)
-                'depth_conf': predictions["depth_conf"].squeeze(0),  # (S, H, W)
-                'world_points': predictions["world_points"].squeeze(0),  # (S, H, W, 3)
-                'world_points_conf': predictions["world_points_conf"].squeeze(0),  # (S, H, W)
-                'extrinsic': extrinsic.squeeze(0),  # (S, 4, 4)
-                'intrinsic': intrinsic.squeeze(0),  # (S, 3, 3)
-            }
-            logger.info("Global 3D scene reconstruction complete")
-        
-        # 2. 获取参考图像的检出框
-        ref_bboxes = extract_bboxes_from_detections([detections[reference_image_idx]], 0, config)
-        if not ref_bboxes and not config.enable_sam3_mask_sampling:
-            logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
-            return {}, None
-
-        if not transforms_info or reference_image_idx >= len(transforms_info):
-            raise ValueError("transforms_info missing")
-
-        ref_transform = transforms_info[reference_image_idx]
-
-        sam_masks_by_obj_id: Dict[int, "np.ndarray"] = {}
-        with StageTimer("sam3_mask"):
-            sam_masks_by_obj_id = _matching_sam3_masks(
-                config=config,
-                detections=detections,
-                reference_image_idx=reference_image_idx,
-                image_paths=image_paths,
-                ref_bboxes=ref_bboxes,
-                transform=ref_transform,
-            )
-        _t_mask_post = time.perf_counter()
-        StageTimer.record("mask_postprocess", time.perf_counter() - _t_mask_post)
-
-        if not ref_bboxes:
-            logger.warning(f"No bounding boxes found in reference image {reference_image_idx}")
-            return {}, None
-
-        correspondences = {}
-        points_per_object = {}
-        
-        # 构建points_per_object用于可视化
-        for bbox_info in ref_bboxes:
-            obj_id = bbox_info['object_id']
-            vggt_bbox = ref_transform.map_bbox_to_final(bbox_info['bbox'])
-            points_per_object[obj_id] = {
-                'bbox': vggt_bbox,
-                'center': [(vggt_bbox[0] + vggt_bbox[2]) / 2, (vggt_bbox[1] + vggt_bbox[3]) / 2],
-                'confidence': bbox_info['confidence']
-            }
-        
-        # 3. 对每个目标图像进行3D-2D投影匹配（添加唯一性约束和3D几何验证）
-        target_set = None
-        if target_indices is not None:
-            target_set = {int(i) for i in target_indices}
-        for target_img_idx, target_detection in enumerate(detections):
-            if target_set is not None and target_img_idx not in target_set:
-                continue
-            if target_img_idx == reference_image_idx:
-                continue
-                
-            target_bboxes = extract_bboxes_from_detections([target_detection], 0, config)
-            if not target_bboxes or target_img_idx >= len(transforms_info):
-                continue
-                
-            target_transform = transforms_info[target_img_idx]
-            
-            # 存储所有候选匹配，用于后续优化选择
-            candidate_matches = []
-            
-            # 对参考图像的每个检出框进行匹配
-            for ref_bbox_info in ref_bboxes:
-                ref_obj_id = ref_bbox_info['object_id']
-                
-                # 从参考图像的检出框采样3D点（使用非重合区域）
-                other_ref_bboxes = [other['bbox'] for other in ref_bboxes if other['object_id'] != ref_obj_id]
-                with StageTimer("ref_point_sampling"):
-                    if int(ref_obj_id) in sam_masks_by_obj_id:
-                        points_3d = sample_3d_points_from_mask(
-                            scene_data=scene_data,
-                            img_idx=reference_image_idx,
-                            mask=sam_masks_by_obj_id[int(ref_obj_id)],
-                            transform=ref_transform,
-                            config=config,
-                            mask_space="final",
-                            bbox_xyxy=ref_bbox_info['bbox'],
-                        )
-                    else:
-                        points_3d = sample_3d_points_from_non_overlap_regions(
-                            scene_data, reference_image_idx, ref_bbox_info['bbox'],
-                            ref_transform, config, other_ref_bboxes
-                        )
-                
-                if points_3d is None or len(points_3d) < config.min_3d_sample_points:
-                    continue
-
-                # 计算参考3D点的统计信息用于几何验证
-                ref_3d_center = points_3d.mean(dim=0)  # (3,)
-                # 使用参考相机坐标系的Z作为深度（extrinsic为world->camera）
-                _t_w2c = time.perf_counter()
-                E = scene_data['extrinsic'][reference_image_idx].to(points_3d.device)
-                points_cam = transform_world_to_camera(points_3d, E)
-                ref_depth_mean = points_cam[:, 2].mean().item()  # 相机坐标系的Z才是深度
-                StageTimer.record("world_to_camera", time.perf_counter() - _t_w2c)
-
-                # 投影到目标图像
-                with StageTimer("projection_3d_to_2d"):
-                    projected_points = project_3d_to_2d(
-                        points_3d,
-                        scene_data['extrinsic'][target_img_idx],
-                        scene_data['intrinsic'][target_img_idx]
-                    )
-
-                _t_proj_post = time.perf_counter()
-                if len(projected_points) < 5 and not logger.isEnabledFor(logging.DEBUG):
-                    StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
-                    continue
-
-                # Map target boxes once: both debug diagnostics and Top-K screening
-                # consume the same batched 2D hit counts.
-                target_bboxes_vggt = []
-                for bbox_info in target_bboxes:
-                    bbox_info_copy = dict(bbox_info)
-                    bbox_info_copy['bbox'] = target_transform.map_bbox_to_final(
-                        bbox_info['bbox']
-                    )
-                    target_bboxes_vggt.append(bbox_info_copy)
-
-                hit_counts: Optional[List[int]] = None
-                ranked_indices: Optional[List[int]] = None
-                if len(projected_points) > 0 and (
-                    logger.isEnabledFor(logging.DEBUG)
-                    or len(target_bboxes_vggt) > config.max_3d_validation_candidates
-                ):
-                    hit_counts, ranked_indices = rank_projected_bbox_hits(
-                        projected_points,
-                        [bbox_info['bbox'] for bbox_info in target_bboxes_vggt],
-                    )
-
-                if logger.isEnabledFor(logging.DEBUG) and hit_counts is not None:
-                    top3 = [
-                        (index, hit_counts[index] / len(projected_points), hit_counts[index])
-                        for index in ranked_indices or []
-                        if hit_counts[index] / len(projected_points) > 0.1
-                    ][:3]
-                    logger.debug(
-                        f"[DIAG] ref{reference_image_idx} obj{ref_obj_id}: "
-                        f"采样={len(points_3d)} 投影={len(projected_points)} "
-                        f"Top3框={[(item[0], f'{item[1]:.0%}', item[2]) for item in top3]}"
-                    )
-
-                if len(projected_points) < 5:
-                    StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
-                    continue
-
-                # 性能优化：预筛选候选框，只对Top-K个最有希望的框进行昂贵的3D验证
-                # 策略：先快速计算所有框的2D投影命中率，然后只对Top-K进行3D采样和验证
-                if len(target_bboxes_vggt) > config.max_3d_validation_candidates:
-                    assert hit_counts is not None and ranked_indices is not None
-                    top_indices = ranked_indices[:config.max_3d_validation_candidates]
-                    top_candidates = [target_bboxes_vggt[index] for index in top_indices]
-
-                    logger.debug(
-                        f"3D预筛选: {len(target_bboxes_vggt)}个候选框 → {len(top_candidates)}个进入3D验证 "
-                        f"(Top-{len(top_candidates)}命中率: "
-                        f"{[f'{hit_counts[index] / len(projected_points):.2f}' for index in top_indices]})"
-                    )
-
-                    target_bboxes_for_validation = top_candidates
-                else:
-                    target_bboxes_for_validation = target_bboxes_vggt
+            _t_proj_post = time.perf_counter()
+            if len(projected_points) < 5 and not logger.isEnabledFor(logging.DEBUG):
                 StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
+                continue
 
-                # 找到最匹配的目标框（仅对预筛选后的候选框进行昂贵的3D验证）
-                with StageTimer("target_bbox_match"):
-                    best_match = find_best_matching_bbox_with_3d_validation(
-                        projected_points, target_bboxes_for_validation, config,
-                        scene_data, target_img_idx, target_transform,
-                        ref_3d_center, ref_depth_mean, ref_points_3d=points_3d
-                    )
-                
-                if best_match:
-                    # 添加更多3D验证信息
-                    best_match['ref_obj_id'] = ref_obj_id
-                    best_match['ref_3d_center'] = ref_3d_center
-                    best_match['ref_depth_mean'] = ref_depth_mean
-                    candidate_matches.append(best_match)
-            
-            # 应用唯一性约束：每个目标框只能匹配一个参考框
-            final_matches = apply_uniqueness_constraint(candidate_matches)
-            
-            if final_matches:
-                matched_objects = []
-                for match in final_matches:
-                    target_bbox_info = match['target_bbox_info']
-                    original_bbox = target_transform.map_bbox_to_original(target_bbox_info['bbox'])
-                    
-                    match_result = {
-                        'object_id': match['ref_obj_id'],
-                        'target_obj_id': target_bbox_info['object_id'],
-                        'box': original_bbox,
-                        'vggt_box': target_bbox_info['bbox'],
-                        'correspondence_ratio': match['match_ratio'],
-                        'matched_points': match['points_in_bbox'],
-                        'total_points': match['total_points'],
-                        'confidence': target_bbox_info['confidence'],
-                        # 新增3D验证信息
-                        '3d_distance': match.get('3d_distance', 0.0),
-                    }
-                    
-                    matched_objects.append(match_result)
-                
-                correspondences[target_img_idx] = matched_objects
+            hit_counts: Optional[List[int]] = None
+            ranked_indices: Optional[List[int]] = None
+            if len(projected_points) > 0 and (
+                logger.isEnabledFor(logging.DEBUG)
+                or len(target_bboxes_vggt) > config.max_3d_validation_candidates
+            ):
+                hit_counts, ranked_indices = rank_projected_bbox_hits(
+                    projected_points,
+                    [bbox_info['bbox'] for bbox_info in target_bboxes_vggt],
+                )
 
-        matched_targets = len(correspondences)
-        logger.info(f"3D-2D projection complete. Found correspondences in {matched_targets} images.")
-        return correspondences, points_per_object
+            if logger.isEnabledFor(logging.DEBUG) and hit_counts is not None:
+                top3 = [
+                    (index, hit_counts[index] / len(projected_points), hit_counts[index])
+                    for index in ranked_indices or []
+                    if hit_counts[index] / len(projected_points) > 0.1
+                ][:3]
+                logger.debug(
+                    f"[DIAG] ref{reference_image_idx} obj{ref_obj_id}: "
+                    f"采样={len(points_3d)} 投影={len(projected_points)} "
+                    f"Top3框={[(item[0], f'{item[1]:.0%}', item[2]) for item in top3]}"
+                )
+
+            if len(projected_points) < 5:
+                StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
+                continue
+
+            # 性能优化：预筛选候选框，只对Top-K个最有希望的框进行昂贵的3D验证
+            # 策略：先快速计算所有框的2D投影命中率，然后只对Top-K进行3D采样和验证
+            if len(target_bboxes_vggt) > config.max_3d_validation_candidates:
+                assert hit_counts is not None and ranked_indices is not None
+                top_indices = ranked_indices[:config.max_3d_validation_candidates]
+                top_candidates = [target_bboxes_vggt[index] for index in top_indices]
+
+                logger.debug(
+                    f"3D预筛选: {len(target_bboxes_vggt)}个候选框 → {len(top_candidates)}个进入3D验证 "
+                    f"(Top-{len(top_candidates)}命中率: "
+                    f"{[f'{hit_counts[index] / len(projected_points):.2f}' for index in top_indices]})"
+                )
+
+                target_bboxes_for_validation = top_candidates
+            else:
+                target_bboxes_for_validation = target_bboxes_vggt
+            StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
+
+            # 找到最匹配的目标框（仅对预筛选后的候选框进行昂贵的3D验证）
+            with StageTimer("target_bbox_match"):
+                best_match = find_best_matching_bbox_with_3d_validation(
+                    projected_points, target_bboxes_for_validation, config,
+                    scene_data, target_img_idx, target_transform,
+                    ref_3d_center, ref_depth_mean, ref_points_3d=points_3d
+                )
+                
+            if best_match:
+                # 添加更多3D验证信息
+                best_match['ref_obj_id'] = ref_obj_id
+                best_match['ref_3d_center'] = ref_3d_center
+                best_match['ref_depth_mean'] = ref_depth_mean
+                candidate_matches.append(best_match)
+            
+        # 应用唯一性约束：每个目标框只能匹配一个参考框
+        final_matches = apply_uniqueness_constraint(candidate_matches)
+            
+        if final_matches:
+            matched_objects = []
+            for match in final_matches:
+                target_bbox_info = match['target_bbox_info']
+                original_bbox = target_transform.map_bbox_to_original(target_bbox_info['bbox'])
+                    
+                match_result = {
+                    'object_id': match['ref_obj_id'],
+                    'target_obj_id': target_bbox_info['object_id'],
+                    'box': original_bbox,
+                    'vggt_box': target_bbox_info['bbox'],
+                    'correspondence_ratio': match['match_ratio'],
+                    'matched_points': match['points_in_bbox'],
+                    'total_points': match['total_points'],
+                    'confidence': target_bbox_info['confidence'],
+                    # 新增3D验证信息
+                    '3d_distance': match.get('3d_distance', 0.0),
+                }
+                    
+                matched_objects.append(match_result)
+                
+            correspondences[target_img_idx] = matched_objects
+
+    matched_targets = len(correspondences)
+    logger.info(f"3D-2D projection complete. Found correspondences in {matched_targets} images.")
+    return correspondences, points_per_object
         
-    except (RuntimeError, ValueError, KeyError, IndexError) as e:
-        logger.error(f"Failed to find 3D-2D projection correspondences: {e}")
-        raise
 
 
 def find_correspondences_point_tracking(
@@ -940,7 +932,6 @@ def match_objects_by_correspondence(
     
     if use_parallel:
         logger.info(f"启用参考对象并行匹配: {num_ref_objects} 个对象，{max_workers} 线程")
-        
         try:
             with ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # 提交所有参考对象的处理任务
@@ -952,7 +943,7 @@ def match_objects_by_correspondence(
                         target_image_idx, config, min_hit_ratio, transforms_info
                     )
                     future_to_ref_id[future] = ref_object_id
-                
+
                 # 收集结果
                 for future in as_completed(future_to_ref_id, timeout=60):
                     ref_object_id = future_to_ref_id[future]
@@ -962,11 +953,10 @@ def match_objects_by_correspondence(
                         stats_list.append(stats)
                     except (TimeoutError, RuntimeError) as e:
                         logger.error(f"并行处理参考对象 {ref_object_id} 失败: {e}")
-                        
         except (RuntimeError, TimeoutError, ImportError) as e:
             logger.warning(f"并行处理失败，回退到串行模式: {e}")
             use_parallel = False
-    
+
     if not use_parallel:
         logger.info("使用串行匹配模式")
         # 串行处理（原有逻辑）

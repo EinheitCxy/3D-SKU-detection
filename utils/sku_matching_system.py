@@ -229,9 +229,6 @@ class SKUMatchingSystem:
             
             return correspondences
             
-        except (RuntimeError, ValueError, FileNotFoundError) as e:
-            logger.error(f"Failed to process images: {e}")
-            raise
         finally:
             StageTimer.record("process_images", time.perf_counter() - _proc_t0)
 
@@ -289,28 +286,23 @@ class SKUMatchingSystem:
             "world_points": np.zeros((len(image_ids), 1, 1, 3), dtype=np.float32)
         }
 
-        # 严格模式=False：允许自动修复顺序不一致和缺失图像
+        # 输入帧必须完整对齐，缺失检测直接报错
         _, aligned_detections, alignment_report = ReconstructionDetectionAligner.validate_and_align(
             reconstruction_data=dummy_reconstruction_data,
             detections=detections,
             detection_indices=detection_indices,
             reconstruction_image_ids=image_ids,
-            strict_mode=False  # 允许自动修复
+            strict_mode=True
         )
 
         # 4) 根据对齐结果重新排列图像路径
-        aligned_image_ids = alignment_report.get('repaired_image_ids', alignment_report['common_ids'])
+        aligned_image_ids = alignment_report['common_ids']
 
         # 构建image_id到路径的映射
         image_id_to_path = {num: path for num, path in image_files}
 
         # 按对齐后的ID顺序构建图像路径列表
-        aligned_image_paths = []
-        for img_id in aligned_image_ids:
-            if img_id in image_id_to_path:
-                aligned_image_paths.append(image_id_to_path[img_id])
-            else:
-                logger.warning(f"Missing image for ID {img_id} after alignment")
+        aligned_image_paths = [image_id_to_path[img_id] for img_id in aligned_image_ids]
 
         # 验证对齐结果
         if len(aligned_image_paths) != len(aligned_detections):
@@ -322,14 +314,6 @@ class SKUMatchingSystem:
         if max_images is not None:
             aligned_image_paths = aligned_image_paths[:max_images]
             aligned_detections = aligned_detections[:max_images]
-
-        # 6) 记录对齐统计信息
-        if alignment_report.get('repair_applied'):
-            logger.info(f"Alignment repaired: {alignment_report['repaired_frame_count']} frames aligned")
-            logger.info(f"   Dropped images: {alignment_report.get('dropped_vggt_frames', 0)}")
-            logger.info(f"   Dropped detections: {alignment_report.get('dropped_detection_frames', 0)}")
-        # else:
-        #     logger.info(f"Perfect alignment: {len(aligned_image_paths)} frames")
 
         StageTimer.record("load_data", time.perf_counter() - _load_t0)
         return aligned_image_paths, aligned_detections
@@ -416,14 +400,23 @@ class SKUMatchingSystem:
         _post_t0 = time.perf_counter()
         if correspondences and not self.config.quiet_outputs:
             if images.device.type == "meta":
-                images = self._load_da3_visualization_images(image_paths, transforms_info)
+                images = self._load_da3_visualization_images(
+                    image_paths, transforms_info,
+                    resample=Image.Resampling.LANCZOS
+                    if self.config.model_type == "pi3" else Image.Resampling.BICUBIC,
+                )
             visualize_results(
                 images, reference_image_idx, points_per_object,
                 correspondences, self.config, detections, transforms_info
             )
 
         # 始终保存可视化摘要（即使没有匹配结果）
-        save_visualization_summary(correspondences, self.config, reference_image_idx)
+        image_ids = [int(Path(path).stem) for path in image_paths]
+        save_visualization_summary(
+            {image_ids[index]: matches for index, matches in correspondences.items()},
+            self.config,
+            image_ids[reference_image_idx],
+        )
 
         # 保存JSON结果（如果启用）
         if self.config.save_json and correspondences and not self.config.quiet_outputs:

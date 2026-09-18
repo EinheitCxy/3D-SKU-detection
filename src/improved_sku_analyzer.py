@@ -31,44 +31,55 @@ class ImprovedSKUCountAnalyzer:
             summary_file = self.summary_dir / str(ref_idx) / "matching_summary.txt"
             if not summary_file.exists():
                 continue
-            content = summary_file.read_text(encoding='utf-8', errors='ignore')
-
-            match_pattern = r'Matched ref (\d+) → target (\d+) \(hit ratio: ([\d.]+) (\d+)/(\d+)\)'
-            matches = re.findall(match_pattern, content)
-            
-            # 方案一：两遍解析法
-            # 第一遍：收集所有目标图像映射信息
-            target_mapping = {}
-            for line in content.split('\n'):
-                # 查找 "Matching objects between reference image X and target image Y"
-                section_match = re.search(r'reference image (\d+) and target image (\d+)', line)
-                if section_match:
-                    ref_img, target_img = int(section_match.group(1)), int(section_match.group(2))
-                    target_mapping[ref_img] = target_img
-            
-            # 第二遍：解析匹配行，使用映射关系确定target_idx
-            for m in matches:
-                ref_id = int(m[0])
-                # 根据ref_id推断属于哪个参考图像（这里的逻辑需要根据实际情况调整）
-                # 由于是从ref_idx目录下读取的，所以目标图像就是映射中对应的值
-                target_idx = target_mapping.get(ref_idx, None)
-                
-                all_matched_pairs.append({
-                    'ref_idx': ref_idx,
-                    'ref_id': ref_id,
-                    'target_idx': target_idx,
-                    'target_id': int(m[1]),
-                    'hit_ratio': float(m[2]),
-                    'matched_points': int(m[3]),
-                    'total_points': int(m[4])
-                })
+            content = summary_file.read_text(encoding="utf-8")
+            pending = []
+            group_ref = None
+            # visualization writes each target ID after that target's matching lines.
+            for line in content.splitlines():
+                group = re.fullmatch(
+                    r"Matching objects between reference image (\d+) and target image (\d+)", line
+                )
+                if group:
+                    group_ref = int(group[1])
+                    continue
+                match = re.fullmatch(
+                    r"Matched ref (\d+) → target (\d+) \(hit ratio: ([\d.]+) (\d+)/(\d+)\)",
+                    line,
+                )
+                if match:
+                    pending.append(
+                        {
+                            "ref_idx": ref_idx,
+                            "ref_id": int(match[1]),
+                            "target_id": int(match[2]),
+                            "hit_ratio": float(match[3]),
+                            "matched_points": int(match[4]),
+                            "total_points": int(match[5]),
+                        }
+                    )
+                    continue
+                block = re.fullmatch(r"Found (\d+) matches in image (\d+)", line)
+                if block is None:
+                    continue
+                if len(pending) != int(block[1]):
+                    raise ValueError(f"Matching block count mismatch: {summary_file}")
+                if pending and group_ref is None:
+                    raise ValueError(f"Matching block is missing reference file ID: {summary_file}")
+                for pair in pending:
+                    pair["ref_idx"] = group_ref
+                    pair["target_idx"] = int(block[2])
+                all_matched_pairs.extend(pending)
+                pending = []
+            if pending:
+                raise ValueError(f"Matching block is missing target image: {summary_file}")
 
         from .deduplicate_detections import filter_best_matches as _dedup_filter
+
         filtered = _dedup_filter(all_matched_pairs)
         return {
-            'original_matches': len(all_matched_pairs),
-            'filtered_matches': len(filtered),
-            'pairs': filtered
+            "original_matches": len(all_matched_pairs),
+            "filtered_matches": len(filtered),
+            "pairs": filtered,
         }
 
 
