@@ -304,7 +304,7 @@ def build_da3_transforms(
 
     Args:
         image_paths: 图像路径列表
-        process_res: DA3 处理分辨率（默认896，须与 da3_runner 的 --process_res 一致）
+        process_res: DA3 处理分辨率（默认504，须与 da3_runner 的 --process_res 一致）
 
     Returns:
         Pi3 变换对象列表（target 尺寸 = DA3 cache 尺寸）
@@ -312,19 +312,15 @@ def build_da3_transforms(
     if not image_paths:
         return []
 
-    # PIL 懒读取：仅需 (W,H) 尺寸，不 convert("RGB") 触发完整解码
-    W_orig, H_orig = Image.open(image_paths[0]).size
-
-    # DA3 upper_bound_resize 算法：长边缩到 process_res，短边按比例（无 14 对齐）
-    longest = max(W_orig, H_orig)
-    scale = process_res / float(longest) if longest > 0 else 1.0
-    TARGET_W = max(1, int(round(W_orig * scale)))
-    TARGET_H = max(1, int(round(H_orig * scale)))
+    from da3_defaults import validate_batch_grid
+    sizes = []
+    for path in image_paths:
+        with Image.open(path) as image:
+            sizes.append(image.size)
+    TARGET_W, TARGET_H = validate_batch_grid(sizes, process_res)
 
     transforms = []
-    for img_path in image_paths:
-        # PIL 懒读取尺寸，不 convert("RGB")（Pi3ImageTransform 只用 w/h 数值）
-        w, h = Image.open(img_path).size
+    for img_path, (w, h) in zip(image_paths, sizes):
         t = DA3ImageTransform(w, h, TARGET_W, TARGET_H)
         try:
             t.image_id = int(Path(img_path).stem)

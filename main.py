@@ -14,7 +14,7 @@ from re import T
 from time import perf_counter
 from typing import Any, Dict, Optional, TypedDict
 
-from da3_defaults import DEFAULT_PROCESS_RES, PREPROCESS_METHOD
+from da3_defaults import DEFAULT_PROCESS_RES, PREPROCESS_METHOD, validate_batch_grid
 
 import colorlog
 import numpy as np
@@ -129,6 +129,18 @@ def _is_reusable_da3_cache(cache_path: Path) -> bool:
             is_metric = cache["is_metric"]
             resolution = cache["preprocess_resolution"]
             method = cache["preprocess_method"]
+            if "use_ray_pose" in cache.files:
+                use_ray_pose = cache["use_ray_pose"]
+                if (
+                    use_ray_pose.shape != ()
+                    or use_ray_pose.dtype != np.dtype(np.bool_)
+                    or bool(use_ray_pose.item())
+                ):
+                    return False
+            sizes = cache["source_image_sizes"]
+            if sizes.ndim != 2 or sizes.shape[1] != 2:
+                return False
+            validate_batch_grid(sizes, DEFAULT_PROCESS_RES)
             return (
                 schema.shape == ()
                 and schema.dtype.kind in "iu"

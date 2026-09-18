@@ -155,10 +155,12 @@ def _validate_model_id(model_id: str) -> str:
     return model_id
 
 
-def _validate_image_orientations(image_sizes: list[tuple[int, int]]) -> None:
+def _validate_image_orientations(image_sizes: list[tuple[int, int]], process_res: int = DEFAULT_PROCESS_RES) -> None:
     orientations = {"横屏" if w > h else "竖屏" if h > w else "方形" for w, h in image_sizes}
     if len(orientations) > 1:
         raise ValueError("同一任务不能混合横屏、竖屏或方形图片，请按拍摄方向分别提交")
+    from da3_defaults import validate_batch_grid
+    validate_batch_grid(image_sizes, process_res)
 
 
 def _parse_args(argv=None) -> argparse.Namespace:
@@ -200,7 +202,7 @@ def main() -> None:
 
     pil_images = [Image.open(p).convert("RGB") for p in paths]
     source_image_sizes = [(image.width, image.height) for image in pil_images]
-    _validate_image_orientations(source_image_sizes)
+    _validate_image_orientations(source_image_sizes, args.process_res)
 
     if "cuda" in args.device and not torch.cuda.is_available():
         raise SystemExit("CUDA device requested but unavailable; refusing CPU fallback")
