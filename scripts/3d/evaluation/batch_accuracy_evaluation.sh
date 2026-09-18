@@ -22,8 +22,10 @@ done
 case "$BACKEND" in
     pt|point_tracking) OUT_SUB="output_pt"; BACKEND="pt" ;;
     pi3)               OUT_SUB="output_3dmapping_pi3" ;;
+    pi3x)              OUT_SUB="output_3dmapping_pi3x" ;;
     da3)               OUT_SUB="output_3dmapping_da3" ;;
-    *)                 echo -e "${RED}未知 backend: $BACKEND (pt|pi3|da3)${NC}"; exit 1 ;;
+    mapanything)       OUT_SUB="output_3dmapping_mapanything" ;;
+    *)                 echo -e "${RED}未知 backend: $BACKEND (pt|pi3|pi3x|da3|mapanything)${NC}"; exit 1 ;;
 esac
 
 DATA_ROOT="${SAVE_ROOT:-$PROJECT_ROOT/Output}"

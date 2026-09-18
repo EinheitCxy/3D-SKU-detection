@@ -12,6 +12,7 @@ from typing import Dict, List, Tuple, Set
 from collections import defaultdict
 import argparse
 from datetime import datetime
+from pathlib import Path
 
  
 class AccuracyAnnotator:
@@ -54,11 +55,16 @@ class AccuracyAnnotator:
             with open(result_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
-            # 从文件路径推断参考图片编号
-            import os
-            parent_dir = os.path.basename(os.path.dirname(result_path))
-            ref_base_index = int(parent_dir)
-            actual_ref = ref_base_index + 1
+            # 兼容新旧两种摘要格式：
+            #   新格式：显式写入 "Reference image file ID: N"，N 与 GT 同为 1-based 展示编号，
+            #           "Found ... in image T" 的 T 亦为 1-based（无偏移）。
+            #   旧格式：无该行，参考图编号取自目录名（0-based），"in image T" 为 0-based。
+            new_format = re.search(r'^Reference image file ID: (\d+)$', content, re.MULTILINE)
+            if new_format is not None:
+                actual_ref = int(new_format[1])
+            else:
+                parent_dir = os.path.basename(os.path.dirname(result_path))
+                actual_ref = int(parent_dir) + 1
             
             # 基于人工标注中的图片对，查找对应的VGGT匹配结果
             expected_pairs = []
@@ -68,6 +74,10 @@ class AccuracyAnnotator:
                     expected_pairs.append((pair_name, int(target_img_str)))
             
             if not expected_pairs:
+                return
+            if re.search(r'^Found 0 matches across 0 images$', content, re.MULTILINE):
+                for pair_name, _ in expected_pairs:
+                    self.vggt_results[pair_name] = []
                 return
             
             lines = content.split('\n')
@@ -83,7 +93,8 @@ class AccuracyAnnotator:
                     found_lines.append({
                         'line_idx': i,
                         'target_img': int(target_img),
-                        'actual_target': int(target_img) + 1
+                        # 新格式无偏移（T 已是 1-based 展示编号）；旧格式为 0-based，需 +1。
+                        'actual_target': int(target_img) if new_format is not None else int(target_img) + 1
                     })
             
             # 为每个found标记提取其上方的匹配内容
@@ -130,7 +141,7 @@ class AccuracyAnnotator:
                         target_section = section
                         break
                 
-                if target_section and target_section['matches']:
+                if target_section is not None:
                     self.vggt_results[pair_name] = target_section['matches']
             
         except Exception as e:
@@ -279,101 +290,104 @@ class AccuracyAnnotator:
                     all_metrics.append(metrics)
         
         if not all_metrics:
+            # 无 GT 覆盖（如 fd6 缺 6_to_7/11_to_1）时不中断批量评估，
+            # 仅在该参考帧报告中给出错误段，与历史基线行为一致。
             report_lines.extend([
                 "错误: 未找到可比较的图片对数据",
-                "请检查人工标注数据和VGGT结果是否匹配"
-            ])
-        else:
-            # 计算总体指标
-            total_gt = sum(m['ground_truth_matches'] for m in all_metrics)
-            total_vggt = sum(m['vggt_matches'] for m in all_metrics)
-            total_tp = sum(m['true_positives'] for m in all_metrics)
-            total_fn = sum(m['false_negatives'] for m in all_metrics)
-            total_extra = sum(len(m['vggt_extra_matches']) for m in all_metrics)
-            total_wrong_mappings = sum(len(m['wrong_mappings']) for m in all_metrics)
-            
-            # 计算总体reference ID映射指标
-            total_ref_mapping_correct = sum(m['ref_mapping_correct'] for m in all_metrics)
-            total_ref_mapping_total = sum(m['ref_mapping_total'] for m in all_metrics)
-            
-            overall_recall = total_tp / total_gt if total_gt > 0 else 0
-            overall_effectiveness = total_tp / total_vggt if total_vggt > 0 else 0
-            overall_ref_mapping_precision = total_ref_mapping_correct / total_ref_mapping_total if total_ref_mapping_total > 0 else 0
-            
-            report_lines.extend([
-                "总体性能指标:",
-                f"  总体召回率 (Recall): {overall_recall:.2%} ({total_tp}/{total_gt})",
-                f"  VGGT有效率 (Effectiveness): {overall_effectiveness:.2%} ({total_tp}/{total_vggt})",
-                f"  Reference ID映射准确率 (Precision): {overall_ref_mapping_precision:.2%} ({total_ref_mapping_correct}/{total_ref_mapping_total})",
-                "",
-                "详细统计:",
-                f"  人工标注总匹配数: {total_gt}",
-                f"  VGGT预测总匹配数: {total_vggt}",
-                f"  正确匹配数: {total_tp}",
-                f"  遗漏匹配数: {total_fn}",
-                f"  VGGT额外预测数: {total_extra}",
-                f"  错误映射数: {total_wrong_mappings}",
-                f"  共同Reference ID数量: {total_ref_mapping_total}",
-                f"  Reference ID映射正确数: {total_ref_mapping_correct}",
-                "",
-                "说明: VGGT额外预测的匹配不被视为错误，因为人工标注可能不完整",
-                "Reference ID映射准确率: 当VGGT和人工标注都对同一ref ID有映射时，映射目标是否一致",
+                "请检查人工标注数据和VGGT结果是否匹配",
                 ""
             ])
+            report_content = "\n".join(report_lines)
+            if output_path:
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(report_content)
+            return report_content
+        total_gt = sum(m['ground_truth_matches'] for m in all_metrics)
+        total_vggt = sum(m['vggt_matches'] for m in all_metrics)
+        total_tp = sum(m['true_positives'] for m in all_metrics)
+        total_fn = sum(m['false_negatives'] for m in all_metrics)
+        total_extra = sum(len(m['vggt_extra_matches']) for m in all_metrics)
+        total_wrong_mappings = sum(len(m['wrong_mappings']) for m in all_metrics)
             
-            # 添加详细匹配分析
-            for metrics in all_metrics:
-                if metrics['image_pair']:  # 确保有图片对数据
+        # 计算总体reference ID映射指标
+        total_ref_mapping_correct = sum(m['ref_mapping_correct'] for m in all_metrics)
+        total_ref_mapping_total = sum(m['ref_mapping_total'] for m in all_metrics)
+            
+        overall_recall = total_tp / total_gt if total_gt > 0 else 0
+        overall_effectiveness = total_tp / total_vggt if total_vggt > 0 else 0
+        overall_ref_mapping_precision = total_ref_mapping_correct / total_ref_mapping_total if total_ref_mapping_total > 0 else 0
+            
+        report_lines.extend([
+            "总体性能指标:",
+            f"  总体召回率 (Recall): {overall_recall:.2%} ({total_tp}/{total_gt})",
+            f"  VGGT有效率 (Effectiveness): {overall_effectiveness:.2%} ({total_tp}/{total_vggt})",
+            f"  Reference ID映射准确率 (Precision): {overall_ref_mapping_precision:.2%} ({total_ref_mapping_correct}/{total_ref_mapping_total})",
+            "",
+            "详细统计:",
+            f"  人工标注总匹配数: {total_gt}",
+            f"  VGGT预测总匹配数: {total_vggt}",
+            f"  正确匹配数: {total_tp}",
+            f"  遗漏匹配数: {total_fn}",
+            f"  VGGT额外预测数: {total_extra}",
+            f"  错误映射数: {total_wrong_mappings}",
+            f"  共同Reference ID数量: {total_ref_mapping_total}",
+            f"  Reference ID映射正确数: {total_ref_mapping_correct}",
+            "",
+            "说明: VGGT额外预测的匹配不被视为错误，因为人工标注可能不完整",
+            "Reference ID映射准确率: 当VGGT和人工标注都对同一ref ID有映射时，映射目标是否一致",
+            ""
+        ])
+            
+        # 添加详细匹配分析
+        for metrics in all_metrics:
+            if metrics['image_pair']:  # 确保有图片对数据
+                report_lines.extend([
+                    f"图片对 {metrics['image_pair']} 详细分析:",
+                    "-" * 50
+                ])
+
+                # VGGT额外预测的匹配
+                if metrics['vggt_extra_matches']:
                     report_lines.extend([
-                        f"图片对 {metrics['image_pair']} 详细分析:",
-                        "-" * 50
+                        "VGGT额外检出对 (人工标注中不存在):",
+                        f"  {metrics['vggt_extra_matches']}",
+                        ""
                     ])
                     
-                    # VGGT额外预测的匹配
-                    if metrics['vggt_extra_matches']:
-                        report_lines.extend([
-                            "VGGT额外检出对 (人工标注中不存在):",
-                            f"  {metrics['vggt_extra_matches']}",
-                            ""
-                        ])
+                # 遗漏的匹配
+                if metrics['missed_matches']:
+                    report_lines.extend([
+                        "遗漏检出对 (人工标注存在但VGGT未检出):",
+                        f"  {metrics['missed_matches']}",
+                        ""
+                    ])
                     
-                    # 遗漏的匹配
-                    if metrics['missed_matches']:
-                        report_lines.extend([
-                            "遗漏检出对 (人工标注存在但VGGT未检出):",
-                            f"  {metrics['missed_matches']}",
-                            ""
-                        ])
-                    
-                    # 错误映射
-                    if metrics['wrong_mappings']:
-                        report_lines.extend([
-                            "错误检出对 (同一ref_id映射到不同target_id):",
-                            "  格式: (ref_id, VGGT预测的target_id, 人工标注的target_id)"
-                        ])
-                        for ref_id, vggt_target, gt_target in metrics['wrong_mappings']:
-                            report_lines.append(f"  ref_{ref_id}: VGGT预测→{vggt_target}, 人工标注→{gt_target}")
-                        report_lines.append("")
-                    
-                    # 正确匹配
-                    if metrics['correct_matches']:
-                        report_lines.extend([
-                            "正确检出对 (人工标注和VGGT都检出):",
-                            f"  {metrics['correct_matches']}",
-                            ""
-                        ])
-                    
+                # 错误映射
+                if metrics['wrong_mappings']:
+                    report_lines.extend([
+                        "错误检出对 (同一ref_id映射到不同target_id):",
+                        "  格式: (ref_id, VGGT预测的target_id, 人工标注的target_id)"
+                    ])
+                    for ref_id, vggt_target, gt_target in metrics['wrong_mappings']:
+                        report_lines.append(f"  ref_{ref_id}: VGGT预测→{vggt_target}, 人工标注→{gt_target}")
                     report_lines.append("")
+                    
+                # 正确匹配
+                if metrics['correct_matches']:
+                    report_lines.extend([
+                        "正确检出对 (人工标注和VGGT都检出):",
+                        f"  {metrics['correct_matches']}",
+                        ""
+                    ])
+                    
+                report_lines.append("")
         
         report_content = "\n".join(report_lines)
         
         # 如果指定了输出路径，则写入文件
         if output_path:
-            try:
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(report_content)
-            except Exception as e:
-                print(f"保存报告失败: {e}")
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(report_content)
         
         return report_content
 
@@ -393,33 +407,22 @@ def main():
     
     # 检查输入文件是否存在
     if not os.path.exists(args.benchmark_csv):
-        print(f"错误: 人工标注文件不存在: {args.benchmark_csv}")
-        return
+        raise FileNotFoundError(f"人工标注文件不存在: {args.benchmark_csv}")
     
     if not os.path.exists(args.vggt_result):
-        print(f"错误: VGGT结果文件不存在: {args.vggt_result}")
-        return
+        raise FileNotFoundError(f"VGGT结果文件不存在: {args.vggt_result}")
     
     # 创建标注器实例
     annotator = AccuracyAnnotator()
     
-    try:
-        # 加载数据
-        annotator.load_ground_truth(args.benchmark_csv, args.dataset_filter)
-        annotator.load_vggt_results(args.vggt_result)
-        
-        # 生成报告
-        if args.output:
-            os.makedirs(os.path.dirname(args.output), exist_ok=True)
-            report = annotator.generate_report(args.output)
-        else:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            default_output = f"accuracy_report_{timestamp}.txt"
-            report = annotator.generate_report(default_output)
-        
-    except Exception as e:
-        print(f"评估过程出错: {e}")
-        return
+    annotator.load_ground_truth(args.benchmark_csv, args.dataset_filter)
+    annotator.load_vggt_results(args.vggt_result)
+    if args.output:
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        annotator.generate_report(args.output)
+    else:
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        annotator.generate_report(f"accuracy_report_{timestamp}.txt")
 
 
 if __name__ == "__main__":

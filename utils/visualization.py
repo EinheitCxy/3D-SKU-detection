@@ -386,6 +386,7 @@ def save_visualization_summary(
         
         with open(summary_path, 'w', encoding='utf-8') as f:
             f.write("SKU匹配结果日志\n")
+            f.write(f"Reference image file ID: {reference_image_idx}\n")
             f.write("=" * 50 + "\n\n")
             
             total_matches = 0
