@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
+import random
 import re
 import sys
 import time
@@ -175,7 +176,18 @@ def _parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--device", default="cuda", help="推理设备（默认 cuda）")
     ap.add_argument(
         "--process_res", type=int, default=DEFAULT_PROCESS_RES,
-        help="推理长边（默认 896）；16:9 横屏 896×504，9:16 竖屏 504×896"
+        help="推理长边（默认 504）；16:9 横屏 504×280，竖屏 280×504；只缩放不裁切"
+    )
+    ap.add_argument(
+        "--use-ray-pose",
+        action="store_true",
+        help="实验性启用 ray-pose；默认关闭",
+    )
+    ap.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="仅显式指定时固定 random、NumPy 和 PyTorch 随机性",
     )
     return ap.parse_args(argv)
 
@@ -183,6 +195,10 @@ def _parse_args(argv=None) -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
     args.model_path = _validate_model_id(args.model_path)
+    if args.seed is not None:
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+        torch.manual_seed(args.seed)
 
     from depth_anything_3.api import DepthAnything3
     from PIL import Image
@@ -217,7 +233,10 @@ def main() -> None:
     )
     t1 = time.time()
     prediction = model.inference(
-        pil_images, process_res=args.process_res, process_res_method=PREPROCESS_METHOD
+        pil_images,
+        process_res=args.process_res,
+        process_res_method=PREPROCESS_METHOD,
+        use_ray_pose=args.use_ray_pose,
     )
     logger.info(f"[da3_runner] inference done ({time.time()-t1:.1f}s)")
 
@@ -296,6 +315,7 @@ def main() -> None:
             affine_convention=np.asarray(AFFINE_CONVENTION, dtype="<U15"),
             preprocess_resolution=np.asarray(args.process_res, dtype=np.int32),
             preprocess_method=np.asarray(PREPROCESS_METHOD, dtype="<U18"),
+            use_ray_pose=np.asarray(args.use_ray_pose, dtype=np.bool_),
             is_metric=np.asarray(is_metric, dtype=np.int32),
             scale_factor=np.asarray(
                 scale_factor if scale_factor is not None else np.nan, dtype=np.float32
