@@ -14,8 +14,8 @@ request 子进程或 Pipe，也不会根据 pipeline summary 伪造 stage 异常
 
 `build.sh` 将包装代码与核心运行代码分开定位：Dockerfile、`build.sh`、
 `__init__.py`、`api.py` 和 `processor.py` 始终从脚本所在的
-`SCRIPT_DIR` 读取；pipeline 核心源码、`pyproject.toml`、`uv.lock`、DA3/SAM3 源码、
-SAM3 checkpoint，以及 builder 的 `/workspace` 挂载均从 `CORE_REPO_ROOT` 读取。
+`SCRIPT_DIR` 读取；pipeline 核心源码、`pyproject.toml`、`uv.lock`、DA3/SAM3.1 源码，
+以及 builder 的 `/workspace` 挂载均从 `CORE_REPO_ROOT` 读取；SAM3.1 checkpoint 从 `SAM3_CHECKPOINT_DIR` 读取。
 无论使用默认值还是显式传入值，`CORE_REPO_ROOT`（包括相对路径）都会立即规范化为
 绝对且存在的路径。
 
@@ -61,7 +61,7 @@ CORE_REPO_ROOT=/path/to/3D_Recognization bash build.sh
   `libx11-6_*.deb` 与 `libgl1_*.deb`；
 - DA3 Hugging Face cache（`refs/`、`blobs/` 和 snapshot
   `b2359bdf726fb44ef62acca04d629dcf158053e7`）；
-- `$CORE_REPO_ROOT/sam3/checkpoints/sam3.pt`。
+- SAM3.1 checkpoint `$SAM3_CHECKPOINT_DIR/sam3.1_multiplex.pt`（默认 modelscope 快照 `/home/xingyu/.cache/modelscope/models/facebook--sam3.1/snapshots/master`），代码树取自 `$CORE_REPO_ROOT/sam31/sam3`；根 `config.yaml` 必须使用相对路径 `sam31/checkpoints/sam3.1_multiplex.pt`，镜像内对应 `/app/sam31/checkpoints/`。镜像不再包含 SAM3.0 代码或权重。
 - Docker 服务端不配置或处理 SKU 主数据，不读取 CSV，也不生成主数据 JSON；镜像不包含 CSV。SKU 主数据由 `visualization` 分支的 `viewer/masterdata.json` 提供。
 
 默认 DA3 cache 是
@@ -237,3 +237,19 @@ Docker `run_mapping_request` 默认启用此选项。请求的必要临时数据
 
 2026-09-11 最终本地部署：`global-id-mapping:viewer-504-2m-500k-20260911` 已用于8011服务。镜像内检查确认默认长边504、商品2000000点和背景500000点；16:9输出504×280、4:3输出504×378，竖屏交换宽高。同批次不能统一网格时拒绝运行，不自动裁切边缘。接口HTTP200。旧容器保留为`global-id-mapping-local-before-504-2m-20260911`，历史对照包未重导出。
 
+## SAM3.1 部署（2026-09-18）
+
+`build_code_update.sh` 以 `global-id-mapping:surfel-256-20260911` 为 `BASE_IMAGE` 增量构建 `global-id-mapping:sam31-20260918`：替换核心代码，删除 `/app/sam3`，加入 `/app/sam31/sam3` 代码树与 `/app/sam31/checkpoints/sam3.1_multiplex.pt`，`PYTHONPATH` 改指 `/app/sam31`。镜像内不再使用 SAM3.0；增量构建仍继承基础镜像层的体积，完整构建 `build.sh` 同样只打包 SAM3.1。
+
+```bash
+CORE_REPO_ROOT=/home/xingyu/3D_Recognization \
+BASE_IMAGE=global-id-mapping:surfel-256-20260911 \
+IMAGE_TAG=global-id-mapping:sam31-20260918 \
+bash docker/build_code_update.sh
+docker run -d --name global-id-mapping-local --gpus '"device=2"' -p 8011:80 \
+  --env-file docker/.env \
+  --mount type=bind,src="$(pwd)/docker/.env",dst=/app/.env,readonly \
+  global-id-mapping:sam31-20260918
+```
+
+8011 服务固定 GPU2：GPU0 被其他进程占用约 30GB，`--gpus all` 默认落在 GPU0 会在匹配阶段 CUDA OOM。验证：video3 前 6 帧真实请求 HTTP 200（约 82 秒），SAM3 从 `/app/sam31` 加载，186 个对象归并为 125 个 `global_id`，COS `global-id-mapping/smoke-sam31-20260918/viewer_bundle.zip` 可下载（27.4MB）；8011 与临时 8012 容器返回的 `global_skus` 完全一致。旧容器保留为 `global-id-mapping-local-before-sam31-20260918`（已停止）。

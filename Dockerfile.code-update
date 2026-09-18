@@ -1,11 +1,15 @@
 ARG BASE_IMAGE=harbor-cn.lingmouai.com/asu/global-id-mapping:4.0
 FROM ${BASE_IMAGE}
 
-RUN rm -rf /app/src /app/utils /app/__pycache__
+RUN rm -rf /app/src /app/utils /app/__pycache__ /app/sam3
 COPY --from=app main.py config.yaml da3_defaults.py /app/
 COPY --from=app src /app/src
 COPY --from=app utils /app/utils
 COPY --from=app api.py processor.py cos_upload.py /app/
 COPY --from=app cos-sdk /app/.venv/lib/python3.11/site-packages/
+COPY --from=app sam31/sam3 /app/sam31/sam3
+COPY --from=sam3_checkpoint sam3.1_multiplex.pt /app/sam31/checkpoints/sam3.1_multiplex.pt
+
+ENV PYTHONPATH=/app:/app/Depth-Anything-3/src:/app/sam31
 
 CMD ["/app/.venv/bin/python", "-m", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "80", "--workers", "1"]

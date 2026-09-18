@@ -8,19 +8,24 @@ COS_SITE_PACKAGES="${COS_SITE_PACKAGES:-$CORE_REPO_ROOT/.venv/lib/python3.11/sit
 COS_SITE_PACKAGES="$(realpath -e "$COS_SITE_PACKAGES")"
 BASE_IMAGE="${BASE_IMAGE:-global-id-mapping:4.0-traceback}"
 IMAGE_TAG="${IMAGE_TAG:-global-id-mapping:4.0-traceback}"
+SAM3_CHECKPOINT_DIR="${SAM3_CHECKPOINT_DIR:-/home/xingyu/.cache/modelscope/models/facebook--sam3.1/snapshots/master}"
 
 docker image inspect "$BASE_IMAGE" >/dev/null
 test -f "$COS_SITE_PACKAGES/qcloud_cos/__init__.py"
 test -d "$COS_SITE_PACKAGES/crcmod"
 test -d "$COS_SITE_PACKAGES/Crypto"
 test -f "$COS_SITE_PACKAGES/xmltodict.py"
+test -f "$SAM3_CHECKPOINT_DIR/sam3.1_multiplex.pt"
+grep -F 'sam3_checkpoint_path: "sam31/checkpoints/sam3.1_multiplex.pt"' "$CORE_REPO_ROOT/config.yaml" >/dev/null
 
 BUILD_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/global-id-mapping-code-update.XXXXXX")"
 trap 'rm -rf "$BUILD_ROOT"' EXIT
 APP_CONTEXT="$BUILD_ROOT/app"
-mkdir -p "$APP_CONTEXT/cos-sdk"
+mkdir -p "$APP_CONTEXT/cos-sdk" "$APP_CONTEXT/sam31"
 cp -a "$CORE_REPO_ROOT/main.py" "$CORE_REPO_ROOT/config.yaml" "$CORE_REPO_ROOT/da3_defaults.py" "$APP_CONTEXT/"
 cp -a "$CORE_REPO_ROOT/src" "$CORE_REPO_ROOT/utils" "$APP_CONTEXT/"
+cp -a "$CORE_REPO_ROOT/sam31/sam3" "$APP_CONTEXT/sam31/"
+rm -rf "$APP_CONTEXT/sam31/sam3/perflib/tests"
 find "$APP_CONTEXT" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$APP_CONTEXT" -type f -name '*.py[co]' -delete
 cp "$SCRIPT_DIR/api.py" "$APP_CONTEXT/api.py"
@@ -32,6 +37,7 @@ cp -a "$COS_SITE_PACKAGES/qcloud_cos" "$COS_SITE_PACKAGES/crcmod" \
 DOCKER_BUILDKIT=1 docker build --network=none --pull=false \
   -f "$SCRIPT_DIR/Dockerfile.code-update" \
   --build-context app="$APP_CONTEXT" \
+  --build-context sam3_checkpoint="$SAM3_CHECKPOINT_DIR" \
   --build-arg BASE_IMAGE="$BASE_IMAGE" \
   -t "$IMAGE_TAG" \
   "$SCRIPT_DIR"
