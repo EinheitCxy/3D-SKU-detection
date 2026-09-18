@@ -26,6 +26,7 @@ from main import PROJECT_ROOT as MAIN_PROJECT_ROOT, SKUDetectionMain
 from cos_upload import CosUploadConfig, upload_viewer_bundle, validate_taskid
 from src.web_viewer_export import export_web_viewer_bundle
 from utils.classification_aggregation import build_resolved_classification
+from utils.config import default_sam3_mask_cache_root
 from utils.matching_algorithms import PI3_SCENE_CACHE
 from utils.sku_matching_system import _DA3_IMAGE_CACHE, _DA3_TRANSFORMS_CACHE
 
@@ -315,7 +316,7 @@ def run_mapping_request(
         global_mapping_path=dataset_output / "dedup_detections" / "global_mapping.json",
         output_dir=viewer_root,
         source_images_dir=dataset_dir / "images",
-        sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
+        sam3_mask_cache_root=default_sam3_mask_cache_root(dataset_output),
         surfel_texture_edge=1920,
     )
     return {
