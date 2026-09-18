@@ -29,7 +29,8 @@ export function visiblePointRanges(objects: ObjectIndex, ids: ReadonlySet<string
 export function firstVisiblePointGlobalId(hitPointIndices: readonly number[], lookup: readonly PointOwnerRange[], visibleIds: ReadonlySet<string>): string | null {
   for (const pointIndex of hitPointIndices) {
     const globalId = globalIdForPointIndex(lookup, pointIndex);
-    if (globalId !== null && visibleIds.has(globalId)) return globalId;
+    if (globalId === null) continue; // 无主点跳过，继续检查后续命中点
+    if (visibleIds.has(globalId)) return globalId;
   }
   return null;
 }

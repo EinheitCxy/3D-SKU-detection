@@ -1,3 +1,4 @@
+import { loadDockerViewerBundle } from "./docker-zip-loader";
 import { loadViewerBundle, type ViewerBundle } from "./bundle-loader";
 import { loadSurfels } from "./surfel-loader";
 import { progressFetch } from "./loading-progress";
@@ -11,6 +12,8 @@ import type { ObjectIndex, OrderedSku } from "./contracts";
 
 interface BootstrapDependencies {
   readonly href: string;
+  readonly fetch?: typeof fetch;
+  readonly loadZip?: typeof loadDockerViewerBundle;
   readonly load: typeof loadViewerBundle;
   readonly mount: (root: HTMLElement, bundle: ViewerBundle) => void;
 }
@@ -37,7 +40,7 @@ export const selectionModeLabels = [
   "Global ID",
 ] as const;
 
-export const selectionSummaryLabels = ["Total", "Removed"] as const;
+export const selectionSummaryLabels = ["Total"] as const;
 
 const selectionModes = [
   { mode: "manufacturer", label: selectionModeLabels[0] },
@@ -105,34 +108,51 @@ if (typeof document !== "undefined") {
 export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDependencies): Promise<void> {
   const loading = loadingMessage("正在连接点云数据…");
   root.replaceChildren(loading);
-  const fetchWithProgress = progressFetch(globalThis.fetch, message => { loading.textContent = message; });
+  const fetchWithProgress = progressFetch(dependencies?.fetch ?? globalThis.fetch, message => { loading.textContent = message; });
+  let bundle: ViewerBundle | null = null;
   try {
     const href = dependencies?.href ?? window.location.href;
-    const renderMode = new URL(href).searchParams.get("render") ?? "points";
+    const renderMode = new URL(href).searchParams.get("render") ?? "surfel";
     if (renderMode !== "points" && renderMode !== "surfel") throw new Error(`Unknown render mode: ${renderMode}`);
     const load = dependencies?.load ?? loadViewerBundle;
     const mount = dependencies?.mount ?? mountViewer;
-    let bundle: ViewerBundle | null = null;
-    const attempts: string[] = [];
-    const errors: string[] = [];
-    for (const baseUrl of dataCandidates(href)) {
-      attempts.push(baseUrl);
-      try {
-        bundle = await load(baseUrl, fetchWithProgress, renderMode);
-        break;
-      } catch (error) {
-        errors.push(`${baseUrl} => ${error instanceof Error ? error.message : String(error)}`);
+    const taskId = new URL(href).searchParams.get("recognition_task_id");
+    if (taskId !== null) {
+      if (!taskId.trim()) throw new Error("recognition_task_id 不能为空");
+      const baseUrl = import.meta.env.VITE_COS_VIEWER_BASE_URL ?? "https://snapshot-video-1305849923.cos.ap-shanghai.myqcloud.com/global-id-mapping";
+      const archiveUrl = `${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(taskId)}/viewer_bundle.zip`;
+      const response = await fetchWithProgress(archiveUrl);
+      if (!response.ok) throw new Error(`任务数据包下载失败：HTTP ${response.status}`);
+      bundle = await (dependencies?.loadZip ?? loadDockerViewerBundle)(await response.blob(), undefined, "surfel");
+    } else {
+      const attempts: string[] = [];
+      const errors: string[] = [];
+      for (const baseUrl of dataCandidates(href)) {
+        attempts.push(baseUrl);
+        try {
+          bundle = await load(baseUrl, fetchWithProgress, "surfel");
+          break;
+        } catch (error) {
+          errors.push(`${baseUrl} => ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (bundle === null) {
+        throw new Error(`Tried ${attempts.length} data roots but none succeeded.\n${errors.join("\n")}`);
       }
     }
-    if (bundle === null) {
-      throw new Error(`Tried ${attempts.length} data roots but none succeeded.\n${errors.join("\n")}`);
-    }
-    if (renderMode === "surfel") {
+    {
       bundle = { ...bundle, surfels: await loadSurfels(bundle, fetchWithProgress) };
     }
     loading.textContent = "数据已就绪，正在初始化三维画面…";
     mount(root, bundle);
+    if (bundle.disposeAssets && typeof window !== "undefined") {
+      const disposeAssets = bundle.disposeAssets;
+      window.addEventListener("pagehide", disposeAssets, { once: true });
+    }
   } catch (error) {
+    bundle?.surfels?.textures.dispose();
+    bundle?.surfels?.depths.dispose();
+    bundle?.disposeAssets?.();
     const failure = document.createElement("section");
     failure.className = "load-error";
     failure.append(title("Viewer bundle failed to load"), text("p", "The data bundle could not be opened."));
@@ -154,12 +174,8 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   const objectStats = document.createElement("div");
   objectStats.className = "object-stats";
   const totalValue = text("strong", String(ids.length));
-  const globalObservationCounts = summarizeObservationCounts(
-    Object.values(bundle.objects).flatMap((object) => object.observations),
-  );
   objectStats.append(
     createStat(selectionSummaryLabels[0], totalValue),
-    createStat(selectionSummaryLabels[1], text("strong", String(globalObservationCounts.removed))),
   );
   listPanel.append(objectStats);
   const modeButtons = document.createElement("div");
@@ -237,6 +253,43 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   root.replaceChildren(shell);
 
   const controller = createViewerScene(canvasHost, bundle);
+  let activeRenderMode: "points" | "surfel" = new URLSearchParams(window.location.search).get("render") === "points" ? "points" : "surfel";
+  controller.setRenderMode(activeRenderMode);
+  const syncPointSizeControl = () => {
+    const size = controller.getPointSize().toFixed(3);
+    controlsPanel.querySelector<HTMLInputElement>('[data-control="point-size"]')!.value = size;
+    controlsPanel.querySelector<HTMLElement>(".control-value")!.textContent = size;
+  };
+  syncPointSizeControl();
+  let localSourceSelection = new URLSearchParams(window.location.search).get("surfel_source") === "local";
+  controller.setSourceSelection(localSourceSelection);
+  const sourceToggle = button("");
+  sourceToggle.dataset.control = "surfel-source";
+  sourceToggle.title = "实验功能：在前表面内逐像素选择来源，减少多帧混色；不修正深度或相机位姿。";
+  const syncSourceToggle = () => {
+    sourceToggle.textContent = `局部来源优选（实验）：${localSourceSelection ? "开" : "关"}`;
+    sourceToggle.setAttribute("aria-pressed", String(localSourceSelection));
+    sourceToggle.hidden = activeRenderMode !== "surfel";
+  };
+  sourceToggle.addEventListener("click", () => {
+    localSourceSelection = !localSourceSelection;
+    controller.setSourceSelection(localSourceSelection);
+    const url = new URL(window.location.href);
+    if (localSourceSelection) url.searchParams.set("surfel_source", "local");
+    else url.searchParams.delete("surfel_source");
+    window.history.replaceState(null, "", url);
+    syncSourceToggle();
+  });
+  syncSourceToggle();
+  const renderToggle = button(activeRenderMode === "surfel" ? "切换到原始点云" : "切换到 Surfel");
+  renderToggle.addEventListener("click", () => {
+    activeRenderMode = activeRenderMode === "surfel" ? "points" : "surfel";
+    controller.setRenderMode(activeRenderMode);
+    syncPointSizeControl();
+    syncSourceToggle();
+    renderToggle.textContent = activeRenderMode === "surfel" ? "切换到原始点云" : "切换到 Surfel";
+  });
+  viewControls.prepend(renderToggle, sourceToggle);
   let selectionMode: SelectionMode = "sku";
   let selectedGlobalId: string | null = null;
   let selectedFacetId: string | null = null;

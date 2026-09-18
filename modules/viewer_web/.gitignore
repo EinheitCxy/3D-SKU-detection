@@ -1,4 +1,9 @@
 node_modules/
 dist/
 *.tsbuildinfo
+
+# 静态站点的运行时数据（4.7G）不入库；仅保留 data/ 作为受控数据集跟踪点。
+public/*
+!public/data/
+!public/data/.gitkeep
 public/data/CURRENT

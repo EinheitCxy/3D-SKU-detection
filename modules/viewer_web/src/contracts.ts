@@ -111,8 +111,10 @@ export function validateSkuMasterData(
       throw contractError(`sku_masterdata SKU ID is not in objects: ${skuId}`);
     }
     const data = asRecord(rawData, `sku_masterdata[${skuId}]`);
+    const manufacturer = asNullableString(data.manufacturer, `sku_masterdata[${skuId}].manufacturer`);
     result[skuId] = {
-      manufacturer: normalizeMasterDataLabel(asNullableString(data.manufacturer, `sku_masterdata[${skuId}].manufacturer`)),
+      manufacturer: manufacturer === "零眸智能" || manufacturer === "lingmouzhineng"
+        ? "其他" : normalizeMasterDataLabel(manufacturer),
       brand: normalizeMasterDataLabel(asNullableString(data.brand, `sku_masterdata[${skuId}].brand`)),
       category: asNullableString(data.category, `sku_masterdata[${skuId}].category`),
       is_posm: asBoolean(data.is_posm, `sku_masterdata[${skuId}].is_posm`),

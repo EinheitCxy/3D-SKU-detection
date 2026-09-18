@@ -10,6 +10,7 @@ import {
 import type { SurfelData } from "./surfel-loader";
 
 export interface ViewerBundle {
+  readonly disposeAssets?: () => void;
   readonly surfels?: SurfelData;
   readonly manifest: Manifest;
   readonly objects: ObjectIndex;
@@ -43,9 +44,9 @@ export async function loadViewerBundle(
   const manifest = validateManifest(await fetchJson(`${generationUrl}manifest.json`, fetcher));
   const [objectsValue, skuMasterDataValue, positionsBuffer, colorsBuffer, normalsBuffer] = await Promise.all([
     fetchJson(`${generationUrl}objects.json`, fetcher),
-    fetchJson(`${generationUrl}sku_masterdata.json`, fetcher),
+    fetchOptionalJson(`${generationUrl}sku_masterdata.json`, fetcher),
     fetchBinary(`${generationUrl}positions.f32.bin`, fetcher),
-    mode === "points" ? fetchBinary(`${generationUrl}colors.u8.bin`, fetcher) : null,
+    fetchBinary(`${generationUrl}colors.u8.bin`, fetcher),
     fetchBinary(`${generationUrl}normals.i8.bin`, fetcher),
   ]);
   const positions = decodePositions(positionsBuffer);
@@ -53,10 +54,11 @@ export async function loadViewerBundle(
   const colors = colorsBuffer === null ? null : decodeColors(colorsBuffer, pointCount);
   const normals = decodeNormals(normalsBuffer, pointCount);
   const objects = validateObjectIndex(objectsValue, pointCount);
-  const skuMasterData = validateSkuMasterData(
-    skuMasterDataValue,
-    new Set(Object.values(objects).flatMap((object) => object.ordered_skus.map((sku) => sku.sku_id))),
-  );
+  const knownSkuIds = new Set(Object.values(objects).flatMap((object) => object.ordered_skus.map((sku) => sku.sku_id)));
+  // sku_masterdata.json 可选：缺失时主数据为空索引，各消费者已容忍 `undefined`/空对象。
+  const skuMasterData: SkuMasterDataIndex = skuMasterDataValue === null
+    ? {}
+    : validateSkuMasterData(skuMasterDataValue, knownSkuIds);
   return {
     manifest,
     objects,
@@ -72,6 +74,17 @@ export async function loadViewerBundle(
 
 async function fetchJson(url: string, fetcher: typeof fetch, init?: RequestInit): Promise<unknown> {
   const response = await fetcher(url, init);
+  if (!response.ok) throw new Error(`Viewer bundle HTTP error ${response.status} for ${url}`);
+  try {
+    return await response.json() as unknown;
+  } catch (error) {
+    throw new Error(`Viewer bundle JSON error for ${url}`, { cause: error });
+  }
+}
+
+async function fetchOptionalJson(url: string, fetcher: typeof fetch): Promise<unknown | null> {
+  const response = await fetcher(url);
+  if (response.status === 404) return null; // 可选资源缺失视为无数据
   if (!response.ok) throw new Error(`Viewer bundle HTTP error ${response.status} for ${url}`);
   try {
     return await response.json() as unknown;

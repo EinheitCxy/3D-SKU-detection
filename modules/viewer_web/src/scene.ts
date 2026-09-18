@@ -48,7 +48,8 @@ import {
 const CLICK_THRESHOLD_PX = 6;
 const MIN_POINT_SIZE = 0.004;
 const MAX_POINT_SIZE = 0.07;
-export const DEFAULT_POINT_SIZE = 0.004;
+export const DEFAULT_POINT_SIZE = MIN_POINT_SIZE;
+const DEFAULT_SURFEL_SIZE = MAX_POINT_SIZE;
 const MAX_SPLAT_PIXELS = 64;
 const FOG_NEAR_RADII = 1;
 const FOG_FAR_RADII = 8;
@@ -57,10 +58,13 @@ const VIEW_TRANSITION_MS = 420;
 const SELECTION_BOX_PADDING_RATIO = 0.02;
 
 export interface ViewerSceneController {
+  setRenderMode(mode: "points" | "surfel"): void;
+  setSourceSelection(enabled: boolean): void;
   selectGlobalId(globalId: string | null): void;
   selectGlobalIds(globalIds: ReadonlySet<string>): void;
   focusGlobalId(globalId: string): void;
   setPointSize(pointSize: number): void;
+  getPointSize(): number;
   setVisibleGlobalIds(ids: ReadonlySet<string>): void;
   setViewPreset(preset: "fit" | "top" | "isometric"): void;
   setPointPickHandler(handler: ((globalId: string) => void) | null): void;
@@ -135,8 +139,10 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   worldGroup.matrixAutoUpdate = false;
   scene.add(worldGroup);
 
-  const points = bundle.surfels ? null : createPoints(bundle, worldGroup.matrix);
+  let renderMode: "points" | "surfel" = bundle.surfels ? "surfel" : "points";
+  const points = bundle.colors ? createPoints(bundle, worldGroup.matrix) : null;
   if (points) {
+    points.visible = renderMode === "points";
     points.layers.set(POINTS_LAYER);
     worldGroup.add(points);
   }
@@ -160,7 +166,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   camera.far = Math.max(sceneRadius * 20, 100);
   camera.updateProjectionMatrix();
   scene.fog = new Fog(background, sceneRadius * FOG_NEAR_RADII, sceneRadius * FOG_FAR_RADII);
-  const pipeline = surfels ? null : createViewerPipeline(renderer, scene, camera);
+  const pipeline = points ? createViewerPipeline(renderer, scene, camera) : null;
 
   let selectedGlobalIdForCamera: string | null = null;
   let pickHandler: ((globalId: string) => void) | null = null;
@@ -171,7 +177,9 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   const renderLoop = createRenderLoop(animate);
   controls.addEventListener("change", renderLoop.request);
   let previousTintedRanges: readonly PointRange[] = [];
-  let currentPointSize = DEFAULT_POINT_SIZE;
+  const pointSizes = { points: DEFAULT_POINT_SIZE, surfel: DEFAULT_SURFEL_SIZE };
+  let currentPointSize = pointSizes[renderMode];
+  surfels?.setRadius(pointSizes.surfel);
   const pointRangeLookup = buildPointRangeLookup(bundle.objects);
   const selectionBoxCache = new Map<string, Box3 | null>();
   const raycaster = new Raycaster();
@@ -222,8 +230,8 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
-    const surfelHit = surfels?.pick((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height);
-    const hitIndices = surfels ? (surfelHit == null ? [] : [surfelHit])
+    const surfelHit = renderMode === "surfel" ? surfels?.pick((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height) : null;
+    const hitIndices = renderMode === "surfel" ? (surfelHit == null ? [] : [surfelHit])
       : points ? raycaster.intersectObject(points, false).flatMap((hit) => hit.index === undefined ? [] : [hit.index]) : [];
     const globalId = firstVisiblePointGlobalId(
       hitIndices,
@@ -248,14 +256,27 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       if (progress === 1) focusAnimation = null;
     }
     controls.update();
-    if (surfels) surfels.render();
+    if (renderMode === "surfel") surfels?.render();
     else pipeline?.composer.render();
-    return !surfels || focusAnimation !== null;
+    return renderMode === "points" || focusAnimation !== null;
   }
   renderLoop.request();
   setViewPreset("fit", false);
 
   return {
+    setSourceSelection(enabled) {
+      surfels?.setSourceSelection(enabled);
+      renderLoop.request();
+    },
+    setRenderMode(mode) {
+      if (mode === "points" && !points) throw new Error("数据包缺少原始点云颜色");
+      if (mode === "surfel" && !surfels) throw new Error("数据包缺少 Surfel 数据");
+      renderMode = mode;
+      currentPointSize = pointSizes[mode];
+      updateRaycasterThreshold();
+      if (points) points.visible = mode === "points";
+      renderLoop.request();
+    },
     selectGlobalId(globalId) {
       selectedGlobalIdForCamera = globalId;
       updateSelectionPointTint(globalId === null ? new Set() : new Set([globalId]));
@@ -283,10 +304,12 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       animateToView(new Vector3(...focused), target, VIEW_TRANSITION_MS);
       selectedGlobalIdForCamera = globalId;
     },
+    getPointSize() { return pointSizes[renderMode]; },
     setPointSize(size) {
       currentPointSize = clamp(size, MIN_POINT_SIZE, MAX_POINT_SIZE);
-      if (pointMaterial) pointMaterial.uniforms.uSize.value = currentPointSize;
-      surfels?.setRadius(currentPointSize);
+      pointSizes[renderMode] = currentPointSize;
+      if (renderMode === "points" && pointMaterial) pointMaterial.uniforms.uSize.value = currentPointSize;
+      if (renderMode === "surfel") surfels?.setRadius(currentPointSize);
       updateRaycasterThreshold();
       renderLoop.request();
     },

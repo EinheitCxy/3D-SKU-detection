@@ -46,12 +46,12 @@ def prepare_surfels(cache, indices, cache_path: Path, images_dir: Path, texture_
     with np.load(cache_path, allow_pickle=False) as archive:
         intrinsic = archive["intrinsic"]
     n, h, w, _ = cache["points"].shape
+    if not 1 <= n <= 256:
+        raise ValueError("Surfel 支持 1..256 个来源帧（Uint8 帧编号 0..255）")
     if intrinsic.shape != (n, 3, 3) or not np.isfinite(intrinsic).all():
         raise ValueError("Surfel requires finite per-frame 3x3 intrinsic")
     u, v, depth = grid_tangents(cache["points"], cache["extrinsic"])
     frame_ids = indices // (h * w)
-    if not 1 <= n <= 32:
-        raise ValueError("Surfel supports 1..32 source frames")
     def half_bytes(values, name):
         if not np.isfinite(values).all() or np.any(np.abs(values) > 65504):
             raise ValueError(f"Surfel {name} exceeds finite Float16 range")

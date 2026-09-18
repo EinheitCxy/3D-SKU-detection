@@ -28,7 +28,7 @@ export async function loadSurfels(bundle: ViewerBundle, fetcher: typeof fetch = 
   };
   const metadata = await (await fetchAsset("surfel.json")).json();
   if (metadata.version !== 2 || metadata.point_count !== bundle.pointCount || !dimensions(metadata.grid_size)
-    || !Array.isArray(metadata.frames) || metadata.frames.length < 1 || metadata.frames.length > 32) {
+    || !Array.isArray(metadata.frames) || metadata.frames.length < 1 || metadata.frames.length > 256) {
     throw new Error("Invalid Surfel v2 metadata or slot count; regenerate the Surfel bundle");
   }
   for (const frame of metadata.frames) {
