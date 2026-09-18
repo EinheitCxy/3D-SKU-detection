@@ -331,6 +331,93 @@ def build_da3_transforms(
     return transforms
 
 
+# ========== MapAnything fixed_mapping 几何（与 map-anything vendored 源逐像素一致） ==========
+
+# 源: map-anything/mapanything/utils/image.py RESOLUTION_MAPPINGS[518]（patch=14 整除桶）
+_MAPANYTHING_RESOLUTION_MAPPINGS_518 = {
+    1.000: (518, 518),  # 1:1
+    1.321: (518, 392),  # 4:3
+    1.542: (518, 336),  # 3:2
+    1.762: (518, 294),  # 16:9
+    2.056: (518, 252),  # 2:1
+    3.083: (518, 168),  # 3.2:1
+    0.757: (392, 518),  # 3:4
+    0.649: (336, 518),  # 2:3
+    0.567: (294, 518),  # 9:16
+    0.486: (252, 518),  # 1:2
+}
+
+
+def mapanything_oriented_size(image_path: str) -> Tuple[int, int]:
+    """读取 EXIF 方向校正后的 (W, H)，与 mapanything load_images 的 exif_transpose 尺寸语义一致。
+
+    仅解析 EXIF 头不解码像素；无方向标签（fd 数据集实测）时与 Image.open().size 相同。
+    """
+    with Image.open(image_path) as img:
+        orientation = img.getexif().get(274)  # ExifTags.Base.Orientation
+        w, h = img.size
+    if orientation in (5, 6, 7, 8):  # 90° 旋转换维；翻转不变维
+        return h, w
+    return w, h
+
+
+def mapanything_target_size(orig_sizes: Sequence[Tuple[int, int]]) -> Tuple[int, int]:
+    """按平均宽高比选 fixed_mapping 目标桶（与 mapanything find_closest_aspect_ratio 一致）。"""
+    average_aspect = sum(w / h for w, h in orig_sizes) / len(orig_sizes)
+    closest_key = min(
+        sorted(_MAPANYTHING_RESOLUTION_MAPPINGS_518), key=lambda k: abs(k - average_aspect)
+    )
+    return _MAPANYTHING_RESOLUTION_MAPPINGS_518[closest_key]
+
+
+def mapanything_frame_affine(
+    orig_width: int, orig_height: int, target_width: int, target_height: int
+) -> np.ndarray:
+    """复现 mapanything fixed_mapping 的 source→processed 完整 (2,3) affine。
+
+    源 cropping.py rescale_image_and_other_optional_info + crop_resize_if_necessary：
+    等比缩放 scale = max(tw/W, th/H) + 1e-8，中间尺寸 floor(W*scale)×floor(H*scale)，
+    居中裁剪 left=(w'-tw)//2, top=(h'-th)//2（无内参分支）。
+    """
+    scale = max(target_width / orig_width, target_height / orig_height) + 1e-8
+    mid_width = math.floor(orig_width * scale)
+    mid_height = math.floor(orig_height * scale)
+    left = (mid_width - target_width) // 2
+    top = (mid_height - target_height) // 2
+    return np.array([[scale, 0.0, -left], [0.0, scale, -top]], dtype=np.float64)
+
+
+def build_mapanything_transforms(image_paths: List[str]) -> List[DA3ImageTransform]:
+    """构建 MapAnything 变换列表（fixed_mapping 518 桶，目标尺寸含居中裁剪）。
+
+    目标尺寸选择与 map-anything/mapanything/utils/image.py load_images(resize_mode="fixed_mapping")
+    逐像素一致（平均宽高比 → RESOLUTION_MAPPINGS[518] 最近桶）。affine 不在此绑定：
+    matching 消费端用 cache 内的权威值 bind_da3_transforms_from_cache（同 da3 路径）。
+
+    Args:
+        image_paths: 图像路径列表
+
+    Returns:
+        DA3 变换对象列表（target 尺寸 = MapAnything cache 尺寸）
+    """
+    if not image_paths:
+        return []
+
+    sizes = [mapanything_oriented_size(path) for path in image_paths]
+    target_w, target_h = mapanything_target_size(sizes)
+
+    transforms = []
+    for img_path, (w, h) in zip(image_paths, sizes):
+        t = DA3ImageTransform(w, h, target_w, target_h)
+        try:
+            t.image_id = int(Path(img_path).stem)
+        except (ValueError, TypeError):
+            t.image_id = None
+        transforms.append(t)
+
+    return transforms
+
+
 class VGGTImageTransform(ImageTransformBase):
     """修复版本的VGGT图像变换类，完全对齐load_and_preprocess_images(crop)的实现
 
@@ -600,9 +687,11 @@ def build_transforms(
     elif model_type == "da3":
         process_res = kwargs.get("process_res", DEFAULT_PROCESS_RES)
         return build_da3_transforms(image_paths, process_res=process_res)
+    elif model_type == "mapanything":
+        return build_mapanything_transforms(image_paths)
     else:
         raise ValueError(
-            f"不支持的模型类型: {model_type}。" f"支持的类型: 'vggt', 'pi3', 'da3'"
+            f"不支持的模型类型: {model_type}。" f"支持的类型: 'vggt', 'pi3', 'da3', 'mapanything'"
         )
 
 
