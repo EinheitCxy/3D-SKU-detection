@@ -84,6 +84,7 @@ def upload_viewer_bundle(
             SecretId=config.secret_id,
             SecretKey=config.secret_key,
             Scheme="https",
+            Timeout=120,
         )
     )
     host = f"{config.bucket}.cos.{config.region}.myqcloud.com"
