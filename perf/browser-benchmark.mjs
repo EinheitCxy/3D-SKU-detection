@@ -139,15 +139,27 @@ async function collectNavigation(browser, origin) {
     observer.observe(document, { childList: true, subtree: true });
   });
   try {
-    await page.goto(`${origin}/?data=/data/`, { waitUntil: "domcontentloaded", timeout: 120_000 });
+    await page.goto(`${origin}/?data=/data/`, { waitUntil: "domcontentloaded", timeout: 300_000 });
     try {
-      await page.waitForSelector(".viewer-shell canvas", { timeout: 120_000 });
+      // polling:100ms instead of rAF: SwiftShader GPU readbacks can stall the main
+      // thread for many seconds at a time, freezing the default rAF-driven check.
+      await page.waitForSelector(".viewer-shell canvas", { timeout: 300_000, polling: 100 });
     } catch (error) {
+      const snapshot = await page.evaluate(() => {
+        const canvas = document.querySelector(".viewer-shell canvas");
+        const fail = document.querySelector(".load-error");
+        const loading = document.querySelector(".loading-message")?.textContent ?? "";
+        if (!canvas) return { canvas: null, fail: fail?.textContent ?? null, loading };
+        const rect = canvas.getBoundingClientRect();
+        const style = getComputedStyle(canvas);
+        return { canvas: { w: rect.width, h: rect.height, display: style.display, visibility: style.visibility }, fail: null, loading };
+      }).catch(() => "snapshot unavailable");
+      console.error("canvas probe snapshot:", JSON.stringify(snapshot));
       const detail = await page.locator(".load-error").textContent().catch(() => null);
       if (detail !== null) throw new Error(viewerMountFailureMessage(detail));
       throw error;
     }
-    await page.waitForFunction(() => window.__da3ViewerPerf?.stableInteractiveMs !== null, null, { timeout: 120_000 });
+    await page.waitForFunction(() => window.__da3ViewerPerf?.stableInteractiveMs !== null, null, { timeout: 300_000 });
     return await page.evaluate(() => {
       const resources = performance.getEntriesByType("resource");
       const dataResources = resources.filter((entry) => entry.name.includes("/data/"));

@@ -34,9 +34,11 @@ uv run --offline python perf/benchmark.py --gpu-index 2
 
 运行创建全新的 `perf/runs/<utc-run-id>/`。每个 `fdN/` 都有独立且初始为空的
 `save_root`。personalcare classification 在 case 开始时异步提交，与 reconstruction、matching
-重叠，并在 analysis/dedup 前 join；之后继续 footprint、bundle export 和一次 cache-disabled
-浏览器导航。不同数据集或不同 benchmark run 之间不复用 DA3/SAM3/classification 产物，
-也不会写入 `Output/`。
+重叠，并在 analysis/dedup 前 join；之后继续 bundle export 和一次 cache-disabled
+浏览器导航。**footprint（可审计的地面面积测量，`--mode ground-stack-area` 的产出）默认不跑**，
+也不需要它才能产生 viewer artifact；需要它时加 `--include-footprint`，会插入在
+analysis_dedup 与 viewer_export 之间并计入汇总。不同数据集或不同 benchmark run 之间不复用
+DA3/SAM3/classification 产物，也不会写入 `Output/`。
 
 同一次 case 内 reconstruction 生成、matching 消费的 cache 属于必要的阶段依赖，不是
 warm start。若指定的 `--run-root` 已存在，采集器直接拒绝运行，避免复用旧产物。
@@ -65,7 +67,11 @@ one-shot cold case 全部完成，平均真实 wall time 为 396.943s。旧
 ## 验证
 
 ```bash
-uv run --offline pytest perf/tests/test_benchmark.py -q
+uv run --offline pytest test/perf/test_benchmark.py -q
 (cd perf && npm test)
 (cd modules/viewer_web && npm test -- --run && npm run build)
 ```
+
+## 视频1固定轨迹三方案对照
+
+`surfel_compare/` 复用每秒一帧的31张图，对比原surfel、跨帧几何一致性过滤和DA3直接预测高斯。固定70个视角，包含RGB、商品点击图、图像拟合与加载观测；不会修改生产匹配/计数或默认DA3 runner。运行方式、尺度修正及测量限制见 [实验说明](surfel_compare/README.md)。本地结果页面为 `http://127.0.0.1:5173/comparison/index.html`，是离线固定轨迹回放。

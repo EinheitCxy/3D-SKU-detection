@@ -380,12 +380,16 @@ def run_case(
     gpu_index: int,
     stage_builder: Callable[..., Sequence[StageSpec]] | None = None,
     executor: Callable[..., StageExecution] = execute_stage,
+    footprint_stage: bool = False,
 ) -> CaseReceipt:
     """Run every dependent stage once from an empty dataset-specific root.
 
     A stage receipt is written immediately so an interrupted GPU job remains
     auditable. Downstream work stops at the first non-complete stage because it
     would otherwise consume stale or missing artifacts.
+
+    footprint_stage=False drops the auditable ground-area measurement from both
+    construction and scheduling; enable it with --include-footprint.
     """
 
     case_root = run_root / _case_directory_name(dataset_name)
@@ -396,6 +400,8 @@ def run_case(
         dataset_name=dataset_name,
         case_root=case_root,
     )
+    if not footprint_stage:
+        stage_specs = [spec for spec in stage_specs if spec.name != "footprint"]
     case_started = time.perf_counter()
     executions: dict[str, StageExecution] = {}
     classification_specs = [
@@ -522,26 +528,34 @@ def render_markdown_report(summary: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _expected_stage_names() -> tuple[str, ...]:
-    return (
+def _expected_stage_names(include_footprint: bool = False) -> tuple[str, ...]:
+    """Stages a complete case must have. footprint is an auditable side metric
+    (ground-support area, --mode ground-stack-area) that no downstream viewer
+    artifact consumes, so it is an opt-in benchmark stage."""
+    stages = [
         "classification",
         "reconstruction",
         "matching",
         "analysis_dedup",
-        "footprint",
-        "viewer_export",
-        "browser_first_interactive",
-    )
+    ]
+    if include_footprint:
+        stages.append("footprint")
+    stages.extend(["viewer_export", "browser_first_interactive"])
+    return tuple(stages)
 
 
-def _case_payload(case: CaseReceipt) -> dict[str, Any]:
+def _case_payload(
+    case: CaseReceipt,
+    expected_stages: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    expected = expected_stages or _expected_stage_names()
     return {
         "dataset": case.dataset,
         "wall_seconds": case.wall_seconds,
         "stages": [asdict(stage) for stage in case.stages],
         "complete": all(
             name in case.stage_by_name() and case.stage_by_name()[name].is_complete
-            for name in _expected_stage_names()
+            for name in expected
         ),
     }
 
@@ -557,6 +571,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--gpu-index", type=int, default=2)
     parser.add_argument("--run-root", type=Path, default=None)
+    parser.add_argument(
+        "--include-footprint",
+        action="store_true",
+        help="also run the auditable ground-area footprint stage (default: off)",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -579,6 +598,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if preflight.exists():
         shutil.copy2(preflight, run_root / "environment.preflight.json")
 
+    expected_stages = _expected_stage_names(
+        include_footprint=args.include_footprint
+    )
     cases: list[CaseReceipt] = []
     for dataset_name in args.datasets:
         case = run_case(
@@ -586,15 +608,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_root=run_root,
             dataset_name=dataset_name,
             gpu_index=args.gpu_index,
+            footprint_stage=args.include_footprint,
         )
         cases.append(case)
 
-    summary = summarise_cases(cases, expected_stages=_expected_stage_names())
+    summary = summarise_cases(cases, expected_stages=expected_stages)
     _write_json(
         run_root / "summary.json",
         {
             "generated_at": datetime.now(UTC).isoformat(),
-            "cases": [_case_payload(case) for case in cases],
+            "cases": [
+                _case_payload(case, expected_stages=expected_stages)
+                for case in cases
+            ],
             "summary": summary,
         },
     )
