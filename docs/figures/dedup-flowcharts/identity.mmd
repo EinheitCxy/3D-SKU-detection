@@ -1,0 +1,39 @@
+flowchart TB
+    accTitle: 身份去重：边、组件、代表和计数
+    accDescr: 当前源码对应的身份去重：边、组件、代表和计数，橙色节点表示缺陷或限制。
+    parse["解析真实图片 ID、对象 ID、文本命中率<br/>保留正向边及末帧 → 首帧闭环"]
+    threshold["去重层再按 min_hit_ratio 筛边<br/>注意与投影候选门槛是两层"]
+    best["每个 ref-target 图对按 hit_ratio 降序<br/>贪心选择 ref/target 都未占用的边"]
+    nodes["为全部原始检测初始化节点<br/>(image_id, object_id)"]
+    edges_left{"还有待处理边？"}
+    union["取下一条强边<br/>查找两个端点的 DSU 根"]
+    conflict{"两组件是否包含同一图片？"}
+    skip["跳过冲突边<br/>仍保留两个组件"]
+    merge["合并组件<br/>已有同根边不改变身份"]
+    gid["按图片 ID、对象索引分配 global_id<br/>无匹配对象仍有独立 ID"]
+    represent["组件最早 observation：removed=false<br/>其余 true，仍全部存在 mapping 中"]
+    outputs["按最终 removed 写逐帧去重 JSON<br/>global_skus 保留全部检测及去重标记"]
+    classify["Viewer 汇总组件全部分类候选<br/>具体 SKU 优先；按累计置信度等排序"]
+    parse --> threshold
+    threshold --> best
+    best -->|"强边排序"| edges_left
+    nodes -->|"节点已初始化"| edges_left
+    edges_left -->|"有"| union
+    edges_left -->|"没有，包括零匹配"| gid
+    union -->|"已同根"| edges_left
+    union -->|"不同根"| conflict
+    conflict -->|"是"| skip
+    conflict -->|"否"| merge
+    skip -->|"下一条"| edges_left
+    merge -->|"下一条"| edges_left
+    gid --> represent
+    represent --> outputs
+    represent -->|"全部 observations"| classify
+    classDef step fill:#e8f1ff,stroke:#648096,color:#152e45
+    class parse,threshold,best,union,merge,gid,represent step
+    classDef data fill:#e3f6ee,stroke:#648096,color:#152e45
+    class nodes,outputs,classify data
+    classDef warn fill:#fff0d9,stroke:#648096,color:#152e45
+    class skip warn
+    classDef decision fill:#eee6ff,stroke:#648096,color:#152e45
+    class edges_left,conflict decision

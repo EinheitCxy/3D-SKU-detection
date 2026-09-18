@@ -1,0 +1,25 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.35, ranksep=0.55];
+node [shape=box, style="rounded,filled", fontname="SimHei", fontsize=15, color="#648096", margin="0.2,0.13"];
+edge [fontname="SimHei", fontsize=12, color="#61788d", arrowsize=0.7];
+refs [label="batch_all_refs 遍历参考图\nnext 环形配对 / all 配对", fillcolor="#e8f1ff"];
+mask [label="读参考图 SAM mask\n空 mask 不足点则跳过匹配", fillcolor="#e3f6ee"];
+sample [label="从 mask 网格采样世界点\n限制数量、检查深度/置信度", fillcolor="#e8f1ff"];
+project [label="目标相机：Xc = R Xw + t\n像素 p = K Xc / Zc", fillcolor="#e8f1ff"];
+hit [label="统计投影落入各目标 bbox 的比例\n3D 候选门槛 projection_match_threshold", fillcolor="#e8f1ff"];
+geometry [label="命中目标 bbox 后进行几何验证\n目标缓存深度自洽、质心距离、平面评分", fillcolor="#e8f1ff"];
+rank [label="combined_score 排序候选\n无通过候选则不建立边", fillcolor="#e8f1ff"];
+unique [label="目标框唯一性分配\n竞争失败者尝试下一候选", fillcolor="#e8f1ff"];
+save [label="保存 ref/target object ID 与 hit_ratio\n文本 summary 是当前去重输入", fillcolor="#e3f6ee"];
+limits [label="现存边界\n目标几何采样使用 bbox；非目标 mask\n参考采样高斯中心的坐标空间待核实", fillcolor="#fff0d9"];
+refs -> mask [label=""];
+mask -> sample [label=""];
+sample -> project [label=""];
+project -> hit [label=""];
+hit -> geometry [label=""];
+geometry -> rank [label=""];
+rank -> unique [label=""];
+unique -> save [label=""];
+sample -> limits [label=""];
+geometry -> limits [label=""];
+}

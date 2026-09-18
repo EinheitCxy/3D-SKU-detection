@@ -1,6 +1,6 @@
 # Surfel 集成说明
 
-本文以当前代码为准。Surfel 接入已有 DA3 缓存导出与 `modules/viewer_web`，不重新推理 DA3/SAM3，不改变 SKU 匹配、去重或计数。`docker/viewer` 的 COS ZIP 查看器已接入此渲染路径，默认读取 Surfel v2；服务端跳过无人工标注的离线评估，导出并打包纹理后上传 COS。此前各版的场景测试记录见 [历史实施报告](surfel_implementation_report.md)，不作为本次验证结果。
+本文保留初版 Surfel 实现说明；当前点保留、模式切换、U/V 限制及点击行为以 [3D 去重与可视化流程](3d_dedup_flowcharts.md) 为准。Surfel 接入已有 DA3 缓存导出与 `modules/viewer_web`，不重新推理 DA3/SAM3，不改变 SKU 匹配、去重或计数。`docker/viewer` 的 COS ZIP 查看器已接入此渲染路径，默认读取 Surfel v2；服务端跳过无人工标注的离线评估，导出并打包纹理后上传 COS。此前各版的场景测试记录见 [历史实施报告](surfel_implementation_report.md)，不作为本次验证结果。
 
 ## 入口和数据流
 
@@ -8,7 +8,7 @@
 DA3 predictions.npz + 原图 + global_mapping.json + 同网格 SAM3 v2 masks
   -> scripts/export_surfel_viewer.py
   -> src/web_viewer_export.py:export_web_viewer_bundle
-     -> 普通过滤、体素选点、数量限制、按商品标签排序
+     -> SAM 商品有效点全量保留；背景过滤、体素选点、独立预算；按标签排序
      -> source_indices 保留每个输出点的原始网格位置
      -> src/surfel_export.py:prepare_surfels
      -> 原子发布 CURRENT -> runs/<run_id>/
@@ -115,6 +115,6 @@ Surfel 使用合并请求的按需 RAF 循环。相机 change、阻尼、Focus/�
 
 ## 边界与验证范围
 
-Sidecar 接受 1..32 帧，但 GPU 实际能否编译相机 uniform 数组取决于设备资源，不能把格式上限当作所有设备的运行保证。renderer 检查浮点 render target 扩展和纹理尺寸上限；本次未做 32 帧设备矩阵验证。
+Sidecar 接受 1..256 帧（Uint8 编号 0..255）。相机参数通过 16 列 RGBA Float32 纹理逐帧读取，不再使用随帧数增长的相机 uniform 数组。renderer 检查纹理层数、尺寸和浮点 render target 支持。合成 256 帧已验证加载、末帧纹理和点击；实际大图仍受显存与浏览器内存限制，未做多设备矩阵验证。
 
 原图提高的是外观采样密度，几何仍受 DA3 processed grid 和筛选后点数限制。细杆、遮挡边界、跨视角深度误差和曝光差异可能产生空洞/接缝/重影。普通点云、Surfel 两个独立数据根用于显式比较，没有自动降级路径。历史浏览器结果和硬件 GPU 性能不能由本次源码审查或构建推导。

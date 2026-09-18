@@ -1,0 +1,30 @@
+flowchart TB
+    accTitle: 匹配：每对图片如何建立候选边
+    accDescr: 当前源码对应的匹配：每对图片如何建立候选边，橙色节点表示缺陷或限制。
+    refs["batch_all_refs 遍历参考图<br/>next 环形配对 / all 配对"]
+    mask["读参考图 SAM mask<br/>空 mask 不足点则跳过匹配"]
+    sample["从 mask 网格采样世界点<br/>限制数量、检查深度/置信度"]
+    project["目标相机：Xc = R Xw + t<br/>像素 p = K Xc / Zc"]
+    hit["统计投影落入各目标 bbox 的比例<br/>3D 候选门槛 projection_match_threshold"]
+    geometry["命中目标 bbox 后进行几何验证<br/>目标缓存深度自洽、质心距离、平面评分"]
+    rank["combined_score 排序候选<br/>无通过候选则不建立边"]
+    unique["目标框唯一性分配<br/>竞争失败者尝试下一候选"]
+    save["保存 ref/target object ID 与 hit_ratio<br/>文本 summary 是当前去重输入"]
+    limits["现存边界<br/>目标几何采样使用 bbox；非目标 mask<br/>参考采样高斯中心的坐标空间待核实"]
+    refs --> mask
+    mask --> sample
+    sample --> project
+    project --> hit
+    hit --> geometry
+    geometry --> rank
+    rank --> unique
+    unique --> save
+    sample --> limits
+    geometry --> limits
+    classDef step fill:#e8f1ff,stroke:#648096,color:#152e45
+    class refs,sample,project,hit,geometry,rank,unique step
+    classDef data fill:#e3f6ee,stroke:#648096,color:#152e45
+    class mask,save data
+    classDef warn fill:#fff0d9,stroke:#648096,color:#152e45
+    class limits warn
+    classDef decision fill:#eee6ff,stroke:#648096,color:#152e45

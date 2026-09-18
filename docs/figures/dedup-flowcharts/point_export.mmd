@@ -1,0 +1,33 @@
+flowchart TB
+    accTitle: 点云导出：商品保护与货架消失的位置
+    accDescr: 当前源码对应的点云导出：商品保护与货架消失的位置，橙色节点表示缺陷或限制。
+    cache["完整重建点网格<br/>颜色 / 置信度 / 来源帧像素"]
+    valid["基础有效性<br/>有限坐标、非全零、有限置信度"]
+    labels["完整 SAM mask 标注 observation<br/>重叠像素由先写入标签取得单一归属"]
+    filter["SOR → DBSCAN → 最大平面过滤<br/>每阶段 OR 商品 protect_mask"]
+    product["SAM 商品点全部保留<br/>不做体素合并、不随机采样"]
+    background["mask 外背景做 5 mm 体素选择<br/>每体素保留最高置信度点"]
+    budget["旧逻辑缺陷：背景预算<br/>max(0, 150 万 − 商品点数)"]
+    zero["本次商品 1,863,298 点<br/>背景预算 0 → 货架全部不导出"]
+    sort["商品 + 保留下来的背景<br/>按标签稳定排序、同步 source_indices"]
+    ranges["positions / colors / normals<br/>objects.point_ranges 半开区间"]
+    proposed["当前修复：背景固定独立 80 万预算<br/>商品全量 + 过滤降采样后的背景"]
+    cache --> valid
+    valid --> labels
+    labels --> filter
+    filter -->|"标签 ≥ 0"| product
+    filter -->|"标签 < 0"| background
+    background -->|"旧逻辑"| budget
+    product -->|"商品数"| budget
+    budget -->|"超过 150 万"| zero
+    product --> sort
+    proposed -->|"独立预算内背景"| sort
+    sort --> ranges
+    background -->|"当前逻辑"| proposed
+    classDef step fill:#e8f1ff,stroke:#648096,color:#152e45
+    class valid,labels,filter,background,sort step
+    classDef data fill:#e3f6ee,stroke:#648096,color:#152e45
+    class cache,product,ranges,proposed data
+    classDef warn fill:#fff0d9,stroke:#648096,color:#152e45
+    class budget,zero warn
+    classDef decision fill:#eee6ff,stroke:#648096,color:#152e45

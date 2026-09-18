@@ -1,0 +1,846 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>3D 去重流程详图</title><style>body{margin:0;background:#f2f5fa;color:#152e45;font:16px system-ui}header,main{max-width:1250px;margin:auto;padding:24px}nav{display:flex;gap:14px;flex-wrap:wrap}a{color:#1261a4}article{background:white;padding:20px;margin:24px 0;border-radius:16px}.diagram{overflow:auto;max-height:1100px;border:1px solid #dae3ed}.diagram svg{display:block;min-width:650px;width:100%;height:auto}button{margin:8px;padding:8px 16px}p{line-height:1.8}</style><header><h1>3D 去重与可视化流程</h1><p>2026-09-10 当前工作区源码。蓝：处理；绿：数据；橙：缺陷或边界。流程图依据源码生成，不代表旧 COS 包或正在运行的容器已更新。</p><p><strong>货架消失：</strong>商品点 1,863,298 已超过 150 万总预算，背景剩余预算为 0。建议改为背景独立预算，当前背景上限固定为 80 万点；商品 1,863,298 点全部保留。此前 150 万预算结果属于历史版本。</p><nav>
+<a href="#overview">总览</a>
+<a href="#matching">匹配</a>
+<a href="#identity">身份去重</a>
+<a href="#point_export">点云导出</a>
+<a href="#surfel">Surfel 与浏览器</a>
+</nav></header><main>
+<article id="overview"><h2>总览：从视频到身份计数和可视化</h2><button onclick="zoom(this,1.25)">放大</button><button onclick="zoom(this,0.8)">缩小</button><a href="overview.svg" download>下载 SVG</a><div class="diagram"><svg width="654pt" height="980pt"
+ viewBox="0.00 0.00 654.20 980.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 958.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-958.6 632.6,-958.6 632.6,21.6 -21.6,21.6"/>
+<!-- input -->
+<g id="node1" class="node">
+<title>input</title>
+<path fill="#e3f6ee" stroke="#648096" d="M239,-937C239,-937 39,-937 39,-937 33,-937 27,-931 27,-925 27,-925 27,-897 27,-897 27,-891 33,-885 39,-885 39,-885 239,-885 239,-885 245,-885 251,-891 251,-897 251,-897 251,-925 251,-925 251,-931 245,-937 239,-937"/>
+<text text-anchor="middle" x="139" y="-916" font-family="SimHei" font-size="15.00">视频抽帧 + classifier 输出</text>
+<text text-anchor="middle" x="139" y="-899" font-family="SimHei" font-size="15.00">图片与检测严格一一对应</text>
+</g>
+<!-- align -->
+<g id="node2" class="node">
+<title>align</title>
+<path fill="#e8f1ff" stroke="#648096" d="M242.5,-844C242.5,-844 35.5,-844 35.5,-844 29.5,-844 23.5,-838 23.5,-832 23.5,-832 23.5,-804 23.5,-804 23.5,-798 29.5,-792 35.5,-792 35.5,-792 242.5,-792 242.5,-792 248.5,-792 254.5,-798 254.5,-804 254.5,-804 254.5,-832 254.5,-832 254.5,-838 248.5,-844 242.5,-844"/>
+<text text-anchor="middle" x="139" y="-823" font-family="SimHei" font-size="15.00">按真实图片 ID 对齐</text>
+<text text-anchor="middle" x="139" y="-806" font-family="SimHei" font-size="15.00">记录原图 → 模型网格 affine</text>
+</g>
+<!-- input&#45;&gt;align -->
+<g id="edge1" class="edge">
+<title>input&#45;&gt;align</title>
+<path fill="none" stroke="#61788d" d="M139,-884.65C139,-874.3 139,-862.2 139,-851.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="141.45,-851.21 139,-844.21 136.55,-851.21 141.45,-851.21"/>
+</g>
+<!-- recon -->
+<g id="node3" class="node">
+<title>recon</title>
+<path fill="#e8f1ff" stroke="#648096" d="M428,-751C428,-751 198,-751 198,-751 192,-751 186,-745 186,-739 186,-739 186,-711 186,-711 186,-705 192,-699 198,-699 198,-699 428,-699 428,-699 434,-699 440,-705 440,-711 440,-711 440,-739 440,-739 440,-745 434,-751 428,-751"/>
+<text text-anchor="middle" x="313" y="-730" font-family="SimHei" font-size="15.00">DA3 默认 / Pi3X 原生分支</text>
+<text text-anchor="middle" x="313" y="-713" font-family="SimHei" font-size="15.00">点网格、相机、置信度、变换缓存</text>
+</g>
+<!-- align&#45;&gt;recon -->
+<g id="edge2" class="edge">
+<title>align&#45;&gt;recon</title>
+<path fill="none" stroke="#61788d" d="M187.01,-791.89C209.26,-780.26 235.8,-766.37 258.77,-754.36"/>
+<polygon fill="#61788d" stroke="#61788d" points="260.08,-756.44 265.15,-751.03 257.81,-752.1 260.08,-756.44"/>
+</g>
+<!-- sam -->
+<g id="node4" class="node">
+<title>sam</title>
+<path fill="#e8f1ff" stroke="#648096" d="M240.5,-646C240.5,-646 25.5,-646 25.5,-646 19.5,-646 13.5,-640 13.5,-634 13.5,-634 13.5,-606 13.5,-606 13.5,-600 19.5,-594 25.5,-594 25.5,-594 240.5,-594 240.5,-594 246.5,-594 252.5,-600 252.5,-606 252.5,-606 252.5,-634 252.5,-634 252.5,-640 246.5,-646 240.5,-646"/>
+<text text-anchor="middle" x="133" y="-625" font-family="SimHei" font-size="15.00">每帧全部检测生成 SAM mask</text>
+<text text-anchor="middle" x="133" y="-608" font-family="SimHei" font-size="15.00">完整 processed&#45;space v2 缓存</text>
+</g>
+<!-- align&#45;&gt;sam -->
+<g id="edge3" class="edge">
+<title>align&#45;&gt;sam</title>
+<path fill="none" stroke="#61788d" d="M137.73,-791.93C137.14,-779.61 136.46,-764.53 136,-751 134.86,-717.8 134.04,-679.81 133.55,-653.51"/>
+<polygon fill="#61788d" stroke="#61788d" points="136,-653.37 133.42,-646.41 131.1,-653.46 136,-653.37"/>
+<text text-anchor="middle" x="154.5" y="-721.9" font-family="SimHei" font-size="12.00">检测框</text>
+</g>
+<!-- recon&#45;&gt;sam -->
+<g id="edge4" class="edge">
+<title>recon&#45;&gt;sam</title>
+<path fill="none" stroke="#61788d" d="M243.48,-698.89C230.03,-693.04 216.3,-686.35 204,-679 190.61,-671.01 177.07,-660.64 165.46,-650.88"/>
+<polygon fill="#61788d" stroke="#61788d" points="166.84,-648.83 159.92,-646.15 163.65,-652.56 166.84,-648.83"/>
+<text text-anchor="middle" x="246.5" y="-669.4" font-family="SimHei" font-size="12.00">processed 网格</text>
+</g>
+<!-- match -->
+<g id="node5" class="node">
+<title>match</title>
+<path fill="#e8f1ff" stroke="#648096" d="M367,-541C367,-541 137,-541 137,-541 131,-541 125,-535 125,-529 125,-529 125,-501 125,-501 125,-495 131,-489 137,-489 137,-489 367,-489 367,-489 373,-489 379,-495 379,-501 379,-501 379,-529 379,-529 379,-535 373,-541 367,-541"/>
+<text text-anchor="middle" x="252" y="-520" font-family="SimHei" font-size="15.00">参考 mask 内少量点 → 目标投影</text>
+<text text-anchor="middle" x="252" y="-503" font-family="SimHei" font-size="15.00">命中率 + 几何评分 + 唯一性</text>
+</g>
+<!-- recon&#45;&gt;match -->
+<g id="edge5" class="edge">
+<title>recon&#45;&gt;match</title>
+<path fill="none" stroke="#61788d" d="M305.64,-698.91C294.56,-661.12 273.58,-589.6 261.41,-548.07"/>
+<polygon fill="#61788d" stroke="#61788d" points="263.71,-547.21 259.38,-541.18 259,-548.59 263.71,-547.21"/>
+<text text-anchor="middle" x="310.5" y="-616.9" font-family="SimHei" font-size="12.00">3D 几何</text>
+</g>
+<!-- export -->
+<g id="node9" class="node">
+<title>export</title>
+<path fill="#fff0d9" stroke="#648096" d="M473.5,-145C473.5,-145 258.5,-145 258.5,-145 252.5,-145 246.5,-139 246.5,-133 246.5,-133 246.5,-105 246.5,-105 246.5,-99 252.5,-93 258.5,-93 258.5,-93 473.5,-93 473.5,-93 479.5,-93 485.5,-99 485.5,-105 485.5,-105 485.5,-133 485.5,-133 485.5,-139 479.5,-145 473.5,-145"/>
+<text text-anchor="middle" x="366" y="-124" font-family="SimHei" font-size="15.00">Viewer 独立选择点</text>
+<text text-anchor="middle" x="366" y="-107" font-family="SimHei" font-size="15.00">商品全量保留；背景过滤及预算</text>
+</g>
+<!-- recon&#45;&gt;export -->
+<g id="edge13" class="edge">
+<title>recon&#45;&gt;export</title>
+<path fill="none" stroke="#61788d" d="M440.17,-713.8C496.39,-701.59 550,-675.62 550,-621 550,-621 550,-621 550,-223 550,-186.88 522.66,-163.3 489.07,-147.96"/>
+<polygon fill="#61788d" stroke="#61788d" points="489.67,-145.55 482.27,-145 487.71,-150.04 489.67,-145.55"/>
+<text text-anchor="middle" x="580.5" y="-418.9" font-family="SimHei" font-size="12.00">完整点网格</text>
+</g>
+<!-- sam&#45;&gt;match -->
+<g id="edge6" class="edge">
+<title>sam&#45;&gt;match</title>
+<path fill="none" stroke="#61788d" d="M162.11,-593.8C178.82,-579.34 199.91,-561.09 217.45,-545.9"/>
+<polygon fill="#61788d" stroke="#61788d" points="219.09,-547.73 222.78,-541.29 215.88,-544.02 219.09,-547.73"/>
+<text text-anchor="middle" x="224.5" y="-564.4" font-family="SimHei" font-size="12.00">匹配采样</text>
+</g>
+<!-- sam&#45;&gt;export -->
+<g id="edge12" class="edge">
+<title>sam&#45;&gt;export</title>
+<path fill="none" stroke="#61788d" d="M63.38,-593.97C31.2,-577.51 0,-552.21 0,-516 0,-516 0,-516 0,-223 0,-171.98 133.44,-145.02 239.17,-131.67"/>
+<polygon fill="#61788d" stroke="#61788d" points="239.77,-134.06 246.41,-130.77 239.16,-129.2 239.77,-134.06"/>
+<text text-anchor="middle" x="27.5" y="-366.4" font-family="SimHei" font-size="12.00">完整 mask</text>
+</g>
+<!-- summary -->
+<g id="node6" class="node">
+<title>summary</title>
+<path fill="#e3f6ee" stroke="#648096" d="M355.5,-448C355.5,-448 148.5,-448 148.5,-448 142.5,-448 136.5,-442 136.5,-436 136.5,-436 136.5,-408 136.5,-408 136.5,-402 142.5,-396 148.5,-396 148.5,-396 355.5,-396 355.5,-396 361.5,-396 367.5,-402 367.5,-408 367.5,-408 367.5,-436 367.5,-436 367.5,-442 361.5,-448 355.5,-448"/>
+<text text-anchor="middle" x="252" y="-427" font-family="SimHei" font-size="15.00">matching_summary.txt</text>
+<text text-anchor="middle" x="252" y="-410" font-family="SimHei" font-size="15.00">真实文件 ID；命中率两位小数</text>
+</g>
+<!-- match&#45;&gt;summary -->
+<g id="edge7" class="edge">
+<title>match&#45;&gt;summary</title>
+<path fill="none" stroke="#61788d" d="M252,-488.65C252,-478.3 252,-466.2 252,-455.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="254.45,-455.21 252,-448.21 249.55,-455.21 254.45,-455.21"/>
+</g>
+<!-- dedup -->
+<g id="node7" class="node">
+<title>dedup</title>
+<path fill="#e8f1ff" stroke="#648096" d="M499.5,-343C499.5,-343 344.5,-343 344.5,-343 338.5,-343 332.5,-337 332.5,-331 332.5,-331 332.5,-303 332.5,-303 332.5,-297 338.5,-291 344.5,-291 344.5,-291 499.5,-291 499.5,-291 505.5,-291 511.5,-297 511.5,-303 511.5,-303 511.5,-331 511.5,-331 511.5,-337 505.5,-343 499.5,-343"/>
+<text text-anchor="middle" x="422" y="-322" font-family="SimHei" font-size="15.00">筛边 + 并查集</text>
+<text text-anchor="middle" x="422" y="-305" font-family="SimHei" font-size="15.00">同帧对象冲突禁止合并</text>
+</g>
+<!-- summary&#45;&gt;dedup -->
+<g id="edge8" class="edge">
+<title>summary&#45;&gt;dedup</title>
+<path fill="none" stroke="#61788d" d="M293.59,-395.8C318.07,-380.97 349.11,-362.16 374.55,-346.75"/>
+<polygon fill="#61788d" stroke="#61788d" points="375.83,-348.84 380.55,-343.11 373.29,-344.65 375.83,-348.84"/>
+</g>
+<!-- analysis -->
+<g id="node11" class="node">
+<title>analysis</title>
+<path fill="#e3f6ee" stroke="#648096" d="M295.5,-343C295.5,-343 50.5,-343 50.5,-343 44.5,-343 38.5,-337 38.5,-331 38.5,-331 38.5,-303 38.5,-303 38.5,-297 44.5,-291 50.5,-291 50.5,-291 295.5,-291 295.5,-291 301.5,-291 307.5,-297 307.5,-303 307.5,-303 307.5,-331 307.5,-331 307.5,-337 301.5,-343 295.5,-343"/>
+<text text-anchor="middle" x="173" y="-322" font-family="SimHei" font-size="15.00">Analyzer 报告 / 可选人工基准评估</text>
+<text text-anchor="middle" x="173" y="-305" font-family="SimHei" font-size="15.00">不决定并查集连边</text>
+</g>
+<!-- summary&#45;&gt;analysis -->
+<g id="edge9" class="edge">
+<title>summary&#45;&gt;analysis</title>
+<path fill="none" stroke="#61788d" d="M232.67,-395.8C221.87,-381.71 208.31,-364.03 196.84,-349.09"/>
+<polygon fill="#61788d" stroke="#61788d" points="198.6,-347.36 192.4,-343.29 194.72,-350.34 198.6,-347.36"/>
+<text text-anchor="middle" x="242.5" y="-366.4" font-family="SimHei" font-size="12.00">报告支路</text>
+</g>
+<!-- mapping -->
+<g id="node8" class="node">
+<title>mapping</title>
+<path fill="#e3f6ee" stroke="#648096" d="M499.5,-250C499.5,-250 232.5,-250 232.5,-250 226.5,-250 220.5,-244 220.5,-238 220.5,-238 220.5,-210 220.5,-210 220.5,-204 226.5,-198 232.5,-198 232.5,-198 499.5,-198 499.5,-198 505.5,-198 511.5,-204 511.5,-210 511.5,-210 511.5,-238 511.5,-238 511.5,-244 505.5,-250 499.5,-250"/>
+<text text-anchor="middle" x="366" y="-229" font-family="SimHei" font-size="15.00">global_mapping：全部 observations</text>
+<text text-anchor="middle" x="366" y="-212" font-family="SimHei" font-size="15.00">global_skus：逐帧全部检测与去重标记</text>
+</g>
+<!-- dedup&#45;&gt;mapping -->
+<g id="edge10" class="edge">
+<title>dedup&#45;&gt;mapping</title>
+<path fill="none" stroke="#61788d" d="M406.4,-290.65C399.85,-280 392.16,-267.51 385.26,-256.29"/>
+<polygon fill="#61788d" stroke="#61788d" points="387.27,-254.89 381.52,-250.21 383.1,-257.46 387.27,-254.89"/>
+</g>
+<!-- mapping&#45;&gt;export -->
+<g id="edge11" class="edge">
+<title>mapping&#45;&gt;export</title>
+<path fill="none" stroke="#61788d" d="M366,-197.8C366,-184.21 366,-167.28 366,-152.68"/>
+<polygon fill="#61788d" stroke="#61788d" points="368.45,-152.29 366,-145.29 363.55,-152.29 368.45,-152.29"/>
+<text text-anchor="middle" x="417.5" y="-168.4" font-family="SimHei" font-size="12.00">全部 observations</text>
+</g>
+<!-- render -->
+<g id="node10" class="node">
+<title>render</title>
+<path fill="#e8f1ff" stroke="#648096" d="M469,-52C469,-52 263,-52 263,-52 257,-52 251,-46 251,-40 251,-40 251,-12 251,-12 251,-6 257,0 263,0 263,0 469,0 469,0 475,0 481,-6 481,-12 481,-12 481,-40 481,-40 481,-46 475,-52 469,-52"/>
+<text text-anchor="middle" x="366" y="-31" font-family="SimHei" font-size="15.00">同一组点：原始点云 ↔ Surfel</text>
+<text text-anchor="middle" x="366" y="-14" font-family="SimHei" font-size="15.00">point_ranges 关联点击归属</text>
+</g>
+<!-- export&#45;&gt;render -->
+<g id="edge14" class="edge">
+<title>export&#45;&gt;render</title>
+<path fill="none" stroke="#61788d" d="M366,-92.65C366,-82.3 366,-70.2 366,-59.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="368.45,-59.21 366,-52.21 363.55,-59.21 368.45,-59.21"/>
+</g>
+</g>
+</svg>
+</div></article>
+<article id="matching"><h2>匹配：每对图片如何建立候选边</h2><button onclick="zoom(this,1.25)">放大</button><button onclick="zoom(this,0.8)">缩小</button><a href="matching.svg" download>下载 SVG</a><div class="diagram"><svg width="610pt" height="848pt"
+ viewBox="0.00 0.00 610.20 848.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 826.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-826.6 588.6,-826.6 588.6,21.6 -21.6,21.6"/>
+<!-- refs -->
+<g id="node1" class="node">
+<title>refs</title>
+<path fill="#e8f1ff" stroke="#648096" d="M423,-805C423,-805 231,-805 231,-805 225,-805 219,-799 219,-793 219,-793 219,-765 219,-765 219,-759 225,-753 231,-753 231,-753 423,-753 423,-753 429,-753 435,-759 435,-765 435,-765 435,-793 435,-793 435,-799 429,-805 423,-805"/>
+<text text-anchor="middle" x="327" y="-784" font-family="SimHei" font-size="15.00">batch_all_refs 遍历参考图</text>
+<text text-anchor="middle" x="327" y="-767" font-family="SimHei" font-size="15.00">next 环形配对 / all 配对</text>
+</g>
+<!-- mask -->
+<g id="node2" class="node">
+<title>mask</title>
+<path fill="#e3f6ee" stroke="#648096" d="M419.5,-713C419.5,-713 234.5,-713 234.5,-713 228.5,-713 222.5,-707 222.5,-701 222.5,-701 222.5,-673 222.5,-673 222.5,-667 228.5,-661 234.5,-661 234.5,-661 419.5,-661 419.5,-661 425.5,-661 431.5,-667 431.5,-673 431.5,-673 431.5,-701 431.5,-701 431.5,-707 425.5,-713 419.5,-713"/>
+<text text-anchor="middle" x="327" y="-692" font-family="SimHei" font-size="15.00">读参考图 SAM mask</text>
+<text text-anchor="middle" x="327" y="-675" font-family="SimHei" font-size="15.00">空 mask 不足点则跳过匹配</text>
+</g>
+<!-- refs&#45;&gt;mask -->
+<g id="edge1" class="edge">
+<title>refs&#45;&gt;mask</title>
+<path fill="none" stroke="#61788d" d="M327,-752.93C327,-742.87 327,-731.15 327,-720.45"/>
+<polygon fill="#61788d" stroke="#61788d" points="329.45,-720.25 327,-713.25 324.55,-720.25 329.45,-720.25"/>
+</g>
+<!-- sample -->
+<g id="node3" class="node">
+<title>sample</title>
+<path fill="#e8f1ff" stroke="#648096" d="M423,-621C423,-621 231,-621 231,-621 225,-621 219,-615 219,-609 219,-609 219,-581 219,-581 219,-575 225,-569 231,-569 231,-569 423,-569 423,-569 429,-569 435,-575 435,-581 435,-581 435,-609 435,-609 435,-615 429,-621 423,-621"/>
+<text text-anchor="middle" x="327" y="-600" font-family="SimHei" font-size="15.00">从 mask 网格采样世界点</text>
+<text text-anchor="middle" x="327" y="-583" font-family="SimHei" font-size="15.00">限制数量、检查深度/置信度</text>
+</g>
+<!-- mask&#45;&gt;sample -->
+<g id="edge2" class="edge">
+<title>mask&#45;&gt;sample</title>
+<path fill="none" stroke="#61788d" d="M327,-660.93C327,-650.87 327,-639.15 327,-628.45"/>
+<polygon fill="#61788d" stroke="#61788d" points="329.45,-628.25 327,-621.25 324.55,-628.25 329.45,-628.25"/>
+</g>
+<!-- project -->
+<g id="node4" class="node">
+<title>project</title>
+<path fill="#e8f1ff" stroke="#648096" d="M346.5,-529C346.5,-529 169.5,-529 169.5,-529 163.5,-529 157.5,-523 157.5,-517 157.5,-517 157.5,-489 157.5,-489 157.5,-483 163.5,-477 169.5,-477 169.5,-477 346.5,-477 346.5,-477 352.5,-477 358.5,-483 358.5,-489 358.5,-489 358.5,-517 358.5,-517 358.5,-523 352.5,-529 346.5,-529"/>
+<text text-anchor="middle" x="258" y="-508" font-family="SimHei" font-size="15.00">目标相机：Xc = R Xw + t</text>
+<text text-anchor="middle" x="258" y="-491" font-family="SimHei" font-size="15.00">像素 p = K Xc / Zc</text>
+</g>
+<!-- sample&#45;&gt;project -->
+<g id="edge3" class="edge">
+<title>sample&#45;&gt;project</title>
+<path fill="none" stroke="#61788d" d="M307.78,-568.93C299.7,-558.39 290.21,-546.02 281.7,-534.92"/>
+<polygon fill="#61788d" stroke="#61788d" points="283.56,-533.31 277.36,-529.25 279.67,-536.29 283.56,-533.31"/>
+</g>
+<!-- limits -->
+<g id="node10" class="node">
+<title>limits</title>
+<path fill="#fff0d9" stroke="#648096" d="M555,-253C555,-253 295,-253 295,-253 289,-253 283,-247 283,-241 283,-241 283,-196 283,-196 283,-190 289,-184 295,-184 295,-184 555,-184 555,-184 561,-184 567,-190 567,-196 567,-196 567,-241 567,-241 567,-247 561,-253 555,-253"/>
+<text text-anchor="middle" x="425" y="-232" font-family="SimHei" font-size="15.00">现存边界</text>
+<text text-anchor="middle" x="425" y="-215" font-family="SimHei" font-size="15.00">目标几何采样使用 bbox；非目标 mask</text>
+<text text-anchor="middle" x="425" y="-198" font-family="SimHei" font-size="15.00">参考采样高斯中心的坐标空间待核实</text>
+</g>
+<!-- sample&#45;&gt;limits -->
+<g id="edge9" class="edge">
+<title>sample&#45;&gt;limits</title>
+<path fill="none" stroke="#61788d" d="M346.64,-568.82C355.02,-557.19 364.37,-542.9 371,-529 413.55,-439.83 422.92,-321.9 424.76,-260.55"/>
+<polygon fill="#61788d" stroke="#61788d" points="427.22,-260.41 424.95,-253.35 422.32,-260.28 427.22,-260.41"/>
+</g>
+<!-- hit -->
+<g id="node5" class="node">
+<title>hit</title>
+<path fill="#e8f1ff" stroke="#648096" d="M375,-437C375,-437 85,-437 85,-437 79,-437 73,-431 73,-425 73,-425 73,-397 73,-397 73,-391 79,-385 85,-385 85,-385 375,-385 375,-385 381,-385 387,-391 387,-397 387,-397 387,-425 387,-425 387,-431 381,-437 375,-437"/>
+<text text-anchor="middle" x="230" y="-416" font-family="SimHei" font-size="15.00">统计投影落入各目标 bbox 的比例</text>
+<text text-anchor="middle" x="230" y="-399" font-family="SimHei" font-size="15.00">3D 候选门槛 projection_match_threshold</text>
+</g>
+<!-- project&#45;&gt;hit -->
+<g id="edge4" class="edge">
+<title>project&#45;&gt;hit</title>
+<path fill="none" stroke="#61788d" d="M250.2,-476.93C247.04,-466.78 243.35,-454.92 240,-444.15"/>
+<polygon fill="#61788d" stroke="#61788d" points="242.27,-443.2 237.85,-437.25 237.59,-444.66 242.27,-443.2"/>
+</g>
+<!-- geometry -->
+<g id="node6" class="node">
+<title>geometry</title>
+<path fill="#e8f1ff" stroke="#648096" d="M367.5,-345C367.5,-345 92.5,-345 92.5,-345 86.5,-345 80.5,-339 80.5,-333 80.5,-333 80.5,-305 80.5,-305 80.5,-299 86.5,-293 92.5,-293 92.5,-293 367.5,-293 367.5,-293 373.5,-293 379.5,-299 379.5,-305 379.5,-305 379.5,-333 379.5,-333 379.5,-339 373.5,-345 367.5,-345"/>
+<text text-anchor="middle" x="230" y="-324" font-family="SimHei" font-size="15.00">命中目标 bbox 后进行几何验证</text>
+<text text-anchor="middle" x="230" y="-307" font-family="SimHei" font-size="15.00">目标缓存深度自洽、质心距离、平面评分</text>
+</g>
+<!-- hit&#45;&gt;geometry -->
+<g id="edge5" class="edge">
+<title>hit&#45;&gt;geometry</title>
+<path fill="none" stroke="#61788d" d="M230,-384.93C230,-374.87 230,-363.15 230,-352.45"/>
+<polygon fill="#61788d" stroke="#61788d" points="232.45,-352.25 230,-345.25 227.55,-352.25 232.45,-352.25"/>
+</g>
+<!-- rank -->
+<g id="node7" class="node">
+<title>rank</title>
+<path fill="#e8f1ff" stroke="#648096" d="M245.5,-244.5C245.5,-244.5 68.5,-244.5 68.5,-244.5 62.5,-244.5 56.5,-238.5 56.5,-232.5 56.5,-232.5 56.5,-204.5 56.5,-204.5 56.5,-198.5 62.5,-192.5 68.5,-192.5 68.5,-192.5 245.5,-192.5 245.5,-192.5 251.5,-192.5 257.5,-198.5 257.5,-204.5 257.5,-204.5 257.5,-232.5 257.5,-232.5 257.5,-238.5 251.5,-244.5 245.5,-244.5"/>
+<text text-anchor="middle" x="157" y="-223.5" font-family="SimHei" font-size="15.00">combined_score 排序候选</text>
+<text text-anchor="middle" x="157" y="-206.5" font-family="SimHei" font-size="15.00">无通过候选则不建立边</text>
+</g>
+<!-- geometry&#45;&gt;rank -->
+<g id="edge6" class="edge">
+<title>geometry&#45;&gt;rank</title>
+<path fill="none" stroke="#61788d" d="M211.39,-292.89C201.78,-279.92 189.97,-263.99 179.82,-250.29"/>
+<polygon fill="#61788d" stroke="#61788d" points="181.71,-248.73 175.58,-244.56 177.78,-251.65 181.71,-248.73"/>
+</g>
+<!-- geometry&#45;&gt;limits -->
+<g id="edge10" class="edge">
+<title>geometry&#45;&gt;limits</title>
+<path fill="none" stroke="#61788d" d="M279.71,-292.89C301.67,-281.8 327.93,-268.53 352.04,-256.35"/>
+<polygon fill="#61788d" stroke="#61788d" points="353.31,-258.46 358.45,-253.12 351.1,-254.09 353.31,-258.46"/>
+</g>
+<!-- unique -->
+<g id="node8" class="node">
+<title>unique</title>
+<path fill="#e8f1ff" stroke="#648096" d="M242,-144C242,-144 72,-144 72,-144 66,-144 60,-138 60,-132 60,-132 60,-104 60,-104 60,-98 66,-92 72,-92 72,-92 242,-92 242,-92 248,-92 254,-98 254,-104 254,-104 254,-132 254,-132 254,-138 248,-144 242,-144"/>
+<text text-anchor="middle" x="157" y="-123" font-family="SimHei" font-size="15.00">目标框唯一性分配</text>
+<text text-anchor="middle" x="157" y="-106" font-family="SimHei" font-size="15.00">竞争失败者尝试下一候选</text>
+</g>
+<!-- rank&#45;&gt;unique -->
+<g id="edge7" class="edge">
+<title>rank&#45;&gt;unique</title>
+<path fill="none" stroke="#61788d" d="M157,-192.39C157,-179.89 157,-164.62 157,-151.26"/>
+<polygon fill="#61788d" stroke="#61788d" points="159.45,-151.06 157,-144.06 154.55,-151.06 159.45,-151.06"/>
+</g>
+<!-- save -->
+<g id="node9" class="node">
+<title>save</title>
+<path fill="#e3f6ee" stroke="#648096" d="M302,-52C302,-52 12,-52 12,-52 6,-52 0,-46 0,-40 0,-40 0,-12 0,-12 0,-6 6,0 12,0 12,0 302,0 302,0 308,0 314,-6 314,-12 314,-12 314,-40 314,-40 314,-46 308,-52 302,-52"/>
+<text text-anchor="middle" x="157" y="-31" font-family="SimHei" font-size="15.00">保存 ref/target object ID 与 hit_ratio</text>
+<text text-anchor="middle" x="157" y="-14" font-family="SimHei" font-size="15.00">文本 summary 是当前去重输入</text>
+</g>
+<!-- unique&#45;&gt;save -->
+<g id="edge8" class="edge">
+<title>unique&#45;&gt;save</title>
+<path fill="none" stroke="#61788d" d="M157,-91.93C157,-81.87 157,-70.15 157,-59.45"/>
+<polygon fill="#61788d" stroke="#61788d" points="159.45,-59.25 157,-52.25 154.55,-59.25 159.45,-59.25"/>
+</g>
+</g>
+</svg>
+</div></article>
+<article id="identity"><h2>身份去重：边、组件、代表和计数</h2><button onclick="zoom(this,1.25)">放大</button><button onclick="zoom(this,0.8)">缩小</button><a href="identity.svg" download>下载 SVG</a><div class="diagram"><svg width="1073pt" height="737pt"
+ viewBox="0.00 0.00 1072.67 737.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 715.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-715.6 1051.07,-715.6 1051.07,21.6 -21.6,21.6"/>
+<!-- parse -->
+<g id="node1" class="node">
+<title>parse</title>
+<path fill="#e8f1ff" stroke="#648096" d="M353.97,-694C353.97,-694 78.97,-694 78.97,-694 72.97,-694 66.97,-688 66.97,-682 66.97,-682 66.97,-654 66.97,-654 66.97,-648 72.97,-642 78.97,-642 78.97,-642 353.97,-642 353.97,-642 359.97,-642 365.97,-648 365.97,-654 365.97,-654 365.97,-682 365.97,-682 365.97,-688 359.97,-694 353.97,-694"/>
+<text text-anchor="middle" x="216.47" y="-673" font-family="SimHei" font-size="15.00">解析真实图片 ID、对象 ID、文本命中率</text>
+<text text-anchor="middle" x="216.47" y="-656" font-family="SimHei" font-size="15.00">保留正向边及末帧 → 首帧闭环</text>
+</g>
+<!-- threshold -->
+<g id="node2" class="node">
+<title>threshold</title>
+<path fill="#e8f1ff" stroke="#648096" d="M327.47,-601C327.47,-601 105.47,-601 105.47,-601 99.47,-601 93.47,-595 93.47,-589 93.47,-589 93.47,-561 93.47,-561 93.47,-555 99.47,-549 105.47,-549 105.47,-549 327.47,-549 327.47,-549 333.47,-549 339.47,-555 339.47,-561 339.47,-561 339.47,-589 339.47,-589 339.47,-595 333.47,-601 327.47,-601"/>
+<text text-anchor="middle" x="216.47" y="-580" font-family="SimHei" font-size="15.00">去重层再按 min_hit_ratio 筛边</text>
+<text text-anchor="middle" x="216.47" y="-563" font-family="SimHei" font-size="15.00">注意与投影候选门槛是两层</text>
+</g>
+<!-- parse&#45;&gt;threshold -->
+<g id="edge1" class="edge">
+<title>parse&#45;&gt;threshold</title>
+<path fill="none" stroke="#61788d" d="M216.47,-641.65C216.47,-631.3 216.47,-619.2 216.47,-608.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="218.92,-608.21 216.47,-601.21 214.02,-608.21 218.92,-608.21"/>
+</g>
+<!-- best -->
+<g id="node3" class="node">
+<title>best</title>
+<path fill="#e8f1ff" stroke="#648096" d="M357.47,-508C357.47,-508 75.47,-508 75.47,-508 69.47,-508 63.47,-502 63.47,-496 63.47,-496 63.47,-468 63.47,-468 63.47,-462 69.47,-456 75.47,-456 75.47,-456 357.47,-456 357.47,-456 363.47,-456 369.47,-462 369.47,-468 369.47,-468 369.47,-496 369.47,-496 369.47,-502 363.47,-508 357.47,-508"/>
+<text text-anchor="middle" x="216.47" y="-487" font-family="SimHei" font-size="15.00">每个 ref&#45;target 图对按 hit_ratio 降序</text>
+<text text-anchor="middle" x="216.47" y="-470" font-family="SimHei" font-size="15.00">贪心选择 ref/target 都未占用的边</text>
+</g>
+<!-- threshold&#45;&gt;best -->
+<g id="edge2" class="edge">
+<title>threshold&#45;&gt;best</title>
+<path fill="none" stroke="#61788d" d="M216.47,-548.65C216.47,-538.3 216.47,-526.2 216.47,-515.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="218.92,-515.21 216.47,-508.21 214.02,-515.21 218.92,-515.21"/>
+</g>
+<!-- edges_left -->
+<g id="node5" class="node">
+<title>edges_left</title>
+<path fill="#eee6ff" stroke="#648096" d="M345.86,-399.97C345.86,-399.97 235.08,-371.03 235.08,-371.03 229.27,-369.52 229.27,-366.48 235.08,-364.97 235.08,-364.97 345.86,-336.03 345.86,-336.03 351.66,-334.52 363.27,-334.52 369.08,-336.03 369.08,-336.03 479.86,-364.97 479.86,-364.97 485.66,-366.48 485.66,-369.52 479.86,-371.03 479.86,-371.03 369.08,-399.97 369.08,-399.97 363.27,-401.48 351.66,-401.48 345.86,-399.97"/>
+<text text-anchor="middle" x="357.47" y="-364.5" font-family="SimHei" font-size="15.00">还有待处理边？</text>
+</g>
+<!-- best&#45;&gt;edges_left -->
+<g id="edge3" class="edge">
+<title>best&#45;&gt;edges_left</title>
+<path fill="none" stroke="#61788d" d="M248.11,-455.87C269.22,-439.1 297.09,-416.96 319.41,-399.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="321,-401.1 324.95,-394.83 317.95,-397.26 321,-401.1"/>
+<text text-anchor="middle" x="311.97" y="-426.4" font-family="SimHei" font-size="12.00">强边排序</text>
+</g>
+<!-- nodes -->
+<g id="node4" class="node">
+<title>nodes</title>
+<path fill="#e3f6ee" stroke="#648096" d="M591.97,-508C591.97,-508 406.97,-508 406.97,-508 400.97,-508 394.97,-502 394.97,-496 394.97,-496 394.97,-468 394.97,-468 394.97,-462 400.97,-456 406.97,-456 406.97,-456 591.97,-456 591.97,-456 597.97,-456 603.97,-462 603.97,-468 603.97,-468 603.97,-496 603.97,-496 603.97,-502 597.97,-508 591.97,-508"/>
+<text text-anchor="middle" x="499.47" y="-487" font-family="SimHei" font-size="15.00">为全部原始检测初始化节点</text>
+<text text-anchor="middle" x="499.47" y="-470" font-family="SimHei" font-size="15.00">(image_id, object_id)</text>
+</g>
+<!-- nodes&#45;&gt;edges_left -->
+<g id="edge4" class="edge">
+<title>nodes&#45;&gt;edges_left</title>
+<path fill="none" stroke="#61788d" d="M467.6,-455.87C446.34,-439.1 418.28,-416.96 395.8,-399.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="397.23,-397.24 390.21,-394.83 394.19,-401.09 397.23,-397.24"/>
+<text text-anchor="middle" x="476.97" y="-426.4" font-family="SimHei" font-size="12.00">节点已初始化</text>
+</g>
+<!-- union -->
+<g id="node6" class="node">
+<title>union</title>
+<path fill="#e8f1ff" stroke="#648096" d="M371.47,-280C371.47,-280 209.47,-280 209.47,-280 203.47,-280 197.47,-274 197.47,-268 197.47,-268 197.47,-240 197.47,-240 197.47,-234 203.47,-228 209.47,-228 209.47,-228 371.47,-228 371.47,-228 377.47,-228 383.47,-234 383.47,-240 383.47,-240 383.47,-268 383.47,-268 383.47,-274 377.47,-280 371.47,-280"/>
+<text text-anchor="middle" x="290.47" y="-259" font-family="SimHei" font-size="15.00">取下一条强边</text>
+<text text-anchor="middle" x="290.47" y="-242" font-family="SimHei" font-size="15.00">查找两个端点的 DSU 根</text>
+</g>
+<!-- edges_left&#45;&gt;union -->
+<g id="edge5" class="edge">
+<title>edges_left&#45;&gt;union</title>
+<path fill="none" stroke="#61788d" d="M346.14,-335.7C341.38,-324.11 335.35,-311.1 328.47,-300 325.51,-295.23 322.08,-290.44 318.51,-285.86"/>
+<polygon fill="#61788d" stroke="#61788d" points="320.24,-284.1 313.94,-280.18 316.42,-287.17 320.24,-284.1"/>
+<text text-anchor="middle" x="341.97" y="-303.4" font-family="SimHei" font-size="12.00">有</text>
+</g>
+<!-- gid -->
+<g id="node10" class="node">
+<title>gid</title>
+<path fill="#e8f1ff" stroke="#648096" d="M785.47,-280C785.47,-280 533.47,-280 533.47,-280 527.47,-280 521.47,-274 521.47,-268 521.47,-268 521.47,-240 521.47,-240 521.47,-234 527.47,-228 533.47,-228 533.47,-228 785.47,-228 785.47,-228 791.47,-228 797.47,-234 797.47,-240 797.47,-240 797.47,-268 797.47,-268 797.47,-274 791.47,-280 785.47,-280"/>
+<text text-anchor="middle" x="659.47" y="-259" font-family="SimHei" font-size="15.00">按图片 ID、对象索引分配 global_id</text>
+<text text-anchor="middle" x="659.47" y="-242" font-family="SimHei" font-size="15.00">无匹配对象仍有独立 ID</text>
+</g>
+<!-- edges_left&#45;&gt;gid -->
+<g id="edge6" class="edge">
+<title>edges_left&#45;&gt;gid</title>
+<path fill="none" stroke="#61788d" d="M411.46,-346.98C459.86,-329.03 531.33,-302.52 585.13,-282.57"/>
+<polygon fill="#61788d" stroke="#61788d" points="586.22,-284.78 591.93,-280.05 584.52,-280.18 586.22,-284.78"/>
+<text text-anchor="middle" x="583.97" y="-303.4" font-family="SimHei" font-size="12.00">没有，包括零匹配</text>
+</g>
+<!-- union&#45;&gt;edges_left -->
+<g id="edge7" class="edge">
+<title>union&#45;&gt;edges_left</title>
+<path fill="none" stroke="#61788d" d="M282.64,-280.09C280.73,-290.73 280.45,-302.97 285.47,-313 290.68,-323.42 298.95,-332.34 308.07,-339.77"/>
+<polygon fill="#61788d" stroke="#61788d" points="306.8,-341.88 313.84,-344.2 309.78,-337.99 306.8,-341.88"/>
+<text text-anchor="middle" x="303.97" y="-303.4" font-family="SimHei" font-size="12.00">已同根</text>
+</g>
+<!-- conflict -->
+<g id="node7" class="node">
+<title>conflict</title>
+<path fill="#eee6ff" stroke="#648096" d="M220.63,-173.02C220.63,-173.02 35.3,-141.98 35.3,-141.98 29.39,-140.99 29.39,-139.01 35.3,-138.02 35.3,-138.02 220.63,-106.98 220.63,-106.98 226.55,-105.99 238.39,-105.99 244.3,-106.98 244.3,-106.98 429.63,-138.02 429.63,-138.02 435.55,-139.01 435.55,-140.99 429.63,-141.98 429.63,-141.98 244.3,-173.02 244.3,-173.02 238.39,-174.01 226.55,-174.01 220.63,-173.02"/>
+<text text-anchor="middle" x="232.47" y="-136.5" font-family="SimHei" font-size="15.00">两组件是否包含同一图片？</text>
+</g>
+<!-- union&#45;&gt;conflict -->
+<g id="edge8" class="edge">
+<title>union&#45;&gt;conflict</title>
+<path fill="none" stroke="#61788d" d="M277.45,-227.87C269.96,-213.4 260.41,-194.95 252.03,-178.77"/>
+<polygon fill="#61788d" stroke="#61788d" points="254.16,-177.55 248.76,-172.46 249.81,-179.81 254.16,-177.55"/>
+<text text-anchor="middle" x="285.97" y="-198.4" font-family="SimHei" font-size="12.00">不同根</text>
+</g>
+<!-- skip -->
+<g id="node8" class="node">
+<title>skip</title>
+<path fill="#fff0d9" stroke="#648096" d="M145.47,-52C145.47,-52 35.47,-52 35.47,-52 29.47,-52 23.47,-46 23.47,-40 23.47,-40 23.47,-12 23.47,-12 23.47,-6 29.47,0 35.47,0 35.47,0 145.47,0 145.47,0 151.47,0 157.47,-6 157.47,-12 157.47,-12 157.47,-40 157.47,-40 157.47,-46 151.47,-52 145.47,-52"/>
+<text text-anchor="middle" x="90.47" y="-31" font-family="SimHei" font-size="15.00">跳过冲突边</text>
+<text text-anchor="middle" x="90.47" y="-14" font-family="SimHei" font-size="15.00">仍保留两个组件</text>
+</g>
+<!-- conflict&#45;&gt;skip -->
+<g id="edge9" class="edge">
+<title>conflict&#45;&gt;skip</title>
+<path fill="none" stroke="#61788d" d="M196.64,-110.74C175.67,-94.2 149.23,-73.35 127.98,-56.59"/>
+<polygon fill="#61788d" stroke="#61788d" points="129.43,-54.61 122.41,-52.2 126.39,-58.45 129.43,-54.61"/>
+<text text-anchor="middle" x="167.97" y="-75.4" font-family="SimHei" font-size="12.00">是</text>
+</g>
+<!-- merge -->
+<g id="node9" class="node">
+<title>merge</title>
+<path fill="#e8f1ff" stroke="#648096" d="M381.97,-52C381.97,-52 226.97,-52 226.97,-52 220.97,-52 214.97,-46 214.97,-40 214.97,-40 214.97,-12 214.97,-12 214.97,-6 220.97,0 226.97,0 226.97,0 381.97,0 381.97,0 387.97,0 393.97,-6 393.97,-12 393.97,-12 393.97,-40 393.97,-40 393.97,-46 387.97,-52 381.97,-52"/>
+<text text-anchor="middle" x="304.47" y="-31" font-family="SimHei" font-size="15.00">合并组件</text>
+<text text-anchor="middle" x="304.47" y="-14" font-family="SimHei" font-size="15.00">已有同根边不改变身份</text>
+</g>
+<!-- conflict&#45;&gt;merge -->
+<g id="edge10" class="edge">
+<title>conflict&#45;&gt;merge</title>
+<path fill="none" stroke="#61788d" d="M252.33,-108.1C262.33,-92.55 274.42,-73.75 284.43,-58.16"/>
+<polygon fill="#61788d" stroke="#61788d" points="286.58,-59.36 288.3,-52.14 282.46,-56.71 286.58,-59.36"/>
+<text text-anchor="middle" x="281.97" y="-75.4" font-family="SimHei" font-size="12.00">否</text>
+</g>
+<!-- skip&#45;&gt;edges_left -->
+<g id="edge11" class="edge">
+<title>skip&#45;&gt;edges_left</title>
+<path fill="none" stroke="#61788d" d="M53.54,-52.17C37.05,-65.69 19.36,-83.91 10.47,-105 -1.62,-133.67 -4.83,-147.91 10.47,-175 66.68,-274.58 196,-325.76 279.92,-349.43"/>
+<polygon fill="#61788d" stroke="#61788d" points="279.48,-351.85 286.88,-351.36 280.79,-347.13 279.48,-351.85"/>
+<text text-anchor="middle" x="49.97" y="-198.4" font-family="SimHei" font-size="12.00">下一条</text>
+</g>
+<!-- merge&#45;&gt;edges_left -->
+<g id="edge12" class="edge">
+<title>merge&#45;&gt;edges_left</title>
+<path fill="none" stroke="#61788d" d="M388.92,-52.03C414.12,-63.88 438.88,-80.9 453.47,-105 499.45,-180.97 430.35,-282.49 387.41,-334.01"/>
+<polygon fill="#61788d" stroke="#61788d" points="385.47,-332.51 382.82,-339.44 389.21,-335.67 385.47,-332.51"/>
+<text text-anchor="middle" x="481.97" y="-198.4" font-family="SimHei" font-size="12.00">下一条</text>
+</g>
+<!-- represent -->
+<g id="node11" class="node">
+<title>represent</title>
+<path fill="#e8f1ff" stroke="#648096" d="M796.97,-166C796.97,-166 529.97,-166 529.97,-166 523.97,-166 517.97,-160 517.97,-154 517.97,-154 517.97,-126 517.97,-126 517.97,-120 523.97,-114 529.97,-114 529.97,-114 796.97,-114 796.97,-114 802.97,-114 808.97,-120 808.97,-126 808.97,-126 808.97,-154 808.97,-154 808.97,-160 802.97,-166 796.97,-166"/>
+<text text-anchor="middle" x="663.47" y="-145" font-family="SimHei" font-size="15.00">组件最早 observation：removed=false</text>
+<text text-anchor="middle" x="663.47" y="-128" font-family="SimHei" font-size="15.00">其余 true，仍全部存在 mapping 中</text>
+</g>
+<!-- gid&#45;&gt;represent -->
+<g id="edge13" class="edge">
+<title>gid&#45;&gt;represent</title>
+<path fill="none" stroke="#61788d" d="M660.37,-227.87C660.94,-211.73 661.7,-190.61 662.32,-173.24"/>
+<polygon fill="#61788d" stroke="#61788d" points="664.77,-173.13 662.57,-166.05 659.88,-172.96 664.77,-173.13"/>
+</g>
+<!-- outputs -->
+<g id="node12" class="node">
+<title>outputs</title>
+<path fill="#e3f6ee" stroke="#648096" d="M716.47,-52C716.47,-52 456.47,-52 456.47,-52 450.47,-52 444.47,-46 444.47,-40 444.47,-40 444.47,-12 444.47,-12 444.47,-6 450.47,0 456.47,0 456.47,0 716.47,0 716.47,0 722.47,0 728.47,-6 728.47,-12 728.47,-12 728.47,-40 728.47,-40 728.47,-46 722.47,-52 716.47,-52"/>
+<text text-anchor="middle" x="586.47" y="-31" font-family="SimHei" font-size="15.00">按最终 removed 写逐帧去重 JSON</text>
+<text text-anchor="middle" x="586.47" y="-14" font-family="SimHei" font-size="15.00">global_skus 保留全部检测及去重标记</text>
+</g>
+<!-- represent&#45;&gt;outputs -->
+<g id="edge14" class="edge">
+<title>represent&#45;&gt;outputs</title>
+<path fill="none" stroke="#61788d" d="M646.19,-113.87C634.79,-97.29 619.8,-75.48 607.68,-57.85"/>
+<polygon fill="#61788d" stroke="#61788d" points="609.68,-56.43 603.69,-52.05 605.64,-59.21 609.68,-56.43"/>
+</g>
+<!-- classify -->
+<g id="node13" class="node">
+<title>classify</title>
+<path fill="#e3f6ee" stroke="#648096" d="M1017.47,-52C1017.47,-52 765.47,-52 765.47,-52 759.47,-52 753.47,-46 753.47,-40 753.47,-40 753.47,-12 753.47,-12 753.47,-6 759.47,0 765.47,0 765.47,0 1017.47,0 1017.47,0 1023.47,0 1029.47,-6 1029.47,-12 1029.47,-12 1029.47,-40 1029.47,-40 1029.47,-46 1023.47,-52 1017.47,-52"/>
+<text text-anchor="middle" x="891.47" y="-31" font-family="SimHei" font-size="15.00">Viewer 汇总组件全部分类候选</text>
+<text text-anchor="middle" x="891.47" y="-14" font-family="SimHei" font-size="15.00">具体 SKU 优先；按累计置信度等排序</text>
+</g>
+<!-- represent&#45;&gt;classify -->
+<g id="edge15" class="edge">
+<title>represent&#45;&gt;classify</title>
+<path fill="none" stroke="#61788d" d="M714.64,-113.87C749.99,-96.5 797.06,-73.38 833.75,-55.35"/>
+<polygon fill="#61788d" stroke="#61788d" points="835.27,-57.34 840.47,-52.05 833.11,-52.94 835.27,-57.34"/>
+<text text-anchor="middle" x="848.97" y="-75.4" font-family="SimHei" font-size="12.00">全部 observations</text>
+</g>
+</g>
+</svg>
+</div></article>
+<article id="point_export"><h2>点云导出：商品保护与货架消失的位置</h2><button onclick="zoom(this,1.25)">放大</button><button onclick="zoom(this,0.8)">缩小</button><a href="point_export.svg" download>下载 SVG</a><div class="diagram"><svg width="679pt" height="782pt"
+ viewBox="0.00 0.00 679.20 782.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 760.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-760.6 657.6,-760.6 657.6,21.6 -21.6,21.6"/>
+<!-- cache -->
+<g id="node1" class="node">
+<title>cache</title>
+<path fill="#e3f6ee" stroke="#648096" d="M490.5,-739C490.5,-739 290.5,-739 290.5,-739 284.5,-739 278.5,-733 278.5,-727 278.5,-727 278.5,-699 278.5,-699 278.5,-693 284.5,-687 290.5,-687 290.5,-687 490.5,-687 490.5,-687 496.5,-687 502.5,-693 502.5,-699 502.5,-699 502.5,-727 502.5,-727 502.5,-733 496.5,-739 490.5,-739"/>
+<text text-anchor="middle" x="390.5" y="-718" font-family="SimHei" font-size="15.00">完整重建点网格</text>
+<text text-anchor="middle" x="390.5" y="-701" font-family="SimHei" font-size="15.00">颜色 / 置信度 / 来源帧像素</text>
+</g>
+<!-- valid -->
+<g id="node2" class="node">
+<title>valid</title>
+<path fill="#e8f1ff" stroke="#648096" d="M498,-646C498,-646 283,-646 283,-646 277,-646 271,-640 271,-634 271,-634 271,-606 271,-606 271,-600 277,-594 283,-594 283,-594 498,-594 498,-594 504,-594 510,-600 510,-606 510,-606 510,-634 510,-634 510,-640 504,-646 498,-646"/>
+<text text-anchor="middle" x="390.5" y="-625" font-family="SimHei" font-size="15.00">基础有效性</text>
+<text text-anchor="middle" x="390.5" y="-608" font-family="SimHei" font-size="15.00">有限坐标、非全零、有限置信度</text>
+</g>
+<!-- cache&#45;&gt;valid -->
+<g id="edge1" class="edge">
+<title>cache&#45;&gt;valid</title>
+<path fill="none" stroke="#61788d" d="M390.5,-686.65C390.5,-676.3 390.5,-664.2 390.5,-653.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="392.95,-653.21 390.5,-646.21 388.05,-653.21 392.95,-653.21"/>
+</g>
+<!-- labels -->
+<g id="node3" class="node">
+<title>labels</title>
+<path fill="#e8f1ff" stroke="#648096" d="M513,-553C513,-553 268,-553 268,-553 262,-553 256,-547 256,-541 256,-541 256,-513 256,-513 256,-507 262,-501 268,-501 268,-501 513,-501 513,-501 519,-501 525,-507 525,-513 525,-513 525,-541 525,-541 525,-547 519,-553 513,-553"/>
+<text text-anchor="middle" x="390.5" y="-532" font-family="SimHei" font-size="15.00">完整 SAM mask 标注 observation</text>
+<text text-anchor="middle" x="390.5" y="-515" font-family="SimHei" font-size="15.00">重叠像素由先写入标签取得单一归属</text>
+</g>
+<!-- valid&#45;&gt;labels -->
+<g id="edge2" class="edge">
+<title>valid&#45;&gt;labels</title>
+<path fill="none" stroke="#61788d" d="M390.5,-593.65C390.5,-583.3 390.5,-571.2 390.5,-560.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="392.95,-560.21 390.5,-553.21 388.05,-560.21 392.95,-560.21"/>
+</g>
+<!-- filter -->
+<g id="node4" class="node">
+<title>filter</title>
+<path fill="#e8f1ff" stroke="#648096" d="M501.5,-460C501.5,-460 279.5,-460 279.5,-460 273.5,-460 267.5,-454 267.5,-448 267.5,-448 267.5,-420 267.5,-420 267.5,-414 273.5,-408 279.5,-408 279.5,-408 501.5,-408 501.5,-408 507.5,-408 513.5,-414 513.5,-420 513.5,-420 513.5,-448 513.5,-448 513.5,-454 507.5,-460 501.5,-460"/>
+<text text-anchor="middle" x="390.5" y="-439" font-family="SimHei" font-size="15.00">SOR → DBSCAN → 最大平面过滤</text>
+<text text-anchor="middle" x="390.5" y="-422" font-family="SimHei" font-size="15.00">每阶段 OR 商品 protect_mask</text>
+</g>
+<!-- labels&#45;&gt;filter -->
+<g id="edge3" class="edge">
+<title>labels&#45;&gt;filter</title>
+<path fill="none" stroke="#61788d" d="M390.5,-500.65C390.5,-490.3 390.5,-478.2 390.5,-467.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="392.95,-467.21 390.5,-460.21 388.05,-467.21 392.95,-467.21"/>
+</g>
+<!-- product -->
+<g id="node5" class="node">
+<title>product</title>
+<path fill="#e3f6ee" stroke="#648096" d="M606,-355C606,-355 421,-355 421,-355 415,-355 409,-349 409,-343 409,-343 409,-315 409,-315 409,-309 415,-303 421,-303 421,-303 606,-303 606,-303 612,-303 618,-309 618,-315 618,-315 618,-343 618,-343 618,-349 612,-355 606,-355"/>
+<text text-anchor="middle" x="513.5" y="-334" font-family="SimHei" font-size="15.00">SAM 商品点全部保留</text>
+<text text-anchor="middle" x="513.5" y="-317" font-family="SimHei" font-size="15.00">不做体素合并、不随机采样</text>
+</g>
+<!-- filter&#45;&gt;product -->
+<g id="edge4" class="edge">
+<title>filter&#45;&gt;product</title>
+<path fill="none" stroke="#61788d" d="M420.59,-407.8C437.86,-393.34 459.66,-375.09 477.79,-359.9"/>
+<polygon fill="#61788d" stroke="#61788d" points="479.5,-361.67 483.3,-355.29 476.36,-357.91 479.5,-361.67"/>
+<text text-anchor="middle" x="487" y="-378.4" font-family="SimHei" font-size="12.00">标签 ≥ 0</text>
+</g>
+<!-- background -->
+<g id="node6" class="node">
+<title>background</title>
+<path fill="#e8f1ff" stroke="#648096" d="M372,-355C372,-355 165,-355 165,-355 159,-355 153,-349 153,-343 153,-343 153,-315 153,-315 153,-309 159,-303 165,-303 165,-303 372,-303 372,-303 378,-303 384,-309 384,-315 384,-315 384,-343 384,-343 384,-349 378,-355 372,-355"/>
+<text text-anchor="middle" x="268.5" y="-334" font-family="SimHei" font-size="15.00">mask 外背景做 5 mm 体素选择</text>
+<text text-anchor="middle" x="268.5" y="-317" font-family="SimHei" font-size="15.00">每体素保留最高置信度点</text>
+</g>
+<!-- filter&#45;&gt;background -->
+<g id="edge5" class="edge">
+<title>filter&#45;&gt;background</title>
+<path fill="none" stroke="#61788d" d="M360.66,-407.8C343.52,-393.34 321.91,-375.09 303.92,-359.9"/>
+<polygon fill="#61788d" stroke="#61788d" points="305.39,-357.94 298.46,-355.29 302.23,-361.68 305.39,-357.94"/>
+<text text-anchor="middle" x="362" y="-378.4" font-family="SimHei" font-size="12.00">标签 &lt; 0</text>
+</g>
+<!-- budget -->
+<g id="node7" class="node">
+<title>budget</title>
+<path fill="#fff0d9" stroke="#648096" d="M215,-250C215,-250 24,-250 24,-250 18,-250 12,-244 12,-238 12,-238 12,-210 12,-210 12,-204 18,-198 24,-198 24,-198 215,-198 215,-198 221,-198 227,-204 227,-210 227,-210 227,-238 227,-238 227,-244 221,-250 215,-250"/>
+<text text-anchor="middle" x="119.5" y="-229" font-family="SimHei" font-size="15.00">旧逻辑缺陷：背景预算</text>
+<text text-anchor="middle" x="119.5" y="-212" font-family="SimHei" font-size="15.00">max(0, 150 万 − 商品点数)</text>
+</g>
+<!-- product&#45;&gt;budget -->
+<g id="edge7" class="edge">
+<title>product&#45;&gt;budget</title>
+<path fill="none" stroke="#61788d" d="M468.97,-302.91C446.16,-291.13 417.57,-277.96 390.5,-270 325.56,-250.89 306.24,-261.36 239.5,-250 237.71,-249.7 235.91,-249.38 234.09,-249.06"/>
+<polygon fill="#61788d" stroke="#61788d" points="234.36,-246.62 227.04,-247.8 233.5,-251.45 234.36,-246.62"/>
+<text text-anchor="middle" x="445" y="-273.4" font-family="SimHei" font-size="12.00">商品数</text>
+</g>
+<!-- sort -->
+<g id="node9" class="node">
+<title>sort</title>
+<path fill="#e8f1ff" stroke="#648096" d="M624,-145C624,-145 357,-145 357,-145 351,-145 345,-139 345,-133 345,-133 345,-105 345,-105 345,-99 351,-93 357,-93 357,-93 624,-93 624,-93 630,-93 636,-99 636,-105 636,-105 636,-133 636,-133 636,-139 630,-145 624,-145"/>
+<text text-anchor="middle" x="490.5" y="-124" font-family="SimHei" font-size="15.00">商品 + 保留下来的背景</text>
+<text text-anchor="middle" x="490.5" y="-107" font-family="SimHei" font-size="15.00">按标签稳定排序、同步 source_indices</text>
+</g>
+<!-- product&#45;&gt;sort -->
+<g id="edge9" class="edge">
+<title>product&#45;&gt;sort</title>
+<path fill="none" stroke="#61788d" d="M524.89,-302.93C538.13,-270 555.84,-210.97 536.5,-165 534.34,-159.86 531.27,-155.01 527.73,-150.54"/>
+<polygon fill="#61788d" stroke="#61788d" points="529.45,-148.79 523.03,-145.08 525.74,-151.98 529.45,-148.79"/>
+</g>
+<!-- background&#45;&gt;budget -->
+<g id="edge6" class="edge">
+<title>background&#45;&gt;budget</title>
+<path fill="none" stroke="#61788d" d="M232.05,-302.8C210.78,-288.1 183.84,-269.48 161.66,-254.14"/>
+<polygon fill="#61788d" stroke="#61788d" points="162.98,-252.08 155.83,-250.11 160.2,-256.11 162.98,-252.08"/>
+<text text-anchor="middle" x="222" y="-273.4" font-family="SimHei" font-size="12.00">旧逻辑</text>
+</g>
+<!-- proposed -->
+<g id="node11" class="node">
+<title>proposed</title>
+<path fill="#e3f6ee" stroke="#648096" d="M509,-250C509,-250 264,-250 264,-250 258,-250 252,-244 252,-238 252,-238 252,-210 252,-210 252,-204 258,-198 264,-198 264,-198 509,-198 509,-198 515,-198 521,-204 521,-210 521,-210 521,-238 521,-238 521,-244 515,-250 509,-250"/>
+<text text-anchor="middle" x="386.5" y="-229" font-family="SimHei" font-size="15.00">当前修复：背景固定独立 80 万预算</text>
+<text text-anchor="middle" x="386.5" y="-212" font-family="SimHei" font-size="15.00">商品全量 + 过滤降采样后的背景</text>
+</g>
+<!-- background&#45;&gt;proposed -->
+<g id="edge12" class="edge">
+<title>background&#45;&gt;proposed</title>
+<path fill="none" stroke="#61788d" d="M297.37,-302.8C313.94,-288.34 334.84,-270.09 352.24,-254.9"/>
+<polygon fill="#61788d" stroke="#61788d" points="353.86,-256.74 357.52,-250.29 350.64,-253.05 353.86,-256.74"/>
+<text text-anchor="middle" x="360" y="-273.4" font-family="SimHei" font-size="12.00">当前逻辑</text>
+</g>
+<!-- zero -->
+<g id="node8" class="node">
+<title>zero</title>
+<path fill="#fff0d9" stroke="#648096" d="M227,-145C227,-145 12,-145 12,-145 6,-145 0,-139 0,-133 0,-133 0,-105 0,-105 0,-99 6,-93 12,-93 12,-93 227,-93 227,-93 233,-93 239,-99 239,-105 239,-105 239,-133 239,-133 239,-139 233,-145 227,-145"/>
+<text text-anchor="middle" x="119.5" y="-124" font-family="SimHei" font-size="15.00">本次商品 1,863,298 点</text>
+<text text-anchor="middle" x="119.5" y="-107" font-family="SimHei" font-size="15.00">背景预算 0 → 货架全部不导出</text>
+</g>
+<!-- budget&#45;&gt;zero -->
+<g id="edge8" class="edge">
+<title>budget&#45;&gt;zero</title>
+<path fill="none" stroke="#61788d" d="M119.5,-197.8C119.5,-184.21 119.5,-167.28 119.5,-152.68"/>
+<polygon fill="#61788d" stroke="#61788d" points="121.95,-152.29 119.5,-145.29 117.05,-152.29 121.95,-152.29"/>
+<text text-anchor="middle" x="153" y="-168.4" font-family="SimHei" font-size="12.00">超过 150 万</text>
+</g>
+<!-- ranges -->
+<g id="node10" class="node">
+<title>ranges</title>
+<path fill="#e3f6ee" stroke="#648096" d="M601.5,-52C601.5,-52 379.5,-52 379.5,-52 373.5,-52 367.5,-46 367.5,-40 367.5,-40 367.5,-12 367.5,-12 367.5,-6 373.5,0 379.5,0 379.5,0 601.5,0 601.5,0 607.5,0 613.5,-6 613.5,-12 613.5,-12 613.5,-40 613.5,-40 613.5,-46 607.5,-52 601.5,-52"/>
+<text text-anchor="middle" x="490.5" y="-31" font-family="SimHei" font-size="15.00">positions / colors / normals</text>
+<text text-anchor="middle" x="490.5" y="-14" font-family="SimHei" font-size="15.00">objects.point_ranges 半开区间</text>
+</g>
+<!-- sort&#45;&gt;ranges -->
+<g id="edge11" class="edge">
+<title>sort&#45;&gt;ranges</title>
+<path fill="none" stroke="#61788d" d="M490.5,-92.65C490.5,-82.3 490.5,-70.2 490.5,-59.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="492.95,-59.21 490.5,-52.21 488.05,-59.21 492.95,-59.21"/>
+</g>
+<!-- proposed&#45;&gt;sort -->
+<g id="edge10" class="edge">
+<title>proposed&#45;&gt;sort</title>
+<path fill="none" stroke="#61788d" d="M411.94,-197.8C426.42,-183.46 444.66,-165.4 459.91,-150.29"/>
+<polygon fill="#61788d" stroke="#61788d" points="461.71,-151.96 464.96,-145.29 458.26,-148.48 461.71,-151.96"/>
+<text text-anchor="middle" x="488" y="-168.4" font-family="SimHei" font-size="12.00">独立预算内背景</text>
+</g>
+</g>
+</svg>
+</div></article>
+<article id="surfel"><h2>Surfel 与浏览器：几何、纹理和点击</h2><button onclick="zoom(this,1.25)">放大</button><button onclick="zoom(this,0.8)">缩小</button><a href="surfel.svg" download>下载 SVG</a><div class="diagram"><svg width="641pt" height="954pt"
+ viewBox="0.00 0.00 641.20 954.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 932.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-932.6 619.6,-932.6 619.6,21.6 -21.6,21.6"/>
+<!-- indices -->
+<g id="node1" class="node">
+<title>indices</title>
+<path fill="#e3f6ee" stroke="#648096" d="M476.5,-911C476.5,-911 291.5,-911 291.5,-911 285.5,-911 279.5,-905 279.5,-899 279.5,-899 279.5,-871 279.5,-871 279.5,-865 285.5,-859 291.5,-859 291.5,-859 476.5,-859 476.5,-859 482.5,-859 488.5,-865 488.5,-871 488.5,-871 488.5,-899 488.5,-899 488.5,-905 482.5,-911 476.5,-911"/>
+<text text-anchor="middle" x="384" y="-890" font-family="SimHei" font-size="15.00">导出点的 source_indices</text>
+<text text-anchor="middle" x="384" y="-873" font-family="SimHei" font-size="15.00">回到同一来源帧和网格像素</text>
+</g>
+<!-- uv -->
+<g id="node2" class="node">
+<title>uv</title>
+<path fill="#e8f1ff" stroke="#648096" d="M495,-818C495,-818 273,-818 273,-818 267,-818 261,-812 261,-806 261,-806 261,-761 261,-761 261,-755 267,-749 273,-749 273,-749 495,-749 495,-749 501,-749 507,-755 507,-761 507,-761 507,-806 507,-806 507,-812 501,-818 495,-818"/>
+<text text-anchor="middle" x="384" y="-797" font-family="SimHei" font-size="15.00">原始网格相邻点前后差分 → U/V</text>
+<text text-anchor="middle" x="384" y="-780" font-family="SimHei" font-size="15.00">边长 &lt; max(3% 深度, 1 mm)</text>
+<text text-anchor="middle" x="384" y="-763" font-family="SimHei" font-size="15.00">取较短有效边；无有效边则为零</text>
+</g>
+<!-- indices&#45;&gt;uv -->
+<g id="edge1" class="edge">
+<title>indices&#45;&gt;uv</title>
+<path fill="none" stroke="#61788d" d="M384,-858.89C384,-848.79 384,-836.86 384,-825.56"/>
+<polygon fill="#61788d" stroke="#61788d" points="386.45,-825.25 384,-818.25 381.55,-825.25 386.45,-825.25"/>
+</g>
+<!-- files -->
+<g id="node3" class="node">
+<title>files</title>
+<path fill="#e3f6ee" stroke="#648096" d="M407.5,-708C407.5,-708 192.5,-708 192.5,-708 186.5,-708 180.5,-702 180.5,-696 180.5,-696 180.5,-668 180.5,-668 180.5,-662 186.5,-656 192.5,-656 192.5,-656 407.5,-656 407.5,-656 413.5,-656 419.5,-662 419.5,-668 419.5,-668 419.5,-696 419.5,-696 419.5,-702 413.5,-708 407.5,-708"/>
+<text text-anchor="middle" x="300" y="-687" font-family="SimHei" font-size="15.00">位置 FP32；U/V 和深度 FP16</text>
+<text text-anchor="middle" x="300" y="-670" font-family="SimHei" font-size="15.00">来源帧 Uint8；原图 JPEG 纹理</text>
+</g>
+<!-- uv&#45;&gt;files -->
+<g id="edge2" class="edge">
+<title>uv&#45;&gt;files</title>
+<path fill="none" stroke="#61788d" d="M355.56,-748.81C345.91,-737.38 335.18,-724.68 325.75,-713.51"/>
+<polygon fill="#61788d" stroke="#61788d" points="327.63,-711.92 321.24,-708.16 323.88,-715.09 327.63,-711.92"/>
+</g>
+<!-- limit -->
+<g id="node11" class="node">
+<title>limit</title>
+<path fill="#fff0d9" stroke="#648096" d="M586,-69C586,-69 326,-69 326,-69 320,-69 314,-63 314,-57 314,-57 314,-12 314,-12 314,-6 320,0 326,0 326,0 586,0 586,0 592,0 598,-6 598,-12 598,-12 598,-57 598,-57 598,-63 592,-69 586,-69"/>
+<text text-anchor="middle" x="456" y="-48" font-family="SimHei" font-size="15.00">保留点 ≠ 所有视角都能看见</text>
+<text text-anchor="middle" x="456" y="-31" font-family="SimHei" font-size="15.00">零面积面片、遮挡、深度门槛仍会留孔</text>
+<text text-anchor="middle" x="456" y="-14" font-family="SimHei" font-size="15.00">此流程不优化相机、不融合多层几何</text>
+</g>
+<!-- uv&#45;&gt;limit -->
+<g id="edge11" class="edge">
+<title>uv&#45;&gt;limit</title>
+<path fill="none" stroke="#61788d" d="M429.04,-748.73C446.78,-731.41 463,-708.59 463,-683 463,-683 463,-683 463,-135 463,-115.58 461.66,-94.09 460.15,-76.06"/>
+<polygon fill="#61788d" stroke="#61788d" points="462.59,-75.84 459.54,-69.08 457.71,-76.27 462.59,-75.84"/>
+</g>
+<!-- publish -->
+<g id="node4" class="node">
+<title>publish</title>
+<path fill="#e8f1ff" stroke="#648096" d="M413,-615C413,-615 153,-615 153,-615 147,-615 141,-609 141,-603 141,-603 141,-575 141,-575 141,-569 147,-563 153,-563 153,-563 413,-563 413,-563 419,-563 425,-569 425,-575 425,-575 425,-603 425,-603 425,-609 419,-615 413,-615"/>
+<text text-anchor="middle" x="283" y="-594" font-family="SimHei" font-size="15.00">完整 generation 写完再更新 CURRENT</text>
+<text text-anchor="middle" x="283" y="-577" font-family="SimHei" font-size="15.00">Docker 将同一 generation 打包 ZIP</text>
+</g>
+<!-- files&#45;&gt;publish -->
+<g id="edge3" class="edge">
+<title>files&#45;&gt;publish</title>
+<path fill="none" stroke="#61788d" d="M295.26,-655.65C293.33,-645.3 291.07,-633.2 289.02,-622.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="291.4,-621.64 287.71,-615.21 286.59,-622.54 291.4,-621.64"/>
+</g>
+<!-- load -->
+<g id="node5" class="node">
+<title>load</title>
+<path fill="#e8f1ff" stroke="#648096" d="M375.5,-522C375.5,-522 190.5,-522 190.5,-522 184.5,-522 178.5,-516 178.5,-510 178.5,-510 178.5,-482 178.5,-482 178.5,-476 184.5,-470 190.5,-470 190.5,-470 375.5,-470 375.5,-470 381.5,-470 387.5,-476 387.5,-482 387.5,-482 387.5,-510 387.5,-510 387.5,-516 381.5,-522 375.5,-522"/>
+<text text-anchor="middle" x="283" y="-501" font-family="SimHei" font-size="15.00">浏览器加载同一 bundle</text>
+<text text-anchor="middle" x="283" y="-484" font-family="SimHei" font-size="15.00">点数、范围、帧和纹理检查</text>
+</g>
+<!-- publish&#45;&gt;load -->
+<g id="edge4" class="edge">
+<title>publish&#45;&gt;load</title>
+<path fill="none" stroke="#61788d" d="M283,-562.65C283,-552.3 283,-540.2 283,-529.23"/>
+<polygon fill="#61788d" stroke="#61788d" points="285.45,-529.21 283,-522.21 280.55,-529.21 285.45,-529.21"/>
+</g>
+<!-- mode -->
+<g id="node6" class="node">
+<title>mode</title>
+<path fill="#eee6ff" stroke="#648096" d="M271.83,-424.61C271.83,-424.61 205.17,-398.39 205.17,-398.39 199.58,-396.2 199.58,-391.8 205.17,-389.61 205.17,-389.61 271.83,-363.39 271.83,-363.39 277.42,-361.2 288.58,-361.2 294.17,-363.39 294.17,-363.39 360.83,-389.61 360.83,-389.61 366.42,-391.8 366.42,-396.2 360.83,-398.39 360.83,-398.39 294.17,-424.61 294.17,-424.61 288.58,-426.8 277.42,-426.8 271.83,-424.61"/>
+<text text-anchor="middle" x="283" y="-390.5" font-family="SimHei" font-size="15.00">渲染模式</text>
+</g>
+<!-- load&#45;&gt;mode -->
+<g id="edge5" class="edge">
+<title>load&#45;&gt;mode</title>
+<path fill="none" stroke="#61788d" d="M283,-469.77C283,-459.7 283,-447.85 283,-436.59"/>
+<polygon fill="#61788d" stroke="#61788d" points="285.45,-436.29 283,-429.29 280.55,-436.29 285.45,-436.29"/>
+</g>
+<!-- points -->
+<g id="node7" class="node">
+<title>points</title>
+<path fill="#e8f1ff" stroke="#648096" d="M204.5,-234C204.5,-234 49.5,-234 49.5,-234 43.5,-234 37.5,-228 37.5,-222 37.5,-222 37.5,-194 37.5,-194 37.5,-188 43.5,-182 49.5,-182 49.5,-182 204.5,-182 204.5,-182 210.5,-182 216.5,-188 216.5,-194 216.5,-194 216.5,-222 216.5,-222 216.5,-228 210.5,-234 204.5,-234"/>
+<text text-anchor="middle" x="127" y="-213" font-family="SimHei" font-size="15.00">原始点云：RGB 点渲染</text>
+<text text-anchor="middle" x="127" y="-196" font-family="SimHei" font-size="15.00">默认 size 0.004</text>
+</g>
+<!-- mode&#45;&gt;points -->
+<g id="edge6" class="edge">
+<title>mode&#45;&gt;points</title>
+<path fill="none" stroke="#61788d" d="M240.86,-375.39C211.38,-360.95 173.42,-337.71 151,-306 137.62,-287.07 131.67,-261.49 129.04,-241.34"/>
+<polygon fill="#61788d" stroke="#61788d" points="131.45,-240.86 128.21,-234.19 126.58,-241.42 131.45,-240.86"/>
+<text text-anchor="middle" x="205.5" y="-329.4" font-family="SimHei" font-size="12.00">原始点云</text>
+</g>
+<!-- surface -->
+<g id="node8" class="node">
+<title>surface</title>
+<path fill="#e8f1ff" stroke="#648096" d="M412.5,-306C412.5,-306 175.5,-306 175.5,-306 169.5,-306 163.5,-300 163.5,-294 163.5,-294 163.5,-266 163.5,-266 163.5,-260 169.5,-254 175.5,-254 175.5,-254 412.5,-254 412.5,-254 418.5,-254 424.5,-260 424.5,-266 424.5,-266 424.5,-294 424.5,-294 424.5,-300 418.5,-306 412.5,-306"/>
+<text text-anchor="middle" x="294" y="-285" font-family="SimHei" font-size="15.00">Surfel：限制 U/V 拉伸和边缘覆盖</text>
+<text text-anchor="middle" x="294" y="-268" font-family="SimHei" font-size="15.00">默认 size 0.07 → 半径上限 2</text>
+</g>
+<!-- mode&#45;&gt;surface -->
+<g id="edge7" class="edge">
+<title>mode&#45;&gt;surface</title>
+<path fill="none" stroke="#61788d" d="M286.24,-360C287.68,-345.39 289.36,-328.24 290.79,-313.66"/>
+<polygon fill="#61788d" stroke="#61788d" points="293.27,-313.51 291.52,-306.3 288.39,-313.03 293.27,-313.51"/>
+<text text-anchor="middle" x="308.5" y="-329.4" font-family="SimHei" font-size="12.00">Surfel</text>
+</g>
+<!-- pick -->
+<g id="node10" class="node">
+<title>pick</title>
+<path fill="#e8f1ff" stroke="#648096" d="M264,-60.5C264,-60.5 12,-60.5 12,-60.5 6,-60.5 0,-54.5 0,-48.5 0,-48.5 0,-20.5 0,-20.5 0,-14.5 6,-8.5 12,-8.5 12,-8.5 264,-8.5 264,-8.5 270,-8.5 276,-14.5 276,-20.5 276,-20.5 276,-48.5 276,-48.5 276,-54.5 270,-60.5 264,-60.5"/>
+<text text-anchor="middle" x="138" y="-39.5" font-family="SimHei" font-size="15.00">点云射线 / Surfel ID pass</text>
+<text text-anchor="middle" x="138" y="-22.5" font-family="SimHei" font-size="15.00">slot → point_ranges → global_id</text>
+</g>
+<!-- points&#45;&gt;pick -->
+<g id="edge9" class="edge">
+<title>points&#45;&gt;pick</title>
+<path fill="none" stroke="#61788d" d="M128.62,-181.69C130.56,-151.46 133.81,-100.84 135.93,-67.81"/>
+<polygon fill="#61788d" stroke="#61788d" points="138.38,-67.77 136.39,-60.63 133.5,-67.46 138.38,-67.77"/>
+</g>
+<!-- passes -->
+<g id="node9" class="node">
+<title>passes</title>
+<path fill="#e8f1ff" stroke="#648096" d="M405,-162C405,-162 183,-162 183,-162 177,-162 171,-156 171,-150 171,-150 171,-122 171,-122 171,-116 177,-110 183,-110 183,-110 405,-110 405,-110 411,-110 417,-116 417,-122 417,-122 417,-150 417,-150 417,-156 411,-162 405,-162"/>
+<text text-anchor="middle" x="294" y="-141" font-family="SimHei" font-size="15.00">来源深度一致性 + 屏幕最近深度</text>
+<text text-anchor="middle" x="294" y="-124" font-family="SimHei" font-size="15.00">加权纹理融合 → 输出颜色</text>
+</g>
+<!-- surface&#45;&gt;passes -->
+<g id="edge8" class="edge">
+<title>surface&#45;&gt;passes</title>
+<path fill="none" stroke="#61788d" d="M294,-253.94C294,-230.46 294,-195.24 294,-169.58"/>
+<polygon fill="#61788d" stroke="#61788d" points="296.45,-169.29 294,-162.29 291.55,-169.29 296.45,-169.29"/>
+</g>
+<!-- passes&#45;&gt;pick -->
+<g id="edge10" class="edge">
+<title>passes&#45;&gt;pick</title>
+<path fill="none" stroke="#61788d" d="M254.63,-109.89C232.93,-96.05 205.88,-78.79 183.29,-64.39"/>
+<polygon fill="#61788d" stroke="#61788d" points="184.57,-62.3 177.35,-60.6 181.94,-66.43 184.57,-62.3"/>
+</g>
+<!-- passes&#45;&gt;limit -->
+<g id="edge12" class="edge">
+<title>passes&#45;&gt;limit</title>
+<path fill="none" stroke="#61788d" d="M334.88,-109.89C353.14,-98.67 375.05,-85.22 395.18,-72.86"/>
+<polygon fill="#61788d" stroke="#61788d" points="396.68,-74.81 401.36,-69.06 394.11,-70.64 396.68,-74.81"/>
+</g>
+</g>
+</svg>
+</div></article>
+<p>完整参数、公式、文件接口和已知限制见 <a href="../../3d_dedup_flowcharts.md" download>详细文档（Markdown）</a>。</p></main><script>function zoom(b,k){const s=b.parentElement.querySelector("svg");const w=s.getBoundingClientRect().width;s.style.width=(w*k)+"px";s.style.maxWidth="none"}</script></html>

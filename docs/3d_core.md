@@ -156,20 +156,77 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 
 该 Python 命令是已验证的 owned gate。仓库根的裸 `uv run --offline pytest -q` 会因未跟踪 nested checkout、`frame_sampler` BSON client 与 legacy SAM3 tests 的 collection 污染而失败，不能表示项目测试结果。
 
-## DA3 默认推理尺寸
+## DA3 默认推理分辨率（当前）
 
-默认长边统一为 `da3_defaults.py` 中的 896：9:16 竖屏 504×896、16:9 横屏 896×504；其他比例按比例缩放并对齐到 14 像素网格。同一任务混合横屏、竖屏或方形输入在加载模型前报错。推理、匹配及完整 pipeline 缓存复用使用同一默认值；旧 504 或缺少预处理设置的缓存不再被完整 pipeline 复用。已有 Viewer 包需重新推理并导出。
+生产默认长边为 **504**；只做等比缩放，并通过 resize 结果对齐模型的 14 像素网格，不裁边、不补边。16:9 横屏得到 **504×280**（宽×高），16:9 竖屏得到 **280×504**；4:3 横屏得到 **504×378**，4:3 竖屏得到 **378×504**。
 
-验证：实际 CPU 预处理覆盖横屏、竖屏和4:3；旧缓存重建、896缓存复用与生产参数透传检查通过。896增加显存需求，31帧在本地实际运行时需要充足空闲显存。
+同一任务混合横屏与竖屏，或缩放后得到不一致的网格，会在模型加载前直接报错；请按方向和网格分别提交。输入按原比例只缩放，不裁边、不补边。输入应使用与检测框一致的已正确朝向的图像像素；流程不额外旋转照片或改变检测框坐标。
+
+完整 pipeline 可复用同一 504 网格的旧缓存；旧 896 缓存必须重建。独立 runner 仍可用 `--process_res` 做指定分辨率实验；`viewer-web` 仅导出已有缓存，不会升级旧包。已生成的本地/COS可视化需按新分辨率重新推理并导出，刷新网页不会提高深度网格。
+
+当前 504 网格的分辨率对照固定最多 200 万商品点和 50 万背景点；预算只影响可视化导出。
 
 ## 静默辅助输出
 
 `uv run python main.py --mode pipeline --dataset <目录> --algorithm 3d --quiet_outputs` 关闭原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON 与最终 Viewer 数据仍按流程需要生成；日志保留。
 
-Docker 服务接入可显式传入 `quiet_outputs=True`。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不新增持久 outputs。普通本地 pipeline 默认保留调试输出。
+Docker `run_mapping_request` 默认启用此选项。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不新增持久 outputs。普通本地 pipeline 默认保留调试输出。
 
 ## 商品点预算更新（2026-09-10）
 
-当前固定保留 **最多 200 万商品点 + 最多 80 万背景点**，取代此前商品 mask 全量输出规则。SAM 内有效点仍先受几何过滤保护；之后按非空 `global_id` 均分商品预算，将同一商品的多帧观测合并抽样。点数不足配额的商品全部保留，剩余配额再分给其他商品；组内使用固定随机种子、不放回均匀抽样。总商品点不足 200 万时不抽样。空 SAM 掩码不能产生商品点。
+当前固定保留 **最多 200 万商品点 + 最多 50 万背景点**，取代此前商品 mask 全量输出规则。SAM 内有效点先受几何过滤保护；之后按非空 `global_id` 均分商品预算，将同一商品的多帧观测合并抽样。小组实际点数不足配额时回收未用配额并分配给其他组；组内使用固定随机种子、不放回均匀抽样。总商品点不足 200 万时不抽样。空 SAM 掩码不能产生商品点。分辨率对照固定上述预算，预算仅影响可视化导出，不改变 mapping 匹配输入。
 
 位置、颜色、Surfel U/V、源帧和点击范围使用相同点索引。此上限由导出端控制，Viewer 不再独立截断点数组；旧包需重新导出才生效。
+
+## 可选的 DA3 几何优化模块
+
+`src/da3_geometry_refinement.py` 是独立的实验入口，默认 pipeline / Docker 不启用。它读取已完成的 DA3 schema-v3 cache，在当前预处理网格上提取独立图像特征，对相机位姿与可选的逐帧深度尺度做小幅修正。输入预处理必须与当前默认一致，避免后续 pipeline 将优化缓存判为旧缓存并重新推理覆盖。
+
+```bash
+uv run python -m src.da3_geometry_refinement \
+  --cache Output/<数据集名>/da3_cache/predictions.npz \
+  --output-root runtime/refined-output \
+  --mode pose
+```
+
+`--output-root` 必须不存在。通过验收后，缓存写入 `<output-root>/<数据集名>/da3_cache/predictions.npz`；原始缓存保留。需要同时优化深度时用 `--mode pose-scale`。第一版只有每帧一个正深度尺度，没有自由逐像素深度形变，也没有重训练 DA3。
+
+- 独立对应：OpenCV SIFT，双向 ratio/mutual 筛选、图像坐标 RANSAC、空间覆盖筛选与相机图连通检查；不把已有 global_id 或 DA3 自投影当作精确对应。
+- 优化：固定首相机、首帧深度尺度与全部内参。对其余帧优化旋转/平移小增量，可选深度正尺度；残差包含双向重投影、深度一致性及初始化先验，使用鲁棒损失。
+- 深度采样：跳过无效点以及局部 2×2 深度跨度超过中值 5% 的边缘，原有效/无效掩码保持。旋转每分量限制 ±5°，平移每分量限制为样本中值深度的 ±10%；深度尺度范围约 0.909–1.1。
+- 验收：每帧对确定性留出约 20% 对应，不参与优化。除了收敛与有效性，留出像素分量 RMSE 必须 ≤3 px、归一化深度 RMSE ≤0.05，同时分别不得相对恶化超过 1%/5%（深度有 1e-4 数值容差）。归一化深度误差的分母是所采样深度的场景中值，不是每点自身深度。这些是初版筛查阈值，不是商品匹配准确率保证。
+- 发布：通过后同步重算 depth、extrinsic、world_points 并保留帧顺序/affine。先校验临时 NPZ，再原子发布。拒绝时 CLI 返回 2，保存 `geometry_refinement.json`，不生成供下游消费的缓存。组件异常保留原异常并记录失败阶段。
+- 置信度与尺度：原 DA3 置信度不重新估计；原 `scale_factor` 只保留来源语义，逐帧修正在 `geometry_refinement` 元数据中记录。固定尺度锚不等于外部验证了真实米制尺寸。
+
+通过验收后，用同一数据集及新的保存根目录运行完整流程，让 SAM 采样、匹配、去重及 Viewer 导出重新读取修正后的几何：
+
+```bash
+uv run python main.py --mode pipeline --dataset <原数据集目录> \
+  --algorithm 3d --match_backend da3 --recon_backend da3 \
+  --save_root runtime/refined-output
+
+uv run python main.py --mode viewer-web --dataset <原数据集目录> \
+  --save_root runtime/refined-output \
+  --viewer-web-output modules/viewer_web/public/data-refined \
+  --viewer-web-sku-masterdata-csv runtime/sku_masterdata.csv
+```
+
+不要把旧 `matching_summary`、global mapping 或 Viewer bundle 复制到新根目录。`--frame-count 8` 仅用于取现有联合预测中的前 8 帧做优化测试，不表示重新做了 8 帧 DA3 推理；继续下游时图像及分类必须是相同子集。完整数据集不传该参数。
+
+当前限制：重复包装可能造成错误像素对应，反光/弱纹理可能导致连通失败；留出对应与训练来自同一场景/特征提取器，并非人工真值或独立视频。较大的位姿错误和局部深度形变可能超出初版能力，不通过时不会自动改阈值、切算法或回退发布。
+
+如果保存根目录内存在几何优化报告但结果被拒绝、缓存未发布或已不符合当前预处理，完整 pipeline 会直接报错，不会自动重新推理覆盖该优化目录。首轮本地 8 帧实验两种模式均未通过绝对验收，详见 `runtime/geometry-refinement-review/README.md`；模块实现通过测试不等于已证明实际场景效果改善。
+
+## Ray pose 独立对照
+
+`src/da3_runner.py` 支持实验参数 `--use-ray-pose`，默认关闭；`--seed 42` 可固定对照的随机种子，未指定时保持原随机行为。例如：
+
+```bash
+uv run python src/da3_runner.py --input_dir <同一组图片> \
+  --output_npz <全新实验目录>/predictions.npz \
+  --model_path <本地DA3权重> --process_res 504 --seed 42 --use-ray-pose
+```
+
+输出缓存用 bool 标量 `use_ray_pose` 标记分支。默认 pipeline 不复用标记为 true 的实验缓存；旧默认缓存缺少该字段仍按原合同处理。实验应保存在独立目录，并显式执行匹配和 Viewer 导出；不要在候选目录运行默认完整 pipeline，否则会按默认分支重新推理。
+
+Ray 分支同时恢复外参和内参；nested 的尺度对齐可能间接改变最终深度。因此对照固定权重、图片、分辨率、参考视图策略与种子，只改变此开关，不同时加入共享内参或几何优化。没有修改生产/Docker 默认。

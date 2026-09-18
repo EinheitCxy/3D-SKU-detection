@@ -1,0 +1,33 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.35, ranksep=0.55];
+node [shape=box, style="rounded,filled", fontname="SimHei", fontsize=15, color="#648096", margin="0.2,0.13"];
+edge [fontname="SimHei", fontsize=12, color="#61788d", arrowsize=0.7];
+parse [label="解析真实图片 ID、对象 ID、文本命中率\n保留正向边及末帧 → 首帧闭环", fillcolor="#e8f1ff"];
+threshold [label="去重层再按 min_hit_ratio 筛边\n注意与投影候选门槛是两层", fillcolor="#e8f1ff"];
+best [label="每个 ref-target 图对按 hit_ratio 降序\n贪心选择 ref/target 都未占用的边", fillcolor="#e8f1ff"];
+nodes [label="为全部原始检测初始化节点\n(image_id, object_id)", fillcolor="#e3f6ee"];
+edges_left [label="还有待处理边？", fillcolor="#eee6ff", shape=diamond];
+union [label="取下一条强边\n查找两个端点的 DSU 根", fillcolor="#e8f1ff"];
+conflict [label="两组件是否包含同一图片？", fillcolor="#eee6ff", shape=diamond];
+skip [label="跳过冲突边\n仍保留两个组件", fillcolor="#fff0d9"];
+merge [label="合并组件\n已有同根边不改变身份", fillcolor="#e8f1ff"];
+gid [label="按图片 ID、对象索引分配 global_id\n无匹配对象仍有独立 ID", fillcolor="#e8f1ff"];
+represent [label="组件最早 observation：removed=false\n其余 true，仍全部存在 mapping 中", fillcolor="#e8f1ff"];
+outputs [label="按最终 removed 写逐帧去重 JSON\nglobal_skus 保留全部检测及去重标记", fillcolor="#e3f6ee"];
+classify [label="Viewer 汇总组件全部分类候选\n具体 SKU 优先；按累计置信度等排序", fillcolor="#e3f6ee"];
+parse -> threshold [label=""];
+threshold -> best [label=""];
+best -> edges_left [label="强边排序"];
+nodes -> edges_left [label="节点已初始化"];
+edges_left -> union [label="有"];
+edges_left -> gid [label="没有，包括零匹配"];
+union -> edges_left [label="已同根"];
+union -> conflict [label="不同根"];
+conflict -> skip [label="是"];
+conflict -> merge [label="否"];
+skip -> edges_left [label="下一条"];
+merge -> edges_left [label="下一条"];
+gid -> represent [label=""];
+represent -> outputs [label=""];
+represent -> classify [label="全部 observations"];
+}

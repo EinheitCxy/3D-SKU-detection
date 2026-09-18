@@ -1,0 +1,28 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.35, ranksep=0.55];
+node [shape=box, style="rounded,filled", fontname="SimHei", fontsize=15, color="#648096", margin="0.2,0.13"];
+edge [fontname="SimHei", fontsize=12, color="#61788d", arrowsize=0.7];
+indices [label="导出点的 source_indices\n回到同一来源帧和网格像素", fillcolor="#e3f6ee"];
+uv [label="原始网格相邻点前后差分 → U/V\n边长 < max(3% 深度, 1 mm)\n取较短有效边；无有效边则为零", fillcolor="#e8f1ff"];
+files [label="位置 FP32；U/V 和深度 FP16\n来源帧 Uint8；原图 JPEG 纹理", fillcolor="#e3f6ee"];
+publish [label="完整 generation 写完再更新 CURRENT\nDocker 将同一 generation 打包 ZIP", fillcolor="#e8f1ff"];
+load [label="浏览器加载同一 bundle\n点数、范围、帧和纹理检查", fillcolor="#e8f1ff"];
+mode [label="渲染模式", fillcolor="#eee6ff", shape=diamond];
+points [label="原始点云：RGB 点渲染\n默认 size 0.004", fillcolor="#e8f1ff"];
+surface [label="Surfel：限制 U/V 拉伸和边缘覆盖\n默认 size 0.07 → 半径上限 2", fillcolor="#e8f1ff"];
+passes [label="来源深度一致性 + 屏幕最近深度\n加权纹理融合 → 输出颜色", fillcolor="#e8f1ff"];
+pick [label="点云射线 / Surfel ID pass\nslot → point_ranges → global_id", fillcolor="#e8f1ff"];
+limit [label="保留点 ≠ 所有视角都能看见\n零面积面片、遮挡、深度门槛仍会留孔\n此流程不优化相机、不融合多层几何", fillcolor="#fff0d9"];
+indices -> uv [label=""];
+uv -> files [label=""];
+files -> publish [label=""];
+publish -> load [label=""];
+load -> mode [label=""];
+mode -> points [label="原始点云"];
+mode -> surface [label="Surfel"];
+surface -> passes [label=""];
+points -> pick [label=""];
+passes -> pick [label=""];
+uv -> limit [label=""];
+passes -> limit [label=""];
+}

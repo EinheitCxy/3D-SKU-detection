@@ -8,7 +8,7 @@
 
 - checkout：`/home/xingyu/3D_Recognization`
 - branch：`main`
-- `main` HEAD：`39dc91f`，跟踪 `origin/area_prediction`
+- `main` HEAD：`aecc8c9`，跟踪 `origin/area_prediction`
 - 备份 branch：`main-backup-20260814`，HEAD `33c5498`
 - 工作区：存在 Rick 之前留下的未跟踪文件；研究期间不处理、不删除、不覆盖。
 - 项目入口：`code/main.py`

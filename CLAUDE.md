@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+> **Current layout (2026-08-24):** the canonical DA3 core is the repository root
+> (`main.py`, `src/`, `utils/`, `config.yaml`, `tests/`), with product modules in
+> `modules/` and generated data in `runtime/`. Run Python from the root with `uv`;
+> DA3 is the default backend and `Output` is the default output.
+> Do not follow the historical `code/`, `modules.*`, or Pi3-default references
+> below. Use [README.md](README.md) and [docs/3d_core.md](docs/3d_core.md) as the
+> current operational contract. `frame_sampler/` remains an external nested repo.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Repository Overview
@@ -19,7 +27,7 @@ Python **3.11** everywhere. **GPU (CUDA) is required** for matching/reconstructi
 
 | Path | Role | Type |
 |---|---|---|
-| `code/` | Core R&D system: 3D SKU detection, matching, dedup, reconstruction, viewer. Own `pyproject.toml` + `.venv`. | Config-driven CLI (`main.py`, class `SKUDetectionMain`) |
+| `code/` | Core R&D system: 3D SKU detection, matching, dedup, reconstruction, web viewer export. Own `pyproject.toml` + `.venv`. | Config-driven CLI (`main.py`, class `SKUDetectionMain`) |
 | `frame_sampler/` | Standalone video frame-extraction FastAPI service (also CLI). | Docker (port 80) / CLI |
 | `sam3/`, `Pi3/`, `Depth-Anything-3/` | Vendored model libs at root — **core source tracked in git** (env/weights/assets gitignored). | Vendored (tracked) |
 | `vggt-main/` | VGGT model lib — fully gitignored (backend disabled); re-clone if needed. | Vendored (untracked) |
@@ -50,7 +58,6 @@ cd code
 uv sync                        # base deps
 uv sync --extra dev            # + pytest/black/isort/flake8
 uv sync --extra gpu            # + faiss-gpu / cupy (CUDA 12.x; see pyproject notes)
-uv sync --extra rendering      # + nvdiffrast (mesh rendering, CUDA)
 
 # Full pipeline on one dataset (PI3 backend, 3D matching — recommended)
 uv run python main.py --mode pipeline --dataset ../imdata/floor_display2 \
@@ -60,7 +67,6 @@ uv run python main.py --mode pipeline --dataset ../imdata/floor_display2 \
 # Other modes
 uv run python main.py --mode interactive   # menu-driven
 uv run python main.py --mode reconstruct   # 3D reconstruction only -> .glb
-uv run python main.py --mode viewer        # viser 3D viewer (default port 8080)
 uv run python main.py --mode analyzer      # SKU count analysis
 uv run python main.py --mode dedup         # cross-image dedup only
 uv run python main.py --mode concise       # match + evaluate only
@@ -81,7 +87,7 @@ uv run python accuracy_annotation.py
 bash batch_accuracy_evaluation.sh floor_display2
 ```
 
-**`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `reconstruct` | `viewer`.
+**`--mode`**: `interactive` | `pipeline` | `concise` | `analyzer` | `dedup` | `ground-stack-area` | `reconstruct` | `viewer-web`.
 **`--algorithm`**: `point_tracking` (2D feature-point trajectories, no 3D needed) | `3d` (3D-2D projection) | `both` (compare).
 **`--match_backend` / `--recon_backend`**: `vggt` | `pi3`.
 Defaults come from `code/config.yaml`; CLI overrides. `--config` selects an alternate YAML.
@@ -132,7 +138,7 @@ code/
 │   ├── deduplicate_detections.py# sequential dedup + union-find global_id assignment
 │   ├── improved_sku_analyzer.py # SKU count analysis (resolves one-to-many matches)
 │   ├── draw_detection_boxes.py  # bbox visualization
-│   └── viewer_runner.py         # viewer launcher
+│   └── web_viewer_export.py     # static web-viewer bundle export (viewer-web/)
 ├── utils/                       # building blocks
 │   ├── config.py                # SKUMatchingConfig dataclass + for_point_tracking()/for_3d_mapping() defaults
 │   ├── sku_matching_system.py   # SKUMatchingSystem — end-to-end matching orchestration
@@ -142,10 +148,9 @@ code/
 │   ├── transforms.py            # VGGTImageTransform (518×518 crop) / Pi3ImageTransform (dynamic resize)
 │   ├── global_id_mapper.py      # GlobalIDMapper — query global_mapping.json
 │   ├── frame_alignment.py       # ReconstructionDetectionAligner — keep image/detection indices aligned
-│   ├── nn_search.py, kdtree_utils.py   # KD-Tree / FAISS nearest-neighbour for point matching
-│   ├── bbox_utils.py, bbox_3d_extractor.py, point_utils.py, mesh_utils.py
+│   ├── nn_search.py             # FAISS nearest-neighbour for point matching
+│   ├── bbox_utils.py, bbox_3d_extractor.py, point_utils.py
 │   ├── data_utils.py, visualization.py, extract_frames.py, process_image_orientation.py
-├── viewer/                      # Viser-based 3D viewer subsystem (runtime/datasource/indexer/id_assign/cache/types)
 ├── scripts/                     # shell batch/eval drivers
 └── Output/                      # run outputs (per-dataset, per-backend)
 ```

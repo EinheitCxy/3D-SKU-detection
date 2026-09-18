@@ -1,0 +1,35 @@
+flowchart TB
+    accTitle: 总览：从视频到身份计数和可视化
+    accDescr: 当前源码对应的总览：从视频到身份计数和可视化，橙色节点表示缺陷或限制。
+    input["视频抽帧 + classifier 输出<br/>图片与检测严格一一对应"]
+    align["按真实图片 ID 对齐<br/>记录原图 → 模型网格 affine"]
+    recon["DA3 默认 / Pi3X 原生分支<br/>点网格、相机、置信度、变换缓存"]
+    sam["每帧全部检测生成 SAM mask<br/>完整 processed-space v2 缓存"]
+    match["参考 mask 内少量点 → 目标投影<br/>命中率 + 几何评分 + 唯一性"]
+    summary["matching_summary.txt<br/>真实文件 ID；命中率两位小数"]
+    dedup["筛边 + 并查集<br/>同帧对象冲突禁止合并"]
+    mapping["global_mapping：全部 observations<br/>global_skus：逐帧全部检测与去重标记"]
+    export["Viewer 独立选择点<br/>商品全量保留；背景过滤及预算"]
+    render["同一组点：原始点云 ↔ Surfel<br/>point_ranges 关联点击归属"]
+    analysis["Analyzer 报告 / 可选人工基准评估<br/>不决定并查集连边"]
+    input --> align
+    align --> recon
+    align -->|"检测框"| sam
+    recon -->|"processed 网格"| sam
+    recon -->|"3D 几何"| match
+    sam -->|"匹配采样"| match
+    match --> summary
+    summary --> dedup
+    summary -->|"报告支路"| analysis
+    dedup --> mapping
+    mapping -->|"全部 observations"| export
+    sam -->|"完整 mask"| export
+    recon -->|"完整点网格"| export
+    export --> render
+    classDef step fill:#e8f1ff,stroke:#648096,color:#152e45
+    class align,recon,sam,match,dedup,render step
+    classDef data fill:#e3f6ee,stroke:#648096,color:#152e45
+    class input,summary,mapping,analysis data
+    classDef warn fill:#fff0d9,stroke:#648096,color:#152e45
+    class export warn
+    classDef decision fill:#eee6ff,stroke:#648096,color:#152e45

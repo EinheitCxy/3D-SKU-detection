@@ -1,0 +1,30 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.35, ranksep=0.55];
+node [shape=box, style="rounded,filled", fontname="SimHei", fontsize=15, color="#648096", margin="0.2,0.13"];
+edge [fontname="SimHei", fontsize=12, color="#61788d", arrowsize=0.7];
+input [label="视频抽帧 + classifier 输出\n图片与检测严格一一对应", fillcolor="#e3f6ee"];
+align [label="按真实图片 ID 对齐\n记录原图 → 模型网格 affine", fillcolor="#e8f1ff"];
+recon [label="DA3 默认 / Pi3X 原生分支\n点网格、相机、置信度、变换缓存", fillcolor="#e8f1ff"];
+sam [label="每帧全部检测生成 SAM mask\n完整 processed-space v2 缓存", fillcolor="#e8f1ff"];
+match [label="参考 mask 内少量点 → 目标投影\n命中率 + 几何评分 + 唯一性", fillcolor="#e8f1ff"];
+summary [label="matching_summary.txt\n真实文件 ID；命中率两位小数", fillcolor="#e3f6ee"];
+dedup [label="筛边 + 并查集\n同帧对象冲突禁止合并", fillcolor="#e8f1ff"];
+mapping [label="global_mapping：全部 observations\nglobal_skus：逐帧全部检测与去重标记", fillcolor="#e3f6ee"];
+export [label="Viewer 独立选择点\n商品全量保留；背景过滤及预算", fillcolor="#fff0d9"];
+render [label="同一组点：原始点云 ↔ Surfel\npoint_ranges 关联点击归属", fillcolor="#e8f1ff"];
+analysis [label="Analyzer 报告 / 可选人工基准评估\n不决定并查集连边", fillcolor="#e3f6ee"];
+input -> align [label=""];
+align -> recon [label=""];
+align -> sam [label="检测框"];
+recon -> sam [label="processed 网格"];
+recon -> match [label="3D 几何"];
+sam -> match [label="匹配采样"];
+match -> summary [label=""];
+summary -> dedup [label=""];
+summary -> analysis [label="报告支路"];
+dedup -> mapping [label=""];
+mapping -> export [label="全部 observations"];
+sam -> export [label="完整 mask"];
+recon -> export [label="完整点网格"];
+export -> render [label=""];
+}

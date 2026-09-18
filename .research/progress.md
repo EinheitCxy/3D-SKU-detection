@@ -1,5 +1,15 @@
 # 3D 展示优化研究进度
 
+## 2026-08-18
+
+- [完成] 为 `viewer-web` 前端新增交互增强：scene 控件 overlay（点大小/footprint 透明度/相机预设）、global ID 搜索与状态联动、证据抽屉快捷键（`H`/`Esc`），并在主脚本层新增 focus/clear 快速动作。
+- [完成] `scene.ts` 与 `footprints.ts` 扩展为可控渲染内核：新增 `setPointSize`、`setFootprintOpacity`、`setViewPreset`，支持 fit/top/isometric 过渡；union outline 显著化但不参与拾取。
+- [完成] 重写 `style.css`，形成高对比审查驾驶舱样式（状态卡、工具栏、响应式折叠策略）。
+- [完成] 更新 `README.md` 与 `.research/todo.md` 记录此次 visual polish。
+- [完成] 使用 `Output/da3/floor_display2` 执行 `--mode viewer-web`（默认与自定义 output），成功生成 v1 bundle，`point_count=500000`，`footprint_status=rejected`；确认脚本输出 custom output 的 `/data/挂载` 提示与默认 output 的 `npm run dev` 提示。测试产物已执行后清理，不留临时 output。
+- [完成] `npm test -- --run`（4 文件、18 用例）与 `npm run build` 均通过；`code/tests/test_web_viewer_export.py` 通过 `25 passed`。受限于容器端口策略，`vite` 本地 dev server `bind EPERM` 无法启动，但非 build/test 验证失败路径。
+- [完成] 继续复测默认输出（`viewer-web/public/data`）并生成新 run `f71dfa34bb51425cb5b92463bac91cb0`，并做本地 bundle 合约抽检：`schema_version=1.0.0`、四段二进制阵列存在、`CURRENT` 指向该 run、`objects.json` 为 246 个 global ID、`footprints` 为 `rejected`/`value_m2=null`，脚本端到端解析正常。再次尝试 `npm run dev -- --host 0.0.0.0 --port 4173` 仍受限于 `EPERM` 监听策略。
+
 ## 2026-08-14
 
 - [完成] 确认当前 checkout 为 `/home/xingyu/3D_Recognization`。

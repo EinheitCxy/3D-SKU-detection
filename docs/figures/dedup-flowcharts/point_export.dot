@@ -1,0 +1,28 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad=0.3, nodesep=0.35, ranksep=0.55];
+node [shape=box, style="rounded,filled", fontname="SimHei", fontsize=15, color="#648096", margin="0.2,0.13"];
+edge [fontname="SimHei", fontsize=12, color="#61788d", arrowsize=0.7];
+cache [label="完整重建点网格\n颜色 / 置信度 / 来源帧像素", fillcolor="#e3f6ee"];
+valid [label="基础有效性\n有限坐标、非全零、有限置信度", fillcolor="#e8f1ff"];
+labels [label="完整 SAM mask 标注 observation\n重叠像素由先写入标签取得单一归属", fillcolor="#e8f1ff"];
+filter [label="SOR → DBSCAN → 最大平面过滤\n每阶段 OR 商品 protect_mask", fillcolor="#e8f1ff"];
+product [label="SAM 商品点全部保留\n不做体素合并、不随机采样", fillcolor="#e3f6ee"];
+background [label="mask 外背景做 5 mm 体素选择\n每体素保留最高置信度点", fillcolor="#e8f1ff"];
+budget [label="旧逻辑缺陷：背景预算\nmax(0, 150 万 − 商品点数)", fillcolor="#fff0d9"];
+zero [label="本次商品 1,863,298 点\n背景预算 0 → 货架全部不导出", fillcolor="#fff0d9"];
+sort [label="商品 + 保留下来的背景\n按标签稳定排序、同步 source_indices", fillcolor="#e8f1ff"];
+ranges [label="positions / colors / normals\nobjects.point_ranges 半开区间", fillcolor="#e3f6ee"];
+proposed [label="当前修复：背景固定独立 80 万预算\n商品全量 + 过滤降采样后的背景", fillcolor="#e3f6ee"];
+cache -> valid [label=""];
+valid -> labels [label=""];
+labels -> filter [label=""];
+filter -> product [label="标签 ≥ 0"];
+filter -> background [label="标签 < 0"];
+background -> budget [label="旧逻辑"];
+product -> budget [label="商品数"];
+budget -> zero [label="超过 150 万"];
+product -> sort [label=""];
+proposed -> sort [label="独立预算内背景"];
+sort -> ranges [label=""];
+background -> proposed [label="当前逻辑"];
+}

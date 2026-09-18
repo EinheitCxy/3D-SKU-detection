@@ -10,22 +10,43 @@ reconstruction/matching 并行，并在 dedup 前 join；端到端统计使用�
 
 ## 性能与显存
 
+- 检测、匹配、分析、重建、分类、可视化与评估阶段失败直接抛出异常，CLI 非零退出，后续阶段停止；
+  成功调用仍返回产物路径和耗时。批量参考帧失败不再继续串行处理其他帧，也不自动串行重跑；
+  已提交的并行任务在退出前完成资源清理。CLI 与交互菜单共用 concise 流程。
+  批量准确率评估在首个失败时非零退出；没有可比较的人工标注直接报错，有标注但零预测仍正常计分。
+- 检测器仅在推理成功且无目标时写空检测；坏检测 JSON 和缺失帧直接报错，不再自动取交集丢帧。
+  DA3/Pi3/Pi3X 匹配按 image ID 对齐，场景内存缓存按帧 ID 顺序区分；旧缓存缺少 ID 时需重新重建。
+  Pi3 后处理、内参拟合和 transforms 保存失败均停止，不再使用默认 K。
+- SKU 分析逐目标图解析 summary，保留不同图片对中相同 object ID 的匹配；零匹配可正常生成报告。
+  3D 匹配每张目标图只变换一次目标框，所有参考物体复用，不改变采样和匹配规则。
+- 本轮最小验证：`uv run --no-sync python -m pytest -q test/test_fail_fast.py
+  test/test_main_pipeline.py test/test_matching_sam3_cache.py test/test_pi3x_export.py
+  test/test_reconstructor_base.py -k 'not cuda'`；CPU stub 覆盖失败传播与正常数据路径，不代表 GPU 性能测量。
+
+- 重建生命周期由 `ReconstructorBase` 统一调度：推理后准备导出数据，再保存 NPZ、导出 GLB，
+  `finally` 清理单次运行资源；缓存或导出失败直接向调用方报错。Pi3X 将导出所需张量一次转到
+  CPU，共享置信度和深度视图，供两种导出复用。直接复用同一 reconstructor 时模型保留，
+  `close()` 或退出 `with` 时释放模型；pipeline 使用 `with` 管理单次重建实例。
+  DA3 保留子进程推理和 partial 缓存原子发布。
+
 - ground-stack support-plane 的 deterministic RANSAC 以 16 个候选为一批计算距离，仍按原始
   seed、triplet 顺序、严格 tie、trial count 与 gate 串行决定结果；批化只增加有限 CPU 临时空间，
   不使用 GPU。
-- DA3 matching 使用零存储 image descriptor；RGB 仅在需要生成匹配可视化时在 CPU 解码。2D box
+- DA3、Pi3/Pi3X matching 使用零存储 image descriptor；Pi3/Pi3X 按帧顺序、后端和 pixel limit 缓存 transforms，RGB 仅在生成匹配可视化时在 CPU 解码（Pi3/Pi3X 保留 LANCZOS resize）。2D box
   hit 以单次向量化计算复用给 Top-K，诊断性的 host 拷贝只在 DEBUG 开启。
 - DA3 runner 先写 `da3_cache/predictions.npz.partial`，父进程验证 schema-v3 metric 和 matcher
   字段后以原子 replace 发布 `predictions.npz`；失败不会覆盖现有 cache。
 
 ## 当前布局
 
+`fd-videos/` 保存原始 HDR 测试视频；最终 SDR/H.264 压缩版位于 `fd-videos-sdr/30fps/`，不覆盖原片。保留 1080p 和竖屏方向，帧率按 Rick 确认降为 30 fps；直接从原片先降帧、再做色调映射与 CRF 23 编码，参数见 [视频说明](fd-videos-sdr/README.md)。SDR 压缩版适合上传/流程测试，不等同于原片画质或重建精度基准。60 fps 中间视频已按要求删除，原片和 30 fps 最终版本保留。
+
 ```text
 3D_Recognization/
 ├── main.py, config.yaml, pyproject.toml, uv.lock  # DA3 核心 CLI 与依赖
 ├── src/                                           # 流水线阶段与重建后端
 ├── utils/                                         # 几何、匹配、cache、过滤等共享库
-├── tests/                                         # 核心回归测试
+├── test/                                         # 核心回归测试
 ├── modules/
 │   ├── sku_detector/                              # YOLO 检测器与独立 uv 项目
 │   ├── personalcare_classifier/                   # source/ + canonical model.bin
@@ -34,13 +55,13 @@ reconstruction/matching 并行，并在 dedup 前 join；端到端统计使用�
 ├── scripts/3d/{pipeline,evaluation,tuning,ops}/   # 端到端 pipeline 与维护工具
 ├── Output/                                        # 忽略的用户可见 pipeline 产物
 ├── runtime/                                       # 忽略的迁移环境与工具 cache
-│   ├── 3d-core/.venv/
+│   ├── sku_detector/.venv/                     # detector 独立运行环境
 │   └── video_to_dedup/
 ├── perf/                                          # 可复现的性能采集与报告
 └── frame_sampler/                                 # 保持为外部嵌套 Git 仓库
 ```
 
-`Output/` 与 `runtime/` 都不是源码，也不应提交。迁移前的 `code/.venv` 保留在 `runtime/3d-core/`；日常核心开发环境从仓库根通过 `uv sync` 重建。
+`Output/` 与 `runtime/` 都不是源码，也不应提交。根 `.venv` 是 core、DA3 和 SAM3 的统一环境；`runtime/sku_detector/.venv` 仅供独立 detector 使用。
 
 ## 环境
 
@@ -109,24 +130,27 @@ image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 check
 stage 异常；API 成功返回 BSON，未捕获的 pipeline、输入或导出异常直接以 HTTP 500 traceback 返回。每个 fd 完成后清除按临时路径持有的 DA3
 request cache，SAM3 model cache 保留并跨请求复用。
 
-客户端只发送以下 BSON 输入，`images` 为非空 bytes list，`skus` 为同帧数的 classifier JSON-string
+客户端发送以下 BSON 输入，`taskID` 标识本次识别任务，`images` 为非空 bytes list，`skus` 为同帧数的 classifier JSON-string
 list：
 
 ```text
-{images: [<numeric-frame image bytes>, ...], skus: ["{classes: {det, cls}, objects: [...]}", ...]}
+{taskID: "<recognition-task-id>", images: [<numeric-frame image bytes>, ...], skus: ["{classes: {det, cls}, objects: [...]}", ...]}
 ```
 
 顶层 `features`、`project_id` 和其他上游透传字段均被 Docker adapter 忽略，不会解析、校验、复制或
 落盘；adapter 固定以 personalcare domain `51` 构建 object-level `classification`。object 内的
-`features` 仍会被拒绝。成功 BSON 响应严格只有 `global_skus` 与 `viewer_bundle`。
-其中 Docker 响应的 `viewer_bundle` 是扁平 ZIP：根目录含 `manifest.json`、
+`features` 仍会被拒绝。成功 BSON 响应严格只有 `global_skus`（逐帧 JSON-string list），每帧为
+`{classes, objects}`。返回的 object 保留原始字段和 `global_id`、`is_deduplicated`，不返回内部
+`classification`。调用方通过帧级 `classes.cls[object.classes.cls]` 读取 `sku_id^sku_name`，
+通过 `object.confidences.cls` 读取分类置信度；内部分类聚合和 Viewer 导出仍使用内部分类数据。
+Viewer bundle 按 `taskID` 上传 COS，不随 BSON 返回。它是扁平 ZIP：根目录含 `manifest.json`、
 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`、`objects.json`，缩略图为
 `thumbs/*.jpg`；它不包含发布器内部的 `CURRENT` 或 `runs/<run_id>/` 路径。
 
 ```bash
 bash docker/build.sh
 docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
-uv run python docker/test_api.py --dataset <path> --classifier-result <path>
+uv run python docker/test/test_api.py --dataset <path> --classifier-result <path>
 ```
 
 详细的离线前提、named contexts、输入 shape 与客户端输出见
@@ -151,8 +175,13 @@ uv run python main.py --mode pipeline \
   --dataset imdata/floor_display2 --algorithm 3d --no-classifier
 
 # 导出静态 minimal schema 3.0.0 Web bundle（不运行 ground-stack-area）
+# 将 61 MiB SKU Excel 转为构建期窄 CSV；浏览器不会加载此全量文件
+uv run python scripts/convert_sku_maindata.py \
+  --input sku-maindata.xlsx --output runtime/sku_masterdata.csv
+
 uv run python main.py --mode viewer-web \
-  --dataset imdata/floor_display2
+  --dataset imdata/floor_display2 \
+  --viewer-web-sku-masterdata-csv runtime/sku_masterdata.csv
 
 # 启动前端；默认 /data/ 映射 modules/viewer_web/public/data/
 npm --prefix modules/viewer_web run dev
@@ -163,7 +192,21 @@ bash scripts/3d/pipeline/video_to_viewer.sh \
   --classifier-device cuda:0 --serve
 ```
 
-`--save_root` 可以覆盖输出目录；相对值始终相对仓库根解析。默认 bundle 位于 `modules/viewer_web/public/data/`，自定义 bundle 必须在前端启动前挂载或 serve 到浏览器的 `/data/`。
+`--save_root` 可以覆盖输出目录；相对值始终相对仓库根解析。默认 bundle 位于 `modules/viewer_web/public/data/`，自定义 bundle 必须在前端启动前挂载或 serve 到浏览器的 `/data/`。`runtime/sku_masterdata.csv` 是从 Excel 提取的 `sku_id`、厂商（`group_name`）、品牌（`brand_name`）、品类（`category_name`）和 POSM（`type_id == 27`）窄表；导出时只把当前 bundle 使用的 SKU 主数据写入该 run 的 `sku_masterdata.json`。
+
+已有完整 Viewer bundle 只需补充主数据时，可避免重跑点云导出：
+
+```bash
+uv run python scripts/publish_viewer_masterdata.py \
+  --viewer-output modules/viewer_web/public/data \
+  --sku-masterdata-csv runtime/sku_masterdata.csv
+```
+
+该命令会复制 `CURRENT` 指向的完整 run，在新 run 写入 `sku_masterdata.json` 后原子更新 `CURRENT`；旧 run 保持不变。
+
+### Pi3X 后端（实验性）
+
+`--recon_backend pi3x --match_backend pi3x` 启用 Pi3X（`yyfz233/Pi3X`，CC BY-NC 4.0）重建与匹配。权重为本地目录 `runtime/models/pi3x/`（model.safetensors + config.json），离线加载。Pi3X 产出与 Pi3 相同的 `pi3x_cache/predictions.npz` schema-v3 契约（sigmoid conf、`local_points` 深度、`camera_poses` 取逆为 w2c extrinsic），匹配侧复用 pi3 图像加载路径；SAM3 v2 mask 缓存需要的 `source_to_processed_affine` 由纯缩放 transform 显式合成。Pi3X 是 approximate metric（尺度逐 batch 估计），不接 `is_metric==1` 硬门，ground-stack-area 等米制计量阶段不对其启用；RoPE2D CUDA kernel 未编译时自动走 PyTorch 慢速路径。fd4–8 与 DA3 1.1 的准确率/性能对比见 [docs/accuracy_da3_vs_pi3x.md](docs/accuracy_da3_vs_pi3x.md)（总 F1 86.8% vs 85.0%）。
 
 完整视频入口的参数、阶段顺序和输出路径见 [scripts/3d/pipeline/README.md](scripts/3d/pipeline/README.md)。其中 `--gpu 2` 设置物理 GPU mask，进程内分类器继续使用 `--classifier-device cuda:0`；`--detections-dir` 可复用已有逐帧检测 JSON。脚本在 dedup 后直接导出 minimal schema 3.0.0 bundle，默认只导出 bundle，增加 `--serve` 才会以前台进程启动 Vite。独立 `ground-stack-area` 仍可按需运行，但不再是该 Viewer 入口的前置阶段。
 
@@ -185,13 +228,15 @@ Docker 服务端调用 `run_complete_pipeline(..., evaluate_accuracy=False)`，�
 
 Surfel 使用已有 DA3 缓存、原图和同网格 SAM3 mask 导出独立纹理表面数据；浏览器通过 `/?data=/data-surfel/&render=surfel` 显式启用，默认 points 入口保持独立。后端导出、Float16 sidecar、逐片元投影与深度融合、商品交互和按需重绘的代码说明见 [Surfel 集成说明](docs/surfel_implementation.md)，命令与限制见 [Viewer README](modules/viewer_web/README.md#深度约束-surfel)。Docker 服务端已启用 Surfel 导出和 COS ZIP 打包；`docker/viewer` 默认以 Surfel 加载新任务。
 
+点云导出默认使用 **5 mm 背景体素、最多 50 万背景点**；商品点最多 200 万。商品点先由 SAM mask 过滤保护，避免有效实例点被几何过滤误删，再按非空 `global_id` 均分商品预算；小组实际点数不足时回收未用配额并分配给其他组。背景上限为固定导出预算，`--viewer-web-voxel-size` 仍可调整背景体素尺寸。分辨率对照固定这两项预算；预算只影响可视化导出点数，不改变 mapping 匹配输入。已有 bundle 需要重新导出才能改变点数。
+
 Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。`CURRENT` 只包含 `run_id`；run 内的 `manifest.json` 固定为 schema `3.0.0`，包含轻量 `backend: "DA3"`、真实 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不携带 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。导出器从 dataset `images/` 中按数字文件名解析原图，为每个 active 与 removed observation 按 bbox（保留 10% padding）写入 `thumbs/*.jpg`：JPEG 始终为精确 `128×128`，crop 等比缩放并居中补深色背景，不拉伸或中心裁掉商品；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
 
 canonical “其他品类”是 `sku_id=56642`、`sku_name=其他品类`。只要存在任一具体 SKU，具体 SKU 按既有 confidence/support 顺序排在 56642 之前；只有全部有效观测都是其他品类时，56642 才能排在首位。Viewer 只消费已排序的 SKU ID/名称，不接收或显示 confidence。
 
 产品界面的 Backend badge 直接显示 manifest 的 `backend`；对象与 SKU counts 由前端读取 `objects.json` 的 observations 派生，而非额外后端聚合字段。默认 `Select by SKU`，与 `Select by Global ID` 互斥，切换会清除上一选择。SKU 选择保留完整场景并批量 magenta 高亮；canvas pick 自动切换为 Global ID。`View Controls` 默认折叠，展开后只有 Fit、Top、Iso 和 Point size。右栏为 `Selected Object`，只显示 Global ID 与按发布顺序排列的 SKU；observation 缩略图以紧凑三列优先网格显示，caption 与 removed 灰化语义保持不变。
 
-Viewer bundle 不包含 footprint、evidence、hash/provenance、source digest、confidence 或其他审计型 rich-contract 元数据。它只恢复产品缩略图所需的 observation 标识和相对 JPEG 路径。点云过滤仍对所有点统一执行，选择和 Focus 通过 `point_ranges` 增量更新现有 geometry，不复制点云。
+Viewer bundle 不包含 footprint、evidence、hash/provenance、source digest、confidence 或其他审计型 rich-contract 元数据。它只恢复产品缩略图所需的 observation 标识和相对 JPEG 路径。导出先读取 SAM3 mask 标注有效点，再将 mask 内的点传入 `protect_mask`，防止离群、小簇和平面过滤误删商品；之后商品点按非空 `global_id` 均分最多 200 万点预算，同一商品的多帧观测合并抽样，小组不足配额时回收未用配额。背景保持原有过滤并独立使用最多 50 万点预算；商品点不占用背景预算。组内抽样使用固定随机种子、不放回均匀抽样，空 SAM 掩码不能产生商品点。分辨率对照固定这两项预算，预算仅影响可视化导出，不改变 mapping 匹配输入。原始点云与 Surfel 共用这组导出点。选择和 Focus 通过 `point_ranges` 增量更新现有 geometry，不复制点云。已有 COS ZIP 不会自动恢复被删点，需要用修改后的后端重新导出。
 
 ## Personalcare classification in viewer objects
 
@@ -235,24 +280,45 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 
 画布右下角显示实际 backend。已有 Pi3X 缓存与匹配结果可运行 `uv run python scripts/export_pi3x_viewer.py --dataset imdata/floor_display6`，生成独立 Pi3X bundle；本地 Viewer 使用 `/?data=/data-pi3x/` 查看，默认 `/` 保留 DA3。详见 [Viewer README](modules/viewer_web/README.md)。
 
-## DA3 默认推理尺寸
+本地测试统一保存在 `test/` 并由 `.gitignore` 忽略，不再纳入 Git；新克隆不包含测试文件。
+核心测试运行 `uv run --no-sync pytest test/`；性能测试在 `test/perf/`，Viewer 测试在 `test/viewer_web/`，SAM3 测试及资源在 `test/sam3/`。Docker 独立工作目录的测试在 `docker/test/`。
 
-默认长边统一为 `da3_defaults.py` 中的 896：9:16 竖屏 504×896、16:9 横屏 896×504；其他比例按比例缩放并对齐到 14 像素网格。同一任务混合横屏、竖屏或方形输入在加载模型前报错。推理、匹配及完整 pipeline 缓存复用使用同一默认值；旧 504 或缺少预处理设置的缓存不再被完整 pipeline 复用。已有 Viewer 包需重新推理并导出。
+Docker Viewer 导出不传入主数据参数，跳过主数据读取和文件生成，镜像构建不复制 CSV；主数据由 `visualization` 分支的 `viewer/masterdata.json` 提供。本地 Viewer 导出仍传入 CSV 路径以生成任务所需的 `sku_masterdata.json`。
 
-验证：实际 CPU 预处理覆盖横屏、竖屏和4:3；旧缓存重建、896缓存复用与生产参数透传检查通过。896增加显存需求，31帧在本地实际运行时需要充足空闲显存。
+### 匹配、导出与点击的一致性
+
+匹配计算内部使用数组下标，`matching_summary.txt` 发布真实图片文件 ID（包括零匹配摘要的 `Reference image file ID`）。去重和计数分析读取摘要中的文件编号，不用输出目录编号代替，也不猜测 0/1 偏移；旧摘要需重新生成。人工 benchmark 延续现有“源文件 ID + 1”的展示编号约定，评估参考编号从摘要头读取。
+
+每个原始检测都进入 global mapping；没有可信匹配边的检测保留独立 ID。逐帧去重 JSON 和 `global_skus` 均依据最终 global mapping 的 removed 标志，避免冲突匹配剔除后商品丢失或多个输出计数矛盾。不存在的帧/对象或不完整匹配分组直接报错。
+
+原始点云点击遇到可见无归属前景点即停止，不继续选择后面的商品。射线点选仍有交互容差；Surfel 使用可见面片的 ID pass。重叠 SAM mask 仍按已有顺序确定单一点击归属，零面积 U/V 点可保留在原始点云中但不产生 Surfel 像素；导出点保留不等于任意视角都无遮挡。
+
+当前 3D 匹配、身份去重、SAM 点保护、背景预算和 Surfel 点击链路的完整说明见 [3D 去重流程详图](docs/3d_dedup_flowcharts.md)，可直接打开 [离线交互流程图](docs/figures/dedup-flowcharts/index.html)。
+
+## DA3 默认推理分辨率（当前）
+
+生产默认长边为 **504**；只做等比缩放，并通过 resize 结果对齐模型的 14 像素网格，不裁边、不补边。16:9 横屏得到 **504×280**（宽×高），16:9 竖屏得到 **280×504**；4:3 横屏得到 **504×378**，4:3 竖屏得到 **378×504**。
+
+同一任务混合横屏与竖屏，或缩放后得到不一致的网格，会在模型加载前直接报错；请按方向和网格分别提交。输入按原比例只缩放，不裁边、不补边。输入应使用与检测框一致的已正确朝向的图像像素；流程不额外旋转照片或改变检测框坐标。
+
+完整 pipeline 可复用同一 504 网格的旧缓存；旧 896 缓存必须重建。独立 runner 仍可用 `--process_res` 做指定分辨率实验；`viewer-web` 仅导出已有缓存，不会升级旧包。已生成的本地/COS可视化需按新分辨率重新推理并导出，刷新网页不会提高深度网格。
+
+当前 504 网格的分辨率对照固定最多 200 万商品点和 50 万背景点；预算只影响可视化导出。
+
+历史部署验证：`global-id-mapping:viewer-896-20260910` 曾运行于 `global-id-mapping-local`；该记录保留用于追溯，不代表当前镜像或运行服务仍使用 896 默认值。
 
 ## 静默辅助输出
 
 `uv run python main.py --mode pipeline --dataset <目录> --algorithm 3d --quiet_outputs` 关闭原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON 与最终 Viewer 数据仍按流程需要生成；日志保留。
 
-Docker 服务接入可显式传入 `quiet_outputs=True`。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不新增持久 outputs。普通本地 pipeline 默认保留调试输出。
+Docker `run_mapping_request` 默认启用此选项。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不新增持久 outputs。普通本地 pipeline 默认保留调试输出。
 
 ## 商品点预算更新（2026-09-10）
 
-当前固定保留 **最多 200 万商品点 + 最多 80 万背景点**，取代此前商品 mask 全量输出规则。SAM 内有效点仍先受几何过滤保护；之后按非空 `global_id` 均分商品预算，将同一商品的多帧观测合并抽样。点数不足配额的商品全部保留，剩余配额再分给其他商品；组内使用固定随机种子、不放回均匀抽样。总商品点不足 200 万时不抽样。空 SAM 掩码不能产生商品点。
+当前固定保留 **最多 200 万商品点 + 最多 50 万背景点**，取代此前商品 mask 全量输出规则。SAM 内有效点先受几何过滤保护；之后按非空 `global_id` 均分商品预算，将同一商品的多帧观测合并抽样。小组实际点数不足配额时回收未用配额并分配给其他组；组内使用固定随机种子、不放回均匀抽样。总商品点不足 200 万时不抽样。空 SAM 掩码不能产生商品点。分辨率对照固定上述预算，预算仅影响可视化导出，不改变 mapping 匹配输入。
 
 位置、颜色、Surfel U/V、源帧和点击范围使用相同点索引。此上限由导出端控制，Viewer 不再独立截断点数组；旧包需重新导出才生效。
 
-## Viewer 包导出接口
+### DA3 位姿与深度尺度优化（实验）
 
-Surfel 包同时写入颜色数组，供同一包切换原始点云模式。`sku_masterdata_csv` 可省略；服务无需内置本地主数据 CSV，显式提供 CSV 的本地导出仍生成主数据文件。
+新增独立命令 `uv run python -m src.da3_geometry_refinement --cache Output/<数据集名>/da3_cache/predictions.npz --output-root runtime/refined-output --mode pose`。`pose-scale` 模式同时优化逐帧正深度尺度。输出根目录必须是新目录；只有留出几何验证通过才发布缓存，之后以同一 `--save_root` 重新运行完整匹配与 Viewer 导出。生产和 Docker 默认不变。参数、验收与限制见 [3D core 文档](docs/3d_core.md#可选的-da3-几何优化模块)。

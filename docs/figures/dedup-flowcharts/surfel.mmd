@@ -1,0 +1,34 @@
+flowchart TB
+    accTitle: Surfel 与浏览器：几何、纹理和点击
+    accDescr: 当前源码对应的Surfel 与浏览器：几何、纹理和点击，橙色节点表示缺陷或限制。
+    indices["导出点的 source_indices<br/>回到同一来源帧和网格像素"]
+    uv["原始网格相邻点前后差分 → U/V<br/>边长 < max(3% 深度, 1 mm)<br/>取较短有效边；无有效边则为零"]
+    files["位置 FP32；U/V 和深度 FP16<br/>来源帧 Uint8；原图 JPEG 纹理"]
+    publish["完整 generation 写完再更新 CURRENT<br/>Docker 将同一 generation 打包 ZIP"]
+    load["浏览器加载同一 bundle<br/>点数、范围、帧和纹理检查"]
+    mode{"渲染模式"}
+    points["原始点云：RGB 点渲染<br/>默认 size 0.004"]
+    surface["Surfel：限制 U/V 拉伸和边缘覆盖<br/>默认 size 0.07 → 半径上限 2"]
+    passes["来源深度一致性 + 屏幕最近深度<br/>加权纹理融合 → 输出颜色"]
+    pick["点云射线 / Surfel ID pass<br/>slot → point_ranges → global_id"]
+    limit["保留点 ≠ 所有视角都能看见<br/>零面积面片、遮挡、深度门槛仍会留孔<br/>此流程不优化相机、不融合多层几何"]
+    indices --> uv
+    uv --> files
+    files --> publish
+    publish --> load
+    load --> mode
+    mode -->|"原始点云"| points
+    mode -->|"Surfel"| surface
+    surface --> passes
+    points --> pick
+    passes --> pick
+    uv --> limit
+    passes --> limit
+    classDef step fill:#e8f1ff,stroke:#648096,color:#152e45
+    class uv,publish,load,points,surface,passes,pick step
+    classDef data fill:#e3f6ee,stroke:#648096,color:#152e45
+    class indices,files data
+    classDef warn fill:#fff0d9,stroke:#648096,color:#152e45
+    class limit warn
+    classDef decision fill:#eee6ff,stroke:#648096,color:#152e45
+    class mode decision
