@@ -317,12 +317,14 @@ class SKUMatchingConfig:
         """根据 backend 自动推导 model_type
 
         Returns:
-            "da3" / "pi3" / "vggt"
+            "da3" / "pi3" / "vggt" / "mapanything"（pi3x 复用 pi3 的图像加载与 transforms 路径）
         """
         if self.backend == "da3":
             return "da3"
-        if self.backend == "pi3":
+        if self.backend in ("pi3", "pi3x"):
             return "pi3"
+        if self.backend == "mapanything":
+            return "mapanything"
         return "vggt"
 
     @property
@@ -332,12 +334,15 @@ class SKUMatchingConfig:
         Returns:
             DA3: {"process_res": DEFAULT_PROCESS_RES}（upper_bound_resize 算法派生目标尺寸）
             Pi3: {"pixel_limit": 255000}
+            MapAnything: {}（fixed_mapping 518 桶算法自包含，见 build_mapanything_transforms）
             VGGT: {"target_size": 518}
         """
         if self.backend == "da3":
             return {"process_res": DEFAULT_PROCESS_RES}
-        if self.backend == "pi3":
+        if self.backend in ("pi3", "pi3x"):
             return {"pixel_limit": 255000}
+        if self.backend == "mapanything":
+            return {}
         return {"target_size": 518}
 
     @property
@@ -348,12 +353,12 @@ class SKUMatchingConfig:
             Pi3/DA3: "resize" (等比例缩放)
             VGGT: "crop" (裁剪+填充)
         """
-        return "resize" if self.backend in ("pi3", "da3") else "crop"
+        return "resize" if self.backend in ("pi3", "pi3x", "da3", "mapanything") else "crop"
 
     def _validate_config(self):
         # Backend验证
-        if self.backend not in ("vggt", "pi3", "da3"):
-            raise ValueError(f"backend must be 'vggt', 'pi3', or 'da3', got {self.backend}")
+        if self.backend not in ("vggt", "pi3", "pi3x", "da3", "mapanything"):
+            raise ValueError(f"backend must be 'vggt', 'pi3', 'pi3x', 'da3', or 'mapanything', got {self.backend}")
 
         if self.max_points_per_bbox <= 0:
             raise ValueError(f"max_points_per_bbox must be positive, got {self.max_points_per_bbox}")
@@ -462,6 +467,27 @@ class SKUMatchingConfig:
                 "point_3d_confidence_threshold": 1.5,
                 "max_3d_distance": 0.5,                 # 米: 同物体跨视角中心应<0.1m, 0.5 容采样抖动
                 "depth_consistency_threshold": 0.3,     # 米: 采样端cache自洽性检查容差
+            })
+        elif backend == "mapanything":
+            # mapanything: metric 米制深度（几何阈值同 da3）+ 原样 conf（未激活，越高越好）。
+            # conf 阈值于 2026-09-16 冒烟一次定档: conf∈[1,24], 有效中位≈5.0,
+            # bbox 对象区 q10≈6.4/中位≈15.3; 3.0 高于有效下界 1.0 (滤低端噪声)
+            # 且远低于对象区 q10 (防饿死匹配)。全臂固定不改。
+            algorithm_specific.update({
+                "min_depth": 0.3,                       # 米
+                "max_depth": 8.0,                       # 米
+                "depth_confidence_threshold": 3.0,
+                "point_3d_confidence_threshold": 3.0,
+                "max_3d_distance": 0.5,                 # 米
+                "depth_consistency_threshold": 0.3,     # 米
+            })
+        elif backend == "pi3x":
+            # pi3x: 近似米制深度（几何阈值同 da3 米制标定）+ sigmoid conf[0,1]（同 pi3 默认值）
+            algorithm_specific.update({
+                "min_depth": 0.3,                       # 米
+                "max_depth": 8.0,                       # 米
+                "max_3d_distance": 0.5,                 # 米
+                "depth_consistency_threshold": 0.3,     # 米
             })
         else:
             # pi3/vggt: 相对深度 + sigmoid conf（已标定，保持原值）

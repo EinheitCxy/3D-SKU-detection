@@ -4,8 +4,6 @@ SKU匹配系统主模块
 封装完整的SKU匹配流程，提供高级接口
 """
 
-from da3_defaults import DEFAULT_PROCESS_RES
-
 import os
 import json
 import time
@@ -29,16 +27,15 @@ logger = logging.getLogger(__name__)
 # key = (image_paths 排序 str tuple) :: TW :: TH, value = (S, C, H, W).
 _DA3_IMAGE_CACHE: Dict[str, tuple[int, int, int, int]] = {}
 
-# DA3 transforms_info 模块级缓存：transforms_info 是纯只读数据对象（w,h,TARGET_W,TARGET_H,image_id），
-# build_da3_transforms 仅 PIL open 读尺寸无副作用；跨 ref 复用省 N×len(image_paths) 次 PIL 解码。
-# key = (image_paths 排序 str tuple) :: model_type :: process_res。
+# transforms_info 跨 reference 缓存，避免重复读取图片尺寸。
+# matching 可补写缓存几何；Pi3/Pi3X 按后端、原始帧顺序和 pixel_limit 隔离。
 _DA3_TRANSFORMS_CACHE: Dict[str, list] = {}
 
 
 def build_da3_matching_image_descriptor(
     image_count: int, target_width: int, target_height: int
 ) -> torch.Tensor:
-    """Return a zero-storage image descriptor for DA3 geometry-only matching."""
+    """Return a zero-storage shape descriptor for cached geometry matching."""
     return torch.empty((image_count, 3, target_height, target_width), device="meta")
 
 
@@ -77,8 +74,8 @@ class SKUMatchingSystem:
                 self._set_random_seeds()
 
             # 根据 backend 条件加载模型
-            if self.config.backend in ("pi3", "da3"):
-                # Pi3/DA3 后端：不需要加载 VGGT 模型（直接从缓存加载 3D 数据）
+            if self.config.backend in ("pi3", "pi3x", "da3", "mapanything"):
+                # Pi3/Pi3X/DA3/MapAnything 后端：不需要加载 VGGT 模型（直接从缓存加载 3D 数据）
                 logger.info(f"{self.config.backend.upper()} 后端：跳过 VGGT 模型加载，将从 {self.config.backend}_cache 加载预重建数据")
                 self.vggt_model = None
             else:
@@ -145,27 +142,13 @@ class SKUMatchingSystem:
 
             # 2. 预处理图像和构建 transforms（使用 config 的衍生属性，消除参数冗余）
             if self.config.model_type == "pi3":
-                # Pi3: 先加载图像（动态尺寸），再根据实际尺寸构建 transforms
-                from pi3.utils.basic import load_images_as_tensor
-                images = load_images_as_tensor(
-                    image_paths,
-                    PIXEL_LIMIT=self.config.transform_kwargs["pixel_limit"]
-                )
-                images = images.to(self.config.device)
-                _, _, H_actual, W_actual = images.shape
-                logger.info(f"Pi3 加载图像: {len(image_paths)} 张, 实际尺寸: ({W_actual}, {H_actual})")
-                transforms_info = build_transforms(
-                    image_paths,
-                    model_type=self.config.model_type,
-                    **self.config.transform_kwargs
-                )
-            elif self.config.model_type == "da3":
-                # DA3: transforms + images 均用 DA3 upper_bound_resize 算法从 process_res 派生，
-                # 目标尺寸与 da3_cache 一致（504×378 等），确保投影点与 cache/world_points 同坐标系。
-                # transforms_info 是纯只读数据对象（w,h,TARGET_W,TARGET_H,image_id），跨 ref 复用
-                # 省 N×len(image_paths) 次 PIL open 解码；build_da3_transforms 无副作用，缓存位级等价。
-                _da3_pr = self.config.transform_kwargs.get("process_res", DEFAULT_PROCESS_RES)
-                _tcache_key = f"{tuple(sorted(str(p) for p in image_paths))}::{self.config.model_type}::{_da3_pr}"
+                # Pi3/Pi3X: transforms 由 PIXEL_LIMIT 算法仅从图像尺寸派生，目标尺寸与
+                # load_images_as_tensor 完全一致（同一套 round-to-14 算法，见
+                # build_pi3_transforms 与 Pi3/pi3/utils/basic.py）。matching 只读取图像
+                # shape，因此与 DA3 一样使用零存储 meta descriptor，可视化时才在 CPU
+                # 解码真实 RGB；transforms_info 跨 ref 缓存复用。
+                _pi3_pl = self.config.transform_kwargs.get("pixel_limit", 255000)
+                _tcache_key = f"{tuple(str(p) for p in image_paths)}::{self.config.backend}::{_pi3_pl}"
                 with StageTimer("build_transforms"):
                     _tcached = _DA3_TRANSFORMS_CACHE.get(_tcache_key)
                     if _tcached is not None:
@@ -177,8 +160,38 @@ class SKUMatchingSystem:
                             **self.config.transform_kwargs
                         )
                         _DA3_TRANSFORMS_CACHE[_tcache_key] = transforms_info
-                # DA3 matching reads only image shape. Keep a meta descriptor and
-                # decode CPU RGB pixels only when a visualization is actually needed.
+                images = build_da3_matching_image_descriptor(
+                    image_count=len(image_paths),
+                    target_width=transforms_info[0].target_width,
+                    target_height=transforms_info[0].target_height,
+                )
+                logger.info(
+                    f"Pi3 加载图像: {len(image_paths)} 张, 尺寸: "
+                    f"({transforms_info[0].target_width}, {transforms_info[0].target_height})"
+                )
+            elif self.config.model_type in ("da3", "mapanything"):
+                # DA3/MapAnything: transforms 从图像尺寸派生（DA3 upper_bound_resize /
+                # MapAnything fixed_mapping 518 桶），目标尺寸与各自 cache 一致，
+                # 确保投影点与 cache/world_points 同坐标系。
+                # transforms_info 是纯只读数据对象（w,h,TARGET_W,TARGET_H,image_id），跨 ref 复用
+                # 省 N×len(image_paths) 次 PIL open 解码；build 无副作用，缓存位级等价。
+                _tcache_key = (
+                    f"{tuple(sorted(str(p) for p in image_paths))}"
+                    f"::{self.config.model_type}::{self.config.transform_kwargs}"
+                )
+                with StageTimer("build_transforms"):
+                    _tcached = _DA3_TRANSFORMS_CACHE.get(_tcache_key)
+                    if _tcached is not None:
+                        transforms_info = _tcached
+                    else:
+                        transforms_info = build_transforms(
+                            image_paths,
+                            model_type=self.config.model_type,
+                            **self.config.transform_kwargs
+                        )
+                        _DA3_TRANSFORMS_CACHE[_tcache_key] = transforms_info
+                # matching 只读取图像 shape。保留 meta descriptor，
+                # 仅在真正需要可视化时才在 CPU 解码真实 RGB。
                 TW = transforms_info[0].target_width
                 TH = transforms_info[0].target_height
                 cache_key = f"{tuple(sorted(str(p) for p in image_paths))}::{TW}::{TH}"
@@ -191,7 +204,7 @@ class SKUMatchingSystem:
                     target_width=image_shape[3],
                     target_height=image_shape[2],
                 )
-                logger.info(f"DA3 加载图像: {len(image_paths)} 张, 尺寸: ({TW}, {TH})")
+                logger.info(f"{self.config.model_type.upper()} 加载图像: {len(image_paths)} 张, 尺寸: ({TW}, {TH})")
             else:
                 # VGGT: 先构建 transforms（固定 518×518），再加载图像
                 from vggt.utils.load_fn import load_and_preprocess_images
@@ -461,9 +474,10 @@ class SKUMatchingSystem:
 
     @staticmethod
     def _load_da3_visualization_images(
-        image_paths: List[str], transforms_info: List
+        image_paths: List[str], transforms_info: List,
+        *, resample=Image.Resampling.BICUBIC,
     ) -> torch.Tensor:
-        """Decode DA3 RGB data on CPU only for the visualization consumer."""
+        """Decode RGB on CPU for visualization with the backend's resize filter."""
         from torchvision import transforms as _TF
 
         target_width = transforms_info[0].target_width
@@ -474,7 +488,7 @@ class SKUMatchingSystem:
             with Image.open(path) as image:
                 images.append(
                     to_tensor(
-                        image.convert("RGB").resize((target_width, target_height))
+                        image.convert("RGB").resize((target_width, target_height), resample)
                     )
                 )
         return torch.stack(images, dim=0)

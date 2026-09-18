@@ -1528,7 +1528,7 @@ class SKUDetectionMain:
             print("1. 运行完整流水线")
             print("2. 运行精简流水线 (SKU Matching + Accuracy evaluation)")
             print("3. 更改数据集路径")
-            print("4. 3D重建 (VGGT/PI3/DA3)")
+            print("4. 3D重建 (VGGT/PI3/PI3X/DA3/MapAnything)")
             print("0. 退出")
 
             # 显示数据集路径（如果是绝对路径，显示相对于 PROJECT_ROOT 的路径）
@@ -1554,9 +1554,13 @@ class SKUDetectionMain:
                 if "3d" in algorithm:
                     while True:
                         backend = (
-                            input("选择3D匹配后端 (vggt/pi3/da3): ").strip().lower()
+                            input(
+                                f"选择3D匹配后端 ({'/'.join(BACKEND_CHOICES)}): "
+                            )
+                            .strip()
+                            .lower()
                         )
-                        if backend in ("vggt", "pi3", "da3"):
+                        if backend in BACKEND_CHOICES:
                             break
                         logger.warning(f"无效的后端 '{backend}'，请重新输入")
                     self.match_backend = backend
@@ -1569,9 +1573,13 @@ class SKUDetectionMain:
                 if "3d" in algorithm:
                     while True:
                         backend = (
-                            input("选择3D匹配后端 (vggt/pi3/da3): ").strip().lower()
+                            input(
+                                f"选择3D匹配后端 ({'/'.join(BACKEND_CHOICES)}): "
+                            )
+                            .strip()
+                            .lower()
                         )
-                        if backend in ("vggt", "pi3", "da3"):
+                        if backend in BACKEND_CHOICES:
                             break
                         logger.warning(f"无效的后端 '{backend}'，请重新输入")
                     self.match_backend = backend
@@ -1604,8 +1612,12 @@ class SKUDetectionMain:
                         )
             elif choice == "4":
                 while True:
-                    backend = input("选择重建后端 (vggt/pi3/da3): ").strip().lower()
-                    if backend in ("vggt", "pi3", "da3"):
+                    backend = (
+                        input(f"选择重建后端 ({'/'.join(BACKEND_CHOICES)}): ")
+                        .strip()
+                        .lower()
+                    )
+                    if backend in BACKEND_CHOICES:
                         break
                     logger.warning(f"无效的后端 '{backend}'，请重新输入")
                 res = self.run_reconstruction(self.default_dataset, backend=backend)
@@ -1614,6 +1626,14 @@ class SKUDetectionMain:
                 )
             else:
                 print("无效选择，请重试")
+
+
+"""3D 重建/匹配后端集合；interactive 菜单与 argparse choices 共用。
+
+注意与 src 注册表（RECONSTRUCTOR_REGISTRY）解耦：此处是 CLI 面板的
+用户可选后端（含 pi3x/mapanything 等只读/对比后端），新增后端时两边同步。
+"""
+BACKEND_CHOICES = ["vggt", "pi3", "pi3x", "da3", "mapanything"]
 
 
 def main() -> None:
@@ -1763,8 +1783,8 @@ def main() -> None:
         "--recon_backend",
         type=str,
         default=yaml_recon.get("backend", "vggt"),
-        choices=["vggt", "pi3", "da3"],
-        help="3D重建后端 (vggt|pi3|da3)",
+        choices=BACKEND_CHOICES,
+        help=f"3D重建后端 ({'|'.join(BACKEND_CHOICES)})",
     )
     parser.add_argument(
         "--recon_model_path",
