@@ -41,6 +41,16 @@ def get_optimal_device_config(verbose: bool = True):
     return device, dtype
 
 
+def default_sam3_mask_cache_root(output_dir: Path | str) -> Path:
+    """默认 SAM3 mask 磁盘缓存根目录（当前默认模型为 SAM3.1）。
+
+    leaf 必须恰好为 "v2"（utils/sam3_utils.py 强制 cache_root.name == "v2"，且
+    缓存 manifest 不含 checkpoint 身份）；父目录按模型隔离为 sam3_mask_cache_sam31，
+    使默认 SAM3.1 运行绝不静默复用旧模型（SAM3.0）在 sam3_mask_cache/v2 下算出的 mask。
+    """
+    return Path(output_dir) / "sam3_mask_cache_sam31" / "v2"
+
+
 # ============ YAML config helpers ============
 
 
@@ -139,6 +149,7 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
         # Optional SAM3-guided sampling (minimal knobs)
         "enable_sam3_mask_sampling",
         "sam3_checkpoint_path",
+        "sam3_code_root",
         "sam3_mask_cache_root",
         "sam3_self_exemplar_threshold",
         "sam3_device",
@@ -241,6 +252,7 @@ class SKUMatchingConfig:
     # 目标：在 bbox 点采样前先用 SAM3 预测 mask，再从 mask 内采样点
     enable_sam3_mask_sampling: bool = True       # 是否启用 SAM3 mask 引导采样
     sam3_checkpoint_path: Optional[str] = None   # sam3.pt 本地路径（禁用 HF 下载）
+    sam3_code_root: Optional[str] = None         # SAM3 代码树根（默认 sam3/；3.1 用 sam31/）
     sam3_mask_cache_root: str = ""               # matching 显式传入的 canonical v2 cache 根目录
     sam3_self_exemplar_threshold: float = 0.5    # self-exemplar检测阈值
     sam3_device: str = "auto"                   # SAM3单独设备: auto/cuda/cpu

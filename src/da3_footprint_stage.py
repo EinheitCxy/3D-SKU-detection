@@ -33,6 +33,7 @@ from utils.da3_cache_validation import (
     unicode_scalar,
     validate_affine_linear_parts,
 )
+from utils.config import default_sam3_mask_cache_root
 from utils.detection_objects import flatten_detection_objects
 from utils.footprint_evidence import (
     EvidenceObservation,
@@ -102,6 +103,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
     dataset = Path(dataset_path)
     output_dir = Path(save_root) / dataset.name / "ground_stack_footprint"
     output_dir.mkdir(parents=True, exist_ok=True)
+    mask_cache_root = default_sam3_mask_cache_root(Path(save_root) / dataset.name)
     report: dict[str, Any] = {
         "schema_version": "2.0.0",
         "metric": "da3_self_exemplar_ground_footprint_union",
@@ -116,7 +118,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             "cache_schema": SAM3_MASK_CACHE_SCHEMA,
         },
         "sam3_mask_cache": {
-            "cache_root": "sam3_mask_cache/v2",
+            "cache_root": str(mask_cache_root),
             "schema": SAM3_MASK_CACHE_SCHEMA,
             "producer": "sku_matching",
             "frames": [],
@@ -174,7 +176,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             detections,
             global_mapping,
             report["per_global_id"],
-            Path(save_root) / dataset.name / "sam3_mask_cache" / "v2",
+            mask_cache_root,
             report["sam3_mask_cache"]["frames"],
         )
         all_object_points = [

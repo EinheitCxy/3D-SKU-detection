@@ -645,6 +645,7 @@ class SKUDetectionMain:
         match_overrides: dict = None,
         enable_profiling: bool = False,
         quiet_outputs: bool = False,
+        sam3_mask_cache_root: Optional[str] = None,
     ) -> StepResult:
         """运行单个参考图片的SKU匹配推理（内部使用）。
 
@@ -1796,8 +1797,15 @@ def main() -> None:
         "--match_backend",
         type=str,
         default=yaml_recon.get("backend", "pi3"),
-        choices=["vggt", "pi3", "da3"],
-        help="SKU匹配 3D 后端 (vggt|pi3|da3)，仅当算法包含3d时生效",
+        choices=BACKEND_CHOICES,
+        help=f"SKU匹配 3D 后端 ({'|'.join(BACKEND_CHOICES)})，仅当算法包含3d时生效",
+    )
+    parser.add_argument(
+        "--sam3_mask_cache_root",
+        type=str,
+        default=None,
+        help="SAM3 mask 缓存根目录（默认 <output_dir>/sam3_mask_cache_sam31/v2）。"
+        "节点缓存 v2 key 无 checkpoint 身份，换 checkpoint 必须换根以免跨版本复用。",
     )
     parser.add_argument(
         "--parallel_refs",
@@ -1968,6 +1976,8 @@ def main() -> None:
             model_path=args.recon_model_path,
         )
     elif args.mode == "viewer-web":
+        from utils.config import default_sam3_mask_cache_root
+
         dataset = Path(args.dataset)
         dataset_output = app.save_root / dataset.name
         viewer_web_output = (
@@ -1989,7 +1999,7 @@ def main() -> None:
             / "global_mapping.json",
             output_dir=viewer_web_output,
             source_images_dir=dataset / "images",
-            sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
+            sam3_mask_cache_root=default_sam3_mask_cache_root(dataset_output),
             sku_masterdata_csv=sku_masterdata_csv,
             voxel_size_m=float(args.viewer_web_voxel_size),
         )

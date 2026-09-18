@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.deduplicate_detections import deduplicate_sequence, resolve_dataset_paths
 from src.web_viewer_export import export_web_viewer_bundle
+from utils.config import default_sam3_mask_cache_root
 
 
 def main():
@@ -32,7 +33,7 @@ def main():
         da3_cache_path=output / 'pi3x_cache/predictions.npz', backend='Pi3X',
         global_mapping_path=output / 'dedup_detections_pi3x/global_mapping.json',
         output_dir=args.viewer_output, source_images_dir=args.dataset / 'images',
-        sam3_mask_cache_root=output / 'sam3_mask_cache/v2',
+        sam3_mask_cache_root=default_sam3_mask_cache_root(output),
         sku_masterdata_csv=args.sku_masterdata_csv,
         voxel_size_m=0.005,
     )

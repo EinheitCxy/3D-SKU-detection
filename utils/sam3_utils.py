@@ -222,15 +222,40 @@ def clip_mask_to_bbox(mask: np.ndarray, bbox_xyxy: Sequence[float]) -> np.ndarra
     return out
 
 
+_SAM3_CODE_ROOT_OVERRIDE: Optional[Path] = None
+
+
+def set_sam3_code_root(code_root: Optional[Union[str, Path]]) -> None:
+    """Point SAM3 imports at an alternate vendored tree (e.g. sam31/ for 3.1).
+
+    Must be called before the first SAM3 import (imports are lazy, so calling
+    it at config-aware entry points is enough). None/"" restores the default.
+    """
+    global _SAM3_CODE_ROOT_OVERRIDE
+    _SAM3_CODE_ROOT_OVERRIDE = Path(code_root).resolve() if code_root else None
+
+
 def _ensure_sam3_in_path() -> Path:
     """Ensure SAM3 repo is in sys.path, return the repo path."""
-    sam3_repo = Path(__file__).resolve().parents[1] / "sam3"
+    sam3_repo = _SAM3_CODE_ROOT_OVERRIDE or Path(__file__).resolve().parents[1] / "sam3"
     if not (sam3_repo / "sam3" / "__init__.py").exists():
         raise ImportError(f"SAM3 repo not found at {sam3_repo}")
     sam3_repo_str = str(sam3_repo)
     if sam3_repo_str not in sys.path:
         sys.path.insert(0, sam3_repo_str)
     return sam3_repo
+
+
+def _sam31_mode() -> bool:
+    """True when SAM3 code imports point at an alternate tree (sam31/ for 3.1).
+
+    The code root override is process-global, set from `config.sam3_code_root`
+    at the config-aware entry points. When active, the checkpoint is the 3.1
+    `sam3.1_multiplex.pt`, which strict-loads only into `Sam3MultiplexDetector`
+    (see the verified smoke), so the dual `build_sam3_image_model` path would
+    misconsume it.
+    """
+    return _SAM3_CODE_ROOT_OVERRIDE is not None
 
 
 def checkpoint_sha256(path: Path) -> str:
@@ -375,14 +400,21 @@ def _get_sam3_batch_components(
     # Build model with bpe_path for text processing
     bpe_path = sam3_repo / "assets" / "bpe_simple_vocab_16e6.txt.gz"
     if not bpe_path.exists():
+        # sam3.1 树的词表在包内（<root>/sam3/assets/），3.0 在 repo 根 assets/
+        bpe_path = sam3_repo / "sam3" / "assets" / "bpe_simple_vocab_16e6.txt.gz"
+    if not bpe_path.exists():
         logger.warning(f"BPE vocab not found at {bpe_path}, trying without bpe_path")
         bpe_path = None
 
-    model = build_sam3_image_model(
-        checkpoint_path=str(checkpoint_path),
-        load_from_HF=False,
-        bpe_path=str(bpe_path) if bpe_path else None,
-    )
+    if _sam31_mode():
+        model = _build_sam31_multiplex_model(bpe_path)
+        model = _load_sam31_ckpt(model, checkpoint_path)
+    else:
+        model = build_sam3_image_model(
+            checkpoint_path=str(checkpoint_path),
+            load_from_HF=False,
+            bpe_path=str(bpe_path) if bpe_path else None,
+        )
     model = model.to(device)
     model.eval()
 
@@ -404,6 +436,137 @@ def _get_sam3_batch_components(
 
     _SAM3_BATCH_API_CACHE[cache_key] = (model, transform, postprocessor)
     return model, transform, postprocessor
+
+
+# ============================================================================
+# SAM 3.1 (sam31 code tree + sam3.1_multiplex.pt) support
+# ============================================================================
+# 3.1 与 3.0 结构不同 (multiplex tri-neck: 删 dual 的 convs.3、增 interactive_convs)，
+# 权重 strict-load 只能进入 Sam3MultiplexDetector (unexpected=0, 转换 freqs_cis
+# 复数->real/imag 后 missing=0)。已验证:
+#   - 同图同框 mask 与 3.0 IoU 0.99x (fd4 1.JPG 3 bbox)
+#   - 整模型推理必须包 bf16 autocast (sam31 vitdet MLP 融合算子硬编码 bf16)
+
+
+def _build_sam31_multiplex_model(bpe_path: Optional[Union[str, Path]]) -> Any:
+    """Build Sam3MultiplexDetector per the official multiplex recipe (no FA3)."""
+    _ensure_sam3_in_path()
+    if not bpe_path or not Path(bpe_path).exists():
+        raise FileNotFoundError(f"3.1 需要 BPE 词表: {bpe_path}")
+
+    from sam3.model.sam3_multiplex_detector import Sam3MultiplexDetector  # type: ignore
+    from sam3.model.vl_combiner import SAM3VLBackboneTri  # type: ignore
+    from sam3.model_builder import (  # type: ignore
+        _create_dot_product_scoring,
+        _create_geometry_encoder,
+        _create_multiplex_tri_backbone,
+        _create_sam3_transformer,
+        _create_segmentation_head,
+        _create_text_encoder,
+    )
+
+    tri_neck = _create_multiplex_tri_backbone(compile_mode=None, use_fa3=False, use_rope_real=True)
+    text_encoder = _create_text_encoder(str(bpe_path))
+    backbone = SAM3VLBackboneTri(scalp=0, visual=tri_neck, text=text_encoder)
+    transformer = _create_sam3_transformer(use_fa3=False)
+    segmentation_head = _create_segmentation_head(use_fa3=False)
+    geometry_encoder = _create_geometry_encoder()
+    dot_prod_scoring = _create_dot_product_scoring()
+    return Sam3MultiplexDetector(
+        num_feature_levels=1,
+        backbone=backbone,
+        transformer=transformer,
+        segmentation_head=segmentation_head,
+        semantic_segmentation_head=None,
+        input_geometry_encoder=geometry_encoder,
+        use_early_fusion=True,
+        use_dot_prod_scoring=True,
+        dot_prod_scoring=dot_prod_scoring,
+        supervise_joint_box_scores=True,
+        is_multiplex=True,
+    )
+
+
+def _load_sam31_ckpt(model: Any, checkpoint_path: str) -> Any:
+    """Strict-load the 3.1 ckpt `detector.*` subset into a multiplex detector.
+
+    ckpt 存复数合并张量 <blk>.attn.freqs_cis (complex64×32); use_rope_real=True 的
+    模型期望拆分 freqs_cis_real/imag。转换后 strict load missing/unexpected 必须为 0。
+    """
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    if "model" in ckpt and isinstance(ckpt["model"], dict):
+        ckpt = ckpt["model"]
+    det = {k.replace("detector.", "", 1): v for k, v in ckpt.items() if k.startswith("detector.")}
+    own = model.state_dict().copy()
+    for k in list(det):
+        if k.endswith(".attn.freqs_cis"):
+            base = k[: -len("freqs_cis")]
+            v = det.pop(k)
+            if torch.is_complex(v):
+                own[base + "freqs_cis_real"] = v.real
+                own[base + "freqs_cis_imag"] = v.imag
+    own.update(det)
+    res = model.load_state_dict(own, strict=True)
+    if res.missing_keys or res.unexpected_keys:
+        raise RuntimeError(
+            f"SAM3.1 strict load failed: missing={len(res.missing_keys)} "
+            f"unexpected={len(res.unexpected_keys)}\n"
+            f"missing[:5]={res.missing_keys[:5]}\nunexpected[:5]={res.unexpected_keys[:5]}"
+        )
+    return model
+
+
+def _fill_sam31_before_embed(batch: Any) -> None:
+    """Populate `input_boxes_before_embed` on each find_input for the multiplex forward.
+
+    Multiplex 前向的 _get_geo_prompt_from_find_input 只消费 input_boxes_before_embed /
+    input_points_before_embed，而 sam31 树的 collate/transform 都无人填它 —— box 提示下
+    Prompt 退化为 null (全 None) -> geometry encoder `_encode_points(None)` 崩溃。这里按
+    input_boxes (归一化 cxcywh [0,1]) 补齐，语义与 box pool 编码一致 (points 保持 None)。
+    """
+    for fi in batch.find_inputs:
+        if (
+            getattr(fi, "input_boxes_before_embed", None) is None
+            and getattr(fi, "input_boxes", None) is not None
+        ):
+            fi.input_boxes_before_embed = fi.input_boxes
+
+
+def _run_sam3_forward(batch: Any, model: Any, device: str) -> Any:
+    """Run SAM3 batch forward, dispatching on the active model family.
+
+    Dual (3.0): model(batch) under the dtype-inferred autocast context (unchanged).
+    Multiplex (3.1): the base forward trims `presence_logit_dec`, which
+        PostProcessImage.process_results requires (KeyError), so we call
+        forward_grounding directly (the official Sam3Processor path) and wrap the
+        output in a SAM3Output. sam31 vitdet MLP 融合算子硬编码 bf16 -> 必须 bf16
+        autocast (不能走 _sam3_autocast_context, 它按首参 dtype= fp32 -> disable)。
+    """
+    if _sam31_mode():
+        _fill_sam31_before_embed(batch)
+        fit = batch.find_inputs[0]
+        backbone_out = {"img_batch_all_stages": batch.img_batch}
+        with torch.inference_mode(), torch.autocast(
+            device_type="cuda", dtype=torch.bfloat16, enabled=True
+        ):
+            backbone_out.update(model.backbone.forward_image(batch.img_batch))
+            backbone_out.update(
+                model.backbone.forward_text(batch.find_text_batch, device=device)
+            )
+            geo_prompt = model._get_geo_prompt_from_find_input(fit)
+            out = model.forward_grounding(
+                backbone_out=backbone_out,
+                find_input=fit,
+                find_target=batch.find_targets[0],
+                geometric_prompt=geo_prompt,
+            )
+        from sam3.model.model_misc import SAM3Output  # type: ignore
+
+        return SAM3Output([[out]], iter_mode=SAM3Output.IterMode.LAST_STEP_PER_STAGE)
+
+    with torch.inference_mode():
+        with _sam3_autocast_context(model, device):
+            return model(batch)
 
 
 # ============================================================================
@@ -1068,16 +1231,12 @@ def sam3_masks_from_bboxes_batch_api(
     batch = copy_data_to_device(batch, torch.device(device), non_blocking=True)
     batch = _coerce_sam3_batch_dtype(batch, model)
 
-    # Run inference
+    # Run inference (3.1 multiplex needs its own forward path: bf16 autocast +
+    # direct forward_grounding because the base forward trims presence_logit_dec)
     with torch.inference_mode():
-        # Enable optimizations for CUDA
-        if device.startswith("cuda"):
-            torch.backends.cuda.matmul.allow_tf32 = True
-            torch.backends.cudnn.allow_tf32 = True
-
-        autocast_ctx = _sam3_autocast_context(model, device)
-        with autocast_ctx:
-            output = model(batch)
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        output = _run_sam3_forward(batch, model, device)
 
     # Postprocess results
     processed_results = postprocessor.process_results(output, batch.find_metadatas)
@@ -1490,15 +1649,11 @@ def sam3_masks_self_exemplar(
         batch = copy_data_to_device(batch, torch.device(device), non_blocking=True)
         batch = _coerce_sam3_batch_dtype(batch, model)
 
-        # Run inference
+        # Run inference (3.1 multiplex needs its own forward path, see note above)
         with torch.inference_mode():
-            if device.startswith("cuda"):
-                torch.backends.cuda.matmul.allow_tf32 = True
-                torch.backends.cudnn.allow_tf32 = True
-
-            autocast_ctx = _sam3_autocast_context(model, device)
-            with autocast_ctx:
-                output = model(batch)
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            output = _run_sam3_forward(batch, model, device)
 
         # Postprocess results
         processed_results = postprocessor.process_results(output, batch.find_metadatas)
@@ -1716,6 +1871,8 @@ def get_self_exemplar_masks_for_reference(
         return {}
     if not config.sam3_checkpoint_path:
         raise ValueError("SAM3 enabled but sam3_checkpoint_path is empty.")
+    # Optional alternate SAM3 code tree (sam31/ for the 3.1 checkpoint).
+    set_sam3_code_root(config.sam3_code_root)
     cache_root = Path(config.sam3_mask_cache_root)
     if cache_root.name != "v2":
         raise ValueError("sam3_mask_cache_root must name the v2 cache root")

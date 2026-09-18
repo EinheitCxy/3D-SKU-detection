@@ -40,8 +40,9 @@ inference:
 
   # SAM3 mask引导采样(可选，提高采样精度)
   enable_sam3_mask_sampling: true  # 是否启用SAM3分割mask引导采样，从物体mask内采样而非整个bbox
-  sam3_checkpoint_path: "sam3/checkpoints/sam3.pt"  # 相对仓库根的 SAM3 模型权重路径
-  sam3_mask_cache_root: ""  # matching 启动时显式设为 <output>/sam3_mask_cache/v2
+  sam3_checkpoint_path: "sam31/checkpoints/sam3.1_multiplex.pt"  # 相对仓库根的 SAM3.1 权重路径（本机链接到 modelscope 快照）
+  sam3_code_root: "sam31/"  # SAM3 代码树根（默认模型为 SAM3.1，用 sam31/ 代码树）
+  sam3_mask_cache_root: ""  # 默认解析为 <output>/sam3_mask_cache_sam31/v2（SAM3.1 专用缓存根，防止复用 SAM3.0 mask）；显式传 --sam3_mask_cache_root 时以此为准
   sam3_self_exemplar_threshold: 0.5  # self-exemplar检测阈值(0-1)，控制分割mask的置信度过滤
   sam3_max_batch_size: 32  # self-exemplar每批最多bbox数(128/64 OOM,32通过);fd6实测sam3 -38% wall-clock -15% R -0.51pt边界
 

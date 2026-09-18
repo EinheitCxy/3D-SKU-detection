@@ -109,6 +109,8 @@ def dispatch_stage(
             exporter = export_web_viewer_bundle
 
         dataset_output = save_root / dataset.name
+        from utils.config import default_sam3_mask_cache_root
+
         result = exporter(
             dataset_name=dataset.name,
             da3_cache_path=dataset_output / "da3_cache" / "predictions.npz",
@@ -117,8 +119,9 @@ def dispatch_stage(
             / "global_mapping.json",
             output_dir=viewer_output or save_root.parent / "viewer-data",
             source_images_dir=dataset / "images",
-            sam3_mask_cache_root=dataset_output / "sam3_mask_cache" / "v2",
+            sam3_mask_cache_root=default_sam3_mask_cache_root(dataset_output),
             voxel_size_m=0.005,
+            surfel_texture_edge=1920,
         )
         return {**result, "success": True}
     raise ValueError(f"unknown benchmark stage: {stage}")

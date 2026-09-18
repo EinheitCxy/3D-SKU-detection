@@ -104,7 +104,7 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         "sam3_mask_cache_root": str(
             Path(args.sam3_mask_cache_root)
             if args.sam3_mask_cache_root
-            else Path(args.output_dir) / "sam3_mask_cache" / "v2"
+            else default_sam3_mask_cache_root(args.output_dir)
         ),
     }
     # 可选 3D 阈值覆盖（网格扫描用，None=用 config 默认）
@@ -128,7 +128,7 @@ def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
     cfg.sam3_mask_cache_root = str(
         Path(args.sam3_mask_cache_root)
         if args.sam3_mask_cache_root
-        else Path(args.output_dir) / "sam3_mask_cache" / "v2"
+        else default_sam3_mask_cache_root(args.output_dir)
     )
     # Override a few runtime knobs from CLI
     cfg.device = args.device

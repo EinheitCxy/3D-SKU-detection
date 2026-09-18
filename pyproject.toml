@@ -58,6 +58,7 @@ dependencies = [
     "bson",
     "cos-python-sdk-v5>=1.9.44",
     "python-calamine>=0.8.2",
+    "modelscope>=1.40.0",
 ]
 
 [project.optional-dependencies]

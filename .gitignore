@@ -83,3 +83,8 @@ knowledge/
 
 # Local tests are kept outside version control.
 /test/
+
+# sam31 (SAM3.1) interior exclusions; the sam3/ package itself is tracked
+sam31/assets/
+sam31/examples/
+sam31/test/
