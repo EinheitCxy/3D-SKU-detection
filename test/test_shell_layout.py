@@ -1,0 +1,248 @@
+"""Project-owned shell entrypoints keep their paths rooted at this checkout."""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import subprocess
+
+import qcloud_cos
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_legacy_batch_operations_use_the_root_layout() -> None:
+    batch = (REPOSITORY_ROOT / "scripts/3d/ops/batch.sh").read_text()
+    launcher = (REPOSITORY_ROOT / "scripts/3d/ops/k.sh").read_text()
+
+    assert 'PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"' in batch
+    assert 'IMAGE_FOLDER="$PROJECT_ROOT/imdata/$FLOOR_DISPLAY/images"' in batch
+    assert "utils/process_image_orientation.py" in batch
+    assert "src/inference.py" in batch
+    assert "../imdata" not in batch
+    assert 'bash "$SCRIPT_DIR/batch.sh"' in launcher
+    assert "code/" not in batch + launcher
+
+
+def test_accuracy_all_uses_the_root_annotation_and_runtime_output() -> None:
+    script = (
+        REPOSITORY_ROOT / "scripts/3d/evaluation/batch_accuracy_evaluation_all.sh"
+    ).read_text()
+
+    assert 'ACCURACY_SCRIPT="$PROJECT_ROOT/accuracy_annotation.py"' in script
+    assert 'uv run python "$ACCURACY_SCRIPT"' in script
+    assert '结果目录: $PROJECT_ROOT/Output/$FD/' in script
+    assert '["da3"]="output_3dmapping_da3:accuracy_evaluation_da3:3D Mapping (DA3)"' in script
+    assert "for algo_type in pt vggt pi3 da3; do" in script
+    assert "code/Output" not in script
+
+
+def test_accuracy_defaults_and_ignored_local_references_use_current_layout() -> None:
+    accuracy = (
+        REPOSITORY_ROOT / "scripts/3d/evaluation/accuracy_evaluation.sh"
+    ).read_text()
+    batch = (
+        REPOSITORY_ROOT / "scripts/3d/evaluation/batch_accuracy_evaluation.sh"
+    ).read_text()
+    ignore = (REPOSITORY_ROOT / ".gitignore").read_text()
+
+    assert 'DATA_ROOT="${SAVE_ROOT:-$PROJECT_ROOT/Output}"' in accuracy
+    assert 'DATA_ROOT="${SAVE_ROOT:-$PROJECT_ROOT/Output}"' in batch
+    assert 'SUMMARY_DIR="$DATA_ROOT/batch_accuracy_results_${BACKEND}"' in batch
+    assert "legacy/" in ignore
+    assert "knowledge/" in ignore
+
+
+def test_video_default_and_viewer_artifacts_are_root_layout_safe() -> None:
+    video_script = (REPOSITORY_ROOT / "modules/video_to_dedup/run.sh").read_text()
+    viewer_ignore = (REPOSITORY_ROOT / "modules/viewer_web/.gitignore").read_text()
+
+    assert 'VIDEO_ARG="${1:-$REPO_DIR/small_fd_video/video-test/6-1.mp4}"' in video_script
+    assert "public/data/CURRENT" in viewer_ignore
+
+
+def test_offline_mapping_docker_build_contract() -> None:
+    docker_root = REPOSITORY_ROOT / "docker"
+    dockerfile = (docker_root / "Dockerfile").read_text()
+    build_script = (docker_root / "build.sh").read_text()
+
+    assert (docker_root / "Dockerfile.dockerignore").is_file()
+    assert (docker_root / "README.md").is_file()
+    assert (docker_root / "wheels" / ".gitignore").read_text() == "*.whl\n!.gitignore\n"
+    assert (docker_root / "test" / "test_api.py").is_file()
+    assert (docker_root / "build.sh").stat().st_mode & 0o111
+    assert "# syntax=docker/dockerfile" not in dockerfile
+    assert "harbor-cn.lingmouai.com/alg/sku-classifier-base:0.0.4" in dockerfile
+    assert "--from=venv" in dockerfile
+    assert "--from=da3_model" in dockerfile
+    assert "--from=sam3_checkpoint" in dockerfile
+    assert "PYTHONPATH=/app:/app/Depth-Anything-3/src:/app/sam3" in dockerfile
+    assert '"--workers", "1"' in dockerfile
+    assert "modules/sku_detector" not in dockerfile
+    assert "modules/personalcare_classifier" not in dockerfile
+    assert "Pi3" not in dockerfile
+    assert "vggt-main" not in dockerfile
+    assert "viewer_web" not in dockerfile + build_script
+    assert "/app/viewer" not in dockerfile
+    assert "--network=none" in build_script
+    assert "--pull=never" in build_script
+    assert "--pull=false" in build_script
+    assert 'OPENCV_WHEEL_DIR="${OPENCV_WHEEL_DIR:-$BUILD_WORK_ROOT/runtime/wheels}"' in build_script
+    assert 'OPENCV_WHEEL_DIR="$(realpath -e "$OPENCV_WHEEL_DIR")"' in build_script
+    assert "opencv_python_headless-4.11.0.86-cp37-abi3-" in build_script
+    assert 'test -f "$OPENCV_WHEEL_DIR/$OPENCV_HEADLESS_WHEEL"' in build_script
+    assert '-v "$OPENCV_WHEEL_DIR:/workspace/docker/wheels:ro"' in build_script
+    assert 'test -w "$UV_CACHE_DIR"' in build_script
+    assert 'rm -rf "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/app"' in build_script
+    assert 'rm -rf "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/bench"' in build_script
+    assert 'rm -rf "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/services"' in build_script
+    assert 'rm -f "$APP_CONTEXT/Depth-Anything-3/src/depth_anything_3/cli.py"' in build_script
+    assert 'rm -rf "$APP_CONTEXT/sam3/sam3/perflib/tests"' in build_script
+    assert "--build-context app=" in build_script
+    assert "--build-context venv=" in build_script
+    assert "--build-context da3_model=" in build_script
+    assert "--build-context sam3_checkpoint=" in build_script
+
+
+def test_mapping_image_flattens_runtime_wrapper_files() -> None:
+    docker_root = REPOSITORY_ROOT / "docker"
+    dockerfile = (docker_root / "Dockerfile").read_text()
+    code_update_dockerfile = (docker_root / "Dockerfile.code-update").read_text()
+    build_script = (docker_root / "build.sh").read_text()
+
+    assert "COPY --from=app api.py processor.py cos_upload.py /app/" in dockerfile
+    assert '"api:app"' in dockerfile
+    assert "/app/docker/" not in dockerfile + code_update_dockerfile
+    assert "COPY --from=app api.py processor.py cos_upload.py /app/" in code_update_dockerfile
+    assert '"$SCRIPT_DIR/api.py"' in build_script
+    assert '"$APP_CONTEXT/docker/"' not in build_script
+
+
+def test_mapping_code_update_build_derives_from_4_and_replaces_processor(
+    tmp_path: Path,
+) -> None:
+    """A code-only refresh must neither recreate the model layer nor change its path."""
+    docker_root = REPOSITORY_ROOT / "docker"
+    build_script = docker_root / "build_code_update.sh"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    args_log = tmp_path / "docker-args.txt"
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        """#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$1" = "image" ] && [ "$2" = "inspect" ]; then
+    exit 0
+fi
+
+[ "$1" = "build" ] || exit 1
+app_context=""
+for ((index = 1; index <= $#; index++)); do
+    if [ "${!index}" = "--build-context" ]; then
+        next_index=$((index + 1))
+        context="${!next_index}"
+        [ "${context#app=}" = "$context" ] || app_context="${context#app=}"
+    fi
+done
+
+[ -n "$app_context" ]
+cmp "$app_context/processor.py" "$EXPECTED_PROCESSOR"
+cmp "$app_context/api.py" "$EXPECTED_API"
+cmp "$app_context/cos-sdk/qcloud_cos/__init__.py" "$EXPECTED_QCLOUD_INIT"
+printf '%s\\n' "$@" > "$DOCKER_ARGS_LOG"
+"""
+    )
+    fake_docker.chmod(0o755)
+    environment = os.environ | {
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "TMPDIR": str(tmp_path),
+        "IMAGE_TAG": "global-id-mapping:4.0-traceback-test",
+        "EXPECTED_PROCESSOR": str(docker_root / "processor.py"),
+        "EXPECTED_API": str(docker_root / "api.py"),
+        "EXPECTED_QCLOUD_INIT": str(Path(qcloud_cos.__file__)),
+        "COS_SITE_PACKAGES": str(Path(qcloud_cos.__file__).parents[1]),
+        "DOCKER_ARGS_LOG": str(args_log),
+    }
+
+    subprocess.run(
+        ["bash", str(build_script)],
+        check=True,
+        cwd=REPOSITORY_ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+    )
+
+    docker_args = args_log.read_text().splitlines()
+    assert "--network=none" in docker_args
+    assert "--pull=false" in docker_args
+    assert "BASE_IMAGE=global-id-mapping:4.0-traceback" in docker_args
+    assert any(arg.endswith("Dockerfile.code-update") for arg in docker_args)
+    assert "COPY --from=app api.py processor.py cos_upload.py /app/" in (
+        docker_root / "Dockerfile.code-update"
+    ).read_text()
+    assert '"api:app"' in (docker_root / "Dockerfile.code-update").read_text()
+
+
+def test_offline_mapping_docker_build_separates_wrapper_and_core_roots() -> None:
+    docker_root = REPOSITORY_ROOT / "docker"
+    build_script = (docker_root / "build.sh").read_text()
+
+    assert 'CORE_REPO_ROOT="${CORE_REPO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"' in build_script
+    assert 'CORE_REPO_ROOT="$(realpath -e "$CORE_REPO_ROOT")"' in build_script
+    assert 'SAM3_CHECKPOINT="$CORE_REPO_ROOT/sam3/checkpoints/sam3.pt"' in build_script
+    assert 'test -f "$CORE_REPO_ROOT/pyproject.toml"' in build_script
+    assert 'test -f "$CORE_REPO_ROOT/uv.lock"' in build_script
+    assert 'cp -a "$CORE_REPO_ROOT/main.py" "$CORE_REPO_ROOT/config.yaml" "$APP_CONTEXT/"' in build_script
+    assert 'cp -a "$CORE_REPO_ROOT/src" "$CORE_REPO_ROOT/utils" "$APP_CONTEXT/"' in build_script
+    assert 'cp -a "$CORE_REPO_ROOT/Depth-Anything-3/src" "$APP_CONTEXT/Depth-Anything-3/"' in build_script
+    assert 'cp -a "$CORE_REPO_ROOT/sam3/sam3" "$APP_CONTEXT/sam3/"' in build_script
+    assert '-v "$CORE_REPO_ROOT:/workspace:ro"' in build_script
+    assert '--build-context sam3_checkpoint="$CORE_REPO_ROOT/sam3/checkpoints"' in build_script
+    for wrapper in ("api.py", "processor.py", "cos_upload.py"):
+        assert f'"$SCRIPT_DIR/{wrapper}"' in build_script
+    assert "api.py processor.py cos_upload.py /app/" in docker_root.joinpath("Dockerfile").read_text()
+    assert '-f "$SCRIPT_DIR/Dockerfile"' in build_script
+    assert '  "$SCRIPT_DIR"\n' in build_script
+    assert "$REPO_ROOT" not in build_script
+
+
+def test_offline_mapping_docker_build_includes_local_x11_opengl_runtime_debs() -> None:
+    docker_root = REPOSITORY_ROOT / "docker"
+    dockerfile = (docker_root / "Dockerfile").read_text()
+    build_script = (docker_root / "build.sh").read_text()
+
+    system_debs_mount = (
+        "RUN --mount=type=bind,from=system_debs,target=/tmp/system-debs,ro"
+    )
+    assert system_debs_mount in dockerfile
+    assert "dpkg -i /tmp/system-debs/*.deb" in dockerfile
+    assert 'test -z "$(dpkg --audit)"' in dockerfile
+    assert "apt-get" not in dockerfile
+    assert "COPY --from=system_debs" not in dockerfile
+    assert dockerfile.index(system_debs_mount) > dockerfile.index(
+        "COPY --from=da3_model"
+    )
+
+    assert 'SYSTEM_DEB_DIR="${SYSTEM_DEB_DIR:-$BUILD_WORK_ROOT/runtime/system-debs/ubuntu-22.04-amd64}"' in build_script
+    assert 'PREPARE_SYSTEM_DEPS_ONLY="${PREPARE_SYSTEM_DEPS_ONLY:-0}"' in build_script
+    assert 'if [ "$PREPARE_SYSTEM_DEPS_ONLY" = "1" ]; then' in build_script
+    assert 'docker image inspect "$BASE_IMAGE" >/dev/null' in build_script
+    assert "source /etc/os-release" in build_script
+    assert 'test "$ID" = "ubuntu"' in build_script
+    assert 'test "$VERSION_ID" = "22.04"' in build_script
+    assert "--network=none --entrypoint /bin/bash" in build_script
+    assert 'rm -f /output/*.deb /output/lock' in build_script
+    assert 'rm -rf /output/partial' in build_script
+    assert 'chown "$OUTPUT_UID:$OUTPUT_GID" /output /output/*.deb' in build_script
+    assert "apt-get update" in build_script
+    assert "apt-get install --download-only --yes --no-install-recommends" in build_script
+    assert "libx11-6 libgl1" in build_script
+    assert 'compgen -G "$SYSTEM_DEB_DIR/libx11-6_*.deb"' in build_script
+    assert 'compgen -G "$SYSTEM_DEB_DIR/libgl1_*.deb"' in build_script
+    assert '--build-context system_debs="$SYSTEM_DEB_DIR"' in build_script
+    assert "docker build --network=none --pull=false" in build_script
+    assert 'test -f "$VENV_CONTEXT/.venv/pyvenv.cfg"' in build_script
+    assert 'test -L "$VENV_CONTEXT/.venv/bin/python"' in build_script
+    assert 'test -x "$VENV_CONTEXT/.venv/bin/python"' not in build_script

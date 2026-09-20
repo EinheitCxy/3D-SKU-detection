@@ -81,8 +81,7 @@ auto-research-loop/
 legacy/
 knowledge/
 
-# Local tests are kept outside version control.
-/test/
+# Root-owned regression tests under test/ are tracked; Docker branch tests stay in docker/test/.
 
 # sam31 (SAM3.1) interior exclusions; the sam3/ package itself is tracked
 sam31/assets/
