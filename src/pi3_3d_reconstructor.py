@@ -102,18 +102,6 @@ def _estimate_intrinsics_from_local_points(
 
     intrinsics = torch.zeros((bsz, num_views, 3, 3), device=device, dtype=dtype)
 
-    image_scale = float(max(height, width))
-
-    # 默认K（当样本不足或拟合失败时退化使用，避免单帧坏图中断整批重建）
-    f_default = image_scale
-    cx_default = (width - 1) / 2.0
-    cy_default = (height - 1) / 2.0
-    default_K = torch.tensor(
-        [[f_default, 0.0, cx_default], [0.0, f_default, cy_default], [0.0, 0.0, 1.0]],
-        device=device,
-        dtype=dtype,
-    )
-
     if conf is not None:
         if conf.ndim == 5 and conf.shape[-1] == 1:
             conf = conf[..., 0]
@@ -133,9 +121,7 @@ def _estimate_intrinsics_from_local_points(
                 valid_mask = valid_mask & (conf[b, n] > 0.05)
 
             if not valid_mask.any():
-                logger.warning(f"Pi3 内参拟合无有效点 (batch={b}, view={n}) → 使用默认内参")
-                intrinsics[b, n] = default_K
-                continue
+                raise ValueError(f"Pi3 内参拟合无有效点 (batch={b}, view={n})")
 
             a_u = (X / Z)[valid_mask]
             a_v = (Y / Z)[valid_mask]
@@ -144,9 +130,9 @@ def _estimate_intrinsics_from_local_points(
 
             num_samples = a_u.numel()
             if num_samples < 10:
-                logger.warning(f"Pi3 内参拟合样本不足 (batch={b}, view={n}): {num_samples} → 使用默认内参")
-                intrinsics[b, n] = default_K
-                continue
+                raise ValueError(
+                    f"Pi3 内参拟合样本不足 (batch={b}, view={n}): {num_samples}"
+                )
 
             if num_samples > max_points_per_view:
                 idx = torch.randperm(num_samples, device=device)[:max_points_per_view]
@@ -170,9 +156,9 @@ def _estimate_intrinsics_from_local_points(
             max_cond = max(cond_u, cond_v)
 
             if not np.isfinite(max_cond) or max_cond > 1e6:
-                logger.warning(f"Pi3 内参拟合矩阵病态 (batch={b}, view={n}): {max_cond} → 使用默认内参")
-                intrinsics[b, n] = default_K
-                continue
+                raise ValueError(
+                    f"Pi3 内参拟合矩阵病态 (batch={b}, view={n}): {max_cond}"
+                )
 
             ATu = A_u.T @ u
             theta_u = torch.linalg.solve(ATA_u, ATu)  # (2,)
@@ -190,9 +176,10 @@ def _estimate_intrinsics_from_local_points(
             # === 必要检查（硬性条件）===
             # 1. 焦距必须为正
             if not np.isfinite([fx, fy, cx, cy]).all() or fx <= 0 or fy <= 0:
-                logger.warning(f"Pi3 内参拟合焦距非正 (batch={b}, view={n}): fx={fx}, fy={fy} → 使用默认内参")
-                intrinsics[b, n] = default_K
-                continue
+                raise ValueError(
+                    f"Pi3 内参拟合非法参数 (batch={b}, view={n}): "
+                    f"fx={fx}, fy={fy}, cx={cx}, cy={cy}"
+                )
 
             # 2. 计算拟合残差（主判据）
             u_pred = fx * a_u + cx
@@ -204,16 +191,14 @@ def _estimate_intrinsics_from_local_points(
             # 主判据：残差过大时直接拒绝拟合结果
             RESIDUAL_THRESHOLD = 50.0  # 平均误差阈值（像素）
             if not np.isfinite(max_residual) or max_residual > RESIDUAL_THRESHOLD:
-                logger.warning(
+                raise ValueError(
                     f"Pi3 内参拟合质量差 (batch={b}, view={n}):"
                     f" 残差 u={residual_u:.1f}px, v={residual_v:.1f}px (阈值={RESIDUAL_THRESHOLD}px)"
-                    f" → 使用默认内参"
                 )
-                intrinsics[b, n] = default_K
-                continue
 
             # === 启发式检查（仅警告，不影响采用）===
             warnings = []
+            image_scale = float(max(height, width))
             if not (0.1 * image_scale <= fx <= 10 * image_scale):
                 warnings.append(f"fx={fx:.1f} 超出合理范围 [{0.1*image_scale:.1f}, {10*image_scale:.1f}]")
             if not (0.1 * image_scale <= fy <= 10 * image_scale):

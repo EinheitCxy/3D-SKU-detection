@@ -185,14 +185,11 @@ class ReconstructorBase:
             out_dir = out_path.parent
             out_dir.mkdir(parents=True, exist_ok=True)
             if save_predictions:
-                try:
-                    t0 = time.time()
-                    self.save_predictions_cache(
-                        predictions, images, out_dir, image_names=image_names, input_dir=input_dir, **kwargs
-                    )
-                    logger.info(f"缓存保存耗时: {time.time() - t0:.2f}s")
-                except Exception as e:  # noqa: BLE001 - 容忍缓存失败不影响 GLB
-                    logger.warning(f"保存预测缓存失败（不影响GLB导出）：{e}")
+                t0 = time.time()
+                self.save_predictions_cache(
+                    predictions, images, out_dir, image_names=image_names, input_dir=input_dir, **kwargs
+                )
+                logger.info(f"缓存保存耗时: {time.time() - t0:.2f}s")
 
             t0 = time.time()
             self.export_glb(

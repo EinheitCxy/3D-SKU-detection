@@ -56,12 +56,11 @@ class AccuracyAnnotator:
                 content = f.read()
             
             # 兼容新旧两种摘要格式：
-            #   新格式：显式写入 "Reference image file ID: N"，N 与 GT 同为 1-based 展示编号，
-            #           "Found ... in image T" 的 T 亦为 1-based（无偏移）。
+            #   新格式：显式写入源文件 ID（0-based）；映射到 GT 展示编号时需 +1。
             #   旧格式：无该行，参考图编号取自目录名（0-based），"in image T" 为 0-based。
             new_format = re.search(r'^Reference image file ID: (\d+)$', content, re.MULTILINE)
             if new_format is not None:
-                actual_ref = int(new_format[1])
+                actual_ref = int(new_format[1]) + 1
             else:
                 parent_dir = os.path.basename(os.path.dirname(result_path))
                 actual_ref = int(parent_dir) + 1
@@ -93,8 +92,8 @@ class AccuracyAnnotator:
                     found_lines.append({
                         'line_idx': i,
                         'target_img': int(target_img),
-                        # 新格式无偏移（T 已是 1-based 展示编号）；旧格式为 0-based，需 +1。
-                        'actual_target': int(target_img) if new_format is not None else int(target_img) + 1
+                        # 摘要中的 target 是源文件 ID（0-based），映射到 GT 展示编号时需 +1。
+                        'actual_target': int(target_img) + 1
                     })
             
             # 为每个found标记提取其上方的匹配内容
@@ -273,14 +272,6 @@ class AccuracyAnnotator:
         Returns:
             报告内容字符串
         """
-        report_lines = [
-            "=" * 80,
-            "SKU匹配准确性评估报告",
-            "=" * 80,
-            f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            ""
-        ]
-        
         # 计算所有图片对的指标
         all_metrics = []
         for image_pair in self.ground_truth.keys():
@@ -290,18 +281,15 @@ class AccuracyAnnotator:
                     all_metrics.append(metrics)
         
         if not all_metrics:
-            # 无 GT 覆盖（如 fd6 缺 6_to_7/11_to_1）时不中断批量评估，
-            # 仅在该参考帧报告中给出错误段，与历史基线行为一致。
-            report_lines.extend([
-                "错误: 未找到可比较的图片对数据",
-                "请检查人工标注数据和VGGT结果是否匹配",
-                ""
-            ])
-            report_content = "\n".join(report_lines)
-            if output_path:
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(report_content)
-            return report_content
+            raise ValueError('未找到可比较的图片对数据')
+
+        report_lines = [
+            "=" * 80,
+            "SKU匹配准确性评估报告",
+            "=" * 80,
+            f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            ""
+        ]
         total_gt = sum(m['ground_truth_matches'] for m in all_metrics)
         total_vggt = sum(m['vggt_matches'] for m in all_metrics)
         total_tp = sum(m['true_positives'] for m in all_metrics)

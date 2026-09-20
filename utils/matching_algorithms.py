@@ -932,32 +932,22 @@ def match_objects_by_correspondence(
     
     if use_parallel:
         logger.info(f"启用参考对象并行匹配: {num_ref_objects} 个对象，{max_workers} 线程")
-        try:
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                # 提交所有参考对象的处理任务
-                future_to_ref_id = {}
-                for ref_object_id, ref_data in points_per_object.items():
-                    future = executor.submit(
-                        _process_single_ref_object,
-                        ref_object_id, ref_data, target_bboxes, tracks, confidence,
-                        target_image_idx, config, min_hit_ratio, transforms_info
-                    )
-                    future_to_ref_id[future] = ref_object_id
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_ref_id = {}
+            for ref_object_id, ref_data in points_per_object.items():
+                future = executor.submit(
+                    _process_single_ref_object,
+                    ref_object_id, ref_data, target_bboxes, tracks, confidence,
+                    target_image_idx, config, min_hit_ratio, transforms_info
+                )
+                future_to_ref_id[future] = ref_object_id
 
-                # 收集结果
-                for future in as_completed(future_to_ref_id, timeout=60):
-                    ref_object_id = future_to_ref_id[future]
-                    try:
-                        matches, stats = future.result()
-                        matched_objects.extend(matches)
-                        stats_list.append(stats)
-                    except (TimeoutError, RuntimeError) as e:
-                        logger.error(f"并行处理参考对象 {ref_object_id} 失败: {e}")
-        except (RuntimeError, TimeoutError, ImportError) as e:
-            logger.warning(f"并行处理失败，回退到串行模式: {e}")
-            use_parallel = False
+            for future in as_completed(future_to_ref_id, timeout=60):
+                matches, stats = future.result()
+                matched_objects.extend(matches)
+                stats_list.append(stats)
 
-    if not use_parallel:
+    else:
         logger.info("使用串行匹配模式")
         # 串行处理（原有逻辑）
         for ref_object_id, ref_data in points_per_object.items():

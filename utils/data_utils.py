@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_detections(detection_dir: str, return_index_map: bool = False) -> List[Dict]:
-    """按数字文件名加载检测，保留合法空帧；单个坏文件跳过记日志，不中断整批。"""
+    """按数字文件名加载检测，保留合法空帧并传播坏 JSON 或 schema 错误。"""
     detection_path = Path(detection_dir)
     if not detection_path.is_dir():
         raise FileNotFoundError(f"Detection directory not found: {detection_dir}")
@@ -30,13 +30,9 @@ def load_detections(detection_dir: str, return_index_map: bool = False) -> List[
         raise ValueError(f"No valid JSON files found in {detection_dir}")
     indexed_detections = []
     for file_number, file_path in json_files:
-        try:
-            with file_path.open(encoding="utf-8") as stream:
-                payload = json.load(stream)
-            objects = flatten_detection_objects(payload)
-        except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
-            logger.error(f"Failed to load detection from {file_path.name}: {error}")
-            continue
+        with file_path.open(encoding="utf-8") as stream:
+            payload = json.load(stream)
+        objects = flatten_detection_objects(payload)
         indexed_detections.append((file_number, {"objects": objects}))
     logger.info("Loaded %d detection files", len(indexed_detections))
     if return_index_map:
