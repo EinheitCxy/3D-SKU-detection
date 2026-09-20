@@ -17,6 +17,15 @@
 0.0.31 必须保持锁定。`Depth-Anything-3/` 与 `sam3/` 是仓库内源码，不在候选环境中
 重复安装 distribution。`modules/sku_detector/pyproject.toml` 是独立的 YOLO 依赖，二者不合并。
 
+## MapAnything provisioning
+
+MapAnything 源码以 `map-anything/` submodule 提供。首次 clone 使用
+`git clone --recurse-submodules <repo>`；已有 checkout 运行 `git submodule update --init`，再执行
+`uv sync --extra mapanything`。该 backend 不下载模型、没有默认模型缓存路径；使用 root CLI 时必须
+显式提供本地快照：`--recon_backend mapanything --recon_model_path /path/to/local-model`。适配器代码为
+Apache-2.0；权重 `facebook/map-anything` 为 CC-BY-NC 4.0，
+`facebook/map-anything-apache` 为 Apache-2.0。
+
 ## 默认路径与后端
 
 - 默认 dataset：`imdata/floor_display2`。
@@ -145,7 +154,7 @@ cache-disabled 导航。当前 [20260826T084815Z](../perf/runs/20260826T084815Z/
 ```bash
 PYTHONPATH=. VIRTUAL_ENV=/home/xingyu/3D_Recognization/.venv \
 UV_CACHE_DIR=/tmp/3d-recognition-uv-cache \
-uv run --active --no-project python -m pytest -q tests
+uv run --active --no-project python -m pytest -q test
 (CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
   modules/personalcare_classifier/source/classify_dataset.py \
   --dataset imdata/floor_display6 --output-root /tmp/personalcare-classifier-smoke \

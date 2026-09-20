@@ -208,6 +208,15 @@ uv run python scripts/publish_viewer_masterdata.py \
 
 `--recon_backend pi3x --match_backend pi3x` 启用 Pi3X（`yyfz233/Pi3X`，CC BY-NC 4.0）重建与匹配。权重为本地目录 `runtime/models/pi3x/`（model.safetensors + config.json），离线加载。Pi3X 产出与 Pi3 相同的 `pi3x_cache/predictions.npz` schema-v3 契约（sigmoid conf、`local_points` 深度、`camera_poses` 取逆为 w2c extrinsic），匹配侧复用 pi3 图像加载路径；SAM3 v2 mask 缓存需要的 `source_to_processed_affine` 由纯缩放 transform 显式合成。Pi3X 是 approximate metric（尺度逐 batch 估计），不接 `is_metric==1` 硬门，ground-stack-area 等米制计量阶段不对其启用；RoPE2D CUDA kernel 未编译时自动走 PyTorch 慢速路径。fd4–8 与 DA3 1.1 的准确率/性能对比见 [docs/accuracy_da3_vs_pi3x.md](docs/accuracy_da3_vs_pi3x.md)（总 F1 86.8% vs 85.0%）。
 
+### MapAnything 后端（显式本地模型）
+
+首次 clone 使用 `git clone --recurse-submodules <repo>`；已有 checkout 请运行
+`git submodule update --init`，然后执行 `uv sync --extra mapanything`。MapAnything 不会下载
+模型，也没有默认缓存路径：运行 root CLI 时必须传入本地快照，例如
+`--recon_backend mapanything --match_backend mapanything --recon_model_path /path/to/local-model`。
+适配器代码遵循 Apache-2.0；权重 `facebook/map-anything` 为 CC-BY-NC 4.0，
+`facebook/map-anything-apache` 为 Apache-2.0。使用前请确认所选权重许可适配你的用途。
+
 完整视频入口的参数、阶段顺序和输出路径见 [scripts/3d/pipeline/README.md](scripts/3d/pipeline/README.md)。其中 `--gpu 2` 设置物理 GPU mask，进程内分类器继续使用 `--classifier-device cuda:0`；`--detections-dir` 可复用已有逐帧检测 JSON。脚本在 dedup 后直接导出 minimal schema 3.0.0 bundle，默认只导出 bundle，增加 `--serve` 才会以前台进程启动 Vite。独立 `ground-stack-area` 仍可按需运行，但不再是该 Viewer 入口的前置阶段。
 
 上例的 `CUDA_VISIBLE_DEVICES=2` 把物理 GPU 2 映射为进程内的 `cuda:0`；`--classifier-device` 必须是一个显式可用的 CUDA device。分类器不接受 CPU 或替代模型 fallback。若不使用 GPU mask，可直接传入实际可见设备号，例如 `--classifier-device cuda:2`。
@@ -267,7 +276,7 @@ CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
 ```bash
 PYTHONPATH=. VIRTUAL_ENV=/home/xingyu/3D_Recognization/.venv \
 UV_CACHE_DIR=/tmp/3d-recognition-uv-cache \
-uv run --active --no-project python -m pytest -q tests
+uv run --active --no-project python -m pytest -q test
 (cd modules/viewer_web && npm test -- --run && npm run build)
 bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/*.sh
 ```
@@ -280,7 +289,7 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 
 画布右下角显示实际 backend。已有 Pi3X 缓存与匹配结果可运行 `uv run python scripts/export_pi3x_viewer.py --dataset imdata/floor_display6`，生成独立 Pi3X bundle；本地 Viewer 使用 `/?data=/data-pi3x/` 查看，默认 `/` 保留 DA3。详见 [Viewer README](modules/viewer_web/README.md)。
 
-本地测试统一保存在 `test/` 并由 `.gitignore` 忽略，不再纳入 Git；新克隆不包含测试文件。
+本地测试统一保存在 `test/`，并作为源码随 Git 跟踪；新 clone 包含这些测试文件。
 核心测试运行 `uv run --no-sync pytest test/`；性能测试在 `test/perf/`，Viewer 测试在 `test/viewer_web/`，SAM3 测试及资源在 `test/sam3/`。Docker 独立工作目录的测试在 `docker/test/`。
 
 Docker Viewer 导出不传入主数据参数，跳过主数据读取和文件生成，镜像构建不复制 CSV；主数据由 `visualization` 分支的 `viewer/masterdata.json` 提供。本地 Viewer 导出仍传入 CSV 路径以生成任务所需的 `sku_masterdata.json`。

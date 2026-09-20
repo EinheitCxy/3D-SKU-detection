@@ -82,6 +82,10 @@ legacy/
 knowledge/
 
 # Root-owned regression tests under test/ are tracked; Docker branch tests stay in docker/test/.
+/test/conftest.py
+/test/legacy_api_client.py
+/test/test_docker_*.py
+/test/viewer_web/node_modules
 
 # sam31 (SAM3.1) interior exclusions; the sam3/ package itself is tracked
 sam31/assets/

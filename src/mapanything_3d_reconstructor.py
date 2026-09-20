@@ -2,7 +2,11 @@
 """
 基于 MapAnything 的 3D 重建与 GLB 导出器
 
-MapAnything（map-anything/，CC-BY-NC 4.0）多视角几何模型：单次前向输出每视角
+MapAnything 的适配器代码遵循 Apache-2.0；权重须按其模型卡许可使用：
+facebook/map-anything 为 CC-BY-NC 4.0，facebook/map-anything-apache 为 Apache-2.0。
+模型必须通过显式本地路径提供；此适配器不会下载或回退到远程模型。
+
+MapAnything（map-anything/）多视角几何模型：单次前向输出每视角
 米制世界系点云 pts3d、深度 depth_z、OpenCV c2w 位姿与内部分辨率内参。
 本适配器产出与 da3 相同的 schema-v3 predictions.npz 缓存契约（含
 source_image_sizes + source_to_processed_affine 完整 (2,3) affine），匹配阶段走
@@ -14,7 +18,8 @@ da3 式完整 affine 消费路径（model_type="mapanything"）。
 的 build_mapanything_transforms / mapanything_frame_affine 逐像素复现同一算法）。
 
 使用：
-  uv run python -m src.mapanything_3d_reconstructor --input_dir <images_dir> --output_file <out.glb>
+  uv run python -m src.mapanything_3d_reconstructor --input_dir <images_dir> \\
+    --output_file <out.glb> --model_path <local_model_snapshot>
 """
 
 from __future__ import annotations
@@ -43,9 +48,6 @@ if not logger.handlers and not logging.getLogger().handlers:
 THIS_DIR = Path(__file__).resolve().parent  # src/
 REPO_ROOT = THIS_DIR.parent
 MAPANYTHING_ROOT = REPO_ROOT / "map-anything"
-DEFAULT_MAPANYTHING_MODEL_DIR = Path(
-    "/home/xingyu/.cache/modelscope/models/facebook--map-anything/snapshots/master"
-)
 
 if str(MAPANYTHING_ROOT) not in sys.path:
     sys.path.insert(0, str(MAPANYTHING_ROOT))
@@ -78,12 +80,25 @@ class MapAnything3DReconstructor(ReconstructorBase):
 
     # ---- 加载 ----
     def load_model(self) -> None:
-        """加载 MapAnything 模型（默认 modelscope 快照目录，避免 HF 网络）。"""
+        """从显式本地快照加载 MapAnything，不下载或回退到远程来源。"""
+        if self.model_path is None:
+            raise ValueError("MapAnything requires an explicit local model_path")
+        if not (MAPANYTHING_ROOT / "mapanything").is_dir():
+            raise FileNotFoundError(
+                "MapAnything submodule package is missing; run "
+                "git submodule update --init"
+            )
+
+        model_path = Path(self.model_path)
+        if not model_path.is_dir():
+            raise FileNotFoundError(
+                f"MapAnything local model_path does not exist: {model_path}"
+            )
+
         from mapanything.models import MapAnything
 
-        src = self.model_path or str(DEFAULT_MAPANYTHING_MODEL_DIR)
-        logger.info(f"加载 MapAnything 模型: {src}")
-        self.model = MapAnything.from_pretrained(src).to(self.device).eval()
+        logger.info(f"加载 MapAnything 本地模型: {model_path}")
+        self.model = MapAnything.from_pretrained(str(model_path)).to(self.device).eval()
 
     def load_images(self, input_dir: str) -> List[Dict[str, Any]]:
         """按文件名数值序加载 views（顺序与基类 image_names 一致），并记录 cache 几何。"""
@@ -253,8 +268,12 @@ def main() -> int:
     parser.add_argument("--input_dir", type=str, required=True, help="输入图片目录")
     parser.add_argument("--output_file", type=str, required=True, help="输出GLB文件路径")
     parser.add_argument("--device", type=str, choices=["cuda", "cpu"], default=None, help="计算设备")
-    parser.add_argument("--model_path", type=str, default=None,
-                        help="MapAnything权重目录（默认 modelscope 快照）")
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        required=True,
+        help="必填：MapAnything 本地权重快照目录（不下载或回退远程模型）",
+    )
     parser.add_argument("--conf_thres", type=float, default=50.0, help="置信度阈值(0-100)")
     parser.add_argument("--no_show_cam", action="store_true", help="GLB中不显示相机")
     args = parser.parse_args()
