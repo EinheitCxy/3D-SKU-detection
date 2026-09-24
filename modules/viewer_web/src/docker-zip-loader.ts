@@ -1,5 +1,6 @@
 import { assertLittleEndian, type ViewerBundle } from "./bundle-loader";
 import { validateManifest, validateObjectIndex, validateSkuMasterData } from "./contracts";
+import { validateSurfelVersion } from "./surfel-loader";
 import masterDataUrl from "../masterdata.json?url";
 
 export type DockerRenderMode = "points" | "surfel";
@@ -24,6 +25,7 @@ const SURFEL_FILES = new Set([
   "surfel-frame.u8.bin",
   "surfel-depth.f16.bin",
 ]);
+const SURFEL_SCALE_FILE = "surfel-scale.f16.bin";
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 export async function loadDockerViewerBundle(
@@ -99,6 +101,10 @@ function parseFlatStoredZip(buffer: ArrayBuffer, mode: DockerRenderMode): Readon
       throw new Error(`数据包 ZIP 缺少${prefix}成员：${name}`);
     }
   }
+  if (mode === "surfel") {
+    const version = validateSurfelVersion(parseJson(entries, "surfel.json"));
+    if (version === 3 && !entries.has(SURFEL_SCALE_FILE)) throw new Error(`数据包 ZIP 缺少必需的 Surfel 成员：${SURFEL_SCALE_FILE}`);
+  }
   return entries;
 }
 
@@ -128,6 +134,7 @@ function decodeName(value: Uint8Array): string {
 function assertMemberName(name: string, mode: DockerRenderMode): void {
   const fixed = mode === "points" ? POINT_FILES : SURFEL_FILES;
   if (fixed.has(name)) return;
+  if (mode === "surfel" && name === SURFEL_SCALE_FILE) return;
   if (/^thumbs\/[^/]+\.jpg$/.test(name) && name !== "thumbs/.jpg") return;
   if (mode === "surfel" && /^surfel-texture-\d+\.jpg$/.test(name)) return;
   throw new Error(`数据包 ZIP 包含不支持的成员：${name}`);
@@ -164,6 +171,7 @@ function createAssetUrls(entries: ReadonlyMap<string, Uint8Array>, objects: View
   const names = new Set<string>();
   for (const object of Object.values(objects)) for (const observation of object.observations) names.add(observation.thumbnail);
   if (mode === "surfel") for (const name of SURFEL_FILES) if (!COMMON_FILES.has(name)) names.add(name);
+  if (mode === "surfel" && entries.has(SURFEL_SCALE_FILE)) names.add(SURFEL_SCALE_FILE);
   if (mode === "surfel") for (const name of entries.keys()) if (/^surfel-texture-\d+\.jpg$/.test(name)) names.add(name);
   const urls = new Map<string, string>();
   try {

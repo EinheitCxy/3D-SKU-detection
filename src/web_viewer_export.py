@@ -75,7 +75,7 @@ def export_web_viewer_bundle(
     filter_config: PointCloudFilterConfig | None = None,
     surfel_texture_edge: int | None = None,
 ) -> dict[str, object]:
-    """Publish up to 2M product points, balanced by global ID, plus 800K background."""
+    """Publish up to 2M product points, balanced by global ID, plus 500K background."""
     if not isinstance(dataset_name, str) or not dataset_name.strip():
         raise WebViewerExportError("dataset_name must be a non-empty string")
     voxel_size = _validate_export_options(voxel_size_m)
@@ -95,12 +95,14 @@ def export_web_viewer_bundle(
         mask_cache_root=Path(sam3_mask_cache_root),
         voxel_size=voxel_size,
         filter_config=filter_config or PointCloudFilterConfig(),
+        adaptive_surfels=surfel_texture_edge is not None,
     )
     if surfel_texture_edge is not None:
         from src.surfel_export import prepare_surfels
         sampled["surfel_files"] = prepare_surfels(
             cache, sampled["source_indices"], Path(da3_cache_path),
             Path(source_images_dir), surfel_texture_edge,
+            scales=sampled.pop("surfel_scales"), geometry=sampled.pop("surfel_geometry"),
         )
     _attach_point_index_ranges(
         objects, sampled["instance_labels"], sampled["label_keys"]
@@ -329,16 +331,18 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
 
 
 def _sample_product_points(
-    indices: np.ndarray, labels: np.ndarray, label_keys: list[tuple[str, int]]
+    indices: np.ndarray, labels: np.ndarray, label_keys: list[tuple[str, int]],
+    *, sample_group=None,
 ) -> np.ndarray:
     """Share a fixed point budget equally across nonempty global IDs.
 
     Multiple frame observations belong to the same group. Small groups retain
-    every point; unused quotas are redistributed. Sampling is uniform without
-    replacement within each global ID, with a fixed seed for reproducibility.
+    every point; unused quotas are redistributed. Plain points use fixed-seed
+    uniform sampling. Surfel export supplies a deterministic edge sampler for
+    selection inside the same quotas.
     """
     if len(indices) <= MAX_PRODUCT_POINTS:
-        return indices
+        return indices if sample_group is None else sample_group(indices, len(indices))
     label_gids = np.asarray([int(gid) for gid, _ in label_keys], dtype=np.int64)
     gids = label_gids[labels[indices]]
     order = np.argsort(gids, kind="stable")
@@ -359,7 +363,10 @@ def _sample_product_points(
     selected = []
     for i, quota in enumerate(quotas):
         group = indices[order[offsets[i]:offsets[i + 1]]]
-        selected.append(group if quota == len(group) else rng.choice(group, size=int(quota), replace=False))
+        if sample_group is not None:
+            selected.append(sample_group(group, int(quota)))
+        else:
+            selected.append(group if quota == len(group) else rng.choice(group, size=int(quota), replace=False))
     return np.sort(np.concatenate(selected))
 
 
@@ -370,6 +377,7 @@ def _sample_points(
     mask_cache_root: Path,
     voxel_size: float,
     filter_config: PointCloudFilterConfig,
+    adaptive_surfels: bool = False,
 ) -> dict[str, Any]:
     flat_points = cache["points"].reshape(-1, 3)
     flat_confidence = cache["confidence"].reshape(-1)
@@ -379,12 +387,37 @@ def _sample_points(
         & np.any(flat_points != 0, axis=1)
         & np.isfinite(flat_confidence)
     )
+    if adaptive_surfels:
+        from src.surfel_export import grid_tangents
+        from src.surfel_sampling import EdgeAdaptiveSampler
+
+        native_u, native_v, depth = grid_tangents(cache["points"], cache["extrinsic"])
+        valid &= depth.ravel() > 0
     valid_indices = np.flatnonzero(valid)
     valid_points = flat_points[valid].astype(np.float64, copy=False)
     level_rotation = _fit_level_rotation(valid_points, cache["extrinsic"])
     labels, label_keys = _instance_labels_v2(
         cache, objects, valid_indices, len(flat_points), mask_cache_root
     )
+    if adaptive_surfels:
+        # Keep semantic boundaries distinct even when neighboring products are
+        # on the same depth plane. Multiple observations of one global ID share
+        # a region; background has its own region.
+        gids = {gid: number for number, gid in enumerate(dict.fromkeys(gid for gid, _ in label_keys))}
+        region_for_label = np.asarray([gids[gid] for gid, _ in label_keys], dtype=np.int32)
+        regions = np.full(len(flat_points), -2, dtype=np.int32)
+        regions[valid_indices] = -1
+        product = labels >= 0
+        regions[valid_indices[product]] = region_for_label[labels[product]]
+        # A bounded sample of native one-pixel tangents estimates spacing. Zero
+        # spacing denotes a wholly degenerate grid, whose surfels have no area.
+        steps = np.concatenate([
+            np.linalg.norm(tangent.reshape(-1, 3)[valid_indices[::16]], axis=1)
+            for tangent in (native_u, native_v)
+        ])
+        steps = steps[np.isfinite(steps) & (steps > 0)]
+        spacing = float(np.median(steps)) if len(steps) else 0.0
+        sampler = EdgeAdaptiveSampler(depth, valid.reshape(depth.shape), spacing, regions.reshape(depth.shape))
     keep_filter = filter_scene_points(
         valid_points, filter_config, protect_mask=labels >= 0
     )
@@ -413,13 +446,30 @@ def _sample_points(
             selected[voxel] = index
     background_keep = np.fromiter(selected.values(), dtype=np.int64, count=len(selected))
     background_budget = MAX_BACKGROUND_POINTS
-    if len(background_keep) > background_budget:
+    sample_group = None
+    if adaptive_surfels:
+        filtered_indices = valid_indices[keep_filter]
+        scales = np.empty((len(filtered_indices), 2), dtype=np.float32)
+
+        def sample_group(group, budget, *, support=None):
+            local, factors = sampler.select(
+                filtered_indices[group], budget,
+                support_indices=None if support is None else filtered_indices[support],
+            )
+            selected_group = group[local]
+            scales[selected_group] = factors
+            return selected_group
+
+        background_keep = sample_group(
+            background_keep, min(len(background_keep), background_budget), support=background,
+        )
+    elif len(background_keep) > background_budget:
         background_keep = np.sort(
             np.random.default_rng(42).choice(
                 background_keep, size=background_budget, replace=False
             )
         )
-    product_keep = _sample_product_points(protected, labels, label_keys)
+    product_keep = _sample_product_points(protected, labels, label_keys, sample_group=sample_group)
     keep = np.sort(np.concatenate([product_keep, background_keep]))
     logger.info(
         "Viewer retained %d/%d valid SAM points (product budget %d, equal per global ID) and %d background points (background budget %d)",
@@ -431,7 +481,7 @@ def _sample_points(
     positions = np.ascontiguousarray(points[order], dtype="<f4")
     if not np.isfinite(positions).all():
         raise WebViewerExportError("valid DA3 points must be finite float32")
-    return {
+    result = {
         "positions": positions,
         "colors": np.ascontiguousarray(colors[order], dtype=np.uint8),
         "normals": np.ascontiguousarray(
@@ -443,6 +493,13 @@ def _sample_points(
         "level_rotation": level_rotation,
         "source_indices": valid_indices[keep_filter][keep][order],
     }
+    if adaptive_surfels:
+        sources = result["source_indices"]
+        result["surfel_scales"] = scales[keep][order]
+        result["surfel_geometry"] = (
+            native_u.reshape(-1, 3)[sources], native_v.reshape(-1, 3)[sources], depth,
+        )
+    return result
 
 
 def _estimate_scene_normals(points: np.ndarray, _extrinsic: np.ndarray) -> np.ndarray:

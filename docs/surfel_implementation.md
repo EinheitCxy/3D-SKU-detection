@@ -1,6 +1,16 @@
 # Surfel 集成说明
 
-本文保留初版 Surfel 实现说明；当前点保留、模式切换、U/V 限制及点击行为以 [3D 去重与可视化流程](3d_dedup_flowcharts.md) 为准。Surfel 接入已有 DA3 缓存导出与 `modules/viewer_web`，不重新推理 DA3/SAM3，不改变 SKU 匹配、去重或计数。`docker/viewer` 的 COS ZIP 查看器已接入此渲染路径，默认读取 Surfel v2；服务端跳过无人工标注的离线评估，导出并打包纹理后上传 COS。此前各版的场景测试记录见 [历史实施报告](surfel_implementation_report.md)，不作为本次验证结果。
+Surfel 接入已有 DA3 缓存导出与 `modules/viewer_web`，不重新推理 DA3/SAM3，不改变 SKU 匹配、去重或计数。当前导出 Surfel v3，使用固定预算的边缘自适应采样与逐点 U/V 尺度；中英文 COS Viewer 均须支持 v3 后才能部署新后端。Viewer 继续明确支持原有 v2 单位尺度包，未知版本或缺失的 v3 尺度文件直接失败。此前各版的场景测试记录见 [历史实施报告](surfel_implementation_report.md)，不作为本次验证结果。
+
+## 固定预算的边缘采样
+
+`src/surfel_sampling.py` 从深度突变、有效域边界和商品 global-ID mask 边界计算权重，边界/附近两像素/内部为 4/2/1。深度突变阈值包含邻域斜率，避免把连续斜面当断层。16×16 图块按权重获得整数名额，预算允许时每个非空块至少一个点；块内按 Morton 顺序确定性分层选择原始观测，不生成深度或移动点。
+
+商品仍跨帧按 global ID 均分最多 200 万点，小组保留全部、剩余额度回流。背景仍经现有过滤和最高置信度体素代表选择，独立最多 50 万点。只替换额度内的选择方法。用于边缘检测的密集几何有效域与候选池分离；背景圆盘密度同时计入体素抽稀，避免将被淘汰的候选误当深度空洞。普通 points 导出保留原选择方式。
+
+每点 U/V 尺度按目标密度的反平方根计算，分别受源图边界距离限制，范围 [0.5, 8]；global-ID 边界也限制扩张。原始一像素 U/V 保持不变，所有位置、颜色、来源帧、尺度与点击区间共用最终 slot 排序。浏览器先约束 native U/V，再仅在圆盘展开时乘尺度；邻点深度预测、纹理深度门和混合深度容忍不随尺度放宽。
+
+这保留了隔离实验方案 2 的设计，但正式商品预算、背景体素筛选和渲染器均不同，不能直接套用实验的 +5.11 个百分点覆盖或 +4.1% 单次总耗时。新尺度文件未压缩大小为每点 4 bytes，达到 250 万点上限时为 10 MB。旧任务 ZIP 需要重新导出才获得新采样结果。
 
 ## 入口和数据流
 
@@ -8,7 +18,7 @@
 DA3 predictions.npz + 原图 + global_mapping.json + 同网格 SAM3 v2 masks
   -> scripts/export_surfel_viewer.py
   -> src/web_viewer_export.py:export_web_viewer_bundle
-     -> SAM 商品有效点全量保留；背景过滤、体素选点、独立预算；按标签排序
+     -> SAM 商品按 global ID 均分预算；背景过滤、体素选点、独立预算；额度内边缘采样
      -> source_indices 保留每个输出点的原始网格位置
      -> src/surfel_export.py:prepare_surfels
      -> 原子发布 CURRENT -> runs/<run_id>/
@@ -29,13 +39,13 @@ DA3 predictions.npz + 原图 + global_mapping.json + 同网格 SAM3 v2 masks
 |---|---|---|
 | world_points | `[F,H,W,3]` | 原始世界坐标网格 |
 | world_points_conf | `[F,H,W]` | 普通体素选点时选择最高置信度代表 |
-| images | `[F,H,W,3]` | 既有导出流程的网格 RGB；Surfel 不发布它 |
+| images | `[F,H,W,3]` | 既有导出流程的网格 RGB，与最终点序同步发布 |
 | extrinsic | `[F,3,4]` | 世界到来源相机的变换 R、t |
 | intrinsic | `[F,3,3]` | processed grid 对应的内参 K |
 | source_to_processed_affine | `[F,2,3]` | 原图像素到 processed 像素的预处理变换 |
 | source_image_sizes / image_ids | `[F,2]` / `[F]` | 原图宽高、帧对应关系 |
 
-`_sample_points` 先去除非有限/全零点，执行现有场景过滤，再按体素选择置信度最高的点；超出上限时使用固定 seed 42 采样，最后按商品标签稳定排序。新增的
+`_sample_points` 先去除非有限/全零点（Surfel 另排除非正来源深度），在商品保护下执行现有场景过滤，再为背景按体素选择置信度最高的点；Surfel 在各自预算内进行上述边缘采样，最后按商品标签稳定排序。
 `source_indices = valid_indices[keep_filter][keep][order]` 与 positions 共序。由该索引可计算来源帧 `f = index // (H*W)`，以及网格行列。
 
 SAM3 mask 和 global mapping 在既有 `_instance_labels_v2` 阶段产生对象标签。Surfel 不重新分配商品 ID；U、V、来源帧逐项跟随最终点序，所以原有半开区间 `point_ranges=[start,end)` 可直接用于批量选择、隐藏和 Focus。
@@ -51,7 +61,7 @@ U/V 的形状起初均为 `[F,H,W,3]`，随后按 source_indices 选为 `[P,3]`�
 浏览器每点实例化一个由两个三角形组成的 quad。其世界坐标为：
 
 ```text
-p_fragment = center + radius * (x * U + y * V)
+p_fragment = center + radius * (x * scale_u * U + y * scale_v * V)
 x*x + y*y <= 1
 ```
 
@@ -66,13 +76,14 @@ x*x + y*y <= 1
 | positions.f32.bin | little-endian Float32 `[P,3]` |
 | normals.i8.bin | Int8 `[P,3]`，共用元数据格式所需的占位数组 |
 | surfel-u.f16.bin / surfel-v.f16.bin | 各为 little-endian Float16 `[P,3]` |
+| surfel-scale.f16.bin | v3 必需；little-endian Float16 `[P,2]`，正有限尺度 [0.5,8] |
 | surfel-frame.u8.bin | Uint8 `[P]`，从 0 开始的来源帧编号 |
 | surfel-depth.f16.bin | little-endian Float16 `[F,H,W]`，保留完整来源网格，0 为无效 |
-| surfel.json | version=2、P、grid_size=[W,H]、每帧相机/映射及纹理信息 |
+| surfel.json | version=3、P、grid_size=[W,H]、每帧相机/映射及纹理信息 |
 | surfel-texture-<f>.jpg | 每帧原图缩小后的纹理 |
 | manifest.json / objects.json / sku_masterdata.json / thumbs | 复用发布元数据、对象区间、主数据和商品缩略图 |
 
-Surfel generation 有意不写 `colors.u8.bin`；普通 points generation 仍要求此文件。二者共用 manifest schema 3.0.0，但客户端必须通过明确的 render 模式区分，不能把 Surfel 数据根当作普通 points 数据根。
+当前导出器也写入 `colors.u8.bin`，但 Surfel 渲染使用照片纹理。二者共用 manifest schema 3.0.0；显式 render 模式决定是否要求 Surfel sidecar。
 
 Float16 输出拒绝非有限值、超过 65504 的数值和正深度下溢为零。浏览器以 Uint16Array 保存 half 位模式，U/V 用标记为 `isFloat16BufferAttribute` 的实例属性直接上传 GL_HALF_FLOAT，深度用 HalfFloatType 的 DataArrayTexture，不展开为 Float32。来源帧始终使用 Uint8。
 
@@ -82,7 +93,7 @@ Float16 输出拒绝非有限值、超过 65504 的数值和正深度下溢为�
 
 ## 浏览器加载与投影
 
-`bootstrap` 默认 render=points，仅接受 points/surfel。Surfel 模式由 `loadViewerBundle` 加载通用数据并跳过 RGB，随后 `loadSurfels` 加载 sidecar、半精度数组和 JPEG。loader 检查 v2、点数、数组长度、有限值、帧编号与图片尺寸。JPEG 顺序解码，以限制临时 bitmap/canvas 开销。
+`bootstrap` 默认 render=points，仅接受 points/surfel。Surfel 模式由 `loadViewerBundle` 加载通用数据并跳过 RGB，随后 `loadSurfels` 加载 sidecar、半精度数组和 JPEG。loader 检查 v2/v3、点数、数组长度、有限值、帧编号与图片尺寸；v2 单位尺度，v3 必须提供尺度文件。JPEG 顺序解码，以限制临时 bitmap/canvas 开销。
 
 所有图片放入一个 RGBA DataArrayTexture；不同宽高按最大宽和高补齐。来源深度使用单通道半精度 DataArrayTexture。纹理内存约为 `F*max_width*max_height*4` bytes，CPU/GPU 各保留一份；不能用压缩 JPEG 大小推算显存。
 

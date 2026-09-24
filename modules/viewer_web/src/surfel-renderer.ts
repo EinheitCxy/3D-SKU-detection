@@ -21,7 +21,7 @@ class HalfFloatInstancedAttribute extends InstancedBufferAttribute {
 
 const vertexShader = /* glsl */ `
 precision highp sampler2DArray;
-in vec3 aCenter; in vec3 aU; in vec3 aV; in float aFrame; in float aSlot;
+in vec3 aCenter; in vec3 aU; in vec3 aV; in vec2 aScale; in float aFrame; in float aSlot;
 in float aVisible; in float aSelected;
 uniform float uRadius; uniform float uPixelCenterOffset;
 uniform sampler2DArray uDepths; uniform vec2 uGrid;
@@ -90,7 +90,9 @@ void main() {
   if (!continuousNeighbor(pixel + ivec2( 1, 0), frame, center.z + depthStep.x, tolerance.x)) vSourceBounds.y = float(pixel.x) + 0.5;
   if (!continuousNeighbor(pixel + ivec2(0, -1), frame, center.z - depthStep.y, tolerance.y)) vSourceBounds.z = float(pixel.y) - 0.5;
   if (!continuousNeighbor(pixel + ivec2(0,  1), frame, center.z + depthStep.y, tolerance.y)) vSourceBounds.w = float(pixel.y) + 0.5;
-  vec3 p = aCenter + uRadius * (position.x * u + position.y * v);
+  // Sampling scale expands only the disk; continuity and blend tolerances keep
+  // the native one-pixel tangents and must not grow with the sampling footprint.
+  vec3 p = aCenter + uRadius * (position.x * aScale.x * u + position.y * aScale.y * v);
   vec4 view = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * view;
   vDisk = position.xy; vWorld = p; vViewDepth = -view.z;
@@ -208,6 +210,7 @@ export function createSurfelRenderer(
   attribute("aCenter", bundle.positions, 3);
   geometry.setAttribute("aU", new HalfFloatInstancedAttribute(data.u, 3));
   geometry.setAttribute("aV", new HalfFloatInstancedAttribute(data.v, 3));
+  geometry.setAttribute("aScale", new HalfFloatInstancedAttribute(data.scale, 2));
   geometry.setAttribute("aFrame", new InstancedBufferAttribute(data.frames, 1));
   attribute("aSlot", Float32Array.from({ length: bundle.pointCount }, (_, i) => i), 1);
   const sharedVisibility = new InstancedBufferAttribute(visibility.array, 1).setUsage(visibility.usage);

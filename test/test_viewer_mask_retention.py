@@ -91,3 +91,54 @@ def test_product_cap_keeps_source_slots_and_background_budget_independent(monkey
     assert np.count_nonzero(result['instance_labels'] == 1) == 2
     assert np.count_nonzero(result['instance_labels'] < 0) == 2
     assert np.array_equal(result['colors'][:,0],result['source_indices'])
+
+
+def test_adaptive_export_keeps_gid_quotas_native_geometry_and_slot_alignment(monkeypatch):
+    y, x = np.indices((32, 48))
+    points = np.stack((x * .001, y * .001, 1 + x * .0001), -1).astype(np.float32)
+    labels = np.full((2, 32, 48), -1, dtype=np.int32)
+    labels[0, :, :16] = 0
+    labels[1, :, :16] = 1  # A second observation of global ID 1.
+    labels[:, :, 16:32] = 2
+    labels[:, 16, 32:34] = 3  # Small product keeps all four observations.
+    keys = [('1', 0), ('1', 1), ('2', 0), ('3', 0)]
+    count = labels.size
+    cache = {
+        'points': np.stack((points, points)),
+        'confidence': np.ones(labels.shape, dtype=np.float32),
+        'images': np.repeat((np.arange(count) % 256).astype(np.uint8)[:, None], 3, axis=1).reshape(2, 32, 48, 3),
+        'extrinsic': np.repeat(np.eye(4)[None], 2, axis=0),
+    }
+    monkeypatch.setattr(exporter, 'MAX_PRODUCT_POINTS', 104)
+    monkeypatch.setattr(exporter, 'MAX_BACKGROUND_POINTS', 13)
+    monkeypatch.setattr(exporter, '_fit_level_rotation', lambda *args: (np.eye(3), False))
+    monkeypatch.setattr(exporter, '_instance_labels_v2', lambda cache, objects, indices, *args: (labels.ravel()[indices], keys))
+    result = exporter._sample_points(cache, {}, mask_cache_root=Path('/unused'), voxel_size=.004,
+        filter_config=PointCloudFilterConfig(enabled=False), adaptive_surfels=True)
+    sources = result['source_indices']
+    slots = result['instance_labels']
+    assert len(sources) == len(np.unique(sources)) == 117
+    assert np.count_nonzero(slots < 0) == 13
+    assert np.count_nonzero(np.isin(slots, [0, 1])) == 50
+    assert np.count_nonzero(slots == 2) == 50
+    assert np.count_nonzero(slots == 3) == 4
+    assert np.array_equal(result['positions'], cache['points'].reshape(-1, 3)[sources])
+    assert np.array_equal(result['colors'][:, 0], sources % 256)
+    assert np.array_equal(slots, labels.ravel()[sources])
+    assert np.all(slots[1:] >= slots[:-1])
+    from src.surfel_export import grid_tangents
+    from src.surfel_sampling import EdgeAdaptiveSampler
+    u, v, depth = grid_tangents(cache['points'], cache['extrinsic'])
+    assert np.array_equal(result['surfel_geometry'][0], u.reshape(-1, 3)[sources])
+    assert np.array_equal(result['surfel_geometry'][1], v.reshape(-1, 3)[sources])
+    assert np.array_equal(result['surfel_geometry'][2], depth)
+    region_map = np.array([0, 0, 1, 2])
+    regions = np.full(labels.shape, -1)
+    regions[labels >= 0] = region_map[labels[labels >= 0]]
+    sampler = EdgeAdaptiveSampler(depth, np.ones_like(depth, bool), .001, regions)
+    for gid_labels, budget in (([0, 1], 50), ([2], 50), ([3], 4)):
+        group = np.flatnonzero(np.isin(labels.ravel(), gid_labels))
+        chosen, expected = sampler.select(group, budget)
+        mask = np.isin(slots, gid_labels)
+        expected_by_source = dict(zip(group[chosen], expected))
+        assert np.allclose(result['surfel_scales'][mask], [expected_by_source[index] for index in sources[mask]])

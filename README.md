@@ -245,7 +245,7 @@ canonical “其他品类”是 `sku_id=56642`、`sku_name=其他品类`。只�
 
 产品界面的 Backend badge 直接显示 manifest 的 `backend`；对象与 SKU counts 由前端读取 `objects.json` 的 observations 派生，而非额外后端聚合字段。默认 `Select by SKU`，与 `Select by Global ID` 互斥，切换会清除上一选择。SKU 选择保留完整场景并批量 magenta 高亮；canvas pick 自动切换为 Global ID。`View Controls` 默认折叠，展开后只有 Fit、Top、Iso 和 Point size。右栏为 `Selected Object`，只显示 Global ID 与按发布顺序排列的 SKU；observation 缩略图以紧凑三列优先网格显示，caption 与 removed 灰化语义保持不变。
 
-Viewer bundle 不包含 footprint、evidence、hash/provenance、source digest、confidence 或其他审计型 rich-contract 元数据。它只恢复产品缩略图所需的 observation 标识和相对 JPEG 路径。导出先读取 SAM3 mask 标注有效点，再将 mask 内的点传入 `protect_mask`，防止离群、小簇和平面过滤误删商品；之后商品点按非空 `global_id` 均分最多 200 万点预算，同一商品的多帧观测合并抽样，小组不足配额时回收未用配额。背景保持原有过滤并独立使用最多 50 万点预算；商品点不占用背景预算。组内抽样使用固定随机种子、不放回均匀抽样，空 SAM 掩码不能产生商品点。分辨率对照固定这两项预算，预算仅影响可视化导出，不改变 mapping 匹配输入。原始点云与 Surfel 共用这组导出点。选择和 Focus 通过 `point_ranges` 增量更新现有 geometry，不复制点云。已有 COS ZIP 不会自动恢复被删点，需要用修改后的后端重新导出。
+Viewer bundle 不包含 footprint、evidence、hash/provenance、source digest、confidence 或其他审计型 rich-contract 元数据。它只恢复产品缩略图所需的 observation 标识和相对 JPEG 路径。导出先读取 SAM3 mask 标注有效点，再将 mask 内的点传入 `protect_mask`，防止离群、小簇和平面过滤误删商品；之后商品点按非空 `global_id` 均分最多 200 万点预算，同一商品的多帧观测合并抽样，小组不足配额时回收未用配额。背景保持原有过滤并独立使用最多 50 万点预算；商品点不占用背景预算。普通 points 组内使用固定随机种子、不放回均匀抽样；Surfel 在同一预算内使用边缘自适应采样和独立的逐点 U/V 尺度，空 SAM 掩码不能产生商品点。预算仅影响可视化导出，不改变 mapping 匹配输入。Surfel v3 新增每点 4 bytes 的 `surfel-scale.f16.bin`，需要同步更新 Viewer；Viewer 保留原有 v2 单位尺度支持。选择和 Focus 通过 `point_ranges` 增量更新现有 geometry，不复制点云。已有 COS ZIP 需重新导出才获得新采样结果。算法、协议和测量边界见 [Surfel 集成说明](docs/surfel_implementation.md)。
 
 ## Personalcare classification in viewer objects
 

@@ -38,7 +38,8 @@ def grid_tangents(points, extrinsic):
     return *tangents, np.where(valid, depth, 0).astype("<f4")
 
 
-def prepare_surfels(cache, indices, cache_path: Path, images_dir: Path, texture_edge: int):
+def prepare_surfels(cache, indices, cache_path: Path, images_dir: Path, texture_edge: int,
+                    *, scales, geometry):
     from src.web_viewer_export import _resolve_source_images
 
     if not 256 <= texture_edge <= 1920:
@@ -50,7 +51,12 @@ def prepare_surfels(cache, indices, cache_path: Path, images_dir: Path, texture_
         raise ValueError("Surfel 支持 1..256 个来源帧（Uint8 帧编号 0..255）")
     if intrinsic.shape != (n, 3, 3) or not np.isfinite(intrinsic).all():
         raise ValueError("Surfel requires finite per-frame 3x3 intrinsic")
-    u, v, depth = grid_tangents(cache["points"], cache["extrinsic"])
+    u, v, depth = geometry
+    scales = np.asarray(scales)
+    if scales.shape != (len(indices), 2) or not np.isfinite(scales).all() or np.any((scales < 0.5) | (scales > 8)):
+        raise ValueError("Surfel scales must be aligned U/V pairs in [0.5, 8]")
+    if u.shape != (len(indices), 3) or v.shape != u.shape or depth.shape != (n, h, w):
+        raise ValueError("Surfel native geometry must match source slots and depth grid")
     frame_ids = indices // (h * w)
     def half_bytes(values, name):
         if not np.isfinite(values).all() or np.any(np.abs(values) > 65504):
@@ -61,8 +67,9 @@ def prepare_surfels(cache, indices, cache_path: Path, images_dir: Path, texture_
         return encoded.tobytes()
 
     files = {
-        "surfel-u.f16.bin": half_bytes(u.reshape(-1, 3)[indices], "u"),
-        "surfel-v.f16.bin": half_bytes(v.reshape(-1, 3)[indices], "v"),
+        "surfel-u.f16.bin": half_bytes(u, "u"),
+        "surfel-v.f16.bin": half_bytes(v, "v"),
+        "surfel-scale.f16.bin": half_bytes(scales, "scale"),
         "surfel-frame.u8.bin": frame_ids.astype("u1").tobytes(),
         "surfel-depth.f16.bin": half_bytes(depth, "depth"),
     }
@@ -90,7 +97,7 @@ def prepare_surfels(cache, indices, cache_path: Path, images_dir: Path, texture_
             "intrinsic": intrinsic[f].tolist(), "extrinsic": cache["extrinsic"][f].tolist(),
         })
     files["surfel.json"] = json.dumps({
-        "version": 2, "point_count": len(indices), "grid_size": [w, h],
+        "version": 3, "point_count": len(indices), "grid_size": [w, h],
         "texture_longest_edge": texture_edge, "frames": frames,
         "coverage_radius_pixels": 1.05, "source_depth_relative_tolerance": 0.015,
     }, allow_nan=False).encode()
