@@ -248,7 +248,11 @@ def pack_viewer_bundle(generation_dir: Path) -> bytes:
     """Pack a textured Surfel generation with flat archive member names."""
     generation_dir = Path(generation_dir)
     surfel = json.loads((generation_dir / "surfel.json").read_text(encoding="utf-8"))
+    if surfel["version"] not in (2, 3):
+        raise ValueError("Unsupported Surfel version")
     names = [*_VIEWER_FILES, *(frame["texture"] for frame in surfel["frames"])]
+    if surfel["version"] == 3:
+        names.append("surfel-scale.f16.bin")
     thumbs = sorted((generation_dir / "thumbs").glob("*.jpg"))
 
     buffer = io.BytesIO()

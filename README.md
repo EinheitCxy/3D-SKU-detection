@@ -156,7 +156,9 @@ POST 到本机服务，并将响应中的 `global_skus` 写为 `global_skus.json
 
 服务端显式调用 `run_complete_pipeline(..., evaluate_accuracy=False)`，不对没有人工标注的线上任务执行离线准确率评估；核心研究流水线默认仍评估。
 
-服务端默认调用 `export_web_viewer_bundle(..., surfel_texture_edge=1920)`，生成 Surfel v2 纹理数据。ZIP 包含 `manifest.json`、`positions.f32.bin`、`normals.i8.bin`、`objects.json`、`surfel.json`、`surfel-u.f16.bin`、`surfel-v.f16.bin`、`surfel-frame.u8.bin`、`surfel-depth.f16.bin`、metadata 引用的全部 `surfel-texture-N.jpg` 和商品 `thumbs/*.jpg`，包含 `colors.u8.bin`。引用纹理缺失时打包直接失败，不上传不完整包。
+服务端默认调用 `export_web_viewer_bundle(..., surfel_texture_edge=1920)`，生成 Surfel v3 纹理数据。商品和背景点预算保持 200 万/50 万；额度内启用边缘自适应采样，独立 U/V 尺度只改变圆盘展开，原生切向量和深度阈值不变。ZIP 包含 `manifest.json`、`positions.f32.bin`、`normals.i8.bin`、`objects.json`、`surfel.json`、`surfel-u.f16.bin`、`surfel-v.f16.bin`、`surfel-frame.u8.bin`、`surfel-depth.f16.bin`、v3 必需的 `surfel-scale.f16.bin`（每点两个 Float16，4 bytes）、metadata 引用的全部 `surfel-texture-N.jpg` 和商品 `thumbs/*.jpg`，包含 `colors.u8.bin`。引用纹理或 v3 尺度文件缺失时打包直接失败，不上传不完整包。打包器继续接受现有 v2 单位尺度数据，拒绝未知版本。
+
+升级时先部署支持 v2/v3 的中英文 Viewer，再更新本服务；旧 Viewer 无法读取 v3。已上传的旧任务保持原有结果，需要重新导出才能获得新采样。仅核心 CPU 算法及打包代码变化时，可用前述 `build_code_update.sh`，显式指定当前 `BASE_IMAGE`、新的 `IMAGE_TAG` 和 `CORE_REPO_ROOT`。部署前应核对新容器的 `/openapi.json` 和实际 v3 bundle 加载；该启动检查不等同完整模型推理验证。
 
 原图等比缩小到最长边 1920、短边 1080 的上限；请求格式仍是 `taskID/images/skus`，响应仍仅有 `global_skus`，COS key 保持不变。前端 visualization 分支默认以 Surfel 加载，因此 `/?recognition_task_id=<taskID>` 即可查看新任务。旧普通点云任务需显式使用 `&render=points`；服务端不自动生成两份数据。Surfel 支持 1..32 个来源帧，GPU 资源上限仍取决于查看设备。
 
