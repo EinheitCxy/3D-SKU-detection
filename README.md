@@ -115,23 +115,27 @@ uv sync --frozen --extra dev
 
 ## 离线 Global-ID Mapping Docker 服务
 
-Docker 包装代码由独立 `origin/docker` 分支维护，父仓库不跟踪并忽略 `/docker/`。首次建立标准
-工作区时，在 main checkout 根目录创建一个追踪该远端分支的嵌套 worktree：
+Docker 包装代码由独立 `origin/docker` 分支维护。本机服务端 checkout 位于
+`runtime/worktrees/mapping-docker-rebuild/`；根 `docker/` 当前是独立 Viewer checkout。
+首次建立服务端工作区时，在 main checkout 根目录创建追踪该远端分支的 worktree：
 
 ```bash
 git fetch origin docker
-git worktree add --track -b docker docker origin/docker
+git worktree add --track -b docker runtime/worktrees/mapping-docker-rebuild origin/docker
 ```
 
-此后 `/home/xingyu/3D_Recognization` 追踪 `main`，其 `docker/` 子目录独立追踪 `docker`。
+主 checkout 追踪 `main`，服务端 worktree 独立追踪 `docker`。
 Docker wrapper 提供只消费外部 classifier 结果的 DA3/SAM3 BSON 映射服务，使用本地 base
 image、冻结的 root lock、完整 DA3 Hugging Face cache 与本地 SAM3 checkpoint 离线构建；镜像
 不包含 detector/classifier、Pi3、VGGT、输入数据或运行输出。
 
-运行时采用直接同步链路 `docker/api.py -> docker/processor.py:process()`：单 worker 配合请求锁
-串行处理 fd，不创建 multiprocessing child 或 Pipe。processor 不会根据 pipeline summary 伪造
-stage 异常；API 成功返回 BSON，未捕获的 pipeline、输入或导出异常直接以 HTTP 500 traceback 返回。每个 fd 完成后清除按临时路径持有的 DA3
-request cache，SAM3 model cache 保留并跨请求复用。
+运行时由服务端 `api.py` 接收请求，再通过 Starlette thread pool 调用
+`processor.py:process()`。BSON 解码、pipeline、请求资源清理和 BSON 编码均在线程内
+执行；单 Uvicorn worker 配合线程内请求锁串行处理 fd。正在处理或等待锁的映射请求不会
+阻塞事件循环，`/openapi.json` 等轻量请求仍可响应。请求锁覆盖完整处理与编码，即使等待
+响应的协程被取消，已经开始的处理仍持有锁直到线程退出。
+成功响应仍为 BSON；未捕获的 pipeline、输入或导出异常仍以 HTTP 500 traceback 返回。
+每个 fd 完成后清除按临时路径持有的 DA3 request cache，SAM3 model cache 保留并跨请求复用。
 
 客户端发送以下 BSON 输入，`taskID` 标识本次识别任务，`images` 为非空 bytes list，`skus` 为同帧数的 classifier JSON-string
 list：
@@ -142,7 +146,7 @@ list：
 
 顶层 `features`、`project_id` 和其他上游透传字段均被 Docker adapter 忽略，不会解析、校验、复制或
 落盘；adapter 固定以 personalcare domain `51` 构建 object-level `classification`。object 内的
-`features` 仍会被拒绝。成功 BSON 响应严格只有 `global_skus`（逐帧 JSON-string list），每帧为
+`features` 仍会被拒绝。成功 BSON 响应包含 `global_skus`（逐帧 JSON-string list）及 `scene_glb`（GLB原始二进制）；`global_skus`每帧为
 `{classes, objects}`。返回的 object 保留原始字段和 `global_id`、`is_deduplicated`，不返回内部
 `classification`。调用方通过帧级 `classes.cls[object.classes.cls]` 读取 `sku_id^sku_name`，
 通过 `object.confidences.cls` 读取分类置信度；内部分类聚合和 Viewer 导出仍使用内部分类数据。
@@ -151,9 +155,8 @@ Viewer bundle 按 `taskID` 上传 COS，不随 BSON 返回。它是扁平 ZIP：
 `thumbs/*.jpg`；它不包含发布器内部的 `CURRENT` 或 `runs/<run_id>/` 路径。
 
 ```bash
-bash docker/build.sh
+CORE_REPO_ROOT="$PWD" bash runtime/worktrees/mapping-docker-rebuild/build.sh
 docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
-uv run python docker/test/test_api.py --dataset <path> --classifier-result <path>
 ```
 
 详细的离线前提、named contexts、输入 shape 与客户端输出见
@@ -301,7 +304,7 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 画布右下角显示实际 backend。已有 Pi3X 缓存与匹配结果可运行 `uv run python scripts/export_pi3x_viewer.py --dataset imdata/floor_display6`，生成独立 Pi3X bundle；本地 Viewer 使用 `/?data=/data-pi3x/` 查看，默认 `/` 保留 DA3。详见 [Viewer README](modules/viewer_web/README.md)。
 
 本地测试统一保存在 `test/`，并作为源码随 Git 跟踪；新 clone 包含这些测试文件。
-核心测试运行 `uv run --no-sync pytest test/`；性能测试在 `test/perf/`，Viewer 测试在 `test/viewer_web/`，SAM3 测试及资源在 `test/sam3/`。Docker 独立工作目录的测试在 `docker/test/`。
+核心测试运行 `uv run --no-sync pytest test/`；性能测试在 `test/perf/`，Viewer 测试在 `test/viewer_web/`，SAM3 测试及资源在 `test/sam3/`。服务端 Docker checkout 的本地测试在 `runtime/worktrees/mapping-docker-rebuild/test/`。
 
 Docker Viewer 导出不传入主数据参数，跳过主数据读取和文件生成，镜像构建不复制 CSV；主数据由 `visualization` 分支的 `viewer/masterdata.json` 提供。本地 Viewer 导出仍传入 CSV 路径以生成任务所需的 `sku_masterdata.json`。
 

@@ -119,6 +119,11 @@ matching 完成后 orchestrator 才 join classifier future；matching 与 classi
 零匹配时每个原始对象各自保留独立 ID。映射或全帧数据校验失败会停止本次逐帧写出；
 单个逐帧文件写入失败仍按现有规则记录并跳过，全局 pair 发布失败仍清理两个全局文件。
 
+Docker BSON 服务通过 Starlette thread pool 执行同步处理：解码、处理、请求清理和编码
+都在线程内请求锁的保护下。单 worker 保证同一时间只有一个映射请求执行；事件循环可以
+继续接收请求、等待工作线程或响应 `/openapi.json`。等待协程的取消不会释放正在执行的
+线程所持有的锁。成功 BSON 和 HTTP 500 traceback 的接口约定保持一致。
+
 ## Footprint 与 SAM3 cache
 
 运行顺序是 canonical contract：matching 必须完成 **全部** `batch_all_refs` references；`--mode ground-stack-area` 是独立的后端计量阶段，`--mode viewer-web` 可在 dedup 后直接发布产品 bundle。matching 是唯一的 SAM3 producer；它在默认 `enable_sam3_mask_sampling: true` 下以 self-exemplar 生成每个 frame 的完整 processed-space masks。master gate 为 false 时 matching 走既有 bbox sampling 且不发布 cache，任何需要实例点标签的 export 必须 fail closed。
@@ -157,6 +162,18 @@ cache-disabled 导航。历史基线摘要见 [20260826T084815Z](perf_baseline_2
 三个 case 全部完成，平均真实 wall time 为 396.943s；footprint 平均 239.435s，是当前主瓶颈。
 
 ## 回归验证
+
+去重产物一致性与 API 并发行为可分别在根目录运行以下 CPU 测试。API 测试使用 processor
+stub，不加载模型、不访问 COS；`--confcutdir` 避免收集独立 checkout 的包初始化代码。
+运行环境需允许 asyncio 跨线程唤醒使用的本地 socket 写入。
+
+```bash
+uv run --no-sync python -B -m pytest -q test/test_classification_aggregation.py \
+  -k 'conflicting_ring or successful_match_and_isolated or zero_matches'
+uv run --no-sync python -B -m pytest -q \
+  --confcutdir=runtime/worktrees/mapping-docker-rebuild/test \
+  runtime/worktrees/mapping-docker-rebuild/test/test_mapping_api.py
+```
 
 ```bash
 PYTHONPATH=. VIRTUAL_ENV=/home/xingyu/3D_Recognization/.venv \
