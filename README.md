@@ -4,11 +4,24 @@
 `POST /api` 服务。镜像不包含 detector、personalcare classifier、Pi3、VGGT、任何
 输入数据或运行产物；调用方必须提供每帧的原图和外部 classifier 结果。
 
-请求链路保持为 `api.py -> processor.process()`：API 只做 BSON 解码/编码并用一个锁
-串行执行请求，processor 在临时目录中直接运行 pipeline、Viewer export 并上传两个结果到 COS。服务不再创建
-request 子进程或 Pipe，也不会根据 pipeline summary 伪造 stage 异常；未捕获的处理失败会以 HTTP 500 直接返回 Python traceback。每次请求结束都会
-清理按临时路径缓存的 DA3 image/transform/scene tensor，SAM3 model cache 则留在进程内供
-下一次请求复用。
+`api.py` 在事件循环读取请求体，再通过 Starlette thread pool 执行同步处理。
+工作线程在请求锁内完成 BSON 解码、`processor.process()` 和 BSON 编码；processor
+在临时目录中运行 pipeline、Viewer export 并上传 Viewer ZIP 到 COS。映射请求串行执行，计算和等待锁均不会阻塞事件循环；处理期间
+`/openapi.json` 等轻量请求仍可响应。锁由工作线程持有，等待响应的协程被取消也不会
+提前释放它，已开始的处理继续完成资源清理。
+成功响应及 HTTP 500 traceback 的约定保持一致。每次请求结束都会清理按临时路径缓存的
+DA3 image/transform/scene tensor，SAM3 model cache 留在进程内供下一次请求复用。
+
+CPU API 回归测试在核心 main checkout 根目录运行，不启动模型或 COS 上传：
+
+```bash
+uv run --no-sync python -B -m pytest -q \
+  --confcutdir=runtime/worktrees/mapping-docker-rebuild/test \
+  runtime/worktrees/mapping-docker-rebuild/test/test_mapping_api.py
+```
+
+`--confcutdir` 将收集范围限制在测试目录，避开服务端包初始化。测试运行环境需允许
+asyncio 跨线程唤醒使用的本地 socket 写入。API 和 GLB 回归测试随服务源码跟踪，其余本地测试仍按既有规则忽略。
 
 ## 离线构建
 
@@ -96,7 +109,8 @@ docker run --rm --gpus all -p 8011:80 \
 root base dependencies（不含 dev extras，且不把 editable 项目路径写进 venv），再用
 BuildKit named contexts 装配最终镜像。运行时固定一份 `/app/.venv`、
 `DA3_VENV_PYTHON=/app/.venv/bin/python`、离线 Hugging Face/Transformers，并且 Uvicorn
-仅启动一个 worker；API 内的请求锁保证同一时刻只运行一个 fd。
+仅启动一个 worker；工作线程内的请求锁保证同一时刻只运行一个 fd，包括请求资源清理和
+BSON 编码。thread pool 负责承接同步任务，不并行执行多个映射流水线。
 
 COS 上传使用官方 `cos-python-sdk-v5` 的 `CosS3Client.put_object`，请求超时设为 120 秒（`CosConfig(Timeout=120)`，不是整个流水线的总时限）。该依赖已由根
 `uv.lock` 锁定。`build_code_update.sh` 默认从本机高重叠的

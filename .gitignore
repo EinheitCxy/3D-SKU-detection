@@ -1,4 +1,5 @@
 .env
 
-# Local tests are kept outside version control.
-/test/
+# Keep the API regression test with the service source.
+/test/*
+!/test/test_mapping_api.py
