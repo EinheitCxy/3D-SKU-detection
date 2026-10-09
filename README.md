@@ -240,6 +240,14 @@ Docker 服务端调用 `run_complete_pipeline(..., evaluate_accuracy=False)`，�
 
 Surfel 使用已有 DA3 缓存、原图和同网格 SAM3 mask 导出独立纹理表面数据；浏览器通过 `/?data=/data-surfel/&render=surfel` 显式启用，默认 points 入口保持独立。后端导出、Float16 sidecar、逐片元投影与深度融合、商品交互和按需重绘的代码说明见 [Surfel 集成说明](docs/surfel_implementation.md)，命令与限制见 [Viewer README](modules/viewer_web/README.md#深度约束-surfel)。Docker 服务端已启用 Surfel 导出和 COS ZIP 打包；`docker/viewer` 默认以 Surfel 加载新任务。
 
+需要通用 GLB 网页直接打开时，可运行 `uv run --no-sync python -m src.surfel_glb <viewer_bundle.zip或generation目录> <输出.glb>`，将 DA3 Surfel 烘焙成带内嵌纹理的标准三角面 GLB，无需重跑推理。它保留来源纹理和深度裁剪的静态近似，不能复现视角相关的重叠混合；参数、体积取舍与对照方法见 [通用 Surfel GLB 导出](docs/surfel_glb.md)。
+
+下载交付前，可再运行 `uv run --no-sync python -m src.surfel_glb_compact <输入.glb> <精简.glb>`，保留三角面数量并缩小几何和纹理存储；精简版需要加载器支持标准 `KHR_mesh_quantization`。
+
+Docker 的 GLB 输出接入复用同一次 Viewer 导出的数据，自动执行 LOD 烘焙和压缩，在 Docker 内生成 `scene.glb`，将其原始bytes放入 BSON 响应的 `scene_glb` 字段，与 `global_skus` 一起返回；GLB不上传COS，原Viewer ZIP上传保持不变。更新服务镜像后对新任务生效，CPU 导出会增加请求耗时，详见 [Docker GLB 输出](docs/surfel_glb.md#docker-输出)。
+
+同时需要减少绘制开销时，在第一步导出加入 `--lod`，对覆盖充足的连续内部区域做2×2像素抽稀，再执行精简命令。该选项会减少面数和纹理页，属于有损LOD，需检查目标视角的细节；默认不启用。
+
 点云导出默认使用 **5 mm 背景体素、最多 50 万背景点**；商品点最多 200 万。商品点先由 SAM mask 过滤保护，避免有效实例点被几何过滤误删，再按非空 `global_id` 均分商品预算；小组实际点数不足时回收未用配额并分配给其他组。背景上限为固定导出预算，`--viewer-web-voxel-size` 仍可调整背景体素尺寸。分辨率对照固定这两项预算；预算只影响可视化导出点数，不改变 mapping 匹配输入。已有 bundle 需要重新导出才能改变点数。
 
 Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。`CURRENT` 只包含 `run_id`；run 内的 `manifest.json` 固定为 schema `3.0.0`，包含轻量 `backend: "DA3"`、真实 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不携带 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。导出器从 dataset `images/` 中按数字文件名解析原图，为每个 active 与 removed observation 按 bbox（保留 10% padding）写入 `thumbs/*.jpg`：JPEG 始终为精确 `128×128`，crop 等比缩放并居中补深色背景，不拉伸或中心裁掉商品；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Surfel / 通用 GLB 对照</title>
+<style>
+body{margin:0;padding:18px;background:#14202d;color:#e6edf5;font:15px/1.5 system-ui,sans-serif}h1{font-size:24px;margin:0}h2{font-size:17px;margin:10px}p{margin:8px 0}.controls{display:flex;gap:12px;align-items:center;margin:12px 0}select,button{padding:6px}.panels{display:grid;grid-template-columns:1fr 1fr;gap:12px}.viewport{height:65vh;min-height:350px}article{border:1px solid #61728a;border-radius:6px;overflow:hidden}canvas{display:block}pre{white-space:pre-wrap;overflow-wrap:anywhere}#error{background:#652930;padding:12px}.muted{color:#b7c5d5}
+</style>
+</head>
+<body>
+<h1>Surfel 与通用纹理 GLB</h1>
+<p>拖动任意画面同步旋转、平移和缩放；两侧使用同一相机。</p>
+<p class="muted">GLB 使用原生 Three.js GLTFLoader 材质。静态 alpha MASK 无法复现 Surfel 随视角变化的 Gaussian 累加。</p>
+<div class="controls"><label>视角 <select id="view"><option value="front">正视</option><option value="side30">侧视 30°</option><option value="source0">来源相机 0</option></select></label><button id="reset">重置视角</button><a id="download" style="color:#a8d7ff">下载 GLB</a><span id="status">加载中…</span></div>
+<pre id="error" hidden></pre>
+<main class="panels"><article><h2>原始 bundle · Surfel renderer</h2><div class="viewport" id="baseline"></div></article><article><h2>GLB · 原生 GLTFLoader / Mesh</h2><div class="viewport" id="glb"></div></article></main>
+<details><summary>加载结果与资源</summary><pre id="report"></pre></details>
+<script type="module" src="/surfel-glb-compare.mjs"></script>
+</body></html>
