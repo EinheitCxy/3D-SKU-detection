@@ -6,7 +6,8 @@
 
 `api.py` 在事件循环读取请求体，再通过 Starlette thread pool 执行同步处理。
 工作线程在请求锁内完成 BSON 解码、`processor.process()` 和 BSON 编码；processor
-在临时目录中运行 pipeline、Viewer export 并上传 Viewer ZIP 到 COS。映射请求串行执行，计算和等待锁均不会阻塞事件循环；处理期间
+在临时目录中运行 pipeline、Viewer export、GLB 导出并上传 Viewer ZIP 到 COS，GLB
+随 BSON 返回。映射请求串行执行，计算和等待锁均不会阻塞事件循环；处理期间
 `/openapi.json` 等轻量请求仍可响应。锁由工作线程持有，等待响应的协程被取消也不会
 提前释放它，已开始的处理继续完成资源清理。
 成功响应及 HTTP 500 traceback 的约定保持一致。每次请求结束都会清理按临时路径缓存的
@@ -155,8 +156,8 @@ pipeline 所需的 object-level `classification`，不会在容器内执行分�
 无法读取该文件时，服务保留底层的原生 OS 异常。
 
 当前 `COS_KEY_PREFIX=global-id-mapping`，因此上传 key 固定为
-`global-id-mapping/<taskID>/viewer_bundle.zip`，不会落在 bucket 根目录。成功 BSON 响应只返回
-`global_skus`；Viewer 依据请求中的 `taskID` 直接从 COS 定位 ZIP。
+`global-id-mapping/<taskID>/viewer_bundle.zip`，不会落在 bucket 根目录。成功 BSON 响应返回
+`global_skus` 和GLB原始二进制字段 `scene_glb`；Viewer 依据请求中的 `taskID` 直接从 COS 定位 ZIP。
 `global_skus` 仍是逐帧 JSON 字符串数组，每帧保留 `{classes, objects}`。返回的 object
 保留原始字段及 `global_id`、`is_deduplicated`，不返回内部生成的 `classification`。
 调用方通过帧级 `classes.cls` 和 object 的 `classes.cls` 索引读取原始分类标签，通过
@@ -166,6 +167,35 @@ pipeline 所需的 object-level `classification`，不会在容器内执行分�
 POST 到本机服务，并将响应中的 `global_skus` 写为 `global_skus.json`。Viewer ZIP 不经 BSON 返回，
 由独立 Viewer 依据 `taskID` 从 COS 下载。
 
+## scene.glb 下载输出
+
+每次请求复用同一次 Viewer export 的 generation 目录，调用核心
+`src.surfel_glb.export_scene_glb`，在 CPU 上烘焙并压缩出自包含 `scene.glb`。
+不重新运行 DA3/SAM3，也不解压 ZIP 或复制一份源照片。
+固定使用减量方案：保守2×2 Surfel LOD、8×8纹理tile、16-bit几何及128种RGB索引PNG。
+普通网页加载器需支持 `KHR_materials_unlit` 和 `KHR_mesh_quantization`；静态三角面是
+当前 Viewer Gaussian 混合外观的近似，细节可能不同。
+
+GLB不上传COS。在请求临时目录内生成 `scene.glb` 后读取原始bytes，响应为：
+
+```text
+{"global_skus": [<每帧JSON字符串>, ...], "scene_glb": <GLB二进制>}
+```
+
+现有 `api.py` 使用 `bson.dumps` 编码，`scene_glb` 为BSON binary，无Base64或额外ZIP包装。
+客户端 `bson.loads(response.content)` 后用
+`Path("scene.glb").write_bytes(result["scene_glb"])` 保存文件即可。
+原 `viewer_bundle.zip` 仍上传到同一taskID的COS目录。
+更新镜像后对新请求生效，旧任务不会自动补导。
+
+临时GLB文件在内容读取后随请求目录清理。生成、读取或Viewer ZIP上传失败直接返回错误。
+服务端BSON编码及客户端解码完整持有GLB，内存和响应大小随文件体积增加。
+CPU导出增加同步 `/api` 的耗时；约236万点现有样例仅LOD烘焙约155秒，另外还有压缩及响应传输。
+117.16 MB只是该样例的最终大小，不能作为所有任务的固定体积或时限。
+
+构建仍使用现有 `build.sh` 或 `build_code_update.sh`，它们从 `CORE_REPO_ROOT/src/`
+包含GLB模块，并从此服务目录复制processor和上传适配代码；不新增Python依赖。
+
 ## Viewer Bundle
 
 服务端显式调用 `run_complete_pipeline(..., evaluate_accuracy=False)`，不对没有人工标注的线上任务执行离线准确率评估；核心研究流水线默认仍评估。
@@ -174,11 +204,11 @@ POST 到本机服务，并将响应中的 `global_skus` 写为 `global_skus.json
 
 升级时先部署支持 v2/v3 的中英文 Viewer，再更新本服务；旧 Viewer 无法读取 v3。已上传的旧任务保持原有结果，需要重新导出才能获得新采样。仅核心 CPU 算法及打包代码变化时，可用前述 `build_code_update.sh`，显式指定当前 `BASE_IMAGE`、新的 `IMAGE_TAG` 和 `CORE_REPO_ROOT`。部署前应核对新容器的 `/openapi.json` 和实际 v3 bundle 加载；该启动检查不等同完整模型推理验证。
 
-原图等比缩小到最长边 1920、短边 1080 的上限；请求格式仍是 `taskID/images/skus`，响应仍仅有 `global_skus`，COS key 保持不变。前端 visualization 分支默认以 Surfel 加载，因此 `/?recognition_task_id=<taskID>` 即可查看新任务。旧普通点云任务需显式使用 `&render=points`；服务端不自动生成两份数据。Surfel 支持 1..32 个来源帧，GPU 资源上限仍取决于查看设备。
+原图等比缩小到最长边 1920、短边 1080 的上限；请求格式仍是 `taskID/images/skus`，响应包含 `global_skus` 和 `scene_glb`，Viewer ZIP的COS key保持不变。前端 visualization 分支默认以 Surfel 加载，因此 `/?recognition_task_id=<taskID>` 即可查看新任务。旧普通点云任务需显式使用 `&render=points`；服务端不自动生成两份数据。Surfel 支持 1..32 个来源帧，GPU 资源上限仍取决于查看设备。
 
 
-此 Docker 服务不构建、携带或托管可视化页面。它只生成平铺、非加密 `ZIP_STORED` schema 3.0.0 的
-`viewer_bundle.zip` 并上传 COS；`global_skus` 只保留在 BSON 成功响应中，不写入 COS。独立 Viewer
+此 Docker 服务不构建、携带或托管可视化页面。它生成平铺、非加密 `ZIP_STORED` schema 3.0.0 的
+`viewer_bundle.zip` 并上传COS；`global_skus` 和 `scene_glb` 通过BSON成功响应返回，不写入COS。独立 Viewer
 依据 `taskID` 直接定位并下载该 ZIP。
 
 可视化代码位于独立的 `visualization` 分支，且该分支只包含 `viewer/`。Viewer 从页面 URL 读取

@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from main import PROJECT_ROOT as MAIN_PROJECT_ROOT, SKUDetectionMain
 from cos_upload import CosUploadConfig, upload_viewer_bundle, validate_taskid
+from src.surfel_glb import export_scene_glb
 from src.web_viewer_export import export_web_viewer_bundle
 from utils.classification_aggregation import build_resolved_classification
 from utils.config import default_sam3_mask_cache_root
@@ -65,12 +66,16 @@ def process(inputs: Mapping[str, Any]) -> dict[str, Any]:
             response = build_success_response(
                 Path(result["global_skus_path"]), Path(result["viewer_dir"])
             )
+            scene_path = work_root / "scene.glb"
+            export_scene_glb(Path(result["viewer_dir"]), scene_path)
+            scene_glb = scene_path.read_bytes()
+            config = CosUploadConfig.from_env()
             upload_viewer_bundle(
                 prepared.taskid,
                 response["viewer_bundle"],
-                CosUploadConfig.from_env(),
+                config,
             )
-            return {"global_skus": response["global_skus"]}
+            return {"global_skus": response["global_skus"], "scene_glb": scene_glb}
         finally:
             PI3_SCENE_CACHE.clear()
             _DA3_IMAGE_CACHE.clear()
