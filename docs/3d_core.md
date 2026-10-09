@@ -30,6 +30,7 @@ Apache-2.0；权重 `facebook/map-anything` 为 CC-BY-NC 4.0，
 
 - 默认 dataset：`imdata/floor_display2`。
 - 默认重建/匹配 backend：`da3`。
+- 重建后端：`da3`、`pi3`、`pi3x`、`mapanything`；VGGT 保留用于 point tracking。
 - 默认输出：根 `Output/`。
 - 默认 viewer bundle：`modules/viewer_web/public/data`。
 - 所有相对 `--save_root` 值按仓库根解析，而非调用终端的当前目录。
@@ -146,7 +147,7 @@ Minimal Viewer 不包含 footprint、evidence、hash/provenance、source digest 
 
 性能采集器只接受 one-shot cold 口径：fd2–4 各自从空的隔离 `save_root` 完整运行一次，
 classification 与 reconstruction/matching 并行并在 dedup 前 join，浏览器只执行一次
-cache-disabled 导航。当前 [20260826T084815Z](../perf/runs/20260826T084815Z/FINAL_REPORT.md)
+cache-disabled 导航。历史基线摘要见 [20260826T084815Z](perf_baseline_20260826.md)：
 三个 case 全部完成，平均真实 wall time 为 396.943s；footprint 平均 239.435s，是当前主瓶颈。
 
 ## 回归验证

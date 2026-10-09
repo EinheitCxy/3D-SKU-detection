@@ -209,8 +209,8 @@ def extract_main_settings(data_or_path: Dict[str, Any] | str | Path) -> Dict[str
 def extract_reconstruction_settings(data_or_path: Dict[str, Any] | str | Path) -> Dict[str, Any]:
     """Extract reconstruction settings section as a dict.
 
-    Keys may include: device, conf_thres, output (filename), model_path, show_cam,
-    mask_black_bg, mask_white_bg, mask_sky.
+    Keys may include: backend, device, conf_thres, output (filename), model_path,
+    show_cam.
     """
     data = load_yaml_config(data_or_path) if not isinstance(data_or_path, dict) else data_or_path
     rec = data.get("reconstruction", data)
@@ -222,9 +222,6 @@ def extract_reconstruction_settings(data_or_path: Dict[str, Any] | str | Path) -
         "output",
         "model_path",
         "show_cam",
-        "mask_black_bg",
-        "mask_white_bg",
-        "mask_sky",
     ):
         if k in rec:
             out[k] = rec[k]

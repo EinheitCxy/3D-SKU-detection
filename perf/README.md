@@ -9,6 +9,8 @@ wall time、driver-visible GPU memory peak、原始日志、GPU telemetry、一�
 
 ## 运行
 
+2026-10-09 清理已移除本地 `.playwright/` 和 `node_modules/`；运行浏览器采集前需按以下命令重新安装。
+
 先从 `perf/` 安装浏览器依赖并把 Chromium 留在本目录：
 
 ```bash
@@ -60,9 +62,9 @@ case wall time。
 `software_or_unavailable`；其资源和 JS 加载时延仍可用，但不能作为硬件 WebGL 或浏览器 GPU
 显存结论。
 
-当前正式基线是 [20260826T084815Z](runs/20260826T084815Z/FINAL_REPORT.md)：fd2–4 三个
-one-shot cold case 全部完成，平均真实 wall time 为 396.943s。旧
-`perf/runs/20260824T032553Z/` 只保留历史 cold 原始证据，不再作为当前结果。
+历史正式基线摘要见 [20260826T084815Z](../docs/perf_baseline_20260826.md)：fd2–4 三个
+one-shot cold case 全部完成，平均真实 wall time 为 396.943s。`perf/runs/` 下的原始
+运行产物已按 2026-09-24 清理要求移除，不能再用它们复核逐阶段原始记录。
 
 ## 验证
 

@@ -2,7 +2,7 @@
 
 面向货架与地堆 SKU 的 DA3 三维重建、跨图匹配、去重、ground-footprint 计量和静态 Web Viewer。Python 负责生成可审计产物；Three.js 只加载、校验和交互展示已经发布的 bundle。
 
-详细的核心契约见 [docs/3d_core.md](docs/3d_core.md)，当前端到端测量结果见 [perf/runs/20260826T084815Z/FINAL_REPORT.md](perf/runs/20260826T084815Z/FINAL_REPORT.md)。
+详细的核心契约见 [docs/3d_core.md](docs/3d_core.md)，端到端测量结果摘要见 [docs/perf_baseline_20260826.md](docs/perf_baseline_20260826.md)。
 
 `perf/benchmark.py` 只采集 one-shot cold 数据：fd2–4 各自使用全新的隔离输出运行一次，
 浏览器也只导航一次；不调度、不保存、不汇总 warm-start case。classification 与
@@ -62,6 +62,9 @@ reconstruction/matching 并行，并在 dedup 前 join；端到端统计使用�
 ```
 
 `Output/` 与 `runtime/` 都不是源码，也不应提交。根 `.venv` 是 core、DA3 和 SAM3 的统一环境；`runtime/sku_detector/.venv` 仅供独立 detector 使用。
+
+当前重建后端为 `da3`、`pi3`、`pi3x`、`mapanything`；VGGT 源码继续用于 point tracking。
+2026-10-09 收尾清理已移除旧实验产物、浏览器基准工具环境及上游 demo 资源，详见 [清理记录](docs/project_cleanup_2026-10-09.md)。
 
 ## 环境
 

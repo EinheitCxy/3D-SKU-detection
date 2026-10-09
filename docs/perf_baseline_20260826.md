@@ -1,5 +1,8 @@
 # fd2–4 DA3 到 Web Viewer one-shot cold 性能报告
 
+> 此处保留 2026-08-26 的历史报告摘要。`perf/runs/` 原始运行产物已按
+> 2026-09-24 的清理要求移除；逐阶段日志、遥测和浏览器回执不再可从本地复核。
+
 ## 结论
 
 本报告来自全新 run `20260826T084815Z`。三个数据集各自使用不存在的新目录，从 DA3 reconstruction 开始重新生成 cache；personalcare classification 与 reconstruction/matching 并行，analysis/dedup 显式消费本次 enriched detections。三个 case 的 7 个 stage 均以 exit code 0 完成，没有 warm case、重复 browser navigation 或旧 run fallback。
@@ -74,7 +77,7 @@ fd3/fd4 使用 SwiftShader，fd2 没有暴露 renderer。浏览器数据可用�
 3. fd4 viewer export 为 44.985s，适合进一步拆分点云过滤、标签传播和缩略图时间。
 4. 在独占 GPU 与硬件 WebGL 环境重跑，才能获得可归因的 GPU peak 和浏览器渲染性能。
 
-## Artifacts
+## 原始 Artifacts（已清理）
 
 - Machine summary：`summary.json`
 - Generated report：`report.md`

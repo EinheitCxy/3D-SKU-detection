@@ -548,6 +548,106 @@ def test_pipeline_cli_defaults_classifier_device_to_cuda_zero(
     assert captured["classifier_device"] == "cuda:0"
 
 
+def test_reconstruction_cli_rejects_retired_vggt(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        main.sys,
+        "argv",
+        ["main.py", "--mode", "reconstruct", "--recon_backend", "vggt"],
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        main.main()
+
+    assert exc.value.code == 2
+    assert "invalid choice: 'vggt'" in capsys.readouterr().err
+
+
+def test_reconstruction_cli_defaults_to_da3_without_yaml_backend(
+    monkeypatch, tmp_path
+) -> None:
+    config = tmp_path / "empty.yaml"
+    config.write_text("{}\n", encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setattr(main, "_configure_logging_to_save_root", lambda _path: None)
+    monkeypatch.setattr(
+        main.SKUDetectionMain,
+        "run_reconstruction",
+        lambda _self, _dataset, **kwargs: calls.append(kwargs["backend"]),
+    )
+    monkeypatch.setattr(
+        main.sys,
+        "argv",
+        ["main.py", "--config", str(config), "--mode", "reconstruct"],
+    )
+
+    main.main()
+
+    assert calls == ["da3"]
+
+
+def test_point_tracking_cli_preserves_vggt_matching(monkeypatch) -> None:
+    calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(main, "_configure_logging_to_save_root", lambda _path: None)
+    monkeypatch.setattr(
+        main.SKUDetectionMain,
+        "run_concise_pipeline",
+        lambda self, _dataset, algorithm, **_kwargs: calls.append(
+            (self.match_backend, algorithm)
+        ),
+    )
+    monkeypatch.setattr(
+        main.sys,
+        "argv",
+        [
+            "main.py", "--mode", "concise", "--algorithm", "point_tracking",
+            "--match_backend", "vggt",
+        ],
+    )
+
+    main.main()
+
+    assert calls == [("vggt", "point_tracking")]
+
+
+def test_programmatic_reconstruction_defaults_to_registered_da3(
+    monkeypatch, tmp_path
+) -> None:
+    import src
+
+    calls: list[str] = []
+
+    class FakeReconstructor:
+        def __init__(self, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def reconstruct_from_directory(self, **kwargs):
+            return Path(kwargs["output_path"])
+
+    def get_reconstructor(backend):
+        calls.append(backend)
+        return FakeReconstructor
+
+    monkeypatch.setattr(src, "get_reconstructor", get_reconstructor)
+    dataset = tmp_path / "dataset"
+    (dataset / "images").mkdir(parents=True)
+    app = main.SKUDetectionMain()
+    app.save_root = tmp_path / "Output"
+
+    result = app.run_reconstruction(str(dataset))
+
+    assert calls == ["da3"]
+    assert result["success"] is True
+    assert Path(result["details"]["output_file"]) == (
+        app.save_root / "dataset" / "da3_cache" / "reconstruction_da3.glb"
+    )
+
+
 @pytest.mark.parametrize(
     ("argv", "expected"),
     [

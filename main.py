@@ -787,15 +787,12 @@ class SKUDetectionMain:
         *,
         device: str | None = None,
         output_filename: str = "reconstruction.glb",
-        backend: str = "vggt",
+        backend: str = "da3",
         conf_thres: float = 50.0,
         model_path: str | None = None,
         show_cam: bool = True,
-        mask_black_bg: bool = True,
-        mask_white_bg: bool = True,
-        mask_sky: bool = True,
     ) -> StepResult:
-        """生成3D点云/GLB（支持后端：已注册的 ReconstructorBase 子类，当前 da3/pi3；vggt 可选）。
+        """生成3D点云/GLB（支持已注册的 da3/pi3/pi3x/mapanything 后端）。
 
         - 输入图片目录：<dataset>/images
         - 输出GLB：<save_root>/<dataset_name>/reconstruction_{backend}.glb（或 <dataset>/reconstruction_{backend}.glb）
@@ -804,15 +801,10 @@ class SKUDetectionMain:
         start = perf_counter()
         from src import RECONSTRUCTOR_REGISTRY, get_reconstructor
 
-        use_backend = (backend or "vggt").lower()
+        use_backend = (backend or "da3").lower()
         if use_backend not in RECONSTRUCTOR_REGISTRY:
             available = ", ".join(sorted(RECONSTRUCTOR_REGISTRY)) or "(无)"
-            hint = (
-                "（如需启用 vggt，请恢复 src/__init__.py 中 VGGT3DReconstructor 的注册）"
-                if use_backend == "vggt"
-                else ""
-            )
-            raise ValueError(f"未知/未启用的重建后端: {backend}. 已注册: {available}{hint}")
+            raise ValueError(f"未知/未启用的重建后端: {backend}. 已注册: {available}")
 
         dataset = Path(dataset_path)
         if not dataset.exists():
@@ -833,7 +825,7 @@ class SKUDetectionMain:
         if (
             use_backend not in output_path.stem
         ):  # 检查文件名（不含扩展名）中是否已包含模型名
-            # 在扩展名前插入模型名称：reconstruction.glb -> reconstruction_vggt.glb
+            # 在扩展名前插入模型名称：reconstruction.glb -> reconstruction_da3.glb
             new_filename = f"{output_path.stem}_{use_backend}{output_path.suffix}"
             output_file = cache_dir / new_filename
         else:
@@ -843,15 +835,6 @@ class SKUDetectionMain:
 
         # 通过注册表获取后端类（新增后端只需 @register_reconstructor + 在 src/__init__.py 导入）
         recon_cls = get_reconstructor(use_backend)
-        # vggt 的 export_glb 需要 mask_* 参数（经 reconstruct_from_directory 的 **kwargs 透传）；
-        # da3/pi3 无此参数，忽略即可。
-        extra_kwargs: dict = {}
-        if use_backend == "vggt":
-            extra_kwargs = {
-                "mask_black_bg": mask_black_bg,
-                "mask_white_bg": mask_white_bg,
-                "mask_sky": mask_sky,
-            }
         with recon_cls(device=device, model_path=model_path) as recon:
             result_path = recon.reconstruct_from_directory(
                 input_dir=str(image_dir),
@@ -859,7 +842,6 @@ class SKUDetectionMain:
                 conf_thres=conf_thres,
                 show_cam=show_cam,
                 save_predictions=True,
-                **extra_kwargs,
             )
 
         duration = perf_counter() - start
@@ -1053,7 +1035,7 @@ class SKUDetectionMain:
             # 1. 3D重建（如果使用3D算法）
             if "3d" in algorithm:
                 match_backend = (
-                    self.match_backend if hasattr(self, "match_backend") else "vggt"
+                    self.match_backend if hasattr(self, "match_backend") else "da3"
                 )
                 # DA3 的 canonical 产物是 schema-v3 metric predictions.npz；其他后端用 GLB。
                 dataset = Path(dataset_path)
@@ -1165,7 +1147,7 @@ class SKUDetectionMain:
             print("1. 运行完整流水线")
             print("2. 运行精简流水线 (SKU Matching + Accuracy evaluation)")
             print("3. 更改数据集路径")
-            print("4. 3D重建 (VGGT/PI3/PI3X/DA3/MapAnything)")
+            print("4. 3D重建 (PI3/PI3X/DA3/MapAnything)")
             print("0. 退出")
 
             # 显示数据集路径（如果是绝对路径，显示相对于 PROJECT_ROOT 的路径）
@@ -1250,11 +1232,11 @@ class SKUDetectionMain:
             elif choice == "4":
                 while True:
                     backend = (
-                        input(f"选择重建后端 ({'/'.join(BACKEND_CHOICES)}): ")
+                        input(f"选择重建后端 ({'/'.join(RECONSTRUCTION_BACKEND_CHOICES)}): ")
                         .strip()
                         .lower()
                     )
-                    if backend in BACKEND_CHOICES:
+                    if backend in RECONSTRUCTION_BACKEND_CHOICES:
                         break
                     logger.warning(f"无效的后端 '{backend}'，请重新输入")
                 res = self.run_reconstruction(self.default_dataset, backend=backend)
@@ -1265,12 +1247,9 @@ class SKUDetectionMain:
                 print("无效选择，请重试")
 
 
-"""3D 重建/匹配后端集合；interactive 菜单与 argparse choices 共用。
-
-注意与 src 注册表（RECONSTRUCTOR_REGISTRY）解耦：此处是 CLI 面板的
-用户可选后端（含 pi3x/mapanything 等只读/对比后端），新增后端时两边同步。
-"""
+# 匹配保留 VGGT；重建菜单和 CLI 仅提供当前已注册的重建器。
 BACKEND_CHOICES = ["vggt", "pi3", "pi3x", "da3", "mapanything"]
+RECONSTRUCTION_BACKEND_CHOICES = ["pi3", "pi3x", "da3", "mapanything"]
 
 
 def main() -> None:
@@ -1419,9 +1398,9 @@ def main() -> None:
     parser.add_argument(
         "--recon_backend",
         type=str,
-        default=yaml_recon.get("backend", "vggt"),
-        choices=BACKEND_CHOICES,
-        help=f"3D重建后端 ({'|'.join(BACKEND_CHOICES)})",
+        default=yaml_recon.get("backend", "da3"),
+        choices=RECONSTRUCTION_BACKEND_CHOICES,
+        help=f"3D重建后端 ({'|'.join(RECONSTRUCTION_BACKEND_CHOICES)})",
     )
     parser.add_argument(
         "--recon_model_path",

@@ -15,16 +15,13 @@ main:
 
 # 3D重建配置（DA3 为当前默认后端）
 reconstruction:
-  backend: "da3"  # 可选 vggt/pi3/da3；当前可运行默认是 DA3
+  backend: "da3"  # 可选 pi3/pi3x/da3/mapanything；默认 DA3
   input_dir: "images"  # 输入图像目录(相对于数据集目录)
-  output_file: "reconstruction.glb"  # 输出文件名，实际会自动添加后端名: reconstruction_vggt.glb或reconstruction_pi3.glb
+  output_file: "reconstruction.glb"  # 输出文件名，实际会自动添加后端名，如 reconstruction_da3.glb
   device: "cuda"  # 计算设备: cuda/cpu
   model_path: null  # 预训练模型路径，null=从HuggingFace自动下载
   conf_thres: 50.0  # 点云置信度阈值(0-100)，低于此值的3D点被过滤，值越高点云越稀疏但质量越好
   show_cam: true  # 是否在GLB中显示相机位置标记
-  mask_black_bg: false  # 是否过滤黑色背景区域的点
-  mask_white_bg: false  # 是否过滤白色背景区域的点
-  mask_sky: false  # 是否过滤天空区域的点(户外场景用)
 
 # SKU匹配推理配置 (src/inference.py)
 inference:
@@ -73,10 +70,6 @@ accuracy:
   system_result: null  # 系统输出文件路径(必需)，支持VGGT/Pi3/Point Tracking的matching_summary.txt
   dataset_filter: null  # 数据集过滤器，如"floor_display2"，仅评估包含该字符串的数据
   output: null  # 评估报告输出路径，null=自动生成到accuracy_results/目录
-
-# 批量准确性分析配置 (modules/analyze_accuracy_metrics.py)
-batch_accuracy:
-  base_dir: "imdata"  # 包含floor_display*目录的根目录，用于批量扫描所有数据集进行评估
 
 # 地堆 footprint 面积配置（--mode ground-stack-area）
 # 指标：da3_self_exemplar_ground_footprint_union —— matching 生成的 self-exemplar mask
