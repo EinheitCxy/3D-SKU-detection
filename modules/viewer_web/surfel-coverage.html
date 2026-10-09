@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Surfel coverage trials</title>
+  <style>
+    body { margin: 0; padding: 18px; font: 15px/1.5 system-ui,sans-serif; color:#e6edf5; background:#101923; }
+    h1 { margin:0 0 8px; font-size:25px; } p { margin:8px 0; }
+    .muted { color:#aebdd0; } .controls { display:flex; gap:14px; flex-wrap:wrap; align-items:center; margin:14px 0; }
+    select,button { color:inherit; background:#263548; border:1px solid #61728a; border-radius:5px; padding:7px; }
+    .panels { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    article { border:1px solid #425169; border-radius:8px; overflow:hidden; }
+    h2 { font-size:17px; margin:10px 14px; } .viewport { width:100%; height:67vh; min-height:350px; }
+    .metrics { padding:0 14px; font-variant-numeric:tabular-nums; }
+    #error { background:#552930; white-space:pre-wrap; padding:12px; } #references img { max-width:100%; }
+    details { margin:12px 0; } pre { white-space:pre-wrap; overflow-wrap:anywhere; }
+    @media(max-width:800px) { .panels { grid-template-columns:1fr; } .viewport { height:52vh; } }
+  </style>
+</head>
+<body>
+  <h1>Surfel coverage trials</h1>
+  <p>Same 29 source frames. Rotate, zoom and pan either view; both cameras stay synchronized.</p>
+  <p class="muted">Gray surfaces have no assigned texture. Empty areas show the dark background. Each trial has its own matched reference.</p>
+  <div class="controls">
+    <label>Trial <select id="trial" disabled><option value="texture">1 · Retain texture sources</option><option value="adaptive">2 · Adaptive edge sampling</option><option value="coverage">3 · Coverage budget — first trial</option><option value="coverage_bounded">3b · Coverage budget — bounded exchange</option></select></label>
+    <label>View <select id="preset"><option value="front">Source-0 direction</option><option value="side60" selected>Shelf overview (60°)</option><option value="close">Product close-up</option><option value="close-side">Product side close-up</option></select></label>
+    <label><input type="checkbox" id="source-color"> Color by source frame</label>
+    <button id="reset">Reset view</button><span id="status">Loading…</span>
+  </div>
+  <p id="description"></p><pre id="error" hidden></pre>
+  <main class="panels"><article><h2 id="reference-title">Reference</h2><div class="viewport" id="reference"></div><p class="metrics" id="reference-metrics"></p></article><article><h2 id="candidate-title">Candidate</h2><div class="viewport" id="candidate"></div><p class="metrics" id="candidate-metrics"></p></article></main>
+  <p class="muted">Coverage numbers compare against cached input-view depths, not physical ground truth. Texture continuity and object boundaries must also be inspected.</p>
+  <details><summary>Measured results and limitations</summary><pre id="details"></pre></details>
+  <details id="references"><summary>All input frames</summary><img id="observations" alt="The 29 input frames"></details>
+  <script type="module" src="/surfel-coverage.mjs"></script>
+</body></html>

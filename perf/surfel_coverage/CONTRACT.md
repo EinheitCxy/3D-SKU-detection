@@ -1,0 +1,29 @@
+# Surfel coverage trials (2026-09-24)
+
+Rick authorized three bounded, isolated CPU experiments with subagents: (1) retain reliable texture sources and cover residual patches, (2) adaptive edge sampling, (3) allocate the same point budget to additional observed surface coverage. Coordinator owns integration, official runs, evaluation, and final decision. No production changes, model inference/training, GPU runs, dependency installation, commits, publication, or replacement of existing assets.
+
+Read-only inputs: `runtime/video3-resolution-review/504/outputs/dataset/da3_cache/predictions.npz`, source images `runtime/video3-resolution-review/dataset/images`, and `runtime/roi-fusion-video3-gid3-v2/shelf-view/{input.npz,fused.npz,meta.json,*-stats.json,*.glb}`. All 29 camera poses and intrinsics remain fixed. Existing `perf/roi_fusion/` is read-only.
+
+Writes: new `perf/surfel_coverage/`, new `runtime/surfel-coverage-20260924/`, new `modules/viewer_web/surfel-coverage.{html,mjs}`, and task journal `docs/work-journal/2026-09-24-surfel-coverage/`. Keep old files intact. Use `uv run --no-sync python`, existing dependencies, at most 8 CPU threads per official run, sequential expensive runs, timeout 15 minutes per command, new artifacts below 3 GiB. These are coordinator-selected execution limits within the user's authorized task, not a newly approved research budget. Three candidates; one bounded implementation repair per candidate if required.
+
+## Shared interfaces
+
+`load_dense()` (coordinator) returns a dict with `points_grid[F,H,W,3]`, `u_grid`, `v_grid`, `depth[F,H,W]`, `confidence_grid`, `valid[F,H,W]`, `K[F,3,3]`, `E[F,4,4]`, `affine[F,3,3]`, `image_paths`, `image_ids`, `spacing` (the original median pixel spacing), and `baseline_indices` (valid original stride-4 flat indices).
+
+Sampling candidates expose `select(data, budget) -> {indices: int64[N], scales: float[N,2], stats: dict}`. Indices are unique C-order `(frame,y,x)` flattened original-grid samples, all `valid`. No fabricated points or changed depth. Scales multiply one-pixel U/V at mesh construction; preserve finite positive footprints and report their distribution. Both sampling candidates have **exactly the baseline point budget** (217049 for this input). Keep frame/xy/source mapping. Source texture remains each selected point's original frame, with the existing four-sample visibility gate. Method 2 may redistribute footprint density/size as its one algorithmic change. Method 3 uses the baseline scale 4 for all points, changing selection only. Method 3 may use spatial occupancy as a coverage proxy but must call it a proxy; actual projected coverage is evaluated independently.
+
+Texture candidate exposes `choose_sources(vertices, faces, data, preferred_sources=...) -> (sources[T], stats)`. Geometry is exactly the existing fused discs (scale 4, radius 1.05). `preferred_sources` repeats `fused['frame']` eight times. Preserve valid original/primary sources; only assign previously uncovered connected residual regions to strictly valid views. Keep old depth/mask/front-face gates. No averaging, threshold relaxation, paint filling, or hole deletion. Report recovered and still-uncovered area and source-switch diagnostics. Existing source selection is the baseline.
+
+## Evaluation fixed before runs
+
+Texture compares to old fused + spatial-patch textures on identical geometry. Sampling compares to old unfused uniform stride-4 discs + original-source textures. Do not combine candidates in this round or attribute geometry/texturing confounds to one method.
+
+Report: point/face count, untextured triangle-area fraction, artifact bytes, selection/export wall time. Independently raycast discs at original camera grids for frames 0,4,9,14,19,24,28; measure original valid-depth pixel coverage within `max(2*spacing,0.005*depth)`, matched pixels whose face has texture, nearer inconsistent geometry, and projection outside valid support. These are reference-depth/visibility proxies, not geometric ground truth. Camera frames are input views, not held-out quality evidence. Screen gray/pixel metrics and total triangle area are distinct.
+
+Visual acceptance: synchronized front, side60, close-up, and source-color views; inspect text seams, duplicated layers, edge bleeding, and holes. A lower gray fraction alone does not pass. Exploratory results are accepted for further work only if useful coverage improves without clear visual or boundary regression; otherwise retain as a negative/inconclusive trial. No automatic promotion to production.
+
+Workers own only their named modules, their focused tests, and individual Markdown reports. They must not spawn agents or launch full-scene runs. Preserve others' edits and report required scope expansion before acting. Coordinator runs the smallest relevant tests, prepares side-by-side artifacts, and dispatches an independent read-only audit after results exist.
+
+## One bounded repair after observed candidate-3 failure
+
+The first coverage selector produced 21.67% missing input-reference pixels versus 0.007% for uniform. With 1,015,703 cells competing for 217049 slots, weighted round-robin never reached a second slot: it effectively selected global high-quality cells. Preserve this negative run as `coverage`. Coordinator authorizes one `coverage_bounded` repair within the existing one-repair limit, no parameter sweep: retain at least 15/16 baseline observations in each occupied 16x16 source tile; do not release boundary/unsupported anchors; exchange the same number for spatially distributed novel observed cells. Keep exact budget, scale4, source rules, reference inputs, seven-camera evaluator and visual acceptance unchanged. Report actual removed/added count and world triangle areas. This is an exploratory repair chosen after seeing v1, not an a-priori independent fourth hypothesis.
