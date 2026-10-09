@@ -332,6 +332,7 @@ def test_dedup_rejects_invalid_classification_without_publishing_global_artifact
 
     assert not (publication_dir / "global_mapping.json").exists()
     assert not (publication_dir / "global_skus.json").exists()
+    assert not (publication_dir / "1_dedup.json").exists()
 
 
 def _write_single_classified_detection(dataset, classification) -> None:
@@ -437,3 +438,159 @@ def test_dedup_publishes_a_complete_valid_global_pair(tmp_path) -> None:
     global_skus = json.loads((publication_dir / "global_skus.json").read_text())
     assert mapping["1"][0]["classification"]["sku_id"] == "A"
     assert json.loads(global_skus[0])["objects"][0]["classification"]["sku_id"] == "A"
+
+
+def _write_dedup_dataset(tmp_path, frame_objects: dict[int, int], edges=()):
+    dataset = tmp_path / "dataset"
+    detections_dir = dataset / "detections_results"
+    detections_dir.mkdir(parents=True)
+    for image_id, object_count in frame_objects.items():
+        objects = [
+            {
+                "position": [float(index), 0.0, float(index + 1), 1.0],
+                "classification": resolved(f"sku-{image_id}-{index}", "产品", 0.8),
+            }
+            for index in range(object_count)
+        ]
+        (detections_dir / f"{image_id}.json").write_text(
+            json.dumps({"skus": [{"classes": {"frame": image_id}, "objects": objects}]}),
+            encoding="utf-8",
+        )
+
+    output_root = tmp_path / "Output"
+    summary_root = output_root / dataset.name / "output_3dmapping_da3"
+    for ref_image, ref_object, target_image, target_object, score in edges:
+        summary_dir = summary_root / str(ref_image)
+        summary_dir.mkdir(parents=True, exist_ok=True)
+        summary = summary_dir / "matching_summary.txt"
+        with summary.open("a", encoding="utf-8") as handle:
+            handle.write(
+                f"Matching objects between reference image {ref_image} and target image {target_image}\n"
+                f"Matched ref {ref_object} -> target {target_object} "
+                f"(hit ratio: {score:.2f} 10/10)\n"
+                f"Found 1 matches in image {target_image}\n"
+            )
+    return dataset, output_root
+
+
+def _assert_frame_outputs_match_global_artifacts(
+    publication_dir, frame_ids: list[int], same_names: bool = False
+) -> None:
+    mapping = json.loads((publication_dir / "global_mapping.json").read_text())
+    global_skus = [
+        json.loads(item)
+        for item in json.loads((publication_dir / "global_skus.json").read_text())
+    ]
+    mapped_retained = {
+        (entry["image_id"], entry["object_id"]): int(global_id)
+        for global_id, entries in mapping.items()
+        for entry in entries
+        if not entry["removed"]
+    }
+    sku_retained = {
+        (image_id, object_id): obj["global_id"]
+        for image_id, image in zip(frame_ids, global_skus)
+        for object_id, obj in enumerate(image["objects"])
+        if not obj["is_deduplicated"]
+    }
+    assert mapped_retained == sku_retained
+
+    for image_id, image in zip(frame_ids, global_skus):
+        filename = f"{image_id}.json" if same_names else f"{image_id}_dedup.json"
+        frame = json.loads((publication_dir / filename).read_text())
+        frame_skus = [
+            obj["classification"]["sku_id"] for obj in frame["objects"]
+        ]
+        expected_skus = [
+            obj["classification"]["sku_id"]
+            for object_id, obj in enumerate(image["objects"])
+            if (image_id, object_id) in mapped_retained
+        ]
+        assert frame_skus == expected_skus
+        assert len(frame["objects"]) == sum(
+            mapped_image == image_id for mapped_image, _ in mapped_retained
+        )
+        assert frame["classes"] == {"frame": image_id}
+
+
+@pytest.mark.parametrize(
+    "frame_ids,same_names",
+    [([0, 1, 2], True), ([1, 2, 3], False)],
+)
+@pytest.mark.parametrize("dedup_mode", ["any", "best"])
+def test_conflicting_ring_keeps_frame_json_mapping_and_global_skus_consistent(
+    tmp_path, frame_ids, same_names, dedup_mode
+) -> None:
+    first, middle, last = frame_ids
+    dataset, output_root = _write_dedup_dataset(
+        tmp_path,
+        {first: 1, middle: 1, last: 2},
+        [
+            (first, 0, middle, 0, 0.95),
+            (middle, 0, last, 0, 0.80),
+            (last, 1, first, 0, 0.90),
+        ],
+    )
+
+    deduplicate_sequence(
+        resolve_dataset_paths(dataset),
+        output_root=output_root,
+        output_subdir="dedup_detections",
+        same_names=same_names,
+        dedup_mode=dedup_mode,
+        algorithm="3d_mapping",
+        backend="da3",
+    )
+
+    publication_dir = output_root / dataset.name / "dedup_detections"
+    _assert_frame_outputs_match_global_artifacts(
+        publication_dir, frame_ids, same_names=same_names
+    )
+    filename = f"{last}.json" if same_names else f"{last}_dedup.json"
+    last_frame = json.loads((publication_dir / filename).read_text())
+    assert len(last_frame["objects"]) == 1
+    assert last_frame["objects"][0]["classification"]["sku_id"] == f"sku-{last}-0"
+
+
+def test_successful_match_and_isolated_objects_keep_expected_dedup_results(
+    tmp_path,
+) -> None:
+    dataset, output_root = _write_dedup_dataset(
+        tmp_path,
+        {1: 1, 2: 2, 3: 1},
+        [(1, 0, 2, 0, 0.9)],
+    )
+
+    deduplicate_sequence(
+        resolve_dataset_paths(dataset),
+        output_root=output_root,
+        output_subdir="dedup_detections",
+        algorithm="3d_mapping",
+        backend="da3",
+    )
+
+    publication_dir = output_root / dataset.name / "dedup_detections"
+    _assert_frame_outputs_match_global_artifacts(publication_dir, [1, 2, 3])
+    assert len(json.loads((publication_dir / "1_dedup.json").read_text())["objects"]) == 1
+    frame2 = json.loads((publication_dir / "2_dedup.json").read_text())
+    assert [obj["classification"]["sku_id"] for obj in frame2["objects"]] == [
+        "sku-2-1"
+    ]
+    assert len(json.loads((publication_dir / "3_dedup.json").read_text())["objects"]) == 1
+
+
+def test_zero_matches_keeps_every_object_as_an_isolated_global_id(tmp_path) -> None:
+    dataset, output_root = _write_dedup_dataset(tmp_path, {1: 1, 2: 2})
+
+    deduplicate_sequence(
+        resolve_dataset_paths(dataset),
+        output_root=output_root,
+        output_subdir="dedup_detections",
+        algorithm="3d_mapping",
+        backend="da3",
+    )
+
+    publication_dir = output_root / dataset.name / "dedup_detections"
+    _assert_frame_outputs_match_global_artifacts(publication_dir, [1, 2])
+    assert len(json.loads((publication_dir / "1_dedup.json").read_text())["objects"]) == 1
+    assert len(json.loads((publication_dir / "2_dedup.json").read_text())["objects"]) == 2

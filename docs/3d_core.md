@@ -113,6 +113,12 @@ matching 完成后 orchestrator 才 join classifier future；matching 与 classi
 
 `global_mapping.json` 的每个 observation（包括 removed observation）保留 classification。后端聚合在 `global_mapping.json` / classification 数据中保留 `confidence`、支持数和最大 confidence，用于对同一 global ID 的 `(sku_id, sku_name)` candidates 确定性排序；这些聚合值不属于 Viewer bundle。resolved 有一个 candidate，conflict 保留全部 candidates，unavailable 没有 candidate；首项 primary 是 Total/SKU facet 的唯一计数来源，避免一个物理对象重复计数。minimal Viewer 的 `objects.json` 只投影排序后的 `ordered_skus` 与 `point_ranges`，不发布或渲染 confidence。
 
+去重先构建并校验最终 global mapping，再生成逐帧去重 JSON 和全帧 `global_skus`。
+逐帧 JSON 按原始对象顺序保留 `removed=false` 的对象；`global_skus` 保留所有原始对象，
+其 `is_deduplicated` 与同一映射的 `removed` 一致。同帧冲突被拒绝的匹配边不参与删除，
+零匹配时每个原始对象各自保留独立 ID。映射或全帧数据校验失败会停止本次逐帧写出；
+单个逐帧文件写入失败仍按现有规则记录并跳过，全局 pair 发布失败仍清理两个全局文件。
+
 ## Footprint 与 SAM3 cache
 
 运行顺序是 canonical contract：matching 必须完成 **全部** `batch_all_refs` references；`--mode ground-stack-area` 是独立的后端计量阶段，`--mode viewer-web` 可在 dedup 后直接发布产品 bundle。matching 是唯一的 SAM3 producer；它在默认 `enable_sam3_mask_sampling: true` 下以 self-exemplar 生成每个 frame 的完整 processed-space masks。master gate 为 false 时 matching 走既有 bbox sampling 且不发布 cache，任何需要实例点标签的 export 必须 fail closed。

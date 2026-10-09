@@ -5,11 +5,13 @@ uv run python src/deduplicate_detections.py --dataset imdata/floor_display2
 用途
 - 读取数据集的检测结果（detections_results/ 数字命名的 JSON）
 - 解析 DA3 产出的 matching_summary.txt（参考/目标均为源图片文件 ID）
-- 依据同一参考物体(ref_id)在早期图片中已出现的情况，去除指定图片中的重复检出框
+- 根据匹配边构建带同帧冲突约束的全局映射
+- 按全局映射中的 removed 标志保留逐帧 JSON 对象
 
-默认策略（序列去重）
-- 处理图片 1..N，其中图片 1 保持不变
-- 对每张图片 i(i>1)，删除它与之前任一图片(1..i-1)中已出现 ref_id 的对应 target_id 的检出框
+去重策略
+- 按 hit ratio 从高到低合并匹配边；会造成同一图片多个对象进入同一组件的边将被跳过
+- 每个最终连通分量中最早出现的对象标记为 removed=false，其余对象标记为 removed=true
+- 逐帧去重 JSON 只保留 removed=false 的对象
 
 输出
 - 将去重后的 JSON 写入 <output_root>/<dataset_name>/dedup_detections/。
@@ -320,9 +322,10 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
                          output_subdir: str = None, algorithm: str = 'point_tracking',
                          backend: str | None = None,
                          detections_dir: Path | None = None) -> Dict[int, Path]:
-    """对 1..N 序列依次去重：
-    - 第1张保留原样
-    - 第i张(i>1)去除在 1..i-1 中已出现过（有匹配）的 ref_id 在第i张对应的 target_id。
+    """根据最终全局映射的 removed 标志生成逐帧去重 JSON。
+
+    每个映射连通分量中最早出现的对象保留，其余观察标记为删除；
+    同帧冲突导致被跳过的匹配边不会单独删除对象。
     返回 {image_idx: 输出路径}。
 
     Args:
@@ -371,10 +374,9 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
     if min_hit_ratio > 0 and all_matches:
         all_matches = [m for m in all_matches if float(m.get('hit_ratio', 0.0)) >= min_hit_ratio]
 
-    # 选择去重策略：'any' 使用所有匹配；'best' 使用一对一过滤。
-    # 全局ID与去重使用同一匹配集合：'any' 下被顺序去重淘汰的近重复检测
-    # 经同一并查集边合并进已有组件，不再拆成独立全局ID重复计数；
-    # 'best' 则保持一对一保守建边，避免同一图片多个框被误并为一个全局ID。
+    # 'any' 使用所有通过阈值的匹配边；'best' 先按图片对做一对一过滤。
+    # 两种模式均由最终全局映射的 removed 标志决定逐帧保留项，
+    # 被并查集拒绝的冲突边不会导致其端点被删除。
     if dedup_mode == 'best':
         matches_for_dedup = filter_best_matches(all_matches) if all_matches else []
     else:
@@ -385,22 +387,6 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
     logger.info(f"[DEBUG] 去重使用的匹配数(matches_for_dedup): {len(matches_for_dedup)}")
     logger.info(f"[DEBUG] 全局ID使用的匹配数(matches_for_gid): {len(matches_for_gid)}")
 
-    # 建立两个删除集合映射（均按 0-based 图像索引记录待删对象ID）
-    # 1) target 视角：删除 image t 中被任何前序参考图命中的 target_id（r_idx < t_idx）
-    drop_target_map: Dict[int, Set[int]] = {}
-    # 2) reference 视角：删除 image r 中那些与任何更早图像存在对应的 ref_id（t_idx < r_idx）
-    drop_ref_map: Dict[int, Set[int]] = {}
-    for m in matches_for_dedup:
-        t_idx = m.get('target_idx')
-        r_idx = m.get('ref_idx')
-        if t_idx is None or r_idx is None:
-            continue
-        # 前序参考图 → 当前 target：删除当前图的 target_id
-        if r_idx < t_idx:
-            drop_target_map.setdefault(t_idx, set()).add(int(m['target_id']))
-        # 当前参考图 → 更早 target：删除当前图的 ref_id
-        if t_idx < r_idx:
-            drop_ref_map.setdefault(r_idx, set()).add(int(m['ref_id']))
     if max_image is not None:
         indices = [i for i in indices if i <= max_image]
     if not indices or indices[0] != 1:
@@ -414,9 +400,10 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
     out_dir.mkdir(parents=True, exist_ok=True)
 
     outputs: Dict[int, Path] = {}
-    # 记录每张图保留下来的对象索引（基于原始 objects 下标）与其对象信息
+    # 最终保留集合从全局映射派生，避免与冲突边处理使用不同的去重决策。
     survivors_by_image: Dict[int, Set[int]] = {}
     objects_by_image: Dict[int, List[Dict]] = {}
+    originals_by_image: Dict[int, Dict] = {}
 
     for i in indices:
         src = paths.detections_dir / f"{i}.json"
@@ -429,39 +416,9 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
             logger.warning(f"Image {i}: 读取检测JSON失败，跳过（{error}）")
             continue
 
-        # 判断是否为第一张图片（支持从0或1开始的编号）
-        is_first_image = (i == indices[0])
+        originals_by_image[i] = original
+        objects_by_image[i] = objects
 
-        if is_first_image:
-            # 第一张图片保留原样，不进行去重
-            survivors_by_image[i] = set(range(len(objects)))
-            objects_by_image[i] = objects
-        else:
-            # 使用文件编号i作为target_idx（匹配结果中的索引与文件编号一致）
-            drop_from_targets = drop_target_map.get(i, set())
-            drop_from_refs = drop_ref_map.get(i, set())
-            drop_ids = set(drop_from_targets) | set(drop_from_refs)
-            survivors_by_image[i] = set(idx for idx in range(len(objects)) if idx not in drop_ids)
-            objects_by_image[i] = objects
-            logger.debug(
-                f"Image {i}: drop {len(drop_ids)} boxes from {len(objects)} "
-                f"(targets:{len(drop_from_targets)}, refs:{len(drop_from_refs)})"
-            )
-
-        # 逐图写出（时序去重结果），单图失败只跳过该图，不影响其余图；
-        # 全局 pair 的构建与发布在其后独立完成。
-        dst = out_dir / (f"{i}.json" if same_names else f"{i}_dedup.json")
-        try:
-            save_detection_objects(
-                dst, original,
-                [obj for index, obj in enumerate(objects) if index in survivors_by_image[i]],
-            )
-        except Exception as error:  # noqa: BLE001 - 单图写入失败不影响整批去重
-            logger.warning(f"Image {i}: 逐图去重JSON写入失败，跳过（{error}）")
-            continue
-        outputs[i] = dst
-
-    logger.info(f"Sequence dedup finished for images {indices[0]}..{indices[-1]} (total {len(indices)})")
     mapping_path = out_dir / 'global_mapping.json'
     global_skus_path = out_dir / 'global_skus.json'
     publication_paths = (mapping_path, global_skus_path)
@@ -472,12 +429,35 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
             matches_for_gid, survivors_by_image, objects_by_image, indices
         )
         _validate_global_mapping_for_publication(mapping)
+        for entries in mapping.values():
+            for entry in entries:
+                if not entry.get('removed', False):
+                    survivors_by_image.setdefault(entry['image_id'], set()).add(
+                        entry['object_id']
+                    )
         json_strings = add_global_id_to_jsons(
             detections_dir=paths.detections_dir,
             global_mapping=mapping,
             indices=indices,
         )
         global_skus = _parse_global_skus_for_publication(json_strings)
+
+        # Per-frame output and global artifacts now share the same retained set.
+        for i, objects in objects_by_image.items():
+            dst = out_dir / (f"{i}.json" if same_names else f"{i}_dedup.json")
+            try:
+                save_detection_objects(
+                    dst, originals_by_image[i],
+                    [
+                        obj for index, obj in enumerate(objects)
+                        if index in survivors_by_image.get(i, set())
+                    ],
+                )
+            except Exception as error:  # noqa: BLE001 - 单图写入失败不影响整批去重
+                logger.warning(f"Image {i}: 逐图去重JSON写入失败，跳过（{error}）")
+                continue
+            outputs[i] = dst
+
         _publish_global_pair(
             mapping_path=mapping_path,
             mapping=mapping,
@@ -489,6 +469,7 @@ def deduplicate_sequence(paths: DatasetPaths, output_root: Path | None = None,
         raise
     logger.info(f"Saved global mapping to: {mapping_path}")
     logger.info(f"Saved global SKUs with metadata to: {global_skus_path} ({len(global_skus)})")
+    logger.info(f"Sequence dedup finished for images {indices[0]}..{indices[-1]} (total {len(indices)})")
 
     return outputs
 
@@ -577,12 +558,13 @@ def build_global_mapping(
     objects_by_image: Dict[int, List[Dict]],
     image_indices: List[int],
 ) -> Dict[str, List[Dict]]:
-    """根据匹配关系与去重结果，为保留的检出框分配全局唯一ID。
+    """根据匹配关系构建全局映射，并标记每个组件中最早的保留观察。
 
     规则
     - 节点: (源图片文件 ID, 原始 object_idx)，包含全部原始检测
     - 边: 使用可信匹配连接两节点；拒绝同一图片不同对象被并入同一组件
-    - 组件: 使用并查集聚类；按图像顺序(1..N)和对象索引顺序为首次出现的组件分配自增ID(从1开始)
+    - 组件: 使用并查集聚类；按图像顺序和对象索引顺序为首次出现的组件分配自增ID(从1开始)
+    - 保留: 每个组件中最早的观察标记为 removed=false，其余标记为 removed=true
     - 值: 每个全局ID下是多个子字典，包含 image_id、object_id、bbox 等原始信息
     """
     # 按置信度降序：高置信边先合并，使连通分量锚定在强匹配上，避免弱错误边污染聚类
@@ -626,28 +608,15 @@ def build_global_mapping(
     logger.info(f"[DEBUG] 匹配关系数量: {len(matches)}")
     logger.info(f"[DEBUG] 有匹配关系的节点数: {len(nodes_with_matches)}")
 
-    # 初始化全部原始检测，未连接的检测保留独立组件
-    total_survivors = 0
-    survivor_nodes = 0
-    match_only_nodes = 0
+    # 初始化全部原始检测，未连接的检测保留独立组件。
     for img_id in image_indices:
         objs = objects_by_image.get(img_id, [])
-        survivors = survivors_by_image.get(img_id, set())
-        img_survivor_count = len(survivors)
-        total_survivors += img_survivor_count
-        logger.info(f"[DEBUG] 图片{img_id}: 原始物体={len(objs)}, 保留物体={img_survivor_count}")
         for obj_idx in range(len(objs)):
             # 每个原始检测都必须进入全局映射；没有可信边的对象成为独立组件。
             parent[(img_id, obj_idx)] = (img_id, obj_idx)
             rank[(img_id, obj_idx)] = 0
-            if obj_idx in survivors:
-                survivor_nodes += 1
-            else:
-                match_only_nodes += 1
 
-    logger.info(f"[DEBUG] 保留物体总数: {total_survivors}")
     logger.info(f"[DEBUG] 初始化节点数(parent): {len(parent)}")
-    logger.info(f"[DEBUG] 其中: 保留物体节点={survivor_nodes}, 仅匹配节点(被删除)={match_only_nodes}")
 
     # 添加边（使用所有匹配连接对应节点）
     # 记录每个连通分量包含哪些图片的物体: root -> {img_id: set(obj_ids)}
@@ -688,35 +657,6 @@ def build_global_mapping(
     unique_roots = set(find(node) for node in parent.keys())
     logger.info(f"[DEBUG] 连通分量数量(即全局ID数): {len(unique_roots)}")
 
-    # === 调试：检查每个连通分量中保留物体的分布 ===
-    # 统计每个连通分量包含多少个保留物体
-    root_to_survivors: Dict[Tuple[int, int], List[Tuple[int, int]]] = {}
-    for node in parent.keys():
-        img_id, obj_idx = node
-        survivors = survivors_by_image.get(img_id, set())
-        if obj_idx in survivors:
-            root = find(node)
-            root_to_survivors.setdefault(root, []).append(node)
-
-    # 统计有多少连通分量包含多个保留物体
-    multi_survivor_components = [(root, nodes) for root, nodes in root_to_survivors.items() if len(nodes) > 1]
-    logger.info(f"[DEBUG] 包含多个保留物体的连通分量数: {len(multi_survivor_components)}")
-
-    # 显示前5个包含多个保留物体的连通分量
-    for i, (root, nodes) in enumerate(multi_survivor_components[:5]):
-        logger.info(f"[DEBUG] 连通分量{i+1}: {nodes}")
-        # 追踪这个连通分量是如何形成的
-        component_nodes = [n for n in parent.keys() if find(n) == root]
-        logger.info(f"[DEBUG]   完整节点列表: {component_nodes}")
-        # 找出哪些匹配边连接了这些节点
-        relevant_matches = []
-        for m in matches:
-            r_node = (int(m.get('ref_idx', -1)), int(m.get('ref_id', -1)))
-            t_node = (int(m.get('target_idx', -1)), int(m.get('target_id', -1)))
-            if r_node in component_nodes and t_node in component_nodes:
-                relevant_matches.append(f"({r_node[0]},{r_node[1]})->({t_node[0]},{t_node[1]})")
-        logger.info(f"[DEBUG]   匹配边: {relevant_matches}")
-
     # 为每个组件分配全局ID（按遇到顺序）
     comp_to_gid: Dict[Tuple[int, int], int] = {}
     gid_counter = 1
@@ -752,6 +692,23 @@ def build_global_mapping(
                 ),
             }
             mapping.setdefault(key, []).append(entry)
+
+    retained_by_image = {img_id: 0 for img_id in image_indices}
+    for entries in mapping.values():
+        for entry in entries:
+            if not entry['removed']:
+                retained_by_image[entry['image_id']] += 1
+    for img_id in image_indices:
+        logger.info(
+            f"[DEBUG] 图片{img_id}: 原始物体={len(objects_by_image.get(img_id, []))}, "
+            f"保留物体={retained_by_image[img_id]}"
+        )
+    retained_count = sum(retained_by_image.values())
+    logger.info(f"[DEBUG] 保留物体总数: {retained_count}")
+    logger.info(
+        f"[DEBUG] 其中: 保留物体节点={retained_count}, "
+        f"仅匹配节点(被删除)={len(parent) - retained_count}"
+    )
 
     return mapping
 

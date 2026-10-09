@@ -4,7 +4,7 @@ node [shape=box, style="rounded,filled", fontname="SimHei", fontsize=15, color="
 edge [fontname="SimHei", fontsize=12, color="#61788d", arrowsize=0.7];
 parse [label="解析真实图片 ID、对象 ID、文本命中率\n保留正向边及末帧 → 首帧闭环", fillcolor="#e8f1ff"];
 threshold [label="去重层再按 min_hit_ratio 筛边\n注意与投影候选门槛是两层", fillcolor="#e8f1ff"];
-best [label="每个 ref-target 图对按 hit_ratio 降序\n贪心选择 ref/target 都未占用的边", fillcolor="#e8f1ff"];
+best [label="any：全部通过阈值的边\nbest：按图像对一对一筛边", fillcolor="#e8f1ff"];
 nodes [label="为全部原始检测初始化节点\n(image_id, object_id)", fillcolor="#e3f6ee"];
 edges_left [label="还有待处理边？", fillcolor="#eee6ff", shape=diamond];
 union [label="取下一条强边\n查找两个端点的 DSU 根", fillcolor="#e8f1ff"];

@@ -3,7 +3,7 @@ flowchart TB
     accDescr: 当前源码对应的身份去重：边、组件、代表和计数，橙色节点表示缺陷或限制。
     parse["解析真实图片 ID、对象 ID、文本命中率<br/>保留正向边及末帧 → 首帧闭环"]
     threshold["去重层再按 min_hit_ratio 筛边<br/>注意与投影候选门槛是两层"]
-    best["每个 ref-target 图对按 hit_ratio 降序<br/>贪心选择 ref/target 都未占用的边"]
+    best["any：全部通过阈值的边<br/>best：按图像对一对一筛边"]
     nodes["为全部原始检测初始化节点<br/>(image_id, object_id)"]
     edges_left{"还有待处理边？"}
     union["取下一条强边<br/>查找两个端点的 DSU 根"]
