@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Full Shelf · Surfel / TSDF Comparison</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px; color: #e6edf5; background: #111720; font: 14px/1.6 system-ui, sans-serif; }
+    h1 { margin: 0 0 4px; font-size: 23px; }
+    p { margin: 5px 0 12px; }
+    .notice { color: #ffce87; }
+    .muted { color: #a8b7c8; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 18px 0; }
+    select, button { padding: 7px 10px; color: inherit; background: #273345; border: 1px solid #526078; border-radius: 5px; }
+    label { display: inline-flex; align-items: center; gap: 7px; }
+    #columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    article { overflow: hidden; border: 1px solid #354355; border-radius: 8px; background: #1b2430; }
+    h2 { font-size: 17px; margin: 10px 14px; }
+    .viewport { height: min(70vh, 720px); min-height: 400px; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    pre { margin: 10px 14px; overflow: auto; max-height: 260px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #error { color: #ffb3b3; background: #421e26; padding: 12px; white-space: pre-wrap; }
+    [hidden] { display: none !important; }
+    #legend { display: flex; flex-wrap: wrap; gap: 12px; }
+    .swatch { display: inline-block; width: 12px; height: 12px; margin-right: 5px; border-radius: 2px; }
+    #references { display: flex; flex-wrap: wrap; gap: 16px; }
+    figure { margin: 0; max-width: 340px; }
+    figure img { max-width: 100%; max-height: 260px; object-fit: contain; }
+    details { margin-top: 16px; }
+    summary { cursor: pointer; }
+    .metrics { margin: 10px 14px; }
+    article details { margin: 10px 14px; }
+    article details pre { margin: 8px 0; }
+    @media (max-width: 800px) { body { padding: 10px; } #columns { overflow-x: auto; grid-template-columns: repeat(2, 400px); } }
+  </style>
+</head>
+<body data-assets-port="8768" data-assets-path="/shelf-view/">
+  <h1>Full Shelf · Surfel / TSDF Comparison</h1>
+  <p class="notice">Both views use the same 29 frames and fixed camera poses. Left: cross-frame fused Surfel discs. Right: a TSDF mesh simplified to one million triangles and retextured from the source frames.</p>
+  <p class="muted">Drag to rotate, scroll to zoom, or right-drag to pan. The two cameras stay synchronized. Gray areas have no valid texture source.</p>
+  <p class="muted">This is an experimental full-shelf preview: the Surfel discs use a GLB renderer, and neither side applies the production Viewer’s SKU protection or background filtering. Source-camera presets use camera positions while looking toward the scene center.</p>
+  <div class="toolbar">
+    <label>View <select id="preset" disabled><option value="front">Front</option><option value="side30">Side 30°</option><option value="side60">Side 60°</option><option value="side">Side 90°</option></select></label>
+    <label><input id="source-color" type="checkbox" disabled>Color by source frame</label>
+    <label hidden><input id="context" type="checkbox" disabled>Show context</label>
+    <button id="reset" disabled>Reset view</button>
+    <span id="status" role="status">Loading full-shelf assets…</span>
+  </div>
+  <p id="error" role="alert" hidden></p>
+  <div id="legend" hidden></div>
+  <main id="columns">
+    <article><h2>Fused Surfel · primary textures</h2><div class="viewport" id="fused"></div><p class="metrics" id="fused-summary"></p><details><summary>Details</summary><pre id="fused-stats"></pre></details></article>
+    <article><h2>TSDF mesh · retextured</h2><div class="viewport" id="tsdf"></div><p class="metrics" id="tsdf-summary"></p><details><summary>Details</summary><pre id="tsdf-stats"></pre></details></article>
+  </main>
+  <details><summary>Input frames</summary><div id="references"></div></details>
+  <details><summary>Rendering environment</summary><pre id="environment"></pre></details>
+  <script type="module" src="/roi-fusion.mjs"></script>
+</body>
+</html>

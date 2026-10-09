@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Video3 单商品融合实验</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 20px; color: #e6edf5; background: #111720; font: 14px/1.6 system-ui, sans-serif; }
+    h1 { margin: 0 0 4px; font-size: 23px; } p { margin: 5px 0 12px; }
+    .notice { color: #ffce87; } .muted { color: #a8b7c8; }
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin: 18px 0; }
+    select, button { padding: 7px 10px; color: inherit; background: #273345; border: 1px solid #526078; border-radius: 5px; }
+    label { display: inline-flex; align-items: center; gap: 7px; }
+    #columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    article { overflow: hidden; border: 1px solid #354355; border-radius: 8px; background: #1b2430; }
+    h2 { font-size: 17px; margin: 10px 14px; } .viewport { height: min(65vh, 650px); min-height: 360px; }
+    canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    pre { margin: 10px 14px; overflow: auto; max-height: 260px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #error { color: #ffb3b3; background: #421e26; padding: 12px; white-space: pre-wrap; } [hidden] { display: none !important; }
+    #legend { display: flex; flex-wrap: wrap; gap: 12px; } .swatch { display: inline-block; width: 12px; height: 12px; margin-right: 5px; border-radius: 2px; }
+    #references { display: flex; flex-wrap: wrap; gap: 16px; } figure { margin: 0; max-width: 340px; } figure img { max-width: 100%; max-height: 260px; object-fit: contain; }
+    details { margin-top: 16px; } summary { cursor: pointer; }
+    .metrics { margin: 10px 14px; } .metrics strong { font-weight: 600; } article details { margin: 10px 14px; } article details pre { margin: 8px 0; }
+    @media (max-width: 800px) { body { padding: 10px; } #columns { overflow-x: auto; grid-template-columns: repeat(3, 300px); } }
+  </style>
+</head>
+<body>
+  <h1>Video3 · 单商品融合对比</h1>
+  <p class="notice">原始与融合 Surfel 采用相同的实验圆盘和无光照材质，并非生产 Surfel shader。原始 Surfel 保留各自来源图；融合与 TSDF 按表面片区固定主纹理。TSDF 为网格结果。</p>
+  <p class="muted">三列相机同步：拖动旋转、滚轮缩放、右键平移。帧颜色表示固定贴图来源；灰色表示未贴图。</p>
+  <p class="muted">各视角使用统一显示相机，朝向展示区域中心；来源视角仅沿用原相机位置，不复现原图朝向和内参。本页不提供基于原图真值的误差指标。</p>
+  <div class="toolbar">
+    <label>观察视角 <select id="preset" disabled><option value="front">正视</option><option value="side30">侧视 30°</option><option value="side60">侧视 60°</option><option value="side">侧视 90°</option></select></label>
+    <label><input id="source-color" type="checkbox" disabled>按来源帧着色</label>
+    <label><input id="context" type="checkbox" disabled>显示周围场景</label>
+    <button id="reset" disabled>重置视角</button>
+    <span id="status" role="status">正在加载实验资产…</span>
+  </div>
+  <p id="error" role="alert" hidden></p>
+  <div id="legend" hidden></div>
+  <main id="columns">
+    <article><h2>原始 Surfel（实验渲染）</h2><div class="viewport" id="baseline"></div><p class="metrics" id="baseline-summary"></p><details><summary>详细指标</summary><pre id="baseline-stats"></pre></details></article>
+    <article><h2>融合＋固定主纹理</h2><div class="viewport" id="fused"></div><p class="metrics" id="fused-summary"></p><details><summary>详细指标</summary><pre id="fused-stats"></pre></details></article>
+    <article><h2>TSDF 网格</h2><div class="viewport" id="tsdf"></div><p class="metrics" id="tsdf-summary"></p><details><summary>详细指标</summary><pre id="tsdf-stats"></pre></details></article>
+  </main>
+  <p class="muted">法向分散中位数是几何代理指标，并非商品实际厚度；较小数值不能单独证明重建更准确。</p>
+  <details open><summary>原始图像与生产渲染参考</summary><p class="muted">原始图像仅作为观察参考，不参与三列相机同步。</p><div id="references"></div></details>
+  <details><summary>运行环境与实验说明</summary><pre id="environment"></pre></details>
+  <script type="module" src="/roi-fusion.mjs"></script>
+</body>
+</html>
