@@ -11,7 +11,9 @@ import {
   Int8BufferAttribute,
   Matrix3,
   Matrix4,
+  OrthographicCamera,
   PerspectiveCamera,
+  Plane,
   Points,
   Raycaster,
   Scene,
@@ -29,6 +31,8 @@ import { createSurfelRenderer } from "./surfel-renderer";
 import { createRenderLoop } from "./render-loop";
 import type { ViewerBundle } from "./bundle-loader";
 import type { ObjectIndex } from "./contracts";
+import type { Manifest } from "./contracts";
+import { AreaMeasurement, type AreaPoint, type AreaMeasurementState } from "./area-measurement";
 import { POINTS_LAYER, createViewerPipeline } from "./edl";
 import { focusedCameraPosition } from "./focus";
 import {
@@ -58,6 +62,13 @@ const VIEW_TRANSITION_MS = 420;
 const SELECTION_BOX_PADDING_RATIO = 0.02;
 
 export interface ViewerSceneController {
+  getAreaMeasurementAvailability(): string | null;
+  startAreaMeasurement(): void;
+  stopAreaMeasurement(): void;
+  closeAreaMeasurement(): void;
+  undoAreaMeasurement(): void;
+  clearAreaMeasurement(): void;
+  setAreaMeasurementHandler(handler: ((state: AreaMeasurementState) => void) | null): void;
   setRenderMode(mode: "points" | "surfel"): void;
   setSourceSelection(enabled: boolean): void;
   selectGlobalId(globalId: string | null): void;
@@ -112,11 +123,40 @@ export function viewPresetDirection(preset: "fit" | "top" | "isometric"): Vector
   return new Vector3(0, 0, 1);
 }
 
+export function areaMeasurementAvailability(manifest: Manifest): string | null {
+  if (!manifest.measurement || manifest.measurement.coordinate_unit !== "m") {
+    return "此数据包缺少米制尺度信息，请重新导出支持面积测量的数据包。";
+  }
+  if (manifest.measurement.orientation_status !== "fitted") {
+    return "此数据包尚未确定水平方向，无法测量水平占地面积。";
+  }
+  const m = manifest.world_to_view;
+  const rows = [[m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]];
+  const rigid = rows.every((row, i) => rows.every((other, j) =>
+    Math.abs(row.reduce((sum, value, k) => sum + value * other[k], 0) - (i === j ? 1 : 0)) < 1e-5));
+  const matrix = new Matrix4().fromArray(m).transpose();
+  if (!rigid || Math.abs(matrix.determinant() - 1) > 1e-5
+    || m.slice(12).some((value, i) => Math.abs(value - (i === 3 ? 1 : 0)) > 1e-8)) {
+    return "场景变换含缩放或畸变，无法直接按平方米测量。";
+  }
+  return null;
+}
+
+export function horizontalPointAtNdc(camera: OrthographicCamera, x: number, y: number, height: number): AreaPoint | null {
+  const raycaster = new Raycaster();
+  raycaster.setFromCamera(new Vector2(x, y), camera);
+  const hit = raycaster.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -height), new Vector3());
+  return hit === null ? null : [hit.x, hit.z];
+}
+
 export function createViewerScene(container: HTMLElement, bundle: ViewerBundle): ViewerSceneController {
   const scene = new Scene();
   const background = new Color("#ffffff");
   scene.background = background;
-  const camera = new PerspectiveCamera(50, 1, 0.01, 10000);
+  const perspectiveCamera = new PerspectiveCamera(50, 1, 0.01, 10000);
+  const measurementCamera = new OrthographicCamera(-1, 1, 1, -1, 0.01, 10000);
+  measurementCamera.up.set(0, 0, -1);
+  let camera: PerspectiveCamera | OrthographicCamera = perspectiveCamera;
   const renderer = new WebGLRenderer({
     antialias: true,
     powerPreference: "high-performance",
@@ -127,9 +167,24 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   container.append(renderer.domElement);
 
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.screenSpacePanning = true;
+  const perspectiveControls = new OrbitControls(perspectiveCamera, renderer.domElement);
+  perspectiveControls.enableDamping = true;
+  perspectiveControls.screenSpacePanning = true;
+  const measurementControls = new OrbitControls(measurementCamera, renderer.domElement);
+  measurementControls.enableRotate = false;
+  measurementControls.enableDamping = false;
+  measurementControls.screenSpacePanning = true;
+  measurementControls.enabled = false;
+  let controls: OrbitControls<PerspectiveCamera> | OrbitControls<OrthographicCamera> = perspectiveControls;
+  const measurement = new AreaMeasurement();
+  let measurementHandler: ((state: AreaMeasurementState) => void) | null = null;
+  let measurementHover: AreaPoint | null = null;
+  const overlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  overlay.classList.add("area-measurement-overlay");
+  overlay.setAttribute("aria-hidden", "true");
+  container.append(overlay);
+  renderer.domElement.tabIndex = 0;
+  renderer.domElement.setAttribute("aria-label", "三维场景；圈选时按 Enter 闭合，Backspace 撤销，Escape 退出");
   const worldGroup = new Group();
   const w2v = bundle.manifest.world_to_view;
   worldGroup.matrix.set(
@@ -162,8 +217,10 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   const sceneCenter = worldBox.getCenter(new Vector3());
   const sceneSpan = Math.max(worldBox.getSize(new Vector3()).length(), 1);
   const sceneRadius = Math.max(sceneSpan * 0.5, 1);
+  let measurementHeight = sceneSpan;
   worldGroup.add(new AxesHelper(sceneSpan * 0.2));
   camera.far = Math.max(sceneRadius * 20, 100);
+  measurementCamera.far = camera.far;
   camera.updateProjectionMatrix();
   scene.fog = new Fog(background, sceneRadius * FOG_NEAR_RADII, sceneRadius * FOG_FAR_RADII);
   const pipeline = points ? createViewerPipeline(renderer, scene, camera) : null;
@@ -176,6 +233,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   let focusAnimation: FocusAnimation | null = null;
   const renderLoop = createRenderLoop(animate);
   controls.addEventListener("change", renderLoop.request);
+  measurementControls.addEventListener("change", renderLoop.request);
   let previousTintedRanges: readonly PointRange[] = [];
   const pointSizes = { points: DEFAULT_POINT_SIZE, surfel: DEFAULT_SURFEL_SIZE };
   let currentPointSize = pointSizes[renderMode];
@@ -193,8 +251,13 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   const resize = () => {
     const width = Math.max(container.clientWidth, 1);
     const height = Math.max(container.clientHeight, 1);
-    camera.aspect = width / height;
-    camera.updateProjectionMatrix();
+    perspectiveCamera.aspect = width / height;
+    perspectiveCamera.updateProjectionMatrix();
+    measurementCamera.left = -measurementHeight * width / height / 2;
+    measurementCamera.right = -measurementCamera.left;
+    measurementCamera.top = measurementHeight / 2;
+    measurementCamera.bottom = -measurementCamera.top;
+    measurementCamera.updateProjectionMatrix();
     renderer.setSize(width, height, false);
     pipeline?.setPixelRatio(renderer.getPixelRatio());
     pipeline?.setSize(width, height);
@@ -209,6 +272,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
 
   const onPointerDown = (event: PointerEvent) => {
     if (event.isPrimary && event.button === 0) {
+      if (measurement.state.active) renderer.domElement.focus({ preventScroll: true });
       primaryPointerPress = {
         pointerId: event.pointerId,
         clientX: event.clientX,
@@ -229,6 +293,21 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     if (!isPointClickRelease(press, event)) return;
     const rect = renderer.domElement.getBoundingClientRect();
     pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+    if (measurement.state.active) {
+      const state = measurement.state;
+      if (state.closed) return;
+      const first = state.vertices[0];
+      const projected = first ? new Vector3(first[0], sceneCenter.y, first[1]).project(camera) : null;
+      if (state.vertices.length >= 3 && projected !== null
+        && Math.hypot((projected.x - pointer.x) * rect.width / 2, (projected.y - pointer.y) * rect.height / 2) <= 10) {
+        measurement.close();
+      } else {
+        const point = horizontalPointAtNdc(measurementCamera, pointer.x, pointer.y, sceneCenter.y);
+        if (point) measurement.addPoint(point);
+      }
+      publishMeasurement();
+      return;
+    }
     raycaster.setFromCamera(pointer, camera);
     const surfelHit = renderMode === "surfel" ? surfels?.pick((event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height) : null;
     const hitIndices = renderMode === "surfel" ? (surfelHit == null ? [] : [surfelHit])
@@ -243,6 +322,25 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   renderer.domElement.addEventListener("pointerdown", onPointerDown);
   renderer.domElement.addEventListener("pointerup", onPointerUp);
   renderer.domElement.addEventListener("pointercancel", onPointerCancel);
+  const onPointerMove = (event: PointerEvent) => {
+    if (!measurement.state.active || measurement.state.closed) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    measurementHover = horizontalPointAtNdc(measurementCamera,
+      (event.clientX - rect.left) / rect.width * 2 - 1,
+      -(event.clientY - rect.top) / rect.height * 2 + 1, sceneCenter.y);
+    drawMeasurement();
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (!measurement.state.active) return;
+    if (event.key === "Enter") measurement.close();
+    else if (event.key === "Backspace" || event.key === "Delete") measurement.undo();
+    else if (event.key === "Escape") { stopAreaMeasurement(); event.preventDefault(); return; }
+    else return;
+    event.preventDefault();
+    publishMeasurement();
+  };
+  renderer.domElement.addEventListener("pointermove", onPointerMove);
+  renderer.domElement.addEventListener("keydown", onKeyDown);
   controls.addEventListener("start", () => {
     focusAnimation = null;
   });
@@ -258,12 +356,45 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     controls.update();
     if (renderMode === "surfel") surfels?.render();
     else pipeline?.composer.render();
+    drawMeasurement();
     return renderMode === "points" || focusAnimation !== null;
   }
   renderLoop.request();
   setViewPreset("fit", false);
 
   return {
+    getAreaMeasurementAvailability() { return areaMeasurementAvailability(bundle.manifest); },
+    startAreaMeasurement() {
+      const unavailable = areaMeasurementAvailability(bundle.manifest);
+      if (unavailable !== null) throw new Error(unavailable);
+      if (!measurement.state.active) {
+        focusAnimation = null;
+        primaryPointerPress = null;
+        perspectiveControls.enabled = false;
+        controls = measurementControls;
+        controls.enabled = true;
+        camera = measurementCamera;
+        measurementCamera.zoom = 1;
+        const size = worldBox.getSize(new Vector3());
+        measurementHeight = 1.15 * Math.max(size.z, size.x / perspectiveCamera.aspect, 0.1);
+        measurementControls.target.copy(sceneCenter);
+        measurementCamera.position.copy(sceneCenter).add(new Vector3(0, sceneRadius * 4, 0));
+        measurementCamera.lookAt(sceneCenter);
+        measurementCamera.updateMatrixWorld();
+        controls.update();
+        pipeline?.setCamera(camera);
+        surfels?.setCamera(camera);
+        resize();
+      }
+      measurement.start();
+      renderer.domElement.style.cursor = "crosshair";
+      publishMeasurement();
+    },
+    stopAreaMeasurement,
+    closeAreaMeasurement() { measurement.close(); publishMeasurement(); },
+    undoAreaMeasurement() { measurement.undo(); publishMeasurement(); },
+    clearAreaMeasurement() { measurement.clear(); publishMeasurement(); },
+    setAreaMeasurementHandler(handler) { measurementHandler = handler; handler?.(measurement.state); },
     setSourceSelection(enabled) {
       surfels?.setSourceSelection(enabled);
       renderLoop.request();
@@ -286,13 +417,14 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       updateSelectionPointTint(globalIds);
     },
     focusGlobalId(globalId) {
+      if (measurement.state.active) return;
       const pointBox = computeSelectionBox(globalId);
       if (pointBox === null) return;
       pointBox.applyMatrix4(worldGroup.matrix);
       const target = pointBox.getCenter(new Vector3());
       const targetRadius = Math.max(pointBox.getSize(new Vector3()).length() * 0.8, 0.15);
       const distance = Math.max(
-        targetRadius / Math.sin((camera.fov * Math.PI) / 360),
+        targetRadius / Math.sin((perspectiveCamera.fov * Math.PI) / 360),
         0.45 * sceneRadius,
       );
       const focused = focusedCameraPosition(
@@ -333,12 +465,17 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     },
     dispose() {
       renderLoop.dispose();
-      controls.removeEventListener("change", renderLoop.request);
+      perspectiveControls.removeEventListener("change", renderLoop.request);
+      measurementControls.removeEventListener("change", renderLoop.request);
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
       renderer.domElement.removeEventListener("pointerup", onPointerUp);
       renderer.domElement.removeEventListener("pointercancel", onPointerCancel);
-      controls.dispose();
+      renderer.domElement.removeEventListener("pointermove", onPointerMove);
+      renderer.domElement.removeEventListener("keydown", onKeyDown);
+      perspectiveControls.dispose();
+      measurementControls.dispose();
+      overlay.remove();
       pipeline?.dispose();
       surfels?.dispose();
       scene.traverse((object) => {
@@ -352,6 +489,69 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       renderer.domElement.remove();
     },
   };
+
+  function publishMeasurement(): void {
+    measurementHover = null;
+    measurementHandler?.(measurement.state);
+    drawMeasurement();
+  }
+
+  function stopAreaMeasurement(): void {
+    measurement.stop();
+    measurementControls.enabled = false;
+    perspectiveControls.enabled = true;
+    controls = perspectiveControls;
+    camera = perspectiveCamera;
+    pipeline?.setCamera(camera);
+    surfels?.setCamera(camera);
+    renderer.domElement.style.cursor = "";
+    primaryPointerPress = null;
+    publishMeasurement();
+    renderLoop.request();
+  }
+
+  function drawMeasurement(): void {
+    const state = measurement.state;
+    overlay.replaceChildren();
+    overlay.style.display = state.active ? "block" : "none";
+    if (!state.active) return;
+    const width = container.clientWidth, height = container.clientHeight;
+    overlay.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    const project = (point: AreaPoint) => {
+      const p = new Vector3(point[0], sceneCenter.y, point[1]).project(camera);
+      return [(p.x + 1) * width / 2, (1 - p.y) * height / 2] as const;
+    };
+    const positions = state.vertices.map(project);
+    if (positions.length) {
+      const outline = document.createElementNS(overlay.namespaceURI, state.closed ? "polygon" : "polyline");
+      outline.setAttribute("points", positions.map(p => p.join(",")).join(" "));
+      outline.setAttribute("fill", state.closed ? "rgba(217,119,6,0.2)" : "none");
+      outline.setAttribute("stroke", "#d97706");
+      outline.setAttribute("stroke-width", "2");
+      overlay.append(outline);
+    }
+    if (!state.closed && measurementHover !== null && positions.length) {
+      const preview = document.createElementNS(overlay.namespaceURI, "polyline");
+      preview.setAttribute("points", [positions[positions.length - 1], project(measurementHover)].map(p => p.join(",")).join(" "));
+      preview.setAttribute("fill", "none");
+      preview.setAttribute("stroke", "#d97706");
+      preview.setAttribute("stroke-width", "1.5");
+      preview.setAttribute("stroke-dasharray", "5 4");
+      overlay.append(preview);
+    }
+    positions.forEach(([x, y], index) => {
+      const dot = document.createElementNS(overlay.namespaceURI, "circle");
+      dot.setAttribute("cx", String(x)); dot.setAttribute("cy", String(y));
+      dot.setAttribute("r", index === 0 ? "6" : "4");
+      dot.setAttribute("fill", "#fff"); dot.setAttribute("stroke", "#b65b19");
+      dot.setAttribute("stroke-width", "2");
+      const label = document.createElementNS(overlay.namespaceURI, "text");
+      label.setAttribute("x", String(x + 9)); label.setAttribute("y", String(y - 8));
+      label.setAttribute("fill", "#7c3c0b"); label.setAttribute("font-size", "12");
+      label.textContent = String(index + 1);
+      overlay.append(dot, label);
+    });
+  }
 
   function computeSelectionBox(globalId: string): Box3 | null {
     return cachedSelectionBox(selectionBoxCache, globalId, () => {
@@ -393,6 +593,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   }
 
   function setViewPreset(preset: "fit" | "top" | "isometric", animateView: boolean): void {
+    if (measurement.state.active) return;
     const target = selectedGlobalIdForCamera === null
       ? sceneCenter
       : computeSelectionBox(selectedGlobalIdForCamera)
@@ -400,7 +601,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
         .getCenter(new Vector3()) ?? sceneCenter;
     const direction = viewPresetDirection(preset);
     const distance = Math.max(
-      sceneRadius / Math.tan((camera.fov * Math.PI) / 360) * (preset === "top" ? 1.15 : 1.5),
+      sceneRadius / Math.tan((perspectiveCamera.fov * Math.PI) / 360) * (preset === "top" ? 1.15 : 1.5),
       1,
     );
     const offset = direction.normalize().multiplyScalar(distance);

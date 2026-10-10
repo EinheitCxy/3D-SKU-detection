@@ -1,3 +1,4 @@
+import { createAreaMeasurementPanel } from "./area-measurement-panel";
 import { loadDockerViewerBundle } from "./docker-zip-loader";
 import { loadViewerBundle, type ViewerBundle } from "./bundle-loader";
 import { loadSurfels } from "./surfel-loader";
@@ -290,6 +291,7 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
     renderToggle.textContent = activeRenderMode === "surfel" ? "切换到原始点云" : "切换到 Surfel";
   });
   viewControls.prepend(renderToggle, sourceToggle);
+  let areaMeasurementActive = false;
   let selectionMode: SelectionMode = "sku";
   let selectedGlobalId: string | null = null;
   let selectedFacetId: string | null = null;
@@ -440,7 +442,7 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
     previous.disabled = state.previousDisabled;
     next.disabled = state.nextDisabled;
     clear.disabled = selectedGlobalId === null;
-    focus.disabled = selectedGlobalId === null
+    focus.disabled = areaMeasurementActive || selectedGlobalId === null
       || !canFocusGlobalId(bundle.objects[selectedGlobalId]);
   };
   const facetsForMode = () => {
@@ -552,7 +554,7 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   });
   clear.addEventListener("click", () => selectGlobal(null, false));
   focus.addEventListener("click", () => {
-    if (selectedGlobalId !== null) {
+    if (!areaMeasurementActive && selectedGlobalId !== null) {
       controller.focusGlobalId(selectedGlobalId);
     }
   });
@@ -563,7 +565,7 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   controlsPanel.addEventListener("click", (event) => {
     const target = event.target as HTMLElement;
     const preset = target.dataset.preset as "fit" | "top" | "isometric" | undefined;
-    if (preset !== undefined) controller.setViewPreset(preset);
+    if (!areaMeasurementActive && preset !== undefined) controller.setViewPreset(preset);
   });
   controlsPanel.querySelector<HTMLInputElement>('[data-control="point-size"]')?.addEventListener("input", (event) => {
     const target = event.target as HTMLInputElement;
@@ -572,6 +574,7 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
     if (value !== null) value.textContent = Number(target.value).toFixed(3);
   });
   controller.setPointPickHandler((globalId) => {
+    if (areaMeasurementActive) return;
     const next = selectionStateAfterCanvasPick(selectionMode, selectedFacetId, globalId);
     selectionMode = next.mode;
     selectedFacetId = next.selectedFacetId;
@@ -585,6 +588,25 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
     renderGlobalList();
     renderSelectedObject();
   });
+  const measurementPanel = createAreaMeasurementPanel(controller, (active) => {
+    areaMeasurementActive = active;
+    hint.hidden = active;
+    focus.disabled = active || selectedGlobalId === null
+      || !canFocusGlobalId(bundle.objects[selectedGlobalId]);
+    for (const preset of controlsPanel.querySelectorAll<HTMLButtonElement>("[data-preset]")) {
+      preset.disabled = active;
+    }
+    if (active) {
+      viewControlsExpanded = false;
+      configureViewControlsState(controlsToggle, controlsPanel, false);
+    }
+  });
+  sceneStage.append(measurementPanel.element);
+  window.addEventListener("pagehide", () => {
+    measurementPanel.dispose();
+    controller.setPointPickHandler(null);
+    controller.dispose();
+  }, { once: true });
   renderSelectionMode();
   renderFacetButtons();
   renderGlobalList();

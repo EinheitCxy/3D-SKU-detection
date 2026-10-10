@@ -11,6 +11,13 @@ export interface Manifest {
   readonly frame_count: number;
   readonly display_bounds: readonly [number, number, number, number, number, number];
   readonly world_to_view: readonly number[];
+  readonly measurement?: MeasurementMetadata;
+}
+
+export interface MeasurementMetadata {
+  readonly coordinate_unit: "m" | "unknown";
+  readonly horizontal_plane: "viewer_xz";
+  readonly orientation_status: "fitted" | "not_found";
 }
 
 export interface OrderedSku {
@@ -62,6 +69,7 @@ export function validateManifest(value: unknown): Manifest {
   const frameCount = asNonNegativeInteger(record.frame_count, "manifest frame_count");
   const displayBounds = validateDisplayBounds(record.display_bounds);
   const worldToView = validateWorldToView(record.world_to_view);
+  const measurement = "measurement" in record ? validateMeasurement(record.measurement) : undefined;
   return {
     schema_version: "3.0.0",
     dataset_name: datasetName,
@@ -69,6 +77,25 @@ export function validateManifest(value: unknown): Manifest {
     frame_count: frameCount,
     display_bounds: displayBounds,
     world_to_view: worldToView,
+    ...(measurement === undefined ? {} : { measurement }),
+  };
+}
+
+function validateMeasurement(value: unknown): MeasurementMetadata {
+  const record = asRecord(value, "manifest measurement");
+  if (record.coordinate_unit !== "m" && record.coordinate_unit !== "unknown") {
+    throw contractError("manifest measurement coordinate_unit must be m or unknown");
+  }
+  if (record.horizontal_plane !== "viewer_xz") {
+    throw contractError("manifest measurement horizontal_plane must be viewer_xz");
+  }
+  if (record.orientation_status !== "fitted" && record.orientation_status !== "not_found") {
+    throw contractError("manifest measurement orientation_status must be fitted or not_found");
+  }
+  return {
+    coordinate_unit: record.coordinate_unit,
+    horizontal_plane: record.horizontal_plane,
+    orientation_status: record.orientation_status,
   };
 }
 

@@ -42,6 +42,24 @@ describe("minimal viewer contracts", () => {
 
   it("accepts the minimal manifest and ignores unknown fields", () => {
     expect(validateManifest({ ...validManifest, source: { ignored: true } })).toEqual(validManifest);
+    expect(validateManifest(validManifest).measurement).toBeUndefined();
+  });
+
+  it.each(["m", "unknown"])("accepts explicit measurement unit %s", (coordinate_unit) => {
+    for (const orientation_status of ["fitted", "not_found"]) {
+      const measurement = { coordinate_unit, horizontal_plane: "viewer_xz", orientation_status };
+      expect(validateManifest({ ...validManifest, measurement }).measurement).toEqual(measurement);
+    }
+  });
+
+  it.each([
+    null, undefined, {},
+    { coordinate_unit: "cm", horizontal_plane: "viewer_xz", orientation_status: "fitted" },
+    { coordinate_unit: "m", horizontal_plane: "world_xy", orientation_status: "fitted" },
+    { coordinate_unit: "m", horizontal_plane: "viewer_xz", orientation_status: "assumed" },
+    { coordinate_unit: "m", horizontal_plane: "viewer_xz" },
+  ])("rejects malformed measurement metadata %j", (measurement) => {
+    expect(() => validateManifest({ ...validManifest, measurement })).toThrow(/measurement/);
   });
 
   it("checks schema, dataset, frame count, bounds, and matrix shape", () => {

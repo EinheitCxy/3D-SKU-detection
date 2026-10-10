@@ -1,4 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { loadSurfels, type SurfelData } from "../../modules/viewer_web/src/surfel-loader";
+
+vi.mock("../../modules/viewer_web/src/surfel-loader", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../../modules/viewer_web/src/surfel-loader")>(),
+  loadSurfels: vi.fn(),
+}));
+
+beforeEach(() => vi.mocked(loadSurfels).mockReset());
+
+function mockSurfelAssets(): SurfelData {
+  const assets = { textures: { dispose: vi.fn() }, depths: { dispose: vi.fn() } } as unknown as SurfelData;
+  vi.mocked(loadSurfels).mockResolvedValueOnce(assets);
+  return assets;
+}
+
 import { bootstrap, candidateLabel, configureViewControlsState, displayPosmValue, selectionModeLabels, selectionModeTransition, selectionSummaryLabels, selectionStateAfterCanvasPick, skuFacetResultLabel, visibleGlobalIdsForFilters } from "../../modules/viewer_web/src/main";
 
 class FakeElement {
@@ -63,6 +78,7 @@ describe("bootstrap", () => {
     const previousDocument = globalThis.document;
     const calls: string[] = [];
     const bundle = {} as import("../../modules/viewer_web/src/bundle-loader").ViewerBundle;
+    const surfels = mockSurfelAssets();
     let mounted: import("../../modules/viewer_web/src/bundle-loader").ViewerBundle | null = null;
     Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: (tag: string) => new FakeElement(tag) } });
     try {
@@ -76,7 +92,8 @@ describe("bootstrap", () => {
         mount: (_root, received) => { mounted = received; },
       });
       expect(calls).toEqual(["https://viewer.test/review/data/", "https://viewer.test/data/"]);
-      expect(mounted).toBe(bundle);
+      expect(loadSurfels).toHaveBeenCalledExactlyOnceWith(bundle, expect.any(Function));
+      expect(mounted).toEqual({ ...bundle, surfels });
     } finally {
       Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });
     }
@@ -165,6 +182,7 @@ describe("recognition task loading", () => {
     const calls: string[] = [];
     let mounted = false;
     const bundle = { disposeAssets: () => {} } as unknown as import("../../modules/viewer_web/src/bundle-loader").ViewerBundle;
+    const surfels = mockSurfelAssets();
     try {
       await bootstrap(root as unknown as HTMLElement, {
         href: "https://viewer.test/?recognition_task_id=task%20id&data=/ignored/&render=points",
@@ -174,14 +192,19 @@ describe("recognition task loading", () => {
           return new Response("archive", { status: fail ? 404 : 200 });
         }) as typeof fetch,
         loadZip: async (_archive: Blob, _data: unknown, mode: string) => {
-          expect(mode).toBe("points");
+          expect(mode).toBe("surfel");
           return bundle;
         },
-        mount: (_root: HTMLElement, loaded: typeof bundle) => { expect(loaded).toBe(bundle); mounted = true; },
+        mount: (_root: HTMLElement, loaded: typeof bundle) => {
+          expect(loaded).toEqual({ ...bundle, surfels });
+          mounted = true;
+        },
       });
       expect(calls).toHaveLength(1);
       expect(calls[0]).toMatch(/\/task%20id\/viewer_bundle.zip$/);
       expect(mounted).toBe(!fail);
+      if (fail) expect(loadSurfels).not.toHaveBeenCalled();
+      else expect(loadSurfels).toHaveBeenCalledExactlyOnceWith(bundle, expect.any(Function));
       if (fail) expect(root.children[0].children[2].textContent).toContain("404");
     } finally {
       Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });

@@ -239,6 +239,8 @@ DA3 bbox 的 source→processed 映射唯一权威是 `predictions.npz` 中每�
 
 ## Minimal Viewer 与点云策略
 
+本地 Viewer 支持“圈选面积”：进入正交俯视，逐点围出闭合区域后显示水平占地面积（m²），支持凹多边形、撤销和重画。它复用已确定的水平方向及米制尺度，不依赖自动 footprint 的商品 OBB 是否通过；旧 bundle 需重新导出以提供测量信息。操作和限制见 [手工圈选水平面积](modules/viewer_web/README.md#手工圈选水平面积)。
+
 Docker 服务端调用 `run_complete_pipeline(..., evaluate_accuracy=False)`，线上请求完成计数后直接导出 Surfel，不依赖人工 benchmark；本地流水线默认仍执行准确率评估。未运行的评估步骤不会在摘要中标为成功。
 
 Surfel 使用已有 DA3 缓存、原图和同网格 SAM3 mask 导出独立纹理表面数据；浏览器通过 `/?data=/data-surfel/&render=surfel` 显式启用，默认 points 入口保持独立。后端导出、Float16 sidecar、逐片元投影与深度融合、商品交互和按需重绘的代码说明见 [Surfel 集成说明](docs/surfel_implementation.md)，命令与限制见 [Viewer README](modules/viewer_web/README.md#深度约束-surfel)。Docker 服务端已启用 Surfel 导出和 COS ZIP 打包；`docker/viewer` 默认以 Surfel 加载新任务。

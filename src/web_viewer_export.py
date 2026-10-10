@@ -125,6 +125,11 @@ def export_web_viewer_bundle(
         "backend": backend,
         "dataset_name": dataset_name,
         "frame_count": int(len(cache["image_ids"])),
+        "measurement": {
+            "coordinate_unit": cache.get("coordinate_unit", "unknown") if backend == "DA3" else "unknown",
+            "horizontal_plane": "viewer_xz",
+            "orientation_status": "fitted" if sampled["level_rotation"][1] else "not_found",
+        },
         "display_bounds": _robust_display_bounds(sampled["positions"]),
         "world_to_view": [
             float(value)
@@ -260,6 +265,11 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
                     "DA3 cache missing required fields: " + ", ".join(missing)
                 )
             cache = {field: loaded[field].copy() for field in _REQUIRED_CACHE_FIELDS}
+            metric = loaded["is_metric"] if "is_metric" in loaded.files else None
+            coordinate_unit = (
+                "m" if metric is not None and metric.shape == ()
+                and metric.dtype.kind in "biuf" and metric.item() == 1 else "unknown"
+            )
     except WebViewerExportError:
         raise
     except (OSError, ValueError) as error:
@@ -340,6 +350,7 @@ def _load_da3_cache(path: Path) -> dict[str, Any]:
         "affine": affine.astype(np.float64, copy=False),
         "extrinsic": extrinsic.astype(np.float64, copy=False),
         "source_image_sizes": sizes,
+        "coordinate_unit": coordinate_unit,
     }
 
 

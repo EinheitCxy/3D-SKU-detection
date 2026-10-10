@@ -109,6 +109,7 @@ uniform sampler2D uFront; uniform sampler2D uWinner; uniform vec2 uResolution; u
 uniform float uPixelCenterOffset;
 uniform sampler2D uCameras;
 uniform vec2 uTextureSize; uniform vec3 uCameraPosition;
+uniform bool uOrthographic; uniform vec3 uViewDirection;
 uniform int uPass; uniform bool uSourceSelection;
 in vec2 vDisk; in vec3 vWorld; in float vViewDepth;
 flat in int vFrame; flat in float vSlot;
@@ -161,7 +162,7 @@ void main() {
   }
   if (uPass == 3) {
     vec3 sourceRay = normalize(vWorld - cameraTexel(14, vFrame).xyz);
-    vec3 currentRay = normalize(vWorld - uCameraPosition);
+    vec3 currentRay = uOrthographic ? uViewDirection : normalize(vWorld - uCameraPosition);
     float alignment = max(0.0, dot(sourceRay, currentRay));
     float quality = 0.85 * alignment + 0.15 * resolution;
     // Quantize quality and prefer the lower frame index for exact ties so a
@@ -248,6 +249,7 @@ export function createSurfelRenderer(
     uCameras: { value: cameras },
     uTextureSize: { value: new Vector2(...data.textureSize) },
     uCameraPosition: { value: new Vector3() }, uPass: { value: 0 }, uSourceSelection: { value: false },
+    uOrthographic: { value: false }, uViewDirection: { value: new Vector3() },
     uRadius: { value: 1.05 },
   };
   const material = new ShaderMaterial({
@@ -286,6 +288,8 @@ export function createSurfelRenderer(
   const syncCameraPosition = () => {
     camera.getWorldPosition(cameraWorldPosition);
     uniforms.uCameraPosition.value.copy(cameraWorldPosition).applyMatrix4(inverseWorld);
+    uniforms.uOrthographic.value = "isOrthographicCamera" in camera;
+    camera.getWorldDirection(uniforms.uViewDirection.value).transformDirection(inverseWorld);
   };
   const renderPass = (pass: number, target: WebGLRenderTarget) => {
     uniforms.uPass.value = pass;
@@ -298,6 +302,7 @@ export function createSurfelRenderer(
     renderer.setRenderTarget(target); renderer.setClearColor(0, 0); renderer.clear(); renderer.render(scene, camera);
   };
   return {
+    setCamera(next: Camera) { camera = next; },
     render() {
       sync();
       syncCameraPosition();

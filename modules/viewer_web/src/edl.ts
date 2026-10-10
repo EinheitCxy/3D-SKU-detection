@@ -9,7 +9,9 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { FullScreenQuad, Pass } from "three/addons/postprocessing/Pass.js";
 import { SMAAPass } from "three/addons/postprocessing/SMAAPass.js";
-import type { PerspectiveCamera, Scene, WebGLRenderer } from "three";
+import type { OrthographicCamera, PerspectiveCamera, Scene, WebGLRenderer } from "three";
+
+type ViewerCamera = PerspectiveCamera | OrthographicCamera;
 
 /** Points render on this camera/scene layer; every other object stays on layer 0. */
 export const POINTS_LAYER = 1;
@@ -38,6 +40,7 @@ uniform sampler2D tDepth;
 uniform vec2 uTexelSize;
 uniform float uCameraNear;
 uniform float uCameraFar;
+uniform bool uOrthographic;
 uniform float uEdlStrength;
 uniform float uEdlRadius;
 varying vec2 vUv;
@@ -46,7 +49,8 @@ varying vec2 vUv;
 float viewDistance(vec2 uv) {
   float depth = texture2D(tDepth, uv).x;
   if (depth >= 1.0) return 0.0;
-  return -perspectiveDepthToViewZ(depth, uCameraNear, uCameraFar);
+  return uOrthographic ? -orthographicDepthToViewZ(depth, uCameraNear, uCameraFar)
+    : -perspectiveDepthToViewZ(depth, uCameraNear, uCameraFar);
 }
 
 float edlResponse(float dist, float neighbour) {
@@ -74,14 +78,14 @@ void main() {
 
 class EDLPass extends Pass {
   private readonly scene: Scene;
-  private readonly camera: PerspectiveCamera;
+  camera: ViewerCamera;
   private readonly renderTarget: WebGLRenderTarget;
   private readonly material: ShaderMaterial;
   private readonly fsQuad: FullScreenQuad;
 
   constructor(
     scene: Scene,
-    camera: PerspectiveCamera,
+    camera: ViewerCamera,
     strength: number,
     radius: number,
   ) {
@@ -102,6 +106,7 @@ class EDLPass extends Pass {
         uTexelSize: { value: new Vector2(1, 1) },
         uCameraNear: { value: 0.01 },
         uCameraFar: { value: 10000 },
+        uOrthographic: { value: false },
         uEdlStrength: { value: strength },
         uEdlRadius: { value: radius },
       },
@@ -135,6 +140,7 @@ class EDLPass extends Pass {
     uniforms.uTexelSize.value.set(1 / this.renderTarget.width, 1 / this.renderTarget.height);
     uniforms.uCameraNear.value = this.camera.near;
     uniforms.uCameraFar.value = this.camera.far;
+    uniforms.uOrthographic.value = "isOrthographicCamera" in this.camera;
     renderer.setRenderTarget(readBuffer);
     this.fsQuad.render(renderer);
   }
@@ -153,9 +159,9 @@ class EDLPass extends Pass {
  */
 class OverlayPass extends Pass {
   private readonly scene: Scene;
-  private readonly camera: PerspectiveCamera;
+  camera: ViewerCamera;
 
-  constructor(scene: Scene, camera: PerspectiveCamera) {
+  constructor(scene: Scene, camera: ViewerCamera) {
     super();
     this.scene = scene;
     this.camera = camera;
@@ -185,6 +191,7 @@ class OverlayPass extends Pass {
 
 export interface ViewerPipeline {
   readonly composer: EffectComposer;
+  setCamera(camera: ViewerCamera): void;
   setPixelRatio(pixelRatio: number): void;
   setSize(width: number, height: number): void;
   dispose(): void;
@@ -202,7 +209,7 @@ export interface PipelineOptions {
 export function createViewerPipeline(
   renderer: WebGLRenderer,
   scene: Scene,
-  camera: PerspectiveCamera,
+  camera: ViewerCamera,
   options: PipelineOptions = {},
 ): ViewerPipeline {
   const edlPass = new EDLPass(
@@ -221,6 +228,10 @@ export function createViewerPipeline(
   composer.addPass(outputPass);
   return {
     composer,
+    setCamera(next) {
+      edlPass.camera = next;
+      overlayPass.camera = next;
+    },
     setPixelRatio(pixelRatio) {
       composer.setPixelRatio(pixelRatio);
     },

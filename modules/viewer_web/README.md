@@ -66,7 +66,7 @@ http://localhost:5173/?recognition_task_id=54ea08a0-a238-4a72-880d-662ffc65250e
 发布采用不可变 `CURRENT -> runs/<run_id>/`：
 
 - `CURRENT` 只包含非空 `run_id`。
-- `manifest.json` 只包含 schema `3.0.0` 所需的 `dataset_name`、非空 `backend`、`frame_count`、`display_bounds` 和 `world_to_view`。
+- `manifest.json` 包含 schema `3.0.0` 所需的 `dataset_name`、非空 `backend`、`frame_count`、`display_bounds` 和 `world_to_view`。新导出额外提供 `measurement`：`coordinate_unit`、`horizontal_plane: viewer_xz` 和 `orientation_status`，供手工面积测量使用；旧包仍可浏览。
 - 固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`；`point_count` 由 positions 长度推导。
 - `objects.json` 每个 global ID 只包含 `ordered_skus`、`point_ranges` 与必填 `observations`；每个 observation 只有 `image_id`、`object_id`、`removed` 与 `thumbnail`，未知扩展字段会被忽略。
 - `sku_masterdata.json` 只包含本 run 的 SKU ID。每项提供 `manufacturer`、`brand`、`category`（可为 null）和布尔 `is_posm`；导出会拒绝缺少任一 bundle SKU 的窄 CSV。
@@ -214,3 +214,11 @@ Surfel 模式下的“局部来源优选（实验）”按钮可即时开关并�
 ## Surfel 来源帧容量
 
 导出和加载支持 1–256 帧，保持 Uint8 来源编号与现有 v2 文件格式。相机矩阵改用浮点纹理读取，避免超过 32 帧后碰到着色器 uniform 数量限制；矩阵列以 RGBA texel 补位存储。纹理数组超过设备层数时明确报错，不截帧。帧数上限不是内存保证，原始高分辨率纹理的显存用量仍随帧数增长。超过 256 帧需调整输入或另行设计分批格式。
+
+## 手工圈选水平面积
+
+本地 Viewer 画布左上角的“圈选面积”展开测量面板。点击“开始圈选”进入正交俯视图，沿区域边界逐点点击；点击起点或“闭合区域”完成，面板显示顶点数和保留四位小数的水平面积（m²）。允许凹多边形，不允许边界自交。右键拖动平移、滚轮缩放；“撤销”先取消闭合，再逐点撤回，“重画”清空并重新开始，“退出测量”恢复原三维视角并保留当前结果。画布获得焦点时可按 Enter 闭合、Backspace 撤销、Escape 退出。面板可折叠。
+
+测量期间暂停商品画布点选，Fit / Top / Iso 和 Focus 暂不可用。只有数据包提供有效米制尺度和方向信息时才能开始；缺少信息会显示原因，不把模型原始尺度标成平方米。旧包需使用更新后的导出器重新导出，可复用重建与匹配缓存，无需重新推理。显示的小数位不代表真实测量精度，结果仍受重建尺度、水平方向和人工选点误差影响。
+
+结果是手工闭合 polygon 的**水平投影面积**，不是任意斜面或商品表面积，也不等同于后端自动 footprint 结果。结果仅保留在当前页面，不写回识别或 SKU 数据。本次功能仅修改本地 Viewer，未更新或部署 Docker。

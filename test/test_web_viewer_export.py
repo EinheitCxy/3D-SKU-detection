@@ -233,9 +233,11 @@ def test_export_publishes_schema3_bundle_with_product_thumbnails(
         "frame_count",
         "display_bounds",
         "world_to_view",
+        "measurement",
     }
     assert manifest["schema_version"] == "3.0.0"
     assert manifest["backend"] == "DA3"
+    assert manifest["measurement"]["coordinate_unit"] == "m"
     assert "source_model" not in manifest
     assert "provenance" not in manifest
     assert manifest["dataset_name"] == "floor_display6"
@@ -327,6 +329,52 @@ def test_export_rejects_empty_dataset_name(exporter_inputs) -> None:
     exporter_inputs["dataset_name"] = " "
     with pytest.raises(WebViewerExportError, match="dataset_name"):
         export_web_viewer_bundle(**exporter_inputs)
+
+
+@pytest.mark.parametrize("metric,unit", [(1, "m"), (0, "unknown"), (None, "unknown")])
+@pytest.mark.parametrize("status", ["fitted", "not_found"])
+def test_export_measurement_uses_cache_scale_and_shared_orientation(
+    exporter_inputs, monkeypatch, metric, unit, status
+):
+    _stable_geometry(monkeypatch)
+    cache_path = exporter_inputs["da3_cache_path"]
+    with np.load(cache_path, allow_pickle=False) as loaded:
+        cache = {key: loaded[key].copy() for key in loaded.files if key != "is_metric"}
+    if metric is not None:
+        cache["is_metric"] = np.asarray(metric, dtype=np.int32)
+    np.savez_compressed(cache_path, **cache)
+    monkeypatch.setattr(
+        exporter, "get_scene_orientation",
+        lambda _path: (SceneOrientation(status, np.eye(3), np.array([0., 1., 0.]), None, {}), "hit"),
+    )
+    result = export_web_viewer_bundle(
+        **exporter_inputs, filter_config=PointCloudFilterConfig(enabled=False)
+    )
+    manifest = json.loads(Path(result["manifest_path"]).read_text())
+    assert manifest["measurement"] == {
+        "coordinate_unit": unit,
+        "horizontal_plane": "viewer_xz",
+        "orientation_status": status,
+    }
+
+
+@pytest.mark.parametrize("leveled", [False, True])
+def test_pi3x_measurement_has_unknown_scale_and_sampled_orientation(
+    exporter_inputs, monkeypatch, leveled
+):
+    _stable_geometry(monkeypatch)
+    cache = exporter._load_da3_cache(exporter_inputs["da3_cache_path"])
+    monkeypatch.setattr(exporter, "_load_pi3x_cache", lambda *_: cache)
+    monkeypatch.setattr(exporter, "_fit_level_rotation", lambda *_: (np.eye(3), leveled))
+    result = export_web_viewer_bundle(
+        **exporter_inputs, backend="Pi3X", filter_config=PointCloudFilterConfig(enabled=False)
+    )
+    manifest = json.loads(Path(result["manifest_path"]).read_text())
+    assert manifest["measurement"] == {
+        "coordinate_unit": "unknown",
+        "horizontal_plane": "viewer_xz",
+        "orientation_status": "fitted" if leveled else "not_found",
+    }
 
 
 def test_export_uses_level_rotation_and_centers_rotated_points(
