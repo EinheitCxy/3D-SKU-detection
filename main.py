@@ -1565,7 +1565,11 @@ def main() -> None:
     elif args.mode == "ground-stack-area":
         from src.da3_footprint_stage import run_da3_footprint
 
-        result = run_da3_footprint(args.dataset, app.save_root)
+        result = run_da3_footprint(
+            args.dataset,
+            app.save_root,
+            sam3_mask_cache_root=args.sam3_mask_cache_root,
+        )
         if not result["success"]:
             logger.error(
                 "ground-stack-area rejected: %s (report: %s)",

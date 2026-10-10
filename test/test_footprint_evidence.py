@@ -10,6 +10,7 @@ from shapely.geometry import box
 from utils.footprint_evidence import (
     EvidenceObservation,
     FormalSnapshot,
+    _sample_reprojection_indices,
     build_shadow_evidence,
 )
 from utils.ground_stack_footprint import SupportPlane
@@ -391,12 +392,15 @@ def test_valid_evidence_is_json_serializable_and_reports_reconstruction_residual
     json.dumps(evidence, allow_nan=False)
 
 
-def test_pairwise_sampling_uses_first_512_qualified_flattened_indices(tmp_path):
-    fields = _identity_camera_arrays(2, 24, 24, focal_length=100.0)
+def test_pairwise_sampling_detects_disagreement_only_in_bottom_half(tmp_path):
+    fields = _identity_camera_arrays(2, 32, 32, focal_length=100.0)
     cache_path = _write_npz(tmp_path / "sample_cap.npz", fields)
-    processed_mask = np.ones((24, 24), dtype=bool)
-    target_mask = np.zeros((24, 24), dtype=bool)
-    target_mask.reshape(-1)[:512] = True
+    processed_mask = np.ones((32, 32), dtype=bool)
+    target_mask = np.zeros((32, 32), dtype=bool)
+    target_mask[:16] = True
+    # The previous prefix sampling sees only agreeing pixels in the top half.
+    old_indices = np.flatnonzero(processed_mask.reshape(-1))[:512]
+    assert target_mask.reshape(-1)[old_indices].all()
 
     evidence = build_shadow_evidence(
         cache_path,
@@ -405,13 +409,35 @@ def test_pairwise_sampling_uses_first_512_qualified_flattened_indices(tmp_path):
             _observation(0, processed_mask),
             _observation(1, target_mask),
         ),
-        formal_snapshot=_snapshot(box(0.0, 0.0, 0.23, 0.23)),
+        formal_snapshot=_snapshot(box(0.0, 0.0, 0.31, 0.31)),
     )
 
     first_direction = evidence["per_global_id"]["1"]["pairs"][0]
     assert first_direction["source_sample_count"] == 512
-    assert first_direction["visible_mask_supported_count"] == 512
-    assert first_direction["visible_mask_unsupported_count"] == 0
+    assert first_direction["visible_mask_supported_count"] == 256
+    assert first_direction["visible_mask_unsupported_count"] == 256
+
+
+@pytest.mark.parametrize("qualified_count", [0, 5, 512, 513, 2048])
+def test_reprojection_sampling_preserves_small_masks_and_bounds_large_masks(
+    qualified_count,
+):
+    mask = np.zeros((2, max(qualified_count, 1)), dtype=bool)
+    mask.reshape(-1)[1 : 2 * qualified_count : 2] = True
+    qualified = np.flatnonzero(mask.reshape(-1))
+
+    sampled = _sample_reprojection_indices(mask)
+
+    assert len(sampled) == min(qualified_count, 512)
+    assert np.array_equal(sampled, _sample_reprojection_indices(mask))
+    assert len(np.unique(sampled)) == len(sampled)
+    assert mask.reshape(-1)[sampled].all()
+    if qualified_count <= 512:
+        assert np.array_equal(sampled, qualified)
+    else:
+        assert sampled[0] == qualified[0]
+        assert sampled[-1] == qualified[-1]
+        assert np.count_nonzero(sampled < mask.size // 2) == 256
 
 
 def test_single_observation_is_clearly_marked_insufficient(tmp_path):

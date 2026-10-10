@@ -22,6 +22,7 @@ from src.sku_masterdata import load_sku_masterdata_csv
 from utils.da3_cache_validation import validate_affine_linear_parts
 from utils.global_id_mapper import GlobalIDMapper
 from utils.global_object_index import build_global_object_index
+from utils.scene_orientation import fit_scene_orientation, get_scene_orientation
 from utils.pointcloud_filter import PointCloudFilterConfig, filter_scene_points
 from utils.sam3_mask_cache import (
     FrameMaskCacheError,
@@ -81,6 +82,7 @@ def export_web_viewer_bundle(
     voxel_size = _validate_export_options(voxel_size_m)
     if backend not in {"DA3", "Pi3X"}:
         raise WebViewerExportError(f"Unsupported viewer backend: {backend}")
+    cache_stat = Path(da3_cache_path).stat() if backend == "DA3" else None
     cache = (
         _load_pi3x_cache(Path(da3_cache_path), Path(source_images_dir))
         if backend == "Pi3X" else _load_da3_cache(Path(da3_cache_path))
@@ -89,6 +91,16 @@ def export_web_viewer_bundle(
     thumbnails = _generate_thumbnails(
         objects, _resolve_source_images(Path(source_images_dir))
     )
+    level_rotation = None
+    if backend == "DA3":
+        orientation, _cache_event = get_scene_orientation(Path(da3_cache_path))
+        current_stat = Path(da3_cache_path).stat()
+        if any(
+            getattr(cache_stat, field) != getattr(current_stat, field)
+            for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        ):
+            raise WebViewerExportError("DA3 cache changed while preparing viewer geometry")
+        level_rotation = (orientation.rotation, orientation.status == "fitted")
     sampled = _sample_points(
         cache,
         objects,
@@ -96,6 +108,7 @@ def export_web_viewer_bundle(
         voxel_size=voxel_size,
         filter_config=filter_config or PointCloudFilterConfig(),
         adaptive_surfels=surfel_texture_edge is not None,
+        level_rotation=level_rotation,
     )
     if surfel_texture_edge is not None:
         from src.surfel_export import prepare_surfels
@@ -378,6 +391,7 @@ def _sample_points(
     voxel_size: float,
     filter_config: PointCloudFilterConfig,
     adaptive_surfels: bool = False,
+    level_rotation: tuple[np.ndarray, bool] | None = None,
 ) -> dict[str, Any]:
     flat_points = cache["points"].reshape(-1, 3)
     flat_confidence = cache["confidence"].reshape(-1)
@@ -395,7 +409,8 @@ def _sample_points(
         valid &= depth.ravel() > 0
     valid_indices = np.flatnonzero(valid)
     valid_points = flat_points[valid].astype(np.float64, copy=False)
-    level_rotation = _fit_level_rotation(valid_points, cache["extrinsic"])
+    if level_rotation is None:
+        level_rotation = _fit_level_rotation(valid_points, cache["extrinsic"])
     labels, label_keys = _instance_labels_v2(
         cache, objects, valid_indices, len(flat_points), mask_cache_root
     )
@@ -810,71 +825,10 @@ def _minimal_objects(
     return result
 
 
-_PLANE_SUBSAMPLE = 200_000
-_PLANE_MIN_INLIER_RATIO = 0.05
-_PLANE_MAX_TILT_DEG = 60.0
-_PLANE_MAX_CANDIDATES = 8
-_PLANE_MAX_BELOW_RATIO = 0.15
-
-
-def _fit_level_rotation(
-    valid_points: np.ndarray, extrinsic: np.ndarray
-) -> tuple[np.ndarray, bool]:
-    """Fit a floor plane from unfiltered points and map it into viewer Y-up."""
-    if len(valid_points) < 3:
-        raise WebViewerExportError("DA3 cache has too few points to orient the scene")
-    try:
-        import open3d as o3d
-    except ImportError as error:
-        raise ImportError("Open3D required: pip install open3d") from error
-
-    rotation_w2c = extrinsic[:, :, :3]
-    translation_w2c = extrinsic[:, :, 3]
-    camera_centers = -np.einsum("nji,nj->ni", rotation_w2c, translation_w2c)
-    camera_mean = camera_centers.mean(axis=0)
-    subsample = (
-        valid_points
-        if len(valid_points) <= _PLANE_SUBSAMPLE
-        else valid_points[
-            np.linspace(0, len(valid_points) - 1, _PLANE_SUBSAMPLE).astype(np.int64)
-        ]
-    )
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(subsample)
-    median_nn = float(np.median(pcd.compute_nearest_neighbor_distance()))
-    distance_threshold = float(np.clip(median_nn * 3.0, 0.02, 0.15))
-    min_inliers = _PLANE_MIN_INLIER_RATIO * len(subsample)
-    m_flip = np.diag([1.0, -1.0, -1.0, 1.0])
-    remaining = pcd
-    for _ in range(_PLANE_MAX_CANDIDATES):
-        if len(remaining.points) < max(min_inliers, 3):
-            break
-        plane, inliers = remaining.segment_plane(
-            distance_threshold, ransac_n=3, num_iterations=1000
-        )
-        inliers = np.asarray(inliers)
-        plane_coeffs = np.asarray(plane[:4], dtype=np.float64)
-        norm = float(np.linalg.norm(plane_coeffs[:3]))
-        if not math.isfinite(norm) or norm <= np.finfo(np.float64).eps:
-            logger.warning("RANSAC returned a degenerate plane; skipping candidate")
-            remaining = remaining.select_by_index(inliers, invert=True)
-            continue
-        normal = plane_coeffs[:3] / norm
-        plane_d = plane_coeffs[3] / norm
-        if normal @ (camera_mean - subsample.mean(axis=0)) < 0:
-            normal = -normal
-            plane_d = -plane_d
-        tilt_deg = math.degrees(math.acos(max(-1.0, min(1.0, -normal[1]))))
-        below_ratio = float(np.mean(subsample @ normal + plane_d < -0.1))
-        if (
-            len(inliers) >= min_inliers
-            and tilt_deg <= _PLANE_MAX_TILT_DEG
-            and below_ratio <= _PLANE_MAX_BELOW_RATIO
-        ):
-            r_level = _shortest_arc_to_y_up(m_flip[:3, :3] @ normal)
-            return (r_level @ m_flip)[:3, :3], True
-        remaining = remaining.select_by_index(inliers, invert=True)
-    return m_flip[:3, :3].copy(), False
+def _fit_level_rotation(valid_points: np.ndarray, extrinsic: np.ndarray) -> tuple[np.ndarray, bool]:
+    """Retain the existing entry point for callers using in-memory geometry."""
+    orientation = fit_scene_orientation(valid_points, extrinsic)
+    return orientation.rotation, orientation.status == "fitted"
 
 
 def _compute_world_to_view(
@@ -882,39 +836,13 @@ def _compute_world_to_view(
 ) -> np.ndarray:
     """Center post-filter points after applying the fitted world-to-view rotation."""
     if len(filtered_points) == 0:
-        raise WebViewerExportError("DA3 cache has too few points to orient the scene")
+        raise ValueError("DA3 cache has too few points to orient the scene")
     rotation, _leveled = level_rotation
     transform = np.eye(4)
     transform[:3, :3] = rotation
     transform[:3, 3] = -np.median(filtered_points @ rotation.T, axis=0)
     return transform
 
-
-def _shortest_arc_to_y_up(normal: np.ndarray) -> np.ndarray:
-    """Return the homogeneous shortest-arc rotation from ``normal`` to +Y."""
-    target = np.asarray([0.0, 1.0, 0.0])
-    axis = np.cross(normal, target)
-    sine = float(np.linalg.norm(axis))
-    cosine = float(np.clip(normal @ target, -1.0, 1.0))
-    rotation = np.eye(4)
-    if sine < 1e-9:
-        if cosine > 0:
-            return rotation
-        rotation[:3, :3] = np.diag([1.0, -1.0, -1.0])
-        return rotation
-    axis /= sine
-    angle = math.atan2(sine, cosine)
-    skew = np.asarray(
-        [
-            [0.0, -axis[2], axis[1]],
-            [axis[2], 0.0, -axis[0]],
-            [-axis[1], axis[0], 0.0],
-        ]
-    )
-    rotation[:3, :3] = (
-        np.eye(3) + math.sin(angle) * skew + (1.0 - math.cos(angle)) * (skew @ skew)
-    )
-    return rotation
 
 
 def _robust_display_bounds(positions: np.ndarray) -> list[float]:

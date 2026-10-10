@@ -16,6 +16,7 @@ from src.da3_runner import (
     _validate_model_id,
 )
 from utils import footprint_evidence as evidence_module
+from utils.config import default_sam3_mask_cache_root
 from utils.sam3_mask_cache import (
     FrameMaskCacheRequest,
     ProcessedDetectionPrompt,
@@ -23,13 +24,19 @@ from utils.sam3_mask_cache import (
 )
 
 
-def test_ground_stack_area_cli_calls_da3_footprint_stage(monkeypatch, tmp_path):
+@pytest.mark.parametrize("explicit_root", [False, True])
+def test_ground_stack_area_cli_calls_da3_footprint_stage(
+    monkeypatch, tmp_path, explicit_root
+):
     import main
 
-    calls: list[tuple[str, Path]] = []
+    calls: list[tuple[str, Path, str | None]] = []
+    cache_root = str(tmp_path / "custom_masks" / "v2") if explicit_root else None
 
-    def run_da3_footprint(dataset: str, save_root: Path) -> dict[str, object]:
-        calls.append((dataset, save_root))
+    def run_da3_footprint(
+        dataset: str, save_root: Path, *, sam3_mask_cache_root=None
+    ) -> dict[str, object]:
+        calls.append((dataset, save_root, sam3_mask_cache_root))
         return {
             "success": True,
             "status": "accepted",
@@ -50,12 +57,13 @@ def test_ground_stack_area_cli_calls_da3_footprint_stage(monkeypatch, tmp_path):
             str(dataset),
             "--save_root",
             str(save_root),
+            *(["--sam3_mask_cache_root", cache_root] if explicit_root else []),
         ],
     )
 
     main.main()
 
-    assert calls == [(str(dataset), save_root.resolve())]
+    assert calls == [(str(dataset), save_root.resolve(), cache_root)]
 
 
 @pytest.mark.parametrize(
@@ -94,7 +102,7 @@ def test_ground_stack_area_cli_preserves_rejected_exit_and_report_log(
     monkeypatch.setattr(
         stage,
         "run_da3_footprint",
-        lambda *_: {
+        lambda *_, **__: {
             "success": False,
             "status": "rejected",
             "report_path": str(report_path),
@@ -139,7 +147,7 @@ def _put_carton(
     x_values = np.linspace(*x_range, x2 - x1, endpoint=True)
     x_grid, y_grid = np.meshgrid(x_values, y_values, indexing="xy")
     world_points[frame, y1:y2, x1:x2] = np.stack(
-        [x_grid, y_grid, np.full_like(x_grid, height)], axis=-1
+        [x_grid, np.full_like(x_grid, 1.0 - height), y_grid + 3.0], axis=-1
     )
 
 
@@ -176,7 +184,8 @@ def make_metric_fixture(
         np.linspace(-1.0, 2.0, 126), np.linspace(-1.0, 2.0, 126), indexing="xy"
     )
     world_points[..., 0] = xs
-    world_points[..., 1] = ys
+    world_points[..., 1] = 1.0
+    world_points[..., 2] = ys + 3.0
     _put_carton(world_points, 0, boxes[0][0], (0.0, 1.0), 0.02)
     _put_carton(world_points, 1, boxes[1][0], (0.0, 1.0), 0.03)
     _put_carton(world_points, 2, boxes[2][0], (0.5, 1.5), 0.80)
@@ -185,6 +194,10 @@ def make_metric_fixture(
         output / "da3_cache" / "predictions.npz",
         world_points=world_points,
         world_points_conf=np.ones((3, 126, 126), dtype=np.float32),
+        extrinsic=np.repeat(
+            np.concatenate([np.eye(3), np.zeros((3, 1))], axis=1)[None],
+            3, axis=0,
+        ),
         image_ids=np.asarray([0, 1, 2], dtype=np.int32),
         source_image_sizes=np.asarray([(126, 126)] * 3, dtype=np.int32),
         source_to_processed_affine=np.asarray(
@@ -252,7 +265,7 @@ def _publish_v2_masks(dataset: Path, save_root: Path, mask_factory) -> None:
         processed_shape = tuple(
             int(value) for value in loaded["world_points"].shape[1:3]
         )
-    cache_root = output / "sam3_mask_cache" / "v2"
+    cache_root = default_sam3_mask_cache_root(output)
     for frame_index, raw_image_id in enumerate(image_ids):
         image_id = int(raw_image_id)
         image_path = dataset / "images" / f"{image_id}.png"
@@ -309,6 +322,50 @@ def _run_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
     dataset, save_root, _ = make_metric_fixture(tmp_path)
     result = stage.run_da3_footprint(str(dataset), save_root)
     return json.loads(Path(result["report_path"]).read_text())
+
+
+def test_area_reuses_shared_orientation_without_refitting(monkeypatch, tmp_path):
+    from utils import scene_orientation
+
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    first = stage.run_da3_footprint(str(dataset), save_root)
+    first_report = json.loads(Path(first["report_path"]).read_text())
+    assert first["success"]
+    assert first_report["orientation"]["cache_event"] == "computed"
+
+    def forbid_refitting(*args, **kwargs):
+        pytest.fail("an existing orientation must be reused")
+
+    monkeypatch.setattr(scene_orientation, "fit_scene_orientation", forbid_refitting)
+    second = stage.run_da3_footprint(str(dataset), save_root)
+    second_report = json.loads(Path(second["report_path"]).read_text())
+    assert second["success"]
+    assert second_report["orientation"]["cache_event"] == "hit"
+    assert second_report["plane"] == first_report["plane"]
+    assert second_report["value_m2"] == first_report["value_m2"]
+
+
+def test_area_rejects_unavailable_orientation_without_searching_other_planes(
+    monkeypatch, tmp_path
+):
+    from utils.scene_orientation import SceneOrientation
+
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    unavailable = SceneOrientation(
+        "not_found", np.diag([1.0, -1.0, -1.0]), None, None, {}
+    )
+    monkeypatch.setattr(stage, "get_scene_orientation", lambda _: (unavailable, "hit"))
+
+    def forbid_plane_search(*args, **kwargs):
+        pytest.fail("missing up direction must not trigger another plane search")
+
+    monkeypatch.setattr(stage, "select_support_plane_with_direction", forbid_plane_search)
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+    assert not result["success"]
+    assert report["value_m2"] is None
+    assert report["orientation"]["status"] == "not_found"
+    assert "no fitted up direction" in report["rejection_reason"]
 
 
 def _formal_projection(report: dict[str, object]) -> dict[str, object]:
@@ -541,6 +598,7 @@ def test_stage_fuses_global_id_views_and_uses_polygon_union(monkeypatch, tmp_pat
     report = json.loads(Path(result["report_path"]).read_text())
 
     assert report["schema_version"] == "2.0.0"
+    assert report["cache"]["schema_version"] == 3
     assert report["metric"] == "da3_self_exemplar_ground_footprint_union"
     assert report["mask_contract"] == {
         "source": "sam3_self_exemplar",
@@ -769,7 +827,7 @@ def test_duplicate_observation_does_not_increase_distinct_image_count(
     mapping["1"].append({"image_id": 0, "object_id": 1, "bbox": duplicate_bbox})
     mapping_path.write_text(json.dumps(mapping))
     _add_camera_fields(save_root / dataset.name / "da3_cache" / "predictions.npz")
-    shutil.rmtree(save_root / dataset.name / "sam3_mask_cache" / "v2")
+    shutil.rmtree(default_sam3_mask_cache_root(save_root / dataset.name))
     _publish_v2_masks(dataset, save_root, exact_bbox_masks)
 
     result = stage.run_da3_footprint(str(dataset), save_root)
@@ -909,10 +967,40 @@ def test_stage_consumes_v2_masks_without_sam3_producer(monkeypatch, tmp_path):
     assert "sam3_masks_from_bboxes_predict_inst" not in stage_source
 
 
+@pytest.mark.parametrize("cache_present", [False, True])
+def test_stage_uses_only_explicit_mask_cache_root(monkeypatch, tmp_path, cache_present):
+    calls = _install_legacy_producer_sentinel(monkeypatch)
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    custom_root = tmp_path / "custom_masks" / "v2"
+    if cache_present:
+        custom_root.parent.mkdir()
+        shutil.move(
+            str(default_sam3_mask_cache_root(save_root / dataset.name)), custom_root
+        )
+
+    result = stage.run_da3_footprint(
+        str(dataset), save_root, sam3_mask_cache_root=custom_root
+    )
+    report = json.loads(Path(result["report_path"]).read_text())
+
+    assert result["success"] is cache_present
+    assert report["sam3_mask_cache"]["cache_root"] == str(custom_root)
+    assert calls == []
+    if cache_present:
+        assert all(
+            frame["cache_event"] == "hit"
+            for frame in report["sam3_mask_cache"]["frames"]
+        )
+    else:
+        assert report["rejection_reason"] == (
+            "canonical self-exemplar mask cache is incomplete; run SKU matching first"
+        )
+
+
 def test_missing_v2_cache_rejects_with_canonical_message(monkeypatch, tmp_path):
     calls = _install_legacy_producer_sentinel(monkeypatch)
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    shutil.rmtree(save_root / dataset.name / "sam3_mask_cache" / "v2")
+    shutil.rmtree(default_sam3_mask_cache_root(save_root / dataset.name))
 
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
@@ -943,7 +1031,7 @@ def test_v2_cache_contract_mismatch_rejects_without_sam3_producer(
 ):
     calls = _install_legacy_producer_sentinel(monkeypatch)
     dataset, save_root, _ = make_metric_fixture(tmp_path)
-    cache_root = save_root / dataset.name / "sam3_mask_cache" / "v2"
+    cache_root = default_sam3_mask_cache_root(save_root / dataset.name)
     entry = cache_root / "entries" / "0"
     if mutation == "missing_frame":
         shutil.rmtree(entry)

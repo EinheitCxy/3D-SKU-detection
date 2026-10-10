@@ -8,7 +8,10 @@ from PIL import Image
 import main as main_module
 import src.web_viewer_export as exporter
 from src.web_viewer_export import WebViewerExportError, export_web_viewer_bundle
+from utils.config import default_sam3_mask_cache_root
 from utils.pointcloud_filter import PointCloudFilterConfig
+import utils.scene_orientation as scene_orientation
+from utils.scene_orientation import SceneOrientation
 from utils.sam3_mask_cache import (
     FrameMaskCacheRequest,
     ProcessedDetectionPrompt,
@@ -334,11 +337,19 @@ def test_export_uses_level_rotation_and_centers_rotated_points(
         [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]]
     )
     monkeypatch.setattr(
-        exporter,
-        "_fit_level_rotation",
-        lambda _points, _extrinsic: (rotation, True),
-        raising=False,
+        scene_orientation,
+        "fit_scene_orientation",
+        lambda _points, _extrinsic: SceneOrientation(
+            "fitted", rotation, rotation.T @ [0.0, 1.0, 0.0], 0.4, {}
+        ),
     )
+    _, event = scene_orientation.get_scene_orientation(exporter_inputs["da3_cache_path"])
+    assert event == "computed"
+
+    def unexpected_refit(*_args):
+        pytest.fail("Viewer must reuse the orientation sidecar")
+
+    monkeypatch.setattr(scene_orientation, "fit_scene_orientation", unexpected_refit)
 
     result = export_web_viewer_bundle(
         **exporter_inputs,
@@ -355,6 +366,23 @@ def test_export_uses_level_rotation_and_centers_rotated_points(
     assert np.allclose(
         world_to_view[:3, 3], -np.median(filtered_points @ rotation.T, axis=0)
     )
+
+
+def test_export_rejects_cache_replaced_between_geometry_and_orientation(
+    exporter_inputs, monkeypatch
+):
+    def replace_cache_before_orientation(cache_path):
+        replacement = cache_path.with_name("replacement.npz")
+        _write_cache(replacement)
+        replacement.replace(cache_path)
+        return SceneOrientation(
+            "fitted", np.eye(3), np.array([0.0, 1.0, 0.0]), 0.0, {}
+        ), "computed"
+
+    monkeypatch.setattr(exporter, "get_scene_orientation", replace_cache_before_orientation)
+    with pytest.raises(WebViewerExportError, match="DA3 cache changed while preparing viewer geometry"):
+        export_web_viewer_bundle(**exporter_inputs)
+    assert not (exporter_inputs["output_dir"] / "CURRENT").exists()
 
 
 def test_fit_level_rotation_levels_real_tilted_ground() -> None:
@@ -446,9 +474,8 @@ def test_viewer_web_cli_routes_minimal_exporter_arguments(
         / "global_mapping.json",
         "output_dir": output_dir.resolve(),
         "source_images_dir": dataset / "images",
-        "sam3_mask_cache_root": dataset_output / "sam3_mask_cache" / "v2",
+        "sam3_mask_cache_root": default_sam3_mask_cache_root(dataset_output),
         "sku_masterdata_csv": main_module.PROJECT_ROOT / "runtime" / "sku_masterdata.csv",
         "voxel_size_m": 0.005,
-        "max_points": 1500000,
     }
     assert "Custom viewer-web output" in capsys.readouterr().out

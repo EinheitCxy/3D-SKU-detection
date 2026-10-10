@@ -285,6 +285,14 @@ CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
 
 `ground-stack-area` 从 matching 发布的 processed-space self-exemplar masks 为每个去重 `global_id` 取多视图 metric 点云，投影到推断支撑平面后以 OBB polygon union 计算 `da3_self_exemplar_ground_footprint_union`（m²）。它不是包装表面积、正面面积、SAM3 mask 面积或 bbox 面积。任何对象缺少足够几何时整次结果为 `rejected` 与 `value_m2: null`，不会发布部分总量；本指标是新 baseline，不可与旧 `da3_ground_footprint_union` 面积直接比较。
 
+面积阶段默认读取 `sam3_mask_cache_sam31/v2`；matching 使用自定义缓存目录时，面积命令也必须传入相同的 `--sam3_mask_cache_root`，不会搜索其他目录或重新运行分割。
+
+面积与 DA3 Viewer 共享 `da3_cache/scene_orientation.json`：已有有效方向直接复用，缺失或重建文件变化时才运行现有 Viewer 摆正算法。方向与同一份 `predictions.npz` 关联，保存法向、参考平面高度和拟合状态；不把 Viewer 的居中原点当地面。面积固定该方向，用 Surfel 的网格切线验证背景局部水平性，再选择有多帧支持的最低可见水平面；不再要求其占全部背景 10%、商品距平面不超过 80 mm，或可见地面 hull 覆盖商品。点数、跨帧、二维宽度和商品位于平面上方的检查仍保留。报告记录方向缓存命中情况；命中时不重新拟合方向。
+
+重投影诊断在全部合格像素中等距选取最多 512 点，仍只提供 shadow evidence，不改变正式面积判定。
+
+当前面积仍是统一方向上的矩形商品投影并集，多层重叠只计一次，并非每层货架面积之和。最低可见水平面不一定是真实地板；方向的启发式误差、非矩形商品和错误 mask 区域仍需实测验证。`accepted` 表示通过当前几何条件，不代表已经通过真实面积精度验收。算法与限制见 [面积说明](docs/ground_stack_footprint_algorithm.md)。
+
 ## 验证
 
 ```bash

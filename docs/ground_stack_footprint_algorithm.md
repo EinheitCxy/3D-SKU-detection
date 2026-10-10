@@ -22,22 +22,25 @@ A_{\mathrm{stack}} = \operatorname{area}\left(\bigcup_{i=1}^{N}\mathrm{OBB}_i\ri
 公开入口为：
 
 ```bash
-cd code
+# 在仓库根目录运行；先完成 reconstruction、完整 matching 和 dedup。
 uv run python main.py --mode ground-stack-area \
   --dataset <dataset> --save_root <save_root>
 ```
 
-测量阶段只读以下输入：
+matching 使用自定义 mask 缓存目录时，追加相同的 `--sam3_mask_cache_root <path-to-v2>`。面积阶段只读取指定目录，不会搜索替代缓存或运行 SAM3。
+
+测量阶段读取以下输入；方向结果另存于同一 DA3 cache 目录：
 
 | 输入 | 用途 |
 | --- | --- |
-| `<dataset>/images/<frame>.*` | 原始图像，供 SAM3 生成实例 mask，并验证 cache hash/尺寸 |
+| `<dataset>/images/<frame>.*` | 原始图像，用于验证 cache 与图像尺寸、内容一致 |
 | `<dataset>/detections_results/<frame>.json` | 每帧检测框 |
-| `<save_root>/<dataset>/da3_cache/predictions.npz` | DA3 metric `world_points`、置信度和像素映射信息 |
+| `<save_root>/<dataset>/da3_cache/predictions.npz` | DA3 metric `world_points`、置信度、world-to-camera `extrinsic` 和像素映射信息 |
+| `predictions.npz` 旁的 `scene_orientation.json` | 与 Viewer 共用的方向；缺失时计算一次并保存 |
 | `<save_root>/<dataset>/dedup_detections/global_mapping.json` | 检测框到物理纸箱 `global_id` 的一一映射 |
-| 本地 SAM3 checkpoint | 按 bbox 分割每个纸箱 |
+| `<save_root>/<dataset>/sam3_mask_cache_sam31/v2` 或显式指定目录 | matching 发布的完整 processed-space self-exemplar masks |
 
-DA3 cache 必须为 schema-v2，且包含原图 SHA256、原图尺寸、pixel-centre affine、预处理分辨率与方法。程序会验证 cache 与当前原图、检测 JSON、global mapping 的帧和对象集合完全一致。旧 cache 或任一不一致输入会被拒绝，而不会继续测量。
+DA3 cache 必须为 schema-v3、`is_metric == 1`，且包含原图 SHA256、原图尺寸、pixel-centre affine、预处理分辨率与方法。程序会验证 cache 与当前原图、检测 JSON、global mapping 的帧和对象集合完全一致。旧 cache 或任一不一致输入会被拒绝，而不会继续测量。报告中的 metric 为 `da3_self_exemplar_ground_footprint_union`，不能与旧的 source-mask 指标直接比较。
 
 ## 算法流程
 
@@ -54,33 +57,34 @@ DA3 cache 必须为 schema-v2，且包含原图 SHA256、原图尺寸、pixel-ce
 
 对每一帧：
 
-1. 用 SAM3 对全部检测 bbox 生成一个 mask。
-2. 用已验证的 affine 将原图 mask 映射到 DA3 `world_points` 网格。
+1. 读取 matching 已发布的完整 v2 mask cache；每个 mask 已位于 DA3 processed grid。
+2. 用 DA3 cache 的完整 affine 映射检测框，验证 mask 的对象、尺寸、bbox 和坐标契约。
 3. 保留同时满足以下条件的 mask 内点：3D 坐标有限、坐标非零、`world_points_conf >= 1.0`。
 4. 将该观测点云归入对应的 `global_id`。
 
 同一 `global_id` 不会选取“最佳单帧”，而是在后续融合它的所有有效观测。这样可由不同视角互补纸箱的顶面和侧面。
 
-### 3. 从 mask 外背景点拟合承载平面
+### 3. 优先复用场景方向，再确定水平支撑高度
 
-所有检测 mask 会先做 5×5 像素膨胀，再从背景中排除，减少纸箱边界混入桌面点。剩余的有效 DA3 世界点构成平面候选背景。
+面积阶段与 DA3 Viewer 共用 `utils/scene_orientation.py`。`scene_orientation.json` 保存 `status`、`rotation`、`normal_world`、`plane_offset_m` 和拟合诊断；参考平面方程是 `normal_world · X + plane_offset_m = 0`。它不包含 Viewer 的居中平移。
 
-平面选择过程：
+方向读取规则：
 
-1. 按帧均衡采样，最多保留 50,000 个背景点，避免某一帧主导 RANSAC。
-2. 以固定随机种子执行最多五个自适应 RANSAC 候选；每轮会移除前一候选的局部内点，以保留桌面、墙面等不同平面。
-3. 对每个候选的全部背景内点执行 SVD refinement。
-4. 记录每个候选的原始法向、原始点、内点数、内点比例和 refinement 结果；即使 refinement 被拒绝也写入报告。
+1. 同一 `predictions.npz` 的方向缓存有效时直接复用，报告 `cache_event: hit`，不重新运行方向拟合。
+2. 缓存缺失或 NPZ 文件状态变化时，调用原 Viewer 的 Open3D 平面摆正算法并原子保存结果，分别报告 `computed` 或 `stale_recomputed`。关联使用真实路径及文件 stat，不增加文件 hash 扫描。
+3. 两个消费者统一使用有限、非零世界点及有限 confidence 的整场景点集。方向估计仍沿用 Viewer 的 5% sampled-point 支持、相对原始 −Y 倾角最多 60°、平面以下 0.1 m 点不超过 15% 等启发式条件；它不是 IMU 重力测量。
+4. 没有拟合方向时，面积阶段拒绝；Viewer 保留已有轴翻转显示行为，但不会把该状态标成方向拟合成功。损坏的方向文件明确报错。
 
-通过 refinement 的候选还必须满足 table compatibility gates：
+所有 detection masks 膨胀 5×5 像素后从有效世界点中排除，得到背景。随后固定共享的 up 方向，仅估计平面高度：
 
-- 至少 10,000 个内点，且背景内点比例至少 10%；
-- 95% 残差满足平面质量门；
-- 内点跨足够多帧，且在平面内具有足够的长宽跨度和 hull 面积；
-- 至少 80% 的物体观测中心位于桌面 hull（带 150 mm buffer）内；
-- 绝大多数物体点位于所选平面上方，且最低高度分位数接近该平面。
+1. 复用 `src.surfel_export.grid_tangents`，在原始 DA3 网格上计算局部表面法向；保留与 up 平行或反平行、夹角不超过 15° 的背景点。局部法向在高度切片**之前**计算，防止把墙上的水平条带当作地面。15° 为初始工程参数，尚未通过独立实测标定。
+2. 按帧均衡采样最多 50,000 个水平支持点；沿 up 的高度排序，以 24 mm 滑窗进行最多 8 次密集高度候选搜索，并抑制重复候选。通过质量条件后仍落入已有合格候选 24 mm 邻域的项标记 `duplicate_of`，保留诊断，但不作为另一个合格平面参与选择。
+3. 在 ±12 mm 邻域中，先求每帧高度中位数，再取帧间中位数，最多更新 10 次。最终使用同一 offset 的 ±10 mm 支持点计算全部质量诊断；法向不重新拟合。
+4. 每个候选需至少 10,000 个水平内点，跨至少 3 帧及 30% 背景帧；支撑 hull 的 minimum rotated rectangle 两边均至少 0.30 m，hull 面积至少 0.25 m²。商品位于平面上方（容忍 −12 mm）的点比例按 observation 等权平均，需达到 95%。
+5. 不再要求支撑点占全部背景 10%、物体 p01 高度低于 80 mm，或可见地面 hull 覆盖商品投影。背景占比和 hull 覆盖率仍记录为诊断。
+6. 在通过质量条件的候选中选最低平面。报告 `method: direction_constrained_height_modes`、`semantics: lowest_observed_horizontal_support`，以及全部候选和选中索引。
 
-如果没有候选通过 refinement，报告明确标记为 `no support-plane candidate passed refinement gates`；如果候选已通过 refinement 但不符合桌面语义，则标记为 `support plane candidates failed table compatibility gates`。若两个方向明显不同的候选得分相近，则以平面歧义拒绝。
+这里的最低平面是**最低可见水平支撑面**，不能仅凭几何断定其就是地板。如果地板完全不可见，最低棚板也可能成为候选。对固定商品点集，平面沿法向平移不改变正交投影面积；但当前 15 mm 高度过滤依赖所选平面位置，仍需保留高度语义与诊断。
 
 ### 4. 每个 `global_id` 的二维 footprint 恢复
 
@@ -112,7 +116,7 @@ DA3 cache 必须为 schema-v2，且包含原图 SHA256、原图尺寸、pixel-ce
 以下任一情况会使整次测量被拒绝：
 
 - 缓存 schema、hash、affine、帧集合或 mapping 不完整；
-- SAM3 失败、mask 空、有效 DA3 点不足；
+- canonical mask cache 缺失或不匹配、mask 空、有效 DA3 点不足；
 - 支撑平面不存在、歧义或质量门失败；
 - 任一 `global_id` 点云不足、DBSCAN 多组件或 OBB 退化；
 - polygon union 精度敏感性超标。
@@ -130,13 +134,24 @@ DA3 cache 必须为 schema-v2，且包含原图 SHA256、原图尺寸、pixel-ce
 
 ## 输出与复核
 
-输出目录：`<save_root>/<dataset>/ground_stack_footprint/`
+输出目录：`<save_root>/<dataset>/ground_stack_footprint/`。`CURRENT` 是记录 `run_id` 的 JSON，以下文件位于它指向的 `runs/<run_id>/` 中。
 
 | 文件 | 内容 |
 | --- | --- |
 | `measurement_report.json` | 输入 provenance、平面候选及 gates、逐 global ID 观测/voxel/分量诊断、union 精度敏感性、最终 accepted/rejected 状态 |
 | `footprints.geojson` | accepted 时包含每个纸箱 OBB 和 `union`；rejected 时为空 feature collection 且标记 `measurement_complete: false` |
 | `top_down_footprint.png` | 俯视复核图；rejected 时带有 `REJECTED` 水印 |
+
+报告还包含 mask 腐蚀/膨胀、固定平面的 leave-one-observation-out 和跨视图重投影诊断。每个来源观测在全部合格像素的排序中等距选择最多 512 点，避免只检查图像顶部；小于预算的观测全部检查。这些均是 shadow evidence，不改变正式结果，扰动面积范围也不是统计置信区间。
+
+## 已知适用边界
+
+- 方向来自现有 Viewer 的平面启发式，而不是独立重力传感器。水平面仍需至少 10,000 个内点、3 帧及 30% 背景帧、足够二维范围；低分辨率、很少可见地面或方向误差仍可能导致拒绝。已有 Viewer manifest 缺少原始地面 offset 和成功状态，不能单独作为可信方向缓存；旧输入首次运行时计算共享缓存。
+- 多层货架共用一个投影方向，重叠位置只计一次。仅看到棚板时不能证明找到了真实地板；新的方向策略也不解决空 mask、缺失商品或 OBB 的形状近似。
+- 每个 global ID 的任一观测不足 32 个有效点，仍会导致该 ID 及整次结果被拒绝。OBB 每条边至少 50 mm，多个显著分离组件也会被拒绝。
+- 5 mm voxel 当前保留首个观测点，结果仍可能随点顺序变化；1%/99% 裁剪也可能随坐标轴方向变化。简单改为最外侧点、最近网格中心点或均值点会在部分噪声或干净样本上增加误差，不能视为已经解决。
+- 与主体相连的错误分割区域可能通过 DBSCAN 并扩大 OBB；矩形近似不能表达瓶罐或袋装商品的真实投影轮廓。
+- 真实准确率应通过独立实测面积评估，同时报告成功输出比例和 accepted 样本的误差；合成测试、内部重投影一致性和 `accepted` 状态都不能替代该评估。
 
 ## 尺度与 reference 的关系
 

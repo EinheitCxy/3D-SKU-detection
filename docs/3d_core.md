@@ -132,6 +132,10 @@ v2 cache 的每个 payload 是 processed DA3 grid 上 `(object_count, height, wi
 
 `--mode ground-stack-area` 只读取 matching 已发布的 v2 cache、metric DA3 cache 与去重映射，不导入、加载或推理 SAM3，也不会因 cache miss 重算。它为每个 `global_id` 从全部有效观测重建 OBB，并在支撑平面上取 polygon union，得到 `da3_self_exemplar_ground_footprint_union`（m²）。缺少任何 canonical mask 或必要几何会发布 `rejected`/`null`，不会伪造部分结果。该 metric 是新 baseline，不能与旧 `da3_ground_footprint_union` 面积比较。
 
+面积入口使用统一默认目录 `sam3_mask_cache_sam31/v2`，也接收 `--sam3_mask_cache_root` 指定 matching 实际发布的目录；显式目录不完整时直接拒绝，不尝试默认目录。DA3 输入及报告中的 cache schema 均为 3。
+
+DA3 Viewer 和面积阶段共用 `utils/scene_orientation.py`，在实际 `predictions.npz` 旁保存 `scene_orientation.json`。方向命中直接复用；文件重建后失效重算，格式错误则报错。方向读取与 NPZ 文件状态绑定，避免跨重建坐标复用；不扫描其他 Viewer bundle，也不以 Viewer 的居中平移定义地面。面积用这个方向约束水平面高度搜索，并复用 Surfel 网格切线排除墙面。报告分别记录 `orientation.cache_event` 和 `plane.method`；没有可靠拟合方向时拒绝计量。最低可见水平面不等于已识别真实地板。规则与限制见 [面积算法说明](ground_stack_footprint_algorithm.md)。
+
 matching producer 与所有 v2 consumer 都只读取 `predictions.npz` 的逐帧完整 `source_to_processed_affine`（2×3）及 processed shape 来映射并裁剪 bbox。该 affine 可包含 resize、pixel-center、patch rounding 和 crop offset；`x'=sx*x+(sx-1)/2`、`y'=sy*y+(sy-1)/2` 仅是无额外 crop 的 simple-resize 例子，不能从 `process_res` 重算并替代 cache。缺 affine/shape 即 fail closed；此前 scale-only 或 raw out-of-grid bbox 的 entries 不能命中，必须重跑完整顺序。
 
 cache 不再是 Web Viewer 的 protection mask。Viewer export 也只读 v2 processed masks，绝不加载或推理 SAM3；它在常规点云过滤之后传播实例标签。任何点都不会因带有 SAM3 标签而跳过点云去噪、地面或天空过滤。

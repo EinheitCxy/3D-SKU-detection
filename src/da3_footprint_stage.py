@@ -28,6 +28,8 @@ from shapely import set_precision
 from shapely.geometry import mapping
 from shapely.ops import unary_union
 
+from src.surfel_export import grid_tangents
+
 from utils.da3_cache_validation import (
     integer_scalar,
     unicode_scalar,
@@ -45,7 +47,7 @@ from utils.ground_stack_footprint import (
     SupportPlaneSelectionError,
     carton_footprint_polygon_from_projected,
     project_to_plane,
-    select_support_plane,
+    select_support_plane_with_direction,
     union_footprints,
     voxel_balance_projected,
 )
@@ -57,10 +59,12 @@ from utils.sam3_mask_cache import (
     load_complete_frame_masks,
     map_source_bbox_to_processed,
 )
+from utils.scene_orientation import get_scene_orientation
 
 _CACHE_FIELDS = {
     "world_points",
     "world_points_conf",
+    "extrinsic",
     "image_ids",
     "source_image_sizes",
     "source_to_processed_affine",
@@ -97,13 +101,22 @@ class FootprintStageError(ValueError):
     """Raised for a strict input or measurement contract violation."""
 
 
-def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
+def run_da3_footprint(
+    dataset_path: str,
+    save_root: Path,
+    *,
+    sam3_mask_cache_root: Path | str | None = None,
+) -> dict[str, object]:
     """Measure the union of every mapped carton's support-plane OBB footprint."""
     measurement_started_at = time.monotonic()
     dataset = Path(dataset_path)
     output_dir = Path(save_root) / dataset.name / "ground_stack_footprint"
     output_dir.mkdir(parents=True, exist_ok=True)
-    mask_cache_root = default_sam3_mask_cache_root(Path(save_root) / dataset.name)
+    mask_cache_root = (
+        Path(sam3_mask_cache_root)
+        if sam3_mask_cache_root is not None
+        else default_sam3_mask_cache_root(Path(save_root) / dataset.name)
+    )
     report: dict[str, Any] = {
         "schema_version": "2.0.0",
         "metric": "da3_self_exemplar_ground_footprint_union",
@@ -124,6 +137,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             "frames": [],
         },
         "plane": {"candidates": [], "selected": None},
+        "orientation": {},
         "per_global_id": {},
         "union": {},
         "performance": {
@@ -131,6 +145,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             "stages_seconds": {
                 "validation_and_io": None,
                 "load_self_exemplar_masks": None,
+                "scene_orientation": None,
                 "select_support_plane": None,
                 "per_id_obb_union": None,
                 "shadow_evidence": None,
@@ -153,6 +168,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
         mapping_path = (
             Path(save_root) / dataset.name / "dedup_detections" / "global_mapping.json"
         )
+        cache_stat = cache_path.stat()
         cache = _load_cache(cache_path)
         cache_frame_ids = cache["image_ids"]
         image_paths = _image_paths(dataset / "images")
@@ -170,6 +186,7 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
             background_points,
             background_frames,
             evidence_observations,
+            background_normals,
         ) = _masked_observations(
             cache,
             image_paths,
@@ -190,11 +207,37 @@ def run_da3_footprint(dataset_path: str, save_root: Path) -> dict[str, object]:
                 "no mapped observations produced valid object points"
             )
         stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
+        active_stage = "scene_orientation"
+        active_stage_started_at = time.monotonic()
+        orientation, orientation_event = get_scene_orientation(cache_path)
+        current_stat = cache_path.stat()
+        if any(
+            getattr(cache_stat, field) != getattr(current_stat, field)
+            for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+        ):
+            raise FootprintStageError("DA3 cache changed while preparing area geometry")
+        report["orientation"] = {
+            "source": "shared_scene_orientation",
+            "cache_event": orientation_event,
+            "cache_path": str(cache_path.resolve().with_name("scene_orientation.json")),
+            "status": orientation.status,
+            "normal_world": (
+                orientation.normal_world.tolist()
+                if orientation.normal_world is not None else None
+            ),
+            "reference_plane_offset_m": orientation.plane_offset_m,
+            "diagnostics": orientation.diagnostics,
+        }
+        if orientation.status != "fitted":
+            raise FootprintStageError("shared scene orientation has no fitted up direction")
+        stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
         active_stage = "select_support_plane"
         active_stage_started_at = time.monotonic()
         try:
-            plane, plane_diagnostics = select_support_plane(
-                background_points, background_frames, all_object_points
+            plane, plane_diagnostics = select_support_plane_with_direction(
+                background_points, background_frames, all_object_points,
+                up_direction=orientation.normal_world,
+                background_normals=background_normals,
             )
         except SupportPlaneSelectionError as error:
             report["plane"] = {"selected": None, **error.diagnostics}
@@ -394,6 +437,9 @@ def _validate_cache(
         raise FootprintStageError(
             "DA3 world point/cache confidence shapes are inconsistent"
         )
+    extrinsic = cache["extrinsic"]
+    if extrinsic.shape != (len(points), 3, 4) or not np.isfinite(extrinsic).all():
+        raise FootprintStageError("DA3 extrinsic must be finite per-frame 3x4 matrices")
     frame_count, height, width, _ = points.shape
     if image_ids.shape != (frame_count,) or image_ids.dtype.kind not in "iu":
         raise FootprintStageError("DA3 cache image_ids must be an integer vector")
@@ -436,7 +482,7 @@ def _validate_cache(
                 f"DA3 cache affine provenance mismatch for image {image_id}"
             )
     return {
-        "schema_version": 2,
+        "schema_version": int(schema.item()),
         "source_model": model,
         "affine_convention": convention,
         "preprocess_resolution": preprocess_resolution,
@@ -585,6 +631,7 @@ def _masked_observations(
     np.ndarray,
     np.ndarray,
     tuple[EvidenceObservation, ...],
+    np.ndarray,
 ]:
     point_clouds = cache["world_points"]
     confidence = cache["world_points_conf"]
@@ -595,6 +642,7 @@ def _masked_observations(
     evidence_observations: list[EvidenceObservation] = []
     background_points: list[np.ndarray] = []
     background_frames: list[np.ndarray] = []
+    background_normals: list[np.ndarray] = []
     lookup = {
         (item["image_id"], item["object_id"]): item["global_id"]
         for entries in mapping_by_id.values()
@@ -696,6 +744,16 @@ def _masked_observations(
         valid_background = valid_grid & ~all_masks
         frame_background = point_clouds[frame_index][valid_background]
         background_points.append(frame_background)
+        # Reuse the Surfel grid derivatives before selecting a height band;
+        # slicing a wall by height must not turn it into horizontal evidence.
+        tangent_u, tangent_v, _ = grid_tangents(
+            point_clouds[frame_index : frame_index + 1],
+            cache["extrinsic"][frame_index : frame_index + 1],
+        )
+        normals = np.cross(tangent_u[0], tangent_v[0])[valid_background]
+        lengths = np.linalg.norm(normals, axis=1, keepdims=True)
+        normals = np.divide(normals, lengths, out=np.zeros_like(normals), where=lengths > 0)
+        background_normals.append(normals)
         background_frames.append(
             np.full(len(frame_background), image_id, dtype=np.int32)
         )
@@ -704,6 +762,7 @@ def _masked_observations(
         np.concatenate(background_points),
         np.concatenate(background_frames),
         tuple(evidence_observations),
+        np.concatenate(background_normals),
     )
 
 

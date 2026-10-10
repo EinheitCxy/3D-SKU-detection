@@ -759,14 +759,23 @@ def _observation_report(
     }
 
 
+def _sample_reprojection_indices(qualified_mask: np.ndarray) -> np.ndarray:
+    """Cover the full qualified pixel sequence within the per-source budget."""
+    indices = np.flatnonzero(qualified_mask.reshape(-1))
+    if len(indices) <= MAX_REPROJECTION_SAMPLES:
+        return indices
+    positions = np.linspace(
+        0, len(indices) - 1, MAX_REPROJECTION_SAMPLES, dtype=np.int64
+    )
+    return indices[positions]
+
+
 def _pairwise_reprojection(
     camera: _CameraCache,
     source: _PreparedObservation,
     target: _PreparedObservation,
 ) -> dict[str, object]:
-    source_indices = np.flatnonzero(source.qualified_mask.reshape(-1))[
-        :MAX_REPROJECTION_SAMPLES
-    ]
+    source_indices = _sample_reprojection_indices(source.qualified_mask)
     source_points = camera.world_points[source.frame_index].reshape(-1, 3)[
         source_indices
     ]

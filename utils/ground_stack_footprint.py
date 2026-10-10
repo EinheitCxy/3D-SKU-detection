@@ -121,7 +121,12 @@ def select_support_plane(
         final_support_frames = raw_inlier_frames[retained_indices]
         coordinates = project_to_plane(final_support_points, plane)
         hull = MultiPoint(coordinates).convex_hull
-        spans = np.ptp(coordinates, axis=0)
+        rectangle = hull.minimum_rotated_rectangle
+        if isinstance(rectangle, Polygon):
+            edges = np.diff(np.asarray(rectangle.exterior.coords), axis=0)
+            spans = np.sort(np.linalg.norm(edges, axis=1)[:2])
+        else:
+            spans = np.zeros(2)
         inlier_frames = np.unique(final_support_frames)
         frame_fraction = len(inlier_frames) / len(np.unique(frames))
         centres_inside = _object_centres_inside_hull(object_centres, plane, hull)
@@ -158,6 +163,7 @@ def select_support_plane(
             "frame_count": int(len(inlier_frames)),
             "frame_fraction": float(frame_fraction),
             "spans_m": spans.tolist(),
+            "span_method": "minimum_rotated_rectangle_short_long_sides",
             "hull_area_m2": float(hull.area),
             "object_centres_inside_fraction": float(centres_inside),
             "object_height_p01_m": float(np.quantile(oriented_heights, 0.01)),
@@ -195,6 +201,173 @@ def select_support_plane(
                 "support plane is ambiguous between differently oriented candidates", diagnostics
             )
     diagnostics["selected_index"] = int(selected_info["index"])
+    return selected, diagnostics
+
+
+def select_support_plane_with_direction(
+    background_points: np.ndarray,
+    frame_ids: np.ndarray,
+    object_observations: np.ndarray | list[np.ndarray],
+    *,
+    up_direction: np.ndarray,
+    background_normals: np.ndarray,
+) -> tuple[SupportPlane, dict[str, object]]:
+    """Find the lowest observed horizontal support, with a trusted fixed up.
+
+    Local normals must come from the original surface neighborhoods, before
+    height slicing. The 15-degree agreement is an initial engineering parameter.
+    This geometric selection does not establish that a visible shelf is ground.
+    """
+    points = _validate_points(background_points, minimum=10_000, label="background")
+    frames = np.asarray(frame_ids)
+    normals = np.asarray(background_normals, dtype=float)
+    up = np.asarray(up_direction, dtype=float)
+    if frames.shape != (len(points),) or normals.shape != points.shape:
+        raise FootprintError("support plane frame ids and normals must align with background points")
+    if up.shape != (3,) or not np.isfinite(up).all() or np.linalg.norm(up) == 0:
+        raise FootprintError("support plane up direction must be a finite nonzero vector")
+    up = up / np.linalg.norm(up)
+    observations = _normalise_object_observations(object_observations)
+    lengths = np.linalg.norm(normals, axis=1)
+    valid_normals = np.isfinite(normals).all(axis=1) & np.isfinite(lengths) & (lengths > 0)
+    agreement = np.zeros(len(points))
+    agreement[valid_normals] = np.abs(normals[valid_normals] @ up) / lengths[valid_normals]
+    horizontal = valid_normals & (agreement >= np.cos(np.deg2rad(15.0)))
+    support_points, support_frames = points[horizontal], frames[horizontal]
+    diagnostics: dict[str, object] = {
+        "method": "direction_constrained_height_modes",
+        "semantics": "lowest_observed_horizontal_support",
+        "up_direction": up.tolist(),
+        "normal_angle_tolerance_deg": 15.0,
+        "normal_angle_parameter_status": "initial_engineering_parameter",
+        "horizontal_point_count": int(len(support_points)),
+        "invalid_normal_count": int(np.count_nonzero(~valid_normals)),
+        "initial_residual_m": 0.012,
+        "final_residual_m": 0.010,
+        "height_mode_nms_m": 0.024,
+        "maximum_candidates": 8,
+        "sample_count": 0,
+        "sample_frame_count": 0,
+        "candidates": [],
+        "selected_index": None,
+    }
+    if not len(support_points):
+        raise SupportPlaneSelectionError("no horizontal background support points", diagnostics)
+    origin = support_points.mean(axis=0)
+    heights = (support_points - origin) @ up
+    sampled, sampled_frames = _frame_balanced_subsample(
+        support_points, support_frames, maximum=50_000
+    )
+    remaining_heights = np.sort((sampled - origin) @ up)
+    diagnostics["sample_count"] = int(len(sampled))
+    diagnostics["sample_frame_count"] = int(len(np.unique(sampled_frames)))
+    diagnostics["height_origin"] = origin.tolist()
+    reference_axis = np.eye(3)[int(np.argmin(np.abs(up)))]
+    u_axis = np.cross(up, reference_axis)
+    u_axis /= np.linalg.norm(u_axis)
+    v_axis = np.cross(up, u_axis)
+    all_frame_count = len(np.unique(frames))
+    centres = np.asarray([observation.mean(axis=0) for observation in observations])
+    eligible = []
+    for index in range(8):
+        if not len(remaining_heights):
+            break
+        ends = np.searchsorted(remaining_heights, remaining_heights + 0.024, side="right")
+        start = int(np.argmax(ends - np.arange(len(remaining_heights))))
+        offset = float(np.median(remaining_heights[start:ends[start]]))
+        raw_offset = offset
+        for iteration in range(10):
+            window = np.abs(heights - offset) <= 0.012
+            active_frames = np.unique(support_frames[window])
+            if not len(active_frames):
+                break
+            new_offset = float(np.median([
+                np.median(heights[window & (support_frames == frame)])
+                for frame in active_frames
+            ]))
+            change = abs(new_offset - offset)
+            offset = new_offset
+            if change <= 1e-9:
+                break
+        remaining_heights = remaining_heights[
+            (np.abs(remaining_heights - raw_offset) > 0.024)
+            & (np.abs(remaining_heights - offset) > 0.024)
+        ]
+        residuals = np.abs(heights - offset)
+        retained = residuals <= 0.010
+        count = int(np.count_nonzero(retained))
+        info = {
+            "index": index,
+            "raw_offset_m": raw_offset,
+            "offset_m": offset,
+            "refinement_iterations": iteration + 1,
+            "inlier_count": count,
+            "inlier_fraction": count / len(points),
+        }
+        if count == 0:
+            info["gates"] = {"inlier_count": False}
+            diagnostics["candidates"].append(info)
+            continue
+        plane = SupportPlane(
+            point=origin + offset * up,
+            normal=up.copy(),
+            u_axis=u_axis.copy(),
+            v_axis=v_axis.copy(),
+            inlier_count=count,
+            inlier_fraction=count / len(points),
+            p95_residual_m=float(np.percentile(residuals[retained], 95)),
+        )
+        coordinates = project_to_plane(support_points[retained], plane)
+        hull = MultiPoint(coordinates).convex_hull
+        rectangle = hull.minimum_rotated_rectangle
+        spans = np.zeros(2)
+        if isinstance(rectangle, Polygon):
+            edges = np.diff(np.asarray(rectangle.exterior.coords), axis=0)
+            spans = np.sort(np.linalg.norm(edges, axis=1)[:2])
+        frame_count = len(np.unique(support_frames[retained]))
+        frame_fraction = frame_count / all_frame_count
+        above_fractions = [
+            float(np.mean((observation - plane.point) @ up >= -0.012))
+            for observation in observations
+        ]
+        above_fraction = float(np.mean(above_fractions))
+        gates = {
+            "inlier_count": count >= 10_000,
+            "p95_residual": plane.p95_residual_m <= 0.010,
+            "frame_span": frame_count >= 3 and frame_fraction >= 0.30,
+            "in_plane_span": bool(np.all(spans >= 0.30)),
+            "hull_area": hull.area >= 0.25,
+            "object_above": above_fraction >= 0.95,
+        }
+        info.update({
+            "point": plane.point.tolist(),
+            "normal": plane.normal.tolist(),
+            "p95_residual_m": plane.p95_residual_m,
+            "frame_count": frame_count,
+            "frame_fraction": frame_fraction,
+            "spans_m": spans.tolist(),
+            "span_method": "minimum_rotated_rectangle_short_long_sides",
+            "hull_area_m2": float(hull.area),
+            "object_centres_inside_fraction": _object_centres_inside_hull(centres, plane, hull),
+            "object_above_fraction": above_fraction,
+            "observation_above_fractions": above_fractions,
+            "gates": gates,
+        })
+        diagnostics["candidates"].append(info)
+        if all(gates.values()):
+            duplicate = next(
+                (previous_index for previous_offset, previous_index, _ in eligible
+                 if abs(offset - previous_offset) <= 0.024),
+                None,
+            )
+            if duplicate is not None:
+                info["duplicate_of"] = duplicate
+            else:
+                eligible.append((offset, index, plane))
+    if not eligible:
+        raise SupportPlaneSelectionError("no direction-constrained support candidate passed quality gates", diagnostics)
+    _, selected_index, selected = min(eligible, key=lambda candidate: (candidate[0], candidate[1]))
+    diagnostics["selected_index"] = selected_index
     return selected, diagnostics
 
 
@@ -331,7 +504,7 @@ def _refine_support_plane(
     if inlier_count < 10_000 or inlier_fraction < 0.10:
         raise FootprintError("support plane has insufficient inliers")
 
-    for _ in range(3):
+    for _ in range(10):
         point, normal = _fit_plane_svd(refined)
         residuals = np.abs((refined - point) @ normal)
         retained = residuals <= max_residual_m
@@ -343,14 +516,18 @@ def _refine_support_plane(
         inlier_fraction = inlier_count / total_points
         if inlier_count < 10_000 or inlier_fraction < 0.10:
             raise FootprintError("support plane has insufficient inliers after residual refinement")
-
+    # Classify against the last fitted plane without refitting the filtered set:
+    # a further fit could move the plane and invalidate its reported support.
+    residuals = np.abs((refined - point) @ normal)
+    retained = residuals <= max_residual_m
+    refined = refined[retained]
+    retained_indices = retained_indices[retained]
+    residuals = residuals[retained]
     inlier_count = len(refined)
     inlier_fraction = inlier_count / total_points
     if inlier_count < 10_000 or inlier_fraction < 0.10:
         raise FootprintError("support plane has insufficient inliers after residual refinement")
 
-    point, normal = _fit_plane_svd(refined)
-    residuals = np.abs((refined - point) @ normal)
     p95_residual_m = float(np.percentile(residuals, 95))
     if p95_residual_m > max_residual_m:
         raise FootprintError(f"support plane residual exceeds {max_residual_m:.3f} m")
