@@ -220,6 +220,35 @@ def test_scene_delivery_bakes_and_compacts_existing_assets(bundle, tmp_path):
         export_scene_glb(bundle, output)
 
 
+def test_scene_delivery_accepts_unquantized_custom_bake_parameters(bundle, tmp_path):
+    from src.surfel_glb import export_scene_glb
+
+    output = tmp_path / "custom" / "scene.glb"
+    report = export_scene_glb(
+        bundle,
+        output,
+        radius=1.05,
+        tile_size=10,
+        lod=False,
+        palette_colors=None,
+    )
+
+    assert report["radius"] == 1.05
+    assert report["tile_size"] == 10
+    assert report["lod"] is False
+    assert report["palette_colors"] is None
+    assert report["bake"]["radius"] == 1.05
+    assert report["bake"]["tile_size"] == 10
+    doc, binary = parse(output)
+    assert doc["asset"]["version"] == "2.0"
+    image_view = doc["bufferViews"][doc["images"][0]["bufferView"]]
+    start = image_view.get("byteOffset", 0)
+    raw = binary[start : start + image_view["byteLength"]]
+    with Image.open(BytesIO(raw)) as image:
+        assert image.mode == "RGBA"
+        assert image.size == (24, 12)
+
+
 def test_scene_delivery_removes_intermediate_on_compaction_failure(bundle, tmp_path, monkeypatch):
     from src.surfel_glb import export_scene_glb
 

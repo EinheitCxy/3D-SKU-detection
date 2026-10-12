@@ -1,28 +1,54 @@
 """Compact baked binary-alpha atlases using standard indexed PNG."""
 from io import BytesIO
+import operator
 
 import numpy as np
 from PIL import Image
 
 
-def compact_png(raw: bytes) -> bytes:
-    """Use 128 RGB colors with both alpha states, retaining filtered edge colors."""
+def _rgba_with_binary_alpha(raw: bytes) -> Image.Image:
     with Image.open(BytesIO(raw)) as source:
         rgba = source.convert("RGBA")
     alpha = np.asarray(rgba)[:, :, 3]
     if not np.isin(alpha, [0, 255]).all():
         raise ValueError("Surfel atlas must have binary alpha")
-    colors = rgba.convert("RGB").quantize(
-        colors=128, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
+    return rgba
+
+
+def compact_png(raw: bytes, colors: int = 128) -> bytes:
+    """Quantize RGB for both alpha states while retaining filtered edge colors."""
+    try:
+        colors = operator.index(colors)
+    except TypeError as error:
+        raise ValueError("colors must be an integer within [2, 128]") from error
+    if isinstance(colors, bool) or not 2 <= colors <= 128:
+        raise ValueError("colors must be an integer within [2, 128]")
+    rgba = _rgba_with_binary_alpha(raw)
+    alpha = np.asarray(rgba)[:, :, 3]
+    indexed = rgba.convert("RGB").quantize(
+        colors=colors, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE
     )
-    indices = np.array(colors)
+    indices = np.array(indexed)
     # Transparent texels retain their RGB: blackening them produces dark
     # outlines when a generic loader bilinearly samples the masked material.
-    indices[alpha == 0] += 128
+    palette_colors = indexed.getpalette()[: 3 * colors]
+    palette_colors += [0] * (3 * colors - len(palette_colors))
+    indices[alpha == 0] += colors
     result = Image.fromarray(indices)
-    palette = colors.getpalette()[:384]
-    palette += [0] * (384 - len(palette))
-    result.putpalette(palette + palette)
+    result.putpalette(palette_colors + palette_colors)
     output = BytesIO()
-    result.save(output, format="PNG", transparency=bytes([255] * 128 + [0] * 128), optimize=True)
+    result.save(
+        output,
+        format="PNG",
+        transparency=bytes([255] * colors + [0] * colors),
+        optimize=True,
+    )
+    return output.getvalue()
+
+
+def rgba_png(raw: bytes) -> bytes:
+    """Re-encode a binary-alpha atlas losslessly as RGBA PNG."""
+    rgba = _rgba_with_binary_alpha(raw)
+    output = BytesIO()
+    rgba.save(output, format="PNG", optimize=True)
     return output.getvalue()

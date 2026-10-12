@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from functools import partial
 import json
 from pathlib import Path, PurePosixPath
 import shutil
@@ -291,29 +292,52 @@ def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"}
 
 
-def export_scene_glb(source, output):
+def export_scene_glb(
+    source,
+    output,
+    *,
+    radius=2.0,
+    tile_size=8,
+    lod=True,
+    palette_colors: int | None = 128,
+):
     """Build the compact LOD delivery file from existing Viewer assets on CPU.
 
     The intermediate full-precision GLB is request-local and always removed.
     No inference or Viewer bundle repacking is needed.
     """
     from src.surfel_glb_compact import compact_surfel_glb
-    from src.surfel_glb_texture import compact_png
+    from src.surfel_glb_texture import compact_png, rgba_png
 
     output = Path(output)
     if output.exists():
         raise FileExistsError(output)
+    image_transform = (
+        rgba_png
+        if palette_colors is None
+        else partial(compact_png, colors=palette_colors)
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="surfel-glb-", dir=output.parent) as work:
         intermediate = Path(work) / "baked.glb"
-        bake = export_surfel_glb(source, intermediate, lod=True)
-        compact = compact_surfel_glb(intermediate, output, image_transform=compact_png)
+        bake = export_surfel_glb(
+            source,
+            intermediate,
+            radius=radius,
+            tile_size=tile_size,
+            lod=lod,
+        )
+        compact = compact_surfel_glb(
+            intermediate, output, image_transform=image_transform
+        )
     # Do not expose paths to intermediates that have already been removed.
     bake.pop("output")
     compact.pop("source")
     return {"output": str(output), "glb_bytes": output.stat().st_size,
             "elapsed_seconds": time.monotonic() - started,
+            "radius": radius, "tile_size": tile_size, "lod": lod,
+            "palette_colors": palette_colors,
             "bake": bake, "compact": compact}
 
 
