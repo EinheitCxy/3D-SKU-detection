@@ -13,6 +13,7 @@ const BLEND_DEPTH_GRID_STEP_RATIO = 0.5;
 const SOURCE_DEPTH_RELATIVE_TOLERANCE = 0.015;
 const MAX_NATIVE_STRETCH = 2.0;
 const MAX_FOOTPRINT_ASPECT = 4.0;
+const MAX_FINAL_DIAMETER_STEPS = 6.0;
 
 // Three.js uses this marker to upload Uint16 bits as GL_HALF_FLOAT, not integers.
 class HalfFloatInstancedAttribute extends InstancedBufferAttribute {
@@ -54,6 +55,16 @@ void boundFootprint(inout vec3 u, inout vec3 v, vec2 nativeStep) {
   v = (a * correction[1][0] + b * correction[1][1]) * nativeStep.y;
 }
 
+// Bound the final ellipse after adaptive scale and the size control. Using its
+// largest singular value also handles skewed axes; shrink both to keep its shape.
+void boundFinalFootprint(inout vec3 u, inout vec3 v, vec2 nativeStep) {
+  float aa = dot(u, u), ab = dot(u, v), bb = dot(v, v);
+  float diameter = 2.0 * sqrt(max(0.0, 0.5 * (aa + bb + length(vec2(aa - bb, 2.0 * ab)))));
+  float limit = ${MAX_FINAL_DIAMETER_STEPS.toFixed(1)} * max(nativeStep.x, nativeStep.y);
+  float shrink = min(1.0, limit / max(diameter, 1e-8));
+  u *= shrink; v *= shrink;
+}
+
 vec4 cameraTexel(int column, int frame) { return texelFetch(uCameras, ivec2(column, frame), 0); }
 mat4 cameraExtrinsic(int frame) {
   return mat4(cameraTexel(0, frame), cameraTexel(1, frame), cameraTexel(2, frame), cameraTexel(3, frame));
@@ -90,9 +101,11 @@ void main() {
   if (!continuousNeighbor(pixel + ivec2( 1, 0), frame, center.z + depthStep.x, tolerance.x)) vSourceBounds.y = float(pixel.x) + 0.5;
   if (!continuousNeighbor(pixel + ivec2(0, -1), frame, center.z - depthStep.y, tolerance.y)) vSourceBounds.z = float(pixel.y) - 0.5;
   if (!continuousNeighbor(pixel + ivec2(0,  1), frame, center.z + depthStep.y, tolerance.y)) vSourceBounds.w = float(pixel.y) + 0.5;
-  // Sampling scale expands only the disk; continuity and blend tolerances keep
-  // the native one-pixel tangents and must not grow with the sampling footprint.
-  vec3 p = aCenter + uRadius * (position.x * aScale.x * u + position.y * aScale.y * v);
+  // Keep native tangents for depth continuity and blend tolerance. Cap only the
+  // expanded footprint, in source scene units, before any display transform.
+  vec3 footprintU = uRadius * aScale.x * u, footprintV = uRadius * aScale.y * v;
+  boundFinalFootprint(footprintU, footprintV, nativeStep);
+  vec3 p = aCenter + position.x * footprintU + position.y * footprintV;
   vec4 view = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * view;
   vDisk = position.xy; vWorld = p; vViewDepth = -view.z;

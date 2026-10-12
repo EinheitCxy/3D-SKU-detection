@@ -21,7 +21,7 @@ uv run --no-sync python -m src.surfel_glb \
 
 每个有效 Surfel 展开为两个三角面；原照片投影颜色、圆盘轮廓及来源深度裁剪被烘焙到内嵌 RGBA PNG atlas。材质使用 `alphaMode: MASK`、双面和 `KHR_materials_unlit`，保留照片自身颜色。场景方向来自原 manifest 的 `world_to_view`。
 
-CPU 烘焙沿用基线 Viewer 的 footprint 限制、深度连续性和 source-depth 阈值。默认 `--radius 2.0` 对应基线 Viewer 初始圆盘大小；`--tile-size 8` 表示每个 Surfel 的有效纹理 tile 为 8×8 像素，另有透明 gutter。可显式增大 tile size 改善局部纹理和裁剪采样精度，但 atlas 显存随 tile 边长平方增长。`--atlas-size` 默认 2048。
+CPU 烘焙沿用基线 Viewer 的 footprint 限制、深度连续性和 source-depth 阈值。应用 `radius` 和 U/V scale 后，最终可见椭圆直径（U/V 两轴矩阵最大奇异值的两倍）最多为 source center 深度及 inverse intrinsic 对应的较大 native grid 间距的 6 倍；超限时两轴等比缩小，因此可能减少放大参数原本产生的覆盖。该限制使用场景坐标相对 source grid 定义，不表示任意 model matrix 变换后的绝对米制上限。默认 `--radius 2.0` 对应基线 Viewer 初始圆盘大小；`--tile-size 8` 表示每个 Surfel 的有效纹理 tile 为 8×8 像素，另有透明 gutter。可显式增大 tile size 改善局部纹理和裁剪采样精度，但 atlas 显存随 tile 边长平方增长。`--atlas-size` 默认 2048。
 
 ### 实验性导出参数
 

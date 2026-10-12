@@ -26,6 +26,16 @@ def decode(page):
     return np.asarray(Image.open(BytesIO(page['image_png'])))
 
 
+def quad_axes(page, index=0):
+    corners = page['positions'].reshape(-1, 4, 3)[index]
+    return (corners[1] - corners[0]) / 2, (corners[3] - corners[0]) / 2
+
+
+def quad_diameter(page, index=0):
+    bu, bv = quad_axes(page, index)
+    return 2 * np.linalg.svd(np.stack((bu, bv), axis=1), compute_uv=False)[0]
+
+
 def test_flat_patch_orientation_and_texel_centers():
     page, = bake_surfel_pages(**fixture())
     texture = decode(page)
@@ -62,15 +72,70 @@ def test_source_depth_test_rejects_interior_even_with_continuous_neighbors():
     assert texture[4, 7, 3] == 255
 
 
-def test_scale_applies_after_footprint_clamp_and_degenerate_skipped():
+def test_scale_applies_after_footprint_clamp_within_final_cap_and_degenerate_skipped():
     args = fixture(2)
     args['u'][0] = [10, 0, 0]
-    args['scales'][0] = [2, 1]
+    args['scales'][0] = [1.25, 1]
     args['v'][1] = 0
     page, = bake_surfel_pages(**args)
     assert page['surfel_count'] == 1
-    np.testing.assert_allclose(page['positions'][:, 0], [-4, 4, 4, -4])
+    np.testing.assert_allclose(page['positions'][:, 0], [-2.5, 2.5, 2.5, -2.5])
     np.testing.assert_allclose(page['positions'][:, 1], [-1, -1, 1, 1])
+
+
+def test_final_diameter_cap_limits_radius_and_anisotropic_scale_bake_geometry():
+    args = fixture()
+    args['scales'][0] = [8, .5]
+    args['radius'] = 2
+    page, = bake_surfel_pages(**args)
+    bu, bv = quad_axes(page)
+    np.testing.assert_allclose(bu, [3, 0, 0])
+    np.testing.assert_allclose(bv, [0, 3 / 16, 0])
+    np.testing.assert_allclose(quad_diameter(page), 6)
+
+
+def test_final_diameter_cap_preserves_skew_plane_and_axis_ratio():
+    args = fixture()
+    args['u'][0] = [1, 0, 0]
+    args['v'][0] = [1, 1, 0]
+    args['scales'][0] = [8, .5]
+    args['radius'] = 2
+    page, = bake_surfel_pages(**args)
+    bu, bv = quad_axes(page)
+    raw_bu, raw_bv = np.array([16, 0, 0]), np.array([1, 1, 0])
+    factor = 6 / (
+        2 * np.linalg.svd(np.stack((raw_bu, raw_bv), axis=1), compute_uv=False)[0]
+    )
+    np.testing.assert_allclose(bu, raw_bu * factor, rtol=2e-6)
+    np.testing.assert_allclose(bv, raw_bv * factor, rtol=2e-6)
+    np.testing.assert_allclose(np.cross(bu, bv) / np.linalg.norm(np.cross(bu, bv)), [0, 0, 1])
+    np.testing.assert_allclose(np.linalg.norm(bu) / np.linalg.norm(bv),
+                               np.linalg.norm(raw_bu) / np.linalg.norm(raw_bv), rtol=1e-6)
+    assert quad_diameter(page) <= 6 + 1e-6
+
+
+def test_final_diameter_cap_leaves_small_footprint_unchanged():
+    args = fixture()
+    args['u'][0] = [.75, 0, 0]
+    args['v'][0] = [0, .25, 0]
+    page, = bake_surfel_pages(**args)
+    bu, bv = quad_axes(page)
+    np.testing.assert_allclose(bu, [.75, 0, 0])
+    np.testing.assert_allclose(bv, [0, .25, 0])
+
+
+def test_final_diameter_cap_tracks_native_grid_at_different_depths():
+    diameters = []
+    for distance in (1, 2):
+        args = fixture()
+        args['positions'][0, 2] = distance
+        args['depths'][:] = distance
+        args['u'][0] = [10, 0, 0]
+        args['scales'][0] = [8, .5]
+        args['radius'] = 2
+        page, = bake_surfel_pages(**args)
+        diameters.append(quad_diameter(page))
+    np.testing.assert_allclose(diameters, [6, 12])
 
 
 def test_multiple_pages_have_compact_valid_dimensions():

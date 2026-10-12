@@ -10,6 +10,9 @@ import numpy as np
 from PIL import Image
 
 
+FINAL_DIAMETER_MAX_NATIVE = 6.0
+
+
 def _bound_footprint(u, v, native):
     a, b = u / native[:, :1], v / native[:, 1:]
     aa, ab, bb = (a * a).sum(1), (a * b).sum(1), (b * b).sum(1)
@@ -26,6 +29,20 @@ def _bound_footprint(u, v, native):
     c11 = np.where(gap > 1e-6, c11, major_scale)
     return ((a * c00[:, None] + b * c01[:, None]) * native[:, :1],
             (a * c01[:, None] + b * c11[:, None]) * native[:, 1:])
+
+
+def _limit_final_diameter(bu, bv, native):
+    """Uniformly cap the baked ellipse diameter relative to its source grid."""
+    aa, ab, bb = (bu * bu).sum(1), (bu * bv).sum(1), (bv * bv).sum(1)
+    sigma_max = np.sqrt(
+        np.maximum(0, (aa + bb + np.hypot(aa - bb, 2 * ab)) * 0.5)
+    )
+    diameter = 2 * sigma_max
+    cap = FINAL_DIAMETER_MAX_NATIVE * np.max(native, axis=1)
+    factor = np.minimum(
+        1, np.divide(cap, diameter, out=np.ones_like(cap), where=diameter > 0)
+    )
+    return bu * factor[:, None], bv * factor[:, None]
 
 
 def _bilinear(image, x, y):
@@ -90,6 +107,7 @@ def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size):
         bounds[:, column] = np.where(continuous, bounds[:, column], pixel[:, axis] + sign * 0.5)
     bu = bu * (radius * scales[:, :1])
     bv = bv * (radius * scales[:, 1:])
+    bu, bv = _limit_final_diameter(bu, bv, native)
     q = (np.arange(tile_size, dtype=np.float32) + 0.5) * (2 / tile_size) - 1
     x, y = np.meshgrid(q, q)
     world = p[:, None, None] + x[None, ..., None] * bu[:, None, None] + y[None, ..., None] * bv[:, None, None]
