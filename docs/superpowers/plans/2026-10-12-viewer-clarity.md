@@ -809,7 +809,7 @@ ln -s /home/xingyu/3D_Recognization/docker/viewer/node_modules "$A/V0/viewer/nod
   - `PSNR ≥ PSNR(V0) − 0.2 dB`；
   - `coverage ≥ coverage(V0) − 2.0 pp`；
   - `product_height_fraction ≥ 1.5 × V0`。
-  
+
   若不满足，停下报告，不得自行放宽。
 - **D1 容差：** V2 相对胜出 V1x 满足 `PSNR ≥ +0.3 dB` 且 coverage 降幅 ≤ 1.0 pp 时采纳；否则 revert V5。
 - **D2 质量过滤（XQ 对 X0）：** 以下全部满足才采纳：
@@ -825,14 +825,14 @@ ln -s /home/xingyu/3D_Recognization/docker/viewer/node_modules "$A/V0/viewer/nod
   - coverage 降幅 ≤ 1.5 pp；
   - M8 = 0；
   - 导出秒数 ≤ 1.25 × X0。
-  
+
   在满足条件的候选中选平均 PSNR 最高者。最终采纳还需 PSNR 在至少一个场景上 ≥ X0 + 0.3 dB，且在另一个场景上 ≥ X0 − 0.2 dB。
 - **D2 组合：** XQS 相对 X0 仍须满足上面两组门槛；不满足时只采纳两者中更好的单项。
 - **D3 GLB：** 先筛出满足以下条件的臂：
   - video3 GLB ≤ 176 MB（当前 117 MB 的 1.5 倍）；
   - 烘焙加压缩耗时 ≤ 1.5 × G0；
   - GLB refview coverage ≥ G0 − 2.0 pp。
-  
+
   在其中选 PSNR 最高者，且它必须比 G0 高 ≥ 1.0 dB 才改默认值；否则保持 G0。
 - 任何一项"差一点没过"都按未通过处理，如实写进报告，不得事后调整阈值。
 
