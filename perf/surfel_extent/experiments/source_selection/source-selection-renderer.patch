@@ -1,0 +1,242 @@
+diff --git a/runtime/viewer-extent-20261012/video12/followup/source-selection-renderer.ts b/runtime/viewer-extent-20261012/video12/followup/source-selection-renderer.ts
+index 755d816..711b80f 100644
+--- a/runtime/viewer-extent-20261012/video12/followup/source-selection-renderer.ts
++++ b/runtime/viewer-extent-20261012/video12/followup/source-selection-renderer.ts
+@@ -2,7 +2,7 @@ import {
+   AddEquation, BufferAttribute, Camera, Color, CustomBlending, DoubleSide, DynamicDrawUsage, Float32BufferAttribute,
+   DataTexture, FloatType, GLSL3, HalfFloatType, InstancedBufferAttribute, InstancedBufferGeometry,
+   Matrix3, Matrix4, Mesh, NearestFilter, NoBlending, OneFactor, OrthographicCamera, PlaneGeometry,
+-  RGBAFormat, Scene, ShaderMaterial, UnsignedByteType, Vector2, WebGLRenderer, WebGLRenderTarget,
++  RGBAFormat, Scene, ShaderMaterial, UnsignedByteType, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget,
+ } from "three";
+ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+@@ -143,9 +143,11 @@ void main() {
+ const fragmentShader = /* glsl */ `
+ precision highp sampler2DArray;
+ uniform sampler2DArray uTextures; uniform sampler2DArray uDepths;
+-uniform sampler2D uFront; uniform vec2 uResolution; uniform vec2 uGrid;
++uniform sampler2D uFront; uniform sampler2D uWinner; uniform vec2 uResolution; uniform vec2 uGrid;
+ uniform sampler2D uCameras;
+-uniform vec2 uTextureSize; uniform int uPass; uniform float uHasSelection;
++uniform vec2 uTextureSize; uniform vec3 uCameraPosition;
++uniform bool uOrthographic; uniform vec3 uViewDirection;
++uniform int uPass; uniform float uHasSelection; uniform bool uSourceSelection; uniform float uSourceDepthTolerance;
+ in vec2 vDisk; in vec3 vWorld; in float vViewDepth;
+ flat in int vFrame; flat in float vSlot;
+ flat in float vVisible; flat in float vSelected; flat in float vTolerance;
+@@ -160,33 +162,60 @@ mat3 cameraMatrix3(int column, int frame) {
+   return mat3(c0.xyz, c1.xyz, c2.xyz);
+ }
+ void main() {
+-  float radius2 = dot(vDisk, vDisk);
+-  if (vVisible < 0.5 || radius2 > 1.0) discard;
++  // Derivatives must precede every fragment-dependent discard or branch.
++  // Use the real texture pixel grid: values below one mean magnification.
+   mat4 extrinsic = cameraExtrinsic(vFrame);
+   mat3 intrinsic = cameraMatrix3(4, vFrame);
+   mat3 inverseAffine = cameraMatrix3(10, vFrame);
+   vec3 sourceCamera = (extrinsic * vec4(vWorld, 1.0)).xyz;
+-  if (sourceCamera.z <= 0.0) discard;
++  float projectionDepth = max(abs(sourceCamera.z), 1e-8) * (2.0 * step(0.0, sourceCamera.z) - 1.0);
+   vec3 projected = intrinsic * sourceCamera;
+-  vec2 processed = projected.xy / projected.z;
++  vec2 processed = projected.xy / projectionDepth;
++  vec2 source = (inverseAffine * vec3(processed, 1.0)).xy;
++  vec4 sizes = cameraTexel(13, vFrame);
++  vec2 texturePixel = (source + 0.5) / sizes.xy * sizes.zw;
++  vec2 textureDx = dFdx(texturePixel), textureDy = dFdy(texturePixel);
++  float aa = dot(textureDx, textureDx), ab = dot(textureDx, textureDy), bb = dot(textureDy, textureDy);
++  float sigmaMin = sqrt(max(0.0, 0.5 * (aa + bb - length(vec2(aa - bb, 2.0 * ab)))));
++  float resolution = clamp(sigmaMin, 0.0, 1.0);
++  float radius2 = dot(vDisk, vDisk);
++  if (vVisible < 0.5 || radius2 > 1.0) discard;
++  if (sourceCamera.z <= 0.0) discard;
+   if (processed.x < vSourceBounds.x || processed.x > vSourceBounds.y
+     || processed.y < vSourceBounds.z || processed.y > vSourceBounds.w) discard;
+   if (any(lessThan(processed, vec2(0.0))) || any(greaterThan(processed, uGrid - 1.0))) discard;
+   float sourceDepth = texture(uDepths, vec3((processed + 0.5) / uGrid, float(vFrame))).r;
+-  if (sourceDepth <= 0.0 || abs(sourceDepth - sourceCamera.z) > ${SOURCE_DEPTH_RELATIVE_TOLERANCE} * sourceDepth + 0.001) discard;
+-  vec2 source = (inverseAffine * vec3(processed, 1.0)).xy;
+-  vec4 sizes = cameraTexel(13, vFrame);
++  if (sourceDepth <= 0.0 || abs(sourceDepth - sourceCamera.z) > uSourceDepthTolerance * sourceDepth + 0.001) discard;
+   if (any(lessThan(source, vec2(0.0))) || any(greaterThan(source, sizes.xy - 1.0))) discard;
++  // The winner pass writes a quality rank into depth, so every other pass
++  // explicitly restores the rasterized geometric depth.
++  gl_FragDepth = gl_FragCoord.z;
+   // Native quad rasterization supplies perspective-correct per-fragment plane depth.
+   if (uPass == 0) { outColor = vec4(vViewDepth, 0.0, 0.0, 1.0); return; }
++  // Winner, accumulation, and source-selected picking all use the same visible
++  // front layer. Normal picking keeps the previous direct ID behavior.
++  if (uPass != 2 || uSourceSelection) {
++    float front = texelFetch(uFront, ivec2(gl_FragCoord.xy), 0).r;
++    if (front <= 0.0 || vViewDepth > front + vTolerance) discard;
++  }
++  if (uPass == 3) {
++    vec3 sourceRay = normalize(vWorld - cameraTexel(14, vFrame).xyz);
++    vec3 currentRay = uOrthographic ? uViewDirection : normalize(vWorld - uCameraPosition);
++    float alignment = max(0.0, dot(sourceRay, currentRay));
++    float quality = 0.85 * alignment + 0.15 * resolution;
++    // Quantize quality and prefer the lower frame index for exact ties so a
++    // still camera has deterministic ownership without temporal hysteresis.
++    float rank = floor(quality * 4095.0 + 0.5) * float(FRAME_COUNT) + float(FRAME_COUNT - vFrame);
++    outColor = vec4(float(vFrame + 1), 0.0, 0.0, 1.0);
++    gl_FragDepth = 1.0 - rank / (4096.0 * float(FRAME_COUNT));
++    return;
++  }
++  if (uSourceSelection && abs(texelFetch(uWinner, ivec2(gl_FragCoord.xy), 0).r - float(vFrame + 1)) > 0.5) discard;
+   if (uPass == 2) {
+     uint id = uint(vSlot) + 1u;
+     outColor = vec4(float(id & 255u), float((id >> 8u) & 255u), float((id >> 16u) & 255u), 255.0) / 255.0;
+     return;
+   }
+-  float front = texelFetch(uFront, ivec2(gl_FragCoord.xy), 0).r;
+-  if (front <= 0.0 || vViewDepth > front + vTolerance) discard;
+-  vec2 texturePixel = (source + 0.5) / sizes.xy * sizes.zw;
+   vec3 color = texture(uTextures, vec3(texturePixel / uTextureSize, float(vFrame))).rgb;
+   if (vSelected > 0.5) color = mix(color, vec3(1.0, 0.0, 1.0), 0.35);
+   else if (uHasSelection > 0.5) color = mix(color, vec3(1.0), 0.5);
+@@ -242,19 +271,23 @@ export function createSurfelRenderer(
+   };
+   data.metadata.frames.forEach((frame, index) => {
+     const offset = index * 64;
+-    cameraData.set(frameMatrices[index].elements, offset);
++    const extrinsic = frameMatrices[index];
++    cameraData.set(extrinsic.elements, offset);
+     writeMat3(offset + 16, mat3(frame.intrinsic));
+     writeMat3(offset + 28, mat3(frame.intrinsic).invert());
+     writeMat3(offset + 40, mat3(frame.processed_to_source));
+     cameraData.set([...frame.source_size, ...frame.texture_size], offset + 52);
++    cameraData.set(new Vector3().setFromMatrixPosition(new Matrix4().copy(extrinsic).invert()).toArray(), offset + 56);
+   });
+   const cameras = new DataTexture(cameraData, 16, frameCount, RGBAFormat, FloatType);
+   cameras.minFilter = NearestFilter; cameras.magFilter = NearestFilter; cameras.generateMipmaps = false; cameras.needsUpdate = true;
+   const uniforms = {
+-    uTextures: { value: data.textures }, uDepths: { value: data.depths }, uFront: { value: null },
++    uTextures: { value: data.textures }, uDepths: { value: data.depths }, uFront: { value: null }, uWinner: { value: null },
+     uResolution: { value: new Vector2(1, 1) }, uGrid: { value: new Vector2(...data.metadata.grid_size) },
+     uCameras: { value: cameras },
+     uTextureSize: { value: new Vector2(...data.textureSize) }, uPass: { value: 0 },
++    uCameraPosition: { value: new Vector3() }, uSourceSelection: { value: false }, uSourceDepthTolerance: { value: SOURCE_DEPTH_RELATIVE_TOLERANCE },
++    uOrthographic: { value: false }, uViewDirection: { value: new Vector3() },
+     uRadius: { value: DEFAULT_SURFEL_RADIUS },
+     uHasSelection: { value: 0 },
+   };
+@@ -267,16 +300,24 @@ export function createSurfelRenderer(
+   const scene = new Scene(); scene.add(mesh);
+   const front = new WebGLRenderTarget(1, 1, { type: FloatType, depthBuffer: true, minFilter: NearestFilter, magFilter: NearestFilter });
+   const accumulation = new WebGLRenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false, minFilter: NearestFilter, magFilter: NearestFilter });
++  // R stores frame index + 1; its depth buffer retains the best local source quality.
++  const winner = new WebGLRenderTarget(1, 1, { type: FloatType, depthBuffer: true, minFilter: NearestFilter, magFilter: NearestFilter });
+   const ids = new WebGLRenderTarget(1, 1, { type: UnsignedByteType, depthBuffer: true, minFilter: NearestFilter, magFilter: NearestFilter });
++  const coverage = new WebGLRenderTarget(1, 1, { type: UnsignedByteType, depthBuffer: false, minFilter: NearestFilter, magFilter: NearestFilter });
+   uniforms.uFront.value = front.texture as never;
+   const outputMaterial = new ShaderMaterial({
+     uniforms: {
+       uAccumulation: { value: accumulation.texture },
+       uBackground: { value: new Color(1, 1, 1) },
++      uCoverage: { value: 0 },
+     },
+     vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+-    fragmentShader: `uniform sampler2D uAccumulation; uniform vec3 uBackground; varying vec2 vUv;
++    fragmentShader: `uniform sampler2D uAccumulation; uniform vec3 uBackground; uniform float uCoverage; varying vec2 vUv;
+       void main() { vec4 c = texture2D(uAccumulation, vUv);
++        if (uCoverage > 0.5) {
++          gl_FragColor = vec4(c.a > 0.0 ? 1.0 : 0.0, c.a > 0.03 ? 1.0 : 0.0, c.a >= 0.3 ? 1.0 : 0.0, clamp(c.a, 0.0, 1.0));
++          return;
++        }
+         vec3 rgb = c.a > 0.0 ? c.rgb / c.a : uBackground;
+         gl_FragColor = vec4(rgb, 1.0);
+       }`,
+@@ -291,36 +332,69 @@ export function createSurfelRenderer(
+   composer.addPass(new RenderPass(outputScene, outputCamera));
+   composer.addPass(smaaPass);
+   composer.addPass(outputPass);
++  const inverseWorld = new Matrix4().copy(worldMatrix).invert();
++  const cameraWorldPosition = new Vector3();
+   let visibilityVersion = -1;
+   const sync = () => {
+     if (visibility.version !== visibilityVersion) { sharedVisibility.needsUpdate = true; visibilityVersion = visibility.version; }
+   };
+   const savedColor = new Color();
++  const syncCameraPosition = () => {
++    camera.getWorldPosition(cameraWorldPosition);
++    uniforms.uCameraPosition.value.copy(cameraWorldPosition).applyMatrix4(inverseWorld);
++    uniforms.uOrthographic.value = "isOrthographicCamera" in camera;
++    camera.getWorldDirection(uniforms.uViewDirection.value).transformDirection(inverseWorld);
++  };
+   const renderPass = (pass: number, target: WebGLRenderTarget) => {
+     uniforms.uPass.value = pass;
+     // Even an unexecuted shader branch must not bind the current color attachment.
+-    uniforms.uFront.value = (pass === 1 ? front.texture : accumulation.texture) as never;
++    uniforms.uFront.value = (pass === 0 ? accumulation.texture : front.texture) as never;
++    uniforms.uWinner.value = (pass === 3 ? accumulation.texture : winner.texture) as never;
+     material.depthWrite = material.depthTest = pass !== 1;
+     material.blending = pass === 1 ? CustomBlending : NoBlending;
+     material.blendEquation = AddEquation; material.blendSrc = material.blendDst = OneFactor;
+     renderer.setRenderTarget(target); renderer.setClearColor(0, 0); renderer.clear(); renderer.render(scene, camera);
+   };
++  const readCoverage = () => {
++    renderer.getClearColor(savedColor); const alpha = renderer.getClearAlpha();
++    outputMaterial.uniforms.uCoverage.value = 1;
++    renderer.setRenderTarget(coverage); renderer.setClearColor(0, 0); renderer.clear(); renderer.render(outputScene, outputCamera);
++    outputMaterial.uniforms.uCoverage.value = 0;
++    const pixels = new Uint8Array(coverage.width * coverage.height * 4);
++    renderer.readRenderTargetPixels(coverage, 0, 0, coverage.width, coverage.height, pixels);
++    renderer.setRenderTarget(null); renderer.setClearColor(savedColor, alpha);
++    let any = 0, contributes = 0, saturated = 0;
++    for (let offset = 0; offset < pixels.length; offset += 4) {
++      if (pixels[offset] > 0) any += 1;
++      if (pixels[offset + 1] > 0) contributes += 1;
++      if (pixels[offset + 2] > 0) saturated += 1;
++    }
++    return { width: coverage.width, height: coverage.height, any, contributes, saturated,
++      total: coverage.width * coverage.height,
++      compositor: { startsAboveAlpha: 0.03, reachesFullWeightAtAlpha: 0.3 } };
++  };
+   return {
+     render() {
+       sync();
++      syncCameraPosition();
+       renderer.getClearColor(savedColor); const alpha = renderer.getClearAlpha();
+-      renderPass(0, front); renderPass(1, accumulation);
++      renderPass(0, front);
++      if (uniforms.uSourceSelection.value) renderPass(3, winner);
++      renderPass(1, accumulation);
+       renderer.setRenderTarget(null); renderer.setClearColor(savedColor, alpha);
+       composer.render();
+     },
+     setSize(width: number, height: number) {
+-      front.setSize(width, height); accumulation.setSize(width, height); ids.setSize(width, height);
++      front.setSize(width, height); accumulation.setSize(width, height); winner.setSize(width, height); ids.setSize(width, height); coverage.setSize(width, height);
+       const pixelRatio = renderer.getPixelRatio();
+       const [logicalWidth, logicalHeight] = composerLogicalSize(width, height, pixelRatio);
+       composer.setPixelRatio(pixelRatio); composer.setSize(logicalWidth, logicalHeight);
+       uniforms.uResolution.value.set(width, height);
+     },
+     setRadius(size: number) { uniforms.uRadius.value = surfelRadiusForSize(size); },
++    setSourceSelection(enabled: boolean) { uniforms.uSourceSelection.value = enabled; },
++    setSourceDepthTolerance(value: number) { uniforms.uSourceDepthTolerance.value = value; },
++    readCoverage,
+     select(ranges: readonly (readonly [number, number])[]) {
+       (selected.array as Uint8Array).fill(0);
+       for (const [start, end] of ranges) (selected.array as Uint8Array).fill(1, start, end);
+@@ -328,7 +402,8 @@ export function createSurfelRenderer(
+       selected.needsUpdate = true;
+     },
+     pick(x: number, y: number): number | null {
+-      sync(); renderer.getClearColor(savedColor); const alpha = renderer.getClearAlpha();
++      sync(); syncCameraPosition(); renderer.getClearColor(savedColor); const alpha = renderer.getClearAlpha();
++      if (uniforms.uSourceSelection.value) { renderPass(0, front); renderPass(3, winner); }
+       renderPass(2, ids);
+       const pixel = new Uint8Array(4);
+       renderer.readRenderTargetPixels(ids, Math.min(ids.width-1, Math.max(0, Math.floor(x * ids.width))),
+@@ -338,7 +413,7 @@ export function createSurfelRenderer(
+       return id === 0 ? null : id - 1;
+     },
+     dispose() {
+-      front.dispose(); accumulation.dispose(); ids.dispose(); geometry.dispose(); material.dispose();
++      front.dispose(); accumulation.dispose(); winner.dispose(); ids.dispose(); coverage.dispose(); geometry.dispose(); material.dispose();
+       quad.geometry.dispose(); outputMaterial.dispose(); cameras.dispose(); data.textures.dispose(); data.depths.dispose();
+       smaaPass.dispose(); outputPass.dispose(); composer.dispose();
+     },

@@ -1,0 +1,90 @@
+diff --git a/runtime/viewer-extent-20261012/video12/followup/diagnostic-renderer.ts b/runtime/viewer-extent-20261012/video12/followup/diagnostic-renderer.ts
+index 61848fc..f57f6ec 100644
+--- a/runtime/viewer-extent-20261012/video12/followup/diagnostic-renderer.ts
++++ b/runtime/viewer-extent-20261012/video12/followup/diagnostic-renderer.ts
+@@ -268,16 +268,24 @@ export function createSurfelRenderer(
+   const front = new WebGLRenderTarget(1, 1, { type: FloatType, depthBuffer: true, minFilter: NearestFilter, magFilter: NearestFilter });
+   const accumulation = new WebGLRenderTarget(1, 1, { type: HalfFloatType, depthBuffer: false, minFilter: NearestFilter, magFilter: NearestFilter });
+   const ids = new WebGLRenderTarget(1, 1, { type: UnsignedByteType, depthBuffer: true, minFilter: NearestFilter, magFilter: NearestFilter });
++  const coverage = new WebGLRenderTarget(1, 1, { type: UnsignedByteType, depthBuffer: false, minFilter: NearestFilter, magFilter: NearestFilter });
+   uniforms.uFront.value = front.texture as never;
+   const outputMaterial = new ShaderMaterial({
+     uniforms: {
+       uAccumulation: { value: accumulation.texture },
+       uBackground: { value: new Color(1, 1, 1) },
++      uCoverage: { value: 0 },
++      uOpaque: { value: 0 },
+     },
+     vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
+-    fragmentShader: `uniform sampler2D uAccumulation; uniform vec3 uBackground; varying vec2 vUv;
++    fragmentShader: `uniform sampler2D uAccumulation; uniform vec3 uBackground; uniform float uCoverage; uniform float uOpaque; varying vec2 vUv;
+       void main() { vec4 c = texture2D(uAccumulation, vUv);
++        if (uCoverage > 0.5) {
++          gl_FragColor = vec4(c.a > 0.0 ? 1.0 : 0.0, c.a > 0.03 ? 1.0 : 0.0, c.a >= 0.3 ? 1.0 : 0.0, clamp(c.a, 0.0, 1.0));
++          return;
++        }
+         vec3 rgb = c.a > 0.0 ? c.rgb / c.a : uBackground;
++        if (uOpaque > 0.5) { gl_FragColor = vec4(rgb, 1.0); return; }
+         gl_FragColor = vec4(mix(uBackground, rgb, smoothstep(0.03, 0.3, c.a)), 1.0);
+       }`,
+     depthTest: false, depthWrite: false, toneMapped: false,
+@@ -305,6 +313,14 @@ export function createSurfelRenderer(
+     material.blendEquation = AddEquation; material.blendSrc = material.blendDst = OneFactor;
+     renderer.setRenderTarget(target); renderer.setClearColor(0, 0); renderer.clear(); renderer.render(scene, camera);
+   };
++  const renderCoverage = () => {
++    renderer.getClearColor(savedColor); const alpha = renderer.getClearAlpha();
++    outputMaterial.uniforms.uCoverage.value = 1;
++    renderer.setRenderTarget(coverage); renderer.setClearColor(0, 0); renderer.clear();
++    renderer.render(outputScene, outputCamera);
++    outputMaterial.uniforms.uCoverage.value = 0;
++    renderer.setRenderTarget(null); renderer.setClearColor(savedColor, alpha);
++  };
+   return {
+     render() {
+       sync();
+@@ -314,13 +330,34 @@ export function createSurfelRenderer(
+       composer.render();
+     },
+     setSize(width: number, height: number) {
+-      front.setSize(width, height); accumulation.setSize(width, height); ids.setSize(width, height);
++      front.setSize(width, height); accumulation.setSize(width, height); ids.setSize(width, height); coverage.setSize(width, height);
+       const pixelRatio = renderer.getPixelRatio();
+       const [logicalWidth, logicalHeight] = composerLogicalSize(width, height, pixelRatio);
+       composer.setPixelRatio(pixelRatio); composer.setSize(logicalWidth, logicalHeight);
+       uniforms.uResolution.value.set(width, height);
+     },
+     setRadius(size: number) { uniforms.uRadius.value = surfelRadiusForSize(size); },
++    setOpaqueOutput(enabled: boolean) { outputMaterial.uniforms.uOpaque.value = enabled ? 1 : 0; },
++    readCoverage() {
++      renderCoverage();
++      const pixels = new Uint8Array(coverage.width * coverage.height * 4);
++      renderer.readRenderTargetPixels(coverage, 0, 0, coverage.width, coverage.height, pixels);
++      let any = 0, contributes = 0, saturated = 0;
++      for (let offset = 0; offset < pixels.length; offset += 4) {
++        if (pixels[offset] > 0) any += 1;
++        if (pixels[offset + 1] > 0) contributes += 1;
++        if (pixels[offset + 2] > 0) saturated += 1;
++      }
++      return { width: coverage.width, height: coverage.height, any, contributes, saturated,
++        total: coverage.width * coverage.height,
++        compositor: { startsAboveAlpha: 0.03, reachesFullWeightAtAlpha: 0.3 } };
++    },
++    showCoverageMask() {
++      renderCoverage();
++      outputMaterial.uniforms.uCoverage.value = 1;
++      renderer.render(outputScene, outputCamera);
++      outputMaterial.uniforms.uCoverage.value = 0;
++    },
+     select(ranges: readonly (readonly [number, number])[]) {
+       (selected.array as Uint8Array).fill(0);
+       for (const [start, end] of ranges) (selected.array as Uint8Array).fill(1, start, end);
+@@ -338,7 +375,7 @@ export function createSurfelRenderer(
+       return id === 0 ? null : id - 1;
+     },
+     dispose() {
+-      front.dispose(); accumulation.dispose(); ids.dispose(); geometry.dispose(); material.dispose();
++      front.dispose(); accumulation.dispose(); ids.dispose(); coverage.dispose(); geometry.dispose(); material.dispose();
+       quad.geometry.dispose(); outputMaterial.dispose(); cameras.dispose(); data.textures.dispose(); data.depths.dispose();
+       smaaPass.dispose(); outputPass.dispose(); composer.dispose();
+     },

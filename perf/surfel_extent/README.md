@@ -56,3 +56,11 @@ The capture has a fixed 960×600 viewport and 960×543 canvas. By default it wri
 The frozen evidence actually captured in this run is six images, rather than the twelve-image CLI default: After overview for video1 and video2, plus video2 Before/After at default close and radius-2 close. `capture-candidate.json` records the two overviews; `capture-before-after.json` records the four close comparisons. Video1 was not image-compared Before/After because its v2 bundle has no adaptive scale and the default footprint cap is not expected to activate. The excluded first video1 attempt is retained as `candidate-overview-invalid-world-axis-fit.png` and is not comparison evidence.
 
 Automated evidence uses Chrome headless shell with SwiftShader software WebGL. These screenshots and probes validate this final-footprint cap in the tested inputs; they are neither an old-D1 result nor hardware-GPU performance or real-world accuracy evidence.
+
+## Follow-up: whitening and texture ghosting
+
+The next experiments use the same full video1/video2 bundles and retain the final diameter cap. See [the follow-up report](../../docs/surfel_clarity_followup.md) for the output-normalization correction, source-selection candidate, and the ownership8 background-resampling confound. The current English renderer includes opaque color normalization; older captures above predate that correction.
+
+`experiments/output_normalization/probe.mjs` loads `normalization-probe.html` and tests the actual English renderer with a single opaque black Surfel. It checks low-weight interior color, empty/hidden pixels, and picking. Use `--base-url http://127.0.0.1:53110` and the same `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` as above. The probe reports six checks and WebGL/browser errors; it does not infer hole coverage from final RGB color.
+
+The local preview was stopped after the follow-up captures. Prepare both experiment renderer patches before restarting Vite; their READMEs document the Git revisions and commands. No LAN service was opened.

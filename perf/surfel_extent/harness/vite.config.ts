@@ -20,6 +20,8 @@ export default {
     { find: "@viewer", replacement: viewer },
     { find: "@baseline-renderer", replacement: resolve(repository, "runtime/viewer-extent-20261012/visual/baseline-renderer.ts") },
     { find: "@candidate-renderer", replacement: resolve(viewer, "surfel-renderer.ts") },
+    { find: "@diagnostic-renderer", replacement: resolve(repository, "runtime/viewer-extent-20261012/video12/followup/diagnostic-renderer.ts") },
+    { find: "@source-selection-renderer", replacement: resolve(repository, "runtime/viewer-extent-20261012/video12/followup/source-selection-renderer.ts") },
     { find: "@uniform-renderer", replacement: resolve(visual, "uniform-renderer.ts") },
     { find: "@major-renderer", replacement: resolve(visual, "major-renderer.ts") },
     { find: "@root-candidate-renderer", replacement: resolve(repository, "modules/viewer_web/src/surfel-renderer.ts") },
@@ -42,9 +44,10 @@ export default {
     },
   }],
   server: {
-    host: "0.0.0.0", port: 53110, strictPort: true,
+    host: "127.0.0.1", port: 53110, strictPort: true,
     fs: { allow: [
       here, viewer, viewerModules, resolve(repository, "modules/viewer_web/src"), visual,
+      resolve(repository, "runtime/viewer-extent-20261012/video12/followup"),
       resolve(repository, "runtime/viewer-extent-20261012/video12/video1"),
       resolve(repository, "runtime/viewer-extent-20261012/video12/video2"),
       resolve(repository, "runtime/viewer-clarity-20261012/video3/X0/crop"),

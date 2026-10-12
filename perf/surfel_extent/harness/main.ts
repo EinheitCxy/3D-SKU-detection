@@ -9,10 +9,21 @@ import { loadSurfels, type SurfelFrame } from "@viewer/surfel-loader";
 
 type Arm = "baseline" | "uniform" | "candidate";
 type View = "overview" | "close" | "source";
+type VisibilityMode = "all" | "source-frame";
+type OutputMode = "old" | "opaque";
+type Coverage = {
+  width: number; height: number; any: number; contributes: number; saturated: number; total: number;
+  compositor: { startsAboveAlpha: number; reachesFullWeightAtAlpha: number };
+};
 type SurfelController = {
   render(): void;
   setSize(width: number, height: number): void;
   setRadius(size: number): void;
+  readCoverage?(): Coverage;
+  showCoverageMask?(): void;
+  setOpaqueOutput?(enabled: boolean): void;
+  setSourceSelection?(enabled: boolean): void;
+  setSourceDepthTolerance?(value: number): void;
   dispose(): void;
 };
 type RendererFactory = (
@@ -32,6 +43,8 @@ const SCENES = {
 type SceneName = keyof typeof SCENES;
 
 const params = new URLSearchParams(location.search);
+const diagnosticKind = params.get("diagnostic");
+const diagnosticEnabled = diagnosticKind === "source-frame" || diagnosticKind === "source-selection";
 const requestedScene = params.get("scene") ?? "video1";
 if (!(requestedScene in SCENES)) throw new Error("scene must be video1, video2, video3, or fd6");
 const sceneName = requestedScene as SceneName;
@@ -67,6 +80,10 @@ let arm: Arm = params.get("arm") === "baseline" ? "baseline" : params.get("arm")
 let view: View = params.get("view") === "close" ? "close" : params.get("view") === "source" ? "source" : "overview";
 let radiusSize = Number(params.get("radiusSize") ?? "0.004");
 let sourceFrameIndex = Math.max(0, Number.parseInt(params.get("frame") ?? "0", 10) || 0);
+let visibilityMode: VisibilityMode = params.get("visibility") === "source-frame" ? "source-frame" : "all";
+let outputMode: OutputMode = params.get("output") === "opaque" ? "opaque" : "old";
+let sourceSelectionEnabled = params.get("sourceSelection") === "on";
+let sourceDepthTolerance = Number(params.get("sourceDepthTolerance") ?? "0.005");
 radiusInput.value = String(radiusSize);
 
 const controllers = new Map<Arm, SurfelController>();
@@ -89,13 +106,17 @@ function updateButtons() {
   const radius = Math.min(2, Math.max(0.6, 1.05 * radiusSize / 0.004));
   const armLabel = arm === "baseline" ? "Before" : arm === "uniform" ? "Uniform snapshot" : "After";
   const source = bundle?.surfels.metadata.frames[sourceFrameIndex];
-  label.textContent = `${SCENES[sceneName].label} · ${armLabel} · ${view} · source frame ${source?.image_id ?? "-"} · pointSize=${radiusSize} · radius=${radius.toFixed(2)}`;
+  const diagnostic = diagnosticKind === "source-selection" ? ` · sourceSelection=${sourceSelectionEnabled ? "on" : "off"} · sourceDepthTolerance=${sourceDepthTolerance}`
+    : diagnosticEnabled ? ` · visibility=${visibilityMode} · output=${outputMode}` : "";
+  label.textContent = `${SCENES[sceneName].label} · ${armLabel} · ${view} · source frame ${source?.image_id ?? "-"} · pointSize=${radiusSize} · radius=${radius.toFixed(2)}${diagnostic}`;
 }
 
 async function factoryFor(next: Arm): Promise<RendererFactory> {
   if (next === "baseline") return (await import("@baseline-renderer")).createSurfelRenderer;
   if (next === "uniform") return (await import("@uniform-renderer")).createSurfelRenderer;
-  return (await import("@candidate-renderer")).createSurfelRenderer;
+  if (diagnosticKind === "source-selection") return (await import("@source-selection-renderer")).createSurfelRenderer;
+  return diagnosticKind === "source-frame" ? (await import("@diagnostic-renderer")).createSurfelRenderer
+    : (await import("@candidate-renderer")).createSurfelRenderer;
 }
 
 async function controllerFor(next: Arm): Promise<SurfelController> {
@@ -104,6 +125,9 @@ async function controllerFor(next: Arm): Promise<SurfelController> {
   status.textContent = `initializing ${next}`;
   const create = await factoryFor(next);
   const controller = create(renderer, camera, bundle, world, visibility);
+  if (diagnosticEnabled) controller.setOpaqueOutput?.(outputMode === "opaque");
+  if (diagnosticKind === "source-selection") controller.setSourceSelection?.(sourceSelectionEnabled);
+  if (diagnosticKind === "source-selection") controller.setSourceDepthTolerance?.(sourceDepthTolerance);
   controller.setRadius(radiusSize);
   controller.setSize(physicalWidth, physicalHeight);
   controllers.set(next, controller);
@@ -193,7 +217,67 @@ async function setView(next: View) {
 async function setSourceFrame(index: number) {
   sourceFrameIndex = Math.min(Math.max(Math.floor(index), 0), bundle.surfels.metadata.frames.length - 1);
   frameSelect.value = String(sourceFrameIndex);
+  if (diagnosticEnabled) applyVisibility(visibilityMode);
   await setView(view);
+}
+
+function applyVisibility(next: VisibilityMode): number {
+  if (!diagnosticEnabled && next !== "all") throw new Error("source-frame visibility is diagnostic-only");
+  visibilityMode = next;
+  const values = visibility.array as Uint8Array;
+  if (next === "all") values.fill(1);
+  else for (let index = 0; index < values.length; index += 1) values[index] = bundle.surfels.frames[index] === sourceFrameIndex ? 1 : 0;
+  visibility.needsUpdate = true;
+  let visible = 0;
+  for (const value of values) visible += value;
+  return visible;
+}
+
+async function setDiagnosticVisibility(next: VisibilityMode) {
+  const visible = applyVisibility(next);
+  await render();
+  return visible;
+}
+
+async function setDiagnosticOutput(next: OutputMode) {
+  if (!diagnosticEnabled) throw new Error("output mode is diagnostic-only");
+  outputMode = next;
+  const controller = await controllerFor(arm);
+  if (!controller.setOpaqueOutput) throw new Error("active renderer has no output diagnostic");
+  controller.setOpaqueOutput(next === "opaque");
+  await render();
+}
+
+async function setDiagnosticSourceSelection(enabled: boolean) {
+  if (diagnosticKind !== "source-selection") throw new Error("source selection is diagnostic-only");
+  sourceSelectionEnabled = enabled;
+  const controller = await controllerFor(arm);
+  if (!controller.setSourceSelection) throw new Error("active renderer has no source-selection control");
+  controller.setSourceSelection(enabled);
+  await render();
+}
+
+async function setDiagnosticSourceDepthTolerance(value: number) {
+  if (diagnosticKind !== "source-selection" || !Number.isFinite(value) || value <= 0) throw new Error("source-depth tolerance is diagnostic-only and must be positive");
+  sourceDepthTolerance = value;
+  const controller = await controllerFor(arm);
+  if (!controller.setSourceDepthTolerance) throw new Error("active renderer has no source-depth tolerance control");
+  controller.setSourceDepthTolerance(value);
+  await render();
+}
+
+async function readDiagnosticCoverage() {
+  if (!diagnosticEnabled) throw new Error("coverage readback is diagnostic-only");
+  const controller = await controllerFor(arm);
+  if (!controller.readCoverage) throw new Error("active renderer has no coverage readback");
+  return controller.readCoverage();
+}
+
+async function showDiagnosticCoverageMask() {
+  if (!diagnosticEnabled) throw new Error("coverage mask is diagnostic-only");
+  const controller = await controllerFor(arm);
+  if (!controller.showCoverageMask) throw new Error("active renderer has no coverage mask");
+  controller.showCoverageMask();
 }
 
 async function setRadius(size: number) {
@@ -245,6 +329,7 @@ async function run() {
   productCenter = products?.center.clone() ?? sceneCenter.clone();
   productSize = products?.size.clone() ?? worldBox.getSize(new Vector3());
   sourceFrameIndex = Math.min(sourceFrameIndex, surfels.metadata.frames.length - 1);
+  if (diagnosticEnabled) applyVisibility(visibilityMode);
   for (let index = 0; index < surfels.metadata.frames.length; index += 1) {
     const frame = surfels.metadata.frames[index];
     frameSelect.add(new Option(`frame ${frame.image_id}`, String(index)));
@@ -275,6 +360,13 @@ async function run() {
       radiusSize,
       sourceFrameIndex,
       sourceImageId: bundle.surfels.metadata.frames[sourceFrameIndex].image_id,
+      diagnosticEnabled,
+      visibilityMode,
+      outputMode: diagnosticKind === "source-frame" ? outputMode : arm === "candidate" ? "opaque" : null,
+      sourceSelectionEnabled,
+      sourceDepthTolerance,
+      pointCount: bundle.pointCount,
+      visibleCount: (visibility.array as Uint8Array).reduce((total, value) => total + value, 0),
       canvas: { width: canvas.width, height: canvas.height, clientWidth: canvas.clientWidth, clientHeight: canvas.clientHeight },
       fov: camera.fov,
       position: camera.position.toArray(),
@@ -283,6 +375,12 @@ async function run() {
       projection: camera.projectionMatrix.toArray(),
     }),
     __render: render,
+    __setDiagnosticVisibility: setDiagnosticVisibility,
+    __setDiagnosticOutput: setDiagnosticOutput,
+    __setDiagnosticSourceSelection: setDiagnosticSourceSelection,
+    __setDiagnosticSourceDepthTolerance: setDiagnosticSourceDepthTolerance,
+    __readDiagnosticCoverage: readDiagnosticCoverage,
+    __showDiagnosticCoverageMask: showDiagnosticCoverageMask,
     __dispose: () => {
       if (disposed) return;
       disposed = true;
