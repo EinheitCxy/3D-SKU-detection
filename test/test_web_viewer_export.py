@@ -8,6 +8,7 @@ from PIL import Image
 import main as main_module
 import src.web_viewer_export as exporter
 from src.web_viewer_export import WebViewerExportError, export_web_viewer_bundle
+from src.viewer_export_tuning import ViewerExportTuning
 from utils.config import default_sam3_mask_cache_root
 from utils.pointcloud_filter import PointCloudFilterConfig
 import utils.scene_orientation as scene_orientation
@@ -201,6 +202,73 @@ def _stable_geometry(monkeypatch: pytest.MonkeyPatch) -> None:
         "_estimate_scene_normals",
         lambda points, _extrinsic: np.tile([0.0, 0.0, 1.0], (len(points), 1)),
     )
+
+
+def test_tuning_requires_surfel_export(exporter_inputs):
+    with pytest.raises(WebViewerExportError, match="tuning requires Surfel export"):
+        export_web_viewer_bundle(
+            **exporter_inputs, tuning=ViewerExportTuning(quality_filter=True)
+        )
+    assert not exporter_inputs["output_dir"].exists()
+
+
+def test_all_viewer_tuning_preserves_nonempty_global_ids(exporter_inputs):
+    path = exporter_inputs["da3_cache_path"]
+    with np.load(path) as archive:
+        cache = {key: archive[key] for key in archive.files}
+    # Small native tangents form a valid Surfel plane instead of metre-wide steps.
+    cache["world_points"][..., :2] *= 0.01
+    cache["intrinsic"] = np.eye(3, dtype=np.float32)[None]
+    np.savez_compressed(path, **cache)
+    common = dict(exporter_inputs, surfel_texture_edge=256,
+                  filter_config=PointCloudFilterConfig(enabled=False))
+    baseline = export_web_viewer_bundle(**common)
+    common["output_dir"] = exporter_inputs["output_dir"].with_name("tuned")
+    tuned = export_web_viewer_bundle(
+        **common, tuning=ViewerExportTuning(
+            quality_filter=True, product_spill_trim=True,
+            background_edge_weights=(2, 1, 1), single_owner=True,
+        )
+    )
+    def counts(result):
+        objects = json.loads(Path(result["manifest_path"]).with_name("objects.json").read_text())
+        return {gid: sum(end - start for start, end in obj["point_ranges"])
+                for gid, obj in objects.items()}
+    before, after = counts(baseline), counts(tuned)
+    assert before and any(before.values())
+    assert all(after.get(gid, 0) > 0 for gid, count in before.items() if count > 0)
+    assert tuned["point_count"] <= baseline["point_count"]
+
+
+def test_single_owner_competes_across_instances_of_one_global_id(monkeypatch):
+    y, x = np.indices((4, 4))
+    plane = np.stack((x * 0.005, y * 0.005, np.full(x.shape, 1.003)), axis=-1).astype(np.float32)
+    points = np.stack((plane, plane + [0, 0, 0.001])).astype(np.float32)
+    labels = np.zeros((2, 4, 4), dtype=np.int32)
+    labels[1] = 1
+    labels[1, :, -1] = 2
+    keys = [("7", 0), ("7", 1), ("9", 0)]
+    cache = dict(points=points, confidence=np.ones(labels.shape, dtype=np.float32),
+                 images=np.arange(points.size, dtype=np.uint8).reshape(points.shape),
+                 extrinsic=np.repeat(np.eye(4)[None], 2, axis=0))
+    monkeypatch.setattr(exporter, "_instance_labels_v2", lambda _cache, _objects, indices, *_:
+                        (labels.ravel()[indices], keys))
+    common = dict(mask_cache_root=Path("/unused"), voxel_size=0.005,
+                  filter_config=PointCloudFilterConfig(enabled=False), adaptive_surfels=True,
+                  level_rotation=(np.eye(3), False))
+    baseline = exporter._sample_points(cache, {}, **common)
+    tuned = exporter._sample_points(
+        cache, {}, **common, tuning=ViewerExportTuning(single_owner=True),
+        frame_sharpness=np.ones(2),
+    )
+    sources = tuned["source_indices"]
+    assert len(sources) < len(baseline["source_indices"])
+    assert set(tuned["instance_labels"]) == {0, 2}
+    assert np.all(sources[tuned["instance_labels"] == 0] < 16)
+    assert np.all(sources[tuned["instance_labels"] == 2] >= 16)
+    assert np.array_equal(tuned["positions"], points.reshape(-1, 3)[sources])
+    assert np.array_equal(tuned["colors"], cache["images"].reshape(-1, 3)[sources])
+    assert np.array_equal(tuned["filtered_points"], baseline["filtered_points"])
 
 
 def test_export_publishes_schema3_bundle_with_product_thumbnails(

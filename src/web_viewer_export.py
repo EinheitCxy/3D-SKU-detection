@@ -10,6 +10,7 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import uuid
 from collections import defaultdict
 from pathlib import Path
@@ -19,6 +20,7 @@ import numpy as np
 from PIL import Image
 
 from src.sku_masterdata import load_sku_masterdata_csv
+from src.viewer_export_tuning import ViewerExportTuning
 from utils.da3_cache_validation import validate_affine_linear_parts
 from utils.global_id_mapper import GlobalIDMapper
 from utils.global_object_index import build_global_object_index
@@ -75,8 +77,12 @@ def export_web_viewer_bundle(
     voxel_size_m: float = 0.005,
     filter_config: PointCloudFilterConfig | None = None,
     surfel_texture_edge: int | None = None,
+    tuning: ViewerExportTuning | None = None,
 ) -> dict[str, object]:
     """Publish up to 2M product points, balanced by global ID, plus 500K background."""
+    tuning = tuning or ViewerExportTuning()
+    if surfel_texture_edge is None and tuning != ViewerExportTuning():
+        raise WebViewerExportError("viewer export tuning requires Surfel export")
     if not isinstance(dataset_name, str) or not dataset_name.strip():
         raise WebViewerExportError("dataset_name must be a non-empty string")
     voxel_size = _validate_export_options(voxel_size_m)
@@ -88,9 +94,15 @@ def export_web_viewer_bundle(
         if backend == "Pi3X" else _load_da3_cache(Path(da3_cache_path))
     )
     objects = build_global_object_index(GlobalIDMapper(str(Path(global_mapping_path))))
-    thumbnails = _generate_thumbnails(
-        objects, _resolve_source_images(Path(source_images_dir))
-    )
+    source_images = _resolve_source_images(Path(source_images_dir))
+    thumbnails = _generate_thumbnails(objects, source_images)
+    frame_sharpness = None
+    if tuning.single_owner:
+        from src.surfel_ownership import frame_sharpness_weights
+
+        frame_sharpness = frame_sharpness_weights(
+            [source_images[int(image_id)] for image_id in cache["image_ids"]]
+        )
     level_rotation = None
     if backend == "DA3":
         orientation, _cache_event = get_scene_orientation(Path(da3_cache_path))
@@ -109,6 +121,8 @@ def export_web_viewer_bundle(
         filter_config=filter_config or PointCloudFilterConfig(),
         adaptive_surfels=surfel_texture_edge is not None,
         level_rotation=level_rotation,
+        tuning=tuning,
+        frame_sharpness=frame_sharpness,
     )
     if surfel_texture_edge is not None:
         from src.surfel_export import prepare_surfels
@@ -403,7 +417,10 @@ def _sample_points(
     filter_config: PointCloudFilterConfig,
     adaptive_surfels: bool = False,
     level_rotation: tuple[np.ndarray, bool] | None = None,
+    tuning: ViewerExportTuning | None = None,
+    frame_sharpness: np.ndarray | None = None,
 ) -> dict[str, Any]:
+    tuning = tuning or ViewerExportTuning()
     flat_points = cache["points"].reshape(-1, 3)
     flat_confidence = cache["confidence"].reshape(-1)
     flat_colors = cache["images"].reshape(-1, 3)
@@ -443,13 +460,55 @@ def _sample_points(
         ])
         steps = steps[np.isfinite(steps) & (steps > 0)]
         spacing = float(np.median(steps)) if len(steps) else 0.0
-        sampler = EdgeAdaptiveSampler(depth, valid.reshape(depth.shape), spacing, regions.reshape(depth.shape))
+        sampler = EdgeAdaptiveSampler(
+            depth, valid.reshape(depth.shape), spacing, regions.reshape(depth.shape),
+            background_weights=tuning.background_edge_weights,
+        )
     keep_filter = filter_scene_points(
         valid_points, filter_config, protect_mask=labels >= 0
     )
+    if adaptive_surfels and (tuning.quality_filter or tuning.single_owner):
+        from src.viewer_point_quality import camera_centers
+
+        centers = camera_centers(cache["extrinsic"])
+    if adaptive_surfels and tuning.quality_filter:
+        from src.viewer_point_quality import pixel_quality_drop, viewer_quality_keep
+
+        drop, counts = pixel_quality_drop(
+            depth=depth, valid=valid.reshape(depth.shape), confidence=cache["confidence"],
+            u=native_u, v=native_v, points=cache["points"], centers=centers, spacing=spacing,
+        )
+        before = int(keep_filter.sum())
+        keep_filter &= viewer_quality_keep(indices=valid_indices, labels=labels, drop=drop)
+        logger.info("Viewer quality removed %d points; grid rules %s", before - int(keep_filter.sum()), counts)
+    if adaptive_surfels and tuning.product_spill_trim:
+        from src.viewer_point_quality import product_spill_keep
+
+        before = int(keep_filter.sum())
+        keep_filter &= product_spill_keep(indices=valid_indices, labels=labels, depth=depth)
+        logger.info("Viewer product spill removed %d points", before - int(keep_filter.sum()))
     filtered_points = valid_points[keep_filter]
     if len(filtered_points) == 0:
         raise WebViewerExportError("DA3 point filtering removed every valid point")
+    if adaptive_surfels and tuning.single_owner:
+        from src.surfel_ownership import select_single_owner
+
+        if frame_sharpness is None:
+            raise WebViewerExportError("single-owner export requires frame sharpness weights")
+        started = time.monotonic()
+        kept = np.flatnonzero(keep_filter)
+        sources = valid_indices[kept]
+        # Ownership must group observations of the same global ID across frames.
+        # Keep the original instance labels for point ranges and thumbnail identity.
+        own = select_single_owner(
+            points=valid_points[kept], frames=sources // (depth.shape[1] * depth.shape[2]),
+            labels=regions[sources],
+            normals=np.cross(native_u.reshape(-1, 3)[sources], native_v.reshape(-1, 3)[sources]),
+            centers=centers, confidence=flat_confidence[sources], sharpness=frame_sharpness,
+            spacing=spacing, patch_cells=tuning.owner_patch_cells,
+        )
+        keep_filter[kept[~own]] = False
+        logger.info("Viewer single-owner removed %d/%d points in %.3f s", int((~own).sum()), len(kept), time.monotonic() - started)
     labels = labels[keep_filter]
     points = valid_points[keep_filter]
     confidence = flat_confidence[valid][keep_filter]
