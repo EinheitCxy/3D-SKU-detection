@@ -64,3 +64,24 @@ def test_same_depth_product_boundary_limits_footprint():
     selected, _ = sampler.select(indices, 128)
     assert len(np.unique(selected)) == 128
     assert (regions.ravel()[indices[selected]] == 0).all()
+
+
+def test_background_weights_change_only_background_regions():
+    depth = np.ones((1, 10, 10))
+    regions = np.full(depth.shape, -1, dtype=np.int32)
+    regions[:, 3:7, 3:7] = 0
+    sampler = EdgeAdaptiveSampler(depth, np.ones_like(depth, bool), 0.002,
+                                  regions, background_weights=(2, 1, 1))
+    default = EdgeAdaptiveSampler(depth, np.ones_like(depth, bool), 0.002, regions)
+    assert sampler.weights.reshape(depth.shape)[0, 0, 0] == 2
+    assert default.weights.reshape(depth.shape)[0, 0, 0] == 4
+    assert np.array_equal(sampler.weights.reshape(depth.shape)[regions >= 0],
+                          default.weights.reshape(depth.shape)[regions >= 0])
+
+
+def test_background_weights_have_no_effect_without_regions():
+    depth = np.ones((1, 10, 10))
+    valid = np.ones_like(depth, dtype=bool)
+    default = EdgeAdaptiveSampler(depth, valid, 0.002)
+    changed = EdgeAdaptiveSampler(depth, valid, 0.002, background_weights=(2, 1, 1))
+    assert np.array_equal(changed.weights, default.weights)

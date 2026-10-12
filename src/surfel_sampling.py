@@ -96,7 +96,7 @@ class EdgeAdaptiveSampler:
     neighboring object's source mask; the minimum scale is still 0.5.
     """
 
-    def __init__(self, depth, valid, spacing, regions=None):
+    def __init__(self, depth, valid, spacing, regions=None, *, background_weights=(4, 2, 1)):
         depth = np.asarray(depth)
         valid = np.asarray(valid, dtype=bool)
         if depth.ndim != 3 or valid.shape != depth.shape or not all(depth.shape):
@@ -107,6 +107,9 @@ class EdgeAdaptiveSampler:
             raise ValueError("valid observations require finite positive camera depth")
         if regions is not None and np.shape(regions) != depth.shape:
             raise ValueError("region labels must align with the camera grid")
+        if (not isinstance(background_weights, tuple) or len(background_weights) != 3
+                or any(type(weight) is not int or not 1 <= weight <= 255 for weight in background_weights)):
+            raise ValueError("background_weights must be three integers in [1, 255]")
         self.shape = depth.shape
         self.valid = valid.ravel()
         self.weights = np.empty(depth.shape, dtype=np.uint8)
@@ -126,7 +129,13 @@ class EdgeAdaptiveSampler:
             edge[:, [0, -1]] = True
             edge &= valid[frame]
             halo = binary_dilation(edge, iterations=2) & valid[frame]
-            self.weights[frame] = np.where(valid[frame], np.where(edge, 4, np.where(halo, 2, 1)), 0)
+            weights = np.where(edge, 4, np.where(halo, 2, 1))
+            if regions is not None:
+                background = regions[frame] == -1
+                background_values = np.where(edge, background_weights[0],
+                                             np.where(halo, background_weights[1], background_weights[2]))
+                weights = np.where(background, background_values, weights)
+            self.weights[frame] = np.where(valid[frame], weights, 0)
             self.caps[frame, ..., 0] = _axis_caps(bx, depth.shape[1:], 1)
             self.caps[frame, ..., 1] = _axis_caps(by, depth.shape[1:], 0)
         self.weights = self.weights.ravel()
