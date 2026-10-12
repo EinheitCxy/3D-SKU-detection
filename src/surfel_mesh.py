@@ -32,17 +32,33 @@ def _bound_footprint(u, v, native):
 
 
 def _limit_final_diameter(bu, bv, native):
-    """Uniformly cap the baked ellipse diameter relative to its source grid."""
+    """Cap baked ellipse singular values relative to the source grid."""
     aa, ab, bb = (bu * bu).sum(1), (bu * bv).sum(1), (bv * bv).sum(1)
-    sigma_max = np.sqrt(
-        np.maximum(0, (aa + bb + np.hypot(aa - bb, 2 * ab)) * 0.5)
+    trace = aa + bb
+    gap = np.hypot(aa - bb, 2 * ab)
+    major = np.sqrt(np.maximum(0, (trace + gap) * 0.5))
+    minor = np.sqrt(np.maximum(0, (trace - gap) * 0.5))
+    half_cap = 0.5 * FINAL_DIAMETER_MAX_NATIVE * np.max(native, axis=1)
+    major_scale = np.minimum(
+        1, np.divide(half_cap, major, out=np.ones_like(major), where=major > 0)
     )
-    diameter = 2 * sigma_max
-    cap = FINAL_DIAMETER_MAX_NATIVE * np.max(native, axis=1)
-    factor = np.minimum(
-        1, np.divide(cap, diameter, out=np.ones_like(cap), where=diameter > 0)
+    minor_scale = np.minimum(
+        1, np.divide(half_cap, minor, out=np.ones_like(minor), where=minor > 0)
     )
-    return bu * factor[:, None], bv * factor[:, None]
+    distinct = gap > 1e-6 * np.maximum(trace, 1e-20)
+    factor = np.divide(
+        major_scale - minor_scale,
+        gap,
+        out=np.zeros_like(gap),
+        where=distinct,
+    )
+    c00 = minor_scale + factor * (aa - minor * minor)
+    c11 = minor_scale + factor * (bb - minor * minor)
+    c01 = factor * ab
+    c00 = np.where(distinct, c00, major_scale)
+    c11 = np.where(distinct, c11, major_scale)
+    return (bu * c00[:, None] + bv * c01[:, None],
+            bu * c01[:, None] + bv * c11[:, None])
 
 
 def _bilinear(image, x, y):

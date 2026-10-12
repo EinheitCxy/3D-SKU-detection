@@ -55,14 +55,28 @@ void boundFootprint(inout vec3 u, inout vec3 v, vec2 nativeStep) {
   v = (a * correction[1][0] + b * correction[1][1]) * nativeStep.y;
 }
 
-// Bound the final ellipse after adaptive scale and the size control. Using its
-// largest singular value also handles skewed axes; shrink both to keep its shape.
+// Bound each final ellipse singular value after adaptive scale and the size control.
+// Retain the short axis when it fits, instead of shrinking the entire footprint.
 void boundFinalFootprint(inout vec3 u, inout vec3 v, vec2 nativeStep) {
   float aa = dot(u, u), ab = dot(u, v), bb = dot(v, v);
-  float diameter = 2.0 * sqrt(max(0.0, 0.5 * (aa + bb + length(vec2(aa - bb, 2.0 * ab)))));
-  float limit = ${MAX_FINAL_DIAMETER_STEPS.toFixed(1)} * max(nativeStep.x, nativeStep.y);
-  float shrink = min(1.0, limit / max(diameter, 1e-8));
-  u *= shrink; v *= shrink;
+  float trace = aa + bb;
+  float gap = length(vec2(aa - bb, 2.0 * ab));
+  float major = sqrt(max(0.0, 0.5 * (trace + gap)));
+  float minor = sqrt(max(0.0, 0.5 * (trace - gap)));
+  float capRadius = 0.5 * ${MAX_FINAL_DIAMETER_STEPS.toFixed(1)} * max(nativeStep.x, nativeStep.y);
+  float majorScale = min(1.0, capRadius / max(major, 1e-8));
+  float minorScale = min(1.0, capRadius / max(minor, 1e-8));
+  mat2 correction;
+  if (gap > 1e-6 * max(trace, 1e-20)) {
+    float low = minor * minor;
+    mat2 majorProjector = mat2(aa - low, ab, ab, bb - low) / gap;
+    correction = mat2(minorScale) + (majorScale - minorScale) * majorProjector;
+  } else {
+    correction = mat2(majorScale);
+  }
+  vec3 originalU = u, originalV = v;
+  u = originalU * correction[0][0] + originalV * correction[0][1];
+  v = originalU * correction[1][0] + originalV * correction[1][1];
 }
 
 vec4 cameraTexel(int column, int frame) { return texelFetch(uCameras, ivec2(column, frame), 0); }

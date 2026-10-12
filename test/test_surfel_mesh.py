@@ -90,11 +90,11 @@ def test_final_diameter_cap_limits_radius_and_anisotropic_scale_bake_geometry():
     page, = bake_surfel_pages(**args)
     bu, bv = quad_axes(page)
     np.testing.assert_allclose(bu, [3, 0, 0])
-    np.testing.assert_allclose(bv, [0, 3 / 16, 0])
+    np.testing.assert_allclose(bv, [0, 1, 0])
     np.testing.assert_allclose(quad_diameter(page), 6)
 
 
-def test_final_diameter_cap_preserves_skew_plane_and_axis_ratio():
+def test_final_diameter_cap_preserves_skew_plane_short_value_and_major_direction():
     args = fixture()
     args['u'][0] = [1, 0, 0]
     args['v'][0] = [1, 1, 0]
@@ -103,15 +103,28 @@ def test_final_diameter_cap_preserves_skew_plane_and_axis_ratio():
     page, = bake_surfel_pages(**args)
     bu, bv = quad_axes(page)
     raw_bu, raw_bv = np.array([16, 0, 0]), np.array([1, 1, 0])
-    factor = 6 / (
-        2 * np.linalg.svd(np.stack((raw_bu, raw_bv), axis=1), compute_uv=False)[0]
+    raw_directions, raw_values, _ = np.linalg.svd(
+        np.stack((raw_bu, raw_bv), axis=1), full_matrices=False
     )
-    np.testing.assert_allclose(bu, raw_bu * factor, rtol=2e-6)
-    np.testing.assert_allclose(bv, raw_bv * factor, rtol=2e-6)
+    baked_directions, baked_values, _ = np.linalg.svd(
+        np.stack((bu, bv), axis=1), full_matrices=False
+    )
+    np.testing.assert_allclose(baked_values, [3, raw_values[1]], rtol=2e-6)
+    np.testing.assert_allclose(abs(raw_directions[:, 0] @ baked_directions[:, 0]), 1,
+                               rtol=2e-6)
     np.testing.assert_allclose(np.cross(bu, bv) / np.linalg.norm(np.cross(bu, bv)), [0, 0, 1])
-    np.testing.assert_allclose(np.linalg.norm(bu) / np.linalg.norm(bv),
-                               np.linalg.norm(raw_bu) / np.linalg.norm(raw_bv), rtol=1e-6)
     assert quad_diameter(page) <= 6 + 1e-6
+
+
+def test_final_diameter_cap_limits_both_axes_of_oversize_isotropic_footprint():
+    args = fixture()
+    args['scales'][0] = [8, 8]
+    args['radius'] = 2
+    page, = bake_surfel_pages(**args)
+    bu, bv = quad_axes(page)
+    np.testing.assert_allclose(bu, [3, 0, 0])
+    np.testing.assert_allclose(bv, [0, 3, 0])
+    np.testing.assert_allclose(quad_diameter(page), 6)
 
 
 def test_final_diameter_cap_leaves_small_footprint_unchanged():
