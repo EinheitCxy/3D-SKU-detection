@@ -8,6 +8,8 @@ const viewer = resolve(repository, "docker/viewer/src");
 const viewerModules = resolve(repository, "docker/viewer/node_modules");
 const visual = resolve(repository, "runtime/viewer-extent-20261012/visual");
 const bundles = new Map([
+  ["/bundles/video1.zip", resolve(repository, "runtime/viewer-extent-20261012/video12/video1/viewer_bundle.zip")],
+  ["/bundles/video2.zip", resolve(repository, "runtime/viewer-extent-20261012/video12/video2/viewer_bundle.zip")],
   ["/bundles/video3.zip", resolve(repository, "runtime/viewer-clarity-20261012/video3/X0/crop/viewer_bundle.zip")],
   ["/bundles/fd6.zip", resolve(repository, "runtime/viewer-clarity-20261012/fd6/X0/crop/viewer_bundle.zip")],
 ]);
@@ -43,6 +45,8 @@ export default {
     host: "0.0.0.0", port: 53110, strictPort: true,
     fs: { allow: [
       here, viewer, viewerModules, resolve(repository, "modules/viewer_web/src"), visual,
+      resolve(repository, "runtime/viewer-extent-20261012/video12/video1"),
+      resolve(repository, "runtime/viewer-extent-20261012/video12/video2"),
       resolve(repository, "runtime/viewer-clarity-20261012/video3/X0/crop"),
       resolve(repository, "runtime/viewer-clarity-20261012/fd6/X0/crop"),
     ] },

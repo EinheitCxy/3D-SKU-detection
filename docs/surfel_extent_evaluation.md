@@ -35,3 +35,34 @@
 - fd6 大半径：[Before](../runtime/viewer-extent-20261012/visual/fd6/radius2/baseline-close.png)、[Uniform](../runtime/viewer-extent-20261012/visual/fd6/radius2/candidate-close.png)、[Axis cap](../runtime/viewer-extent-20261012/visual/fd6/radius2/major-close.png)。
 
 这些是裁剪场景的定性观察，并没有得到可推广的清晰度或精度提升结论。图中的错层、孔洞和边缘破碎仍然存在；长度上限不能校正位姿或补齐缺失几何。软件 WebGL 的截图不作为硬件 GPU 性能证据。
+
+## video1 / video2 完整场景复查
+
+Rick 反馈上述 crop 难以辨认场景，因此新增完整 video1、video2 入口，并将 video1 设为预览默认值。这里的“完整”表示保留导出包的完整空间范围，预览不再裁剪或抽稀点集；导出本身仍使用既有点预算。旧 crop 保留并明确标注，不作为完整场景的结果。
+
+| 场景 | 输入 | 帧数 | 点数 | Surfel 版本 |
+|---|---|---:|---:|---:|
+| video1 | `modules/viewer_web/public/data-video1-1fps/viewer_bundle.zip`，复用现有完整导出 | 31 | 1,500,000 | v2 |
+| video2 | `runtime/fd-videos-20260911/video2/` 下现存 DA3、global mapping 和 SAM3 v2 缓存，CPU 重新导出 | 12 | 2,446,979 | v3 |
+
+video2 保留全部 1,946,979 个有效 SAM 商品点与 500,000 个背景点，纹理长边设置为 1920，其余为当前导出默认参数；没有重跑 DA3/SAM 模型。新数据、导出日志和截图保留在本机 `runtime/viewer-extent-20261012/video12/`。video1 的不同数据年代和版本意味着两场景之间不能直接比较改进量；每个场景的 Before/After 才使用完全相同的 ZIP。
+
+新取景沿来源相机的拍摄方向，以商品范围为中心，将商品包围盒的 8 个角投影到相机坐标后计算距离，避免倾斜视角下直接按世界坐标尺寸取景导致切边。提供 Overview、Close 和 Source 视角及来源帧选择。取景只改变相机，不隐藏背景、不修改商品点。请求的 LAN 入口如下，目前尚未开放：
+
+- video1：`http://192.168.2.6:53110/?scene=video1`
+- video2：`http://192.168.2.6:53110/?scene=video2`
+
+自动审批拒绝了这两个场景的 LAN 监听，要求 Rick 明确授权新增数据的局域网访问。本次先使用获批的 `127.0.0.1:53110` 完成浏览器检查；本机监听不代表上述 LAN 地址可访问。
+
+video1 v2 不包含自适应 scale。默认半径 1.05 下，已有 native 约束使最长直径不超过约 4.2 个 native steps，因此上限 6 预计不触发；不能把这个场景默认半径下的相同画面描述为清晰度提升。这次完整场景复查也不替代原 D1 的固定评估或解除其未判定状态。
+
+已人工检查 video1 的修正后 Overview：完整堆头、底部箱装商品和上方招牌均入画，OMO 和 Comfort 商品布局可辨；表面仍有孔洞、碎片和边缘错层。第一张按世界轴取景的图片上下切边，已另存为 `candidate-overview-invalid-world-axis-fit.png`，不用于最终展示或对比。正式图片为 [video1 Overview](../runtime/viewer-extent-20261012/video12/visual/video1/default/candidate-overview.png)。
+
+已人工检查 [video2 Overview](../runtime/viewer-extent-20261012/video12/visual/video2/default/candidate-overview.png)：蓝色洗衣液、纸箱和价签可辨，商品陈列完整入画；瓶盖、价签和台面上仍有碎片与错层。两张最终 Overview 的实际画布均为 960×543，浏览器 `pageerror` / console errors 为空，具体相机见 `video12/visual/capture-candidate.json`。这证明完整场景能够加载并获得可辨认的取景，不等于消除了重影。
+
+补充检查 video2 的两组近景：
+
+- 默认半径 1.05：[Before](../runtime/viewer-extent-20261012/video12/visual/video2/default/baseline-close.png) / [After](../runtime/viewer-extent-20261012/video12/visual/video2/default/candidate-close.png)。主体外观几乎不变，顶部瓶盖、标签和价签上的错层仍在。
+- 半径 2：[Before](../runtime/viewer-extent-20261012/video12/visual/video2/radius2/baseline-close.png) / [After](../runtime/viewer-extent-20261012/video12/visual/video2/radius2/candidate-close.png)。部分瓶身和纸箱边缘的大片糊连收缩，局部孔洞和颗粒也更明显；没有消除多层纹理或得到整体清晰度提升的证据。
+
+本轮共 6 张正式图片：两张 After Overview，加上 video2 的四张近景 A/B。`capture-before-after.json` 的四张近景没有浏览器错误，coordinator 逐组核对 source frame、相机位置/目标/up/FOV/投影矩阵、半径和画布完全一致。没有另外运行 video1 的图像 A/B；其默认半径不触发上限的判断来自上述几何约束。工具 Vite 构建通过，生产 renderer / GLB 代码本轮未改，未重复运行上一节的单元测试。
