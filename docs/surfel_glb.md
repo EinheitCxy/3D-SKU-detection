@@ -21,7 +21,11 @@ uv run --no-sync python -m src.surfel_glb \
 
 每个有效 Surfel 展开为两个三角面；原照片投影颜色、圆盘轮廓及来源深度裁剪被烘焙到内嵌 RGBA PNG atlas。材质使用 `alphaMode: MASK`、双面和 `KHR_materials_unlit`，保留照片自身颜色。场景方向来自原 manifest 的 `world_to_view`。
 
-CPU 烘焙沿用当前 Viewer 的 footprint 限制、深度连续性和 source-depth 阈值。默认 `--radius 2.0` 对应当前 Viewer 初始圆盘大小；`--tile-size 8` 表示每个 Surfel 的有效纹理 tile 为 8×8 像素，另有透明 gutter。可显式增大 tile size 改善局部纹理和裁剪采样精度，但 atlas 显存随 tile 边长平方增长。`--atlas-size` 默认 2048。
+CPU 烘焙沿用基线 Viewer 的 footprint 限制、深度连续性和 source-depth 阈值。默认 `--radius 2.0` 对应基线 Viewer 初始圆盘大小；`--tile-size 8` 表示每个 Surfel 的有效纹理 tile 为 8×8 像素，另有透明 gutter。可显式增大 tile size 改善局部纹理和裁剪采样精度，但 atlas 显存随 tile 边长平方增长。`--atlas-size` 默认 2048。
+
+### 实验性导出参数
+
+WP-G 将 GLB 导出接口扩展为可调 `radius`、`tile_size`、`lod` 和 `palette_colors`；Docker `export_scene_glb` 的默认值仍为 `2.0`、`8`、`True` 和 `128`。设置 `palette_colors=None` 会输出 RGBA PNG 并保留二值 alpha，不执行颜色索引量化。当前 Viewer clarity 评估在 D1 阶段因 video3 基线 frame 24 无有效比较像素而无法判定，E3 未运行；因此没有本轮候选的文件大小或耗时收益可报告，也没有据此变更生产参数。
 
 默认遍历全部输入点，无静默下采样。完全透明、不可投影或零面积 Surfel 不产生三角面；报告分别记录输入点数、保留和跳过数量、三角数、atlas 页数、GLB 字节数及导出时间。跳过数量是本次有限分辨率烘焙的结果，不能当作原始场景无效点数量。
 
@@ -35,7 +39,7 @@ Docker 服务在现有 Viewer generation 目录生成后，调用 `src.surfel_gl
 
 GLB 在 Docker 请求临时目录内生成，以原始 `bytes` 放入响应的 `scene_glb` 字段，由现有 `bson.dumps` 编码为 BSON binary；不使用 Base64，不上传 COS，也不塞入 ZIP。成功响应为 `{"global_skus": [...], "scene_glb": <binary>}`；原 Viewer ZIP 的 COS 上传保持不变。普通加载器需支持标准 `KHR_materials_unlit` 和 `KHR_mesh_quantization`。
 
-该入口固定使用上一轮减量方案：半径2.0、8×8纹理tile、2×2保守LOD、16-bit几何和128种RGB索引PNG。中间和最终GLB文件均随请求临时目录清理；最终内容在清理前读成bytes返回。导出、读取或原Viewer ZIP上传失败均抛出错误。BSON编码和客户端下载会完整持有GLB，响应大小与内存占用随文件大小增加。
+该入口默认使用上一轮减量方案：半径2.0、8×8纹理tile、2×2保守LOD、16-bit几何和128种RGB索引PNG；导出函数可显式覆盖前述实验参数。中间和最终GLB文件均随请求临时目录清理；最终内容在清理前读成bytes返回。导出、读取或原Viewer ZIP上传失败均抛出错误。BSON编码和客户端下载会完整持有GLB，响应大小与内存占用随文件大小增加。
 
 这是额外的CPU步骤，会延长同步 `/api` 请求；当前约236万点样例的LOD烘焙曾耗时约155秒，之后还需压缩和传输响应，不能视为固定时限。实际文件大小随场景变化；117.16 MB仅为现有样例。运行容器须更新后，新任务才会生成该文件；旧任务不会自动补齐。
 

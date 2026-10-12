@@ -14,6 +14,8 @@
 
 **技术栈：** Python 3.11 + `uv`（numpy/scipy/open3d/opencv/scikit-image 均已在 `.venv`）；Viewer：TypeScript + Vite 8.2.1 + three 0.185.1 + vitest；浏览器评估：Playwright 1.62.1（`perf/package.json`）+ headless Chromium（SwiftShader 或 GPU2）。
 
+**2026-10-12 执行状态：停在 D1，尚未采纳默认值。** WP-0/T/V/X1/X2/G/X3 的候选实现和定向测试已完成。固定的 SwiftShader `center_fraction=0.4` 裁剪在 video3 预登记第 24 帧的源相机视野内没有任何点，V0 该帧 PSNR/SSIM 以及三帧均值未定义，因此无法判定 §6.4 的双场景门槛。未更改评估帧、裁剪或阈值；E2/E3、中文移植和发布延期。详见 `runtime/viewer-clarity-20261012/{RESULTS,DECISIONS,REPORT}.md`。英文分支后续正确性修复属于尚未验收的候选代码；原候选截图未评分。GLB overview/close helper 仍待 E3 实现。
+
 ---
 
 ## 0. Rick 已做的决定（不可更改）
@@ -167,14 +169,14 @@ Wave 6  仅在 Rick 批准后: WP-Deploy
 
 ### WP-0 预检（Coordinator）
 
-- [ ] 三个检出的已跟踪文件都没有改动，否则停下来问 Rick：
+- [x] 三个检出的已跟踪文件都没有改动，否则停下来问 Rick：
   ```bash
   cd /home/xingyu/3D_Recognization
   git status --porcelain --untracked-files=no
   git -C docker status --porcelain --untracked-files=no
   git -C runtime/worktrees/viewer-zn-surfel status --porcelain --untracked-files=no
   ```
-- [ ] 建分支，并先提交本计划：
+- [x] 建分支，并先提交本计划：
   ```bash
   git switch -c feat/viewer-clarity-20261012
   git add docs/superpowers/plans/2026-10-12-viewer-clarity.md
@@ -182,11 +184,11 @@ Wave 6  仅在 Rick 批准后: WP-Deploy
   git -C docker switch -c feat/viewer-clarity-en
   git -C runtime/worktrees/viewer-zn-surfel switch -c feat/viewer-clarity-zn
   ```
-- [ ] `df -h /` 剩余 ≥ 15 GB。
-- [ ] 输入齐全（`ls` 每个路径）：
+- [x] `df -h /` 剩余 ≥ 15 GB。
+- [x] 输入齐全（`ls` 每个路径）：
   - video3：`runtime/video3-resolution-review/504/outputs/dataset/{da3_cache/predictions.npz,dedup_detections/global_mapping.json,sam3_mask_cache/v2}`、`runtime/video3-resolution-review/dataset/images/`（29 张，1080×1920）
   - fd6：`Output/floor_display6/{da3_cache/predictions.npz,dedup_detections/global_mapping.json,sam3_mask_cache_sam31/v2}`、`imdata/floor_display6/images/`（11 张，5712×4284）
-- [ ] **基线导出 X0**（CPU，用当前代码；同时验证输入可用）：
+- [x] **基线导出 X0**（CPU，用当前代码；同时验证输入可用）：
   ```bash
   uv run python - <<'EOF'
   import json, time
@@ -215,21 +217,21 @@ Wave 6  仅在 Rick 批准后: WP-Deploy
   EOF
   ```
   如果 fd6 导出失败：先把 `masks` 换成 `Output/floor_display6/sam3_mask_cache/v2` 再试；仍失败就按 `floor_display4 → 8 → 10` 的顺序换第二场景。最终选用的场景和 mask 根写入 `PREFLIGHT.md`，之后所有臂固定使用。
-- [ ] **生产输入分辨率核对**（只读）：
+- [x] **生产输入分辨率核对**（只读）：
   ```bash
   mkdir -p runtime/viewer-clarity-20261012/prod
   curl --noproxy '*' -fsS -o runtime/viewer-clarity-20261012/prod/UaA0rbjmBRqaola9YDpx.zip \
     https://snapshot-video-1305849923.cos.ap-shanghai.myqcloud.com/global-id-mapping/UaA0rbjmBRqaola9YDpx/viewer_bundle.zip
   ```
   读取 ZIP 内 `surfel.json` 的 `frames[].source_size / texture_size` 和帧数，写入 `PREFLIGHT.md`。这一项决定 WP-X4 是否值得做。下载失败只需记录，不阻塞后续步骤。
-- [ ] **浏览器就绪：**
+- [x] **浏览器就绪：**
   ```bash
   npm ci --prefix perf --registry=https://registry.npmmirror.com
   PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright npx --prefix perf playwright install chromium-headless-shell
   ```
   然后用参数 `--no-sandbox --use-angle=swiftshader --enable-unsafe-swiftshader --no-proxy-server` 启动，确认 WebGL2 和 `EXT_color_buffer_float` 都可用。
 - [ ] **GPU2 探针**（可选，限时 30 分钟）：尝试 `--use-angle=vulkan --enable-features=Vulkan --ignore-gpu-blocklist`，读取 `WEBGL_debug_renderer_info`，并用 `nvidia-smi --query-compute-apps=gpu_uuid,pid --format=csv` 确认进程在 GPU2。不满足就用 SwiftShader。结论写入 `PREFLIGHT.md`。
-- [ ] 产出 `runtime/viewer-clarity-20261012/PREFLIGHT.md`：场景、mask 根、X0 点数与耗时、生产分辨率、渲染后端（GPU2 或 SwiftShader）。
+- [x] 产出 `runtime/viewer-clarity-20261012/PREFLIGHT.md`：场景、mask 根、X0 点数与耗时、生产分辨率、渲染后端（GPU2 或 SwiftShader）。
 
 ### WP-T 评估工具（SA-Tools）
 
@@ -328,9 +330,9 @@ uv run pytest perf/viewer_clarity/test_tools.py -q
 ```
 
 **验收：**
-- [ ] 测试通过；
-- [ ] 对 `video3/X0` 跑一次 `metrics.py`，M1 总点数等于 X0 的 `point_count`；
-- [ ] 对 `video3/X0` 的 crop 包跑一次 Surfel refview 和 capture，单帧都在超时内完成（这是冒烟，不是评估）。
+- [x] 测试通过；
+- [x] 对 `video3/X0` 跑一次 `metrics.py`，M1 总点数等于 X0 的 `point_count`；
+- [x] 对 `video3/X0` 的 crop 包跑一次 Surfel refview 和 capture，单帧都在超时内完成（这是冒烟，不是评估）。
 
 Coordinator 提交：`feat(perf): add viewer clarity evaluation tools`。
 
@@ -468,9 +470,9 @@ export const DEFAULT_SURFEL_SIZE = MIN_POINT_SIZE; // -> uRadius 1.05（原为 M
 提交：`fix(viewer): tighten Surfel source depth tolerance`。
 
 **验收（WP-V 整体）：**
-- [ ] `npm test -- --run` 和 `npm run build` 通过；
-- [ ] 7 个提交顺序为 V1、V2、V3、V7、V4、V6、V5；
-- [ ] 回报每个提交的 sha。
+- [x] `npm test -- --run` 和 `npm run build` 通过；
+- [x] 7 个提交顺序为 V1、V2、V3、V7、V4、V6、V5；
+- [x] 回报每个提交的 sha。
 
 > V4/V6/V7 是着色器和管线改动，单测只覆盖导出的纯函数和常量，实际效果由 WP-E1 截图与 refview 验收。
 
@@ -527,9 +529,9 @@ export const DEFAULT_SURFEL_SIZE = MIN_POINT_SIZE; // -> uRadius 1.05（原为 M
    ```
 
 **验收：**
-- [ ] 测试通过；
-- [ ] 未修改 `web_viewer_export.py` 和 `utils/pointcloud_filter.py`；
-- [ ] 回报接口签名。
+- [x] 测试通过；
+- [x] 未修改 `web_viewer_export.py` 和 `utils/pointcloud_filter.py`；
+- [x] 回报接口签名。
 
 Coordinator 提交：`feat(export): add viewer point quality filters and background sampling weights`。
 
@@ -572,8 +574,8 @@ uv run pytest test/test_surfel_ownership.py -q
 ```
 
 **验收：**
-- [ ] 测试通过；
-- [ ] 只写了两个新文件。
+- [x] 测试通过；
+- [x] 只写了两个新文件。
 
 Coordinator 提交：`feat(export): select a single source frame per Surfel surface patch`。
 
@@ -595,8 +597,8 @@ Coordinator 提交：`feat(export): select a single source frame per Surfel surf
   ```
 
 **验收：**
-- [ ] 测试通过；
-- [ ] `export_scene_glb()` 无参数调用时输出与修改前一致（现有测试不改即通过）。
+- [x] 测试通过；
+- [x] `export_scene_glb()` 无参数调用时输出与修改前一致（现有测试不改即通过）。
 
 Coordinator 提交：`feat(glb): parameterize scene GLB radius, tile size, LOD and palette`。
 
@@ -628,8 +630,8 @@ Coordinator 提交：`feat(glb): parameterize scene GLB radius, tile size, LOD a
   ```
 
 **验收：**
-- [ ] 测试通过；
-- [ ] 对 video3 用 `export_arm.py --arm XQS4`（全开）导出一次冒烟，记录耗时。
+- [x] 测试通过；
+- [x] 对 video3 用 `export_arm.py --arm XQS4`（全开）导出一次冒烟，记录耗时。
 
 Coordinator 提交：`feat(export): wire viewer tuning into Surfel export`。
 
@@ -718,15 +720,16 @@ ln -s /home/xingyu/3D_Recognization/docker/viewer/node_modules "$A/V0/viewer/nod
 
 ### WP-F 最终验证与报告（Coordinator）→ 停
 
-- [ ] main：
+- [x] main：
   ```bash
   uv run pytest test/test_web_viewer_export.py test/test_surfel_sampling.py test/test_surfel_glb.py test/test_surfel_glb_texture.py test/test_surfel_mesh.py test/test_surfel_lod.py test/test_viewer_mask_retention.py test/test_matching_viewer_identity.py perf/viewer_clarity/test_tools.py -q
   ```
   再加上 D2 后仍存在的新测试文件。
 - [ ] en、zn：`npm test -- --run && npm run build`。
-- [ ] 四个检出都跑 `git diff --check` 和 `git status`（确认没有遗漏文件；未跟踪文件保持原样）。
-- [ ] 删除临时 viewer 臂工作树；删除 generation 解包目录。
-- [ ] 写 `runtime/viewer-clarity-20261012/REPORT.md`（模板见 §7），附对比图路径。
+  - en：87 tests passed，最终源码 build 通过；zn 未移植，未重复运行测试。
+- [x] 四个检出都跑 `git diff --check` 和 `git status`（确认没有遗漏文件；未跟踪文件保持原样）。
+- [x] 删除临时 viewer 臂工作树；删除 generation 解包目录。
+- [x] 写 `runtime/viewer-clarity-20261012/REPORT.md`（模板见 §7），附对比图路径。
 - [ ] 向 Rick 汇报，然后**停止**，等待 §9 的批准。
 
 ### WP-Deploy（仅在 Rick 明确批准后）

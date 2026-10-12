@@ -68,3 +68,5 @@ PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/tmp/surfel-glb-browser/extracted/chrome-hea
 ## Limits
 
 The render and score depend on source-camera pose/depth estimates from the reconstruction. White packaging pixels are excluded, only two scenes are registered, and side-view quality is judged from captured images. SwiftShader output is not GPU performance evidence. Export and ZIP timing are recorded separately.
+
+The 2026-10-12 run stopped at D1: the fixed crop contains no visible points in video3 source frame 24, so the baseline three-frame PSNR/SSIM means are undefined. No candidate defaults were adopted. Saved ZIPs, JSON and PNGs remain under `runtime/viewer-clarity-20261012`; temporary worktrees and unpacked binary assets were removed. Historical generation paths in receipts require explicitly extracting the retained ZIP into a new directory before reuse. See that run's `REPORT.md` and `DECISIONS.md` before resuming; changing the registered crop/frame setup requires approval.
