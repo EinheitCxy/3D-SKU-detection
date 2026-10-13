@@ -660,7 +660,7 @@ def test_stage_fuses_global_id_views_and_uses_polygon_union(monkeypatch, tmp_pat
     result = stage.run_da3_footprint(str(dataset), save_root)
     report = json.loads(Path(result["report_path"]).read_text())
 
-    assert report["schema_version"] == "2.0.0"
+    assert report["schema_version"] == "3.0.0"
     assert report["cache"]["schema_version"] == 3
     assert report["metric"] == "da3_self_exemplar_ground_footprint_union"
     assert report["mask_contract"] == {

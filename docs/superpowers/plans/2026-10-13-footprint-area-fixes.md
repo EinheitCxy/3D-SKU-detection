@@ -71,7 +71,7 @@ Tasks 0–3, 5–7 and 10 do not depend on D1/D2/D4.
 - Consumes: nothing.
 - Produces: `run.sh <label>` and `summarize.py <label>`, reused in Task 10.
 
-- [ ] **Step 1: Create the worktree and commit the plan**
+- [x] **Step 1: Create the worktree and commit the plan**
 
 ```bash
 cd /home/xingyu/3D_Recognization
@@ -88,7 +88,7 @@ git commit -m "docs(plan): add ground-stack footprint fix plan
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 2: Record the flaky baseline**
+- [x] **Step 2: Record the flaky baseline**
 
 ```bash
 for i in 1 2 3; do
@@ -99,7 +99,7 @@ done
 
 Expected: at least one run shows `failed` (R0). Record the three result lines in the Task 1 commit body.
 
-- [ ] **Step 3: Write the validation scripts**
+- [x] **Step 3: Write the validation scripts**
 
 `runtime/footprint-fix-validation-20261013/run.sh`:
 
@@ -158,7 +158,7 @@ for dataset in sorted(path for path in root.iterdir() if path.is_dir()):
 
 The stage writes `scene_orientation.json` beside each resolved `Output/floor_display*/da3_cache/predictions.npz`, which is the existing shared-sidecar behaviour. video3 inputs (`runtime/fd-videos-20260911/`) were deleted on 2026-10-13 14:31 by another process, so fd4–fd8 are the only complete real inputs.
 
-- [ ] **Step 4: Run the baseline**
+- [x] **Step 4: Run the baseline**
 
 ```bash
 bash /home/xingyu/3D_Recognization/runtime/footprint-fix-validation-20261013/run.sh baseline
@@ -179,7 +179,7 @@ Expected: five JSON lines, `schema` `2.0.0`. Keep the output for Task 10.
 - Consumes: nothing.
 - Produces: `fit_scene_orientation(valid_points, extrinsic) -> SceneOrientation` is bitwise reproducible; `ALGORITHM_VERSION == "viewer-plane-v2"`.
 
-- [ ] **Step 1: Write the failing test** (append to `test/test_scene_orientation.py`)
+- [x] **Step 1: Write the failing test** (append to `test/test_scene_orientation.py`)
 
 ```python
 def test_fit_is_bitwise_reproducible_and_versioned():
@@ -201,12 +201,12 @@ def test_fit_is_bitwise_reproducible_and_versioned():
     assert orientation.ALGORITHM_VERSION == "viewer-plane-v2"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_scene_orientation.py -k bitwise`
 Expected: FAIL (`ALGORITHM_VERSION` is `viewer-plane-v1`; normals may also differ).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `utils/scene_orientation.py` set `ALGORITHM_VERSION = "viewer-plane-v2"` and add after `_PLANE_MAX_BELOW_RATIO = 0.15`:
 
@@ -306,7 +306,7 @@ Replace the part of `fit_scene_orientation` from `remaining = pcd` through the l
 
 Keep the Open3D `PointCloud` and `compute_nearest_neighbor_distance` lines above the loop; they are deterministic.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_scene_orientation.py test/test_web_viewer_export.py`
 Expected: PASS.
@@ -317,7 +317,7 @@ Expected: `4 passed, ... deselected` in all five runs.
 Then run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add utils/scene_orientation.py test/test_scene_orientation.py
@@ -349,7 +349,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `fused_carton_footprint(observations, plane, *, frame_offsets_m) -> tuple[Polygon, dict[str, object]]`; a raised `FootprintError.diagnostics` holds the metrics computed before the failure
   - `FormalSnapshot.frame_offsets_m: Mapping[int, float]` (required field)
 
-- [ ] **Step 1: Write the failing tests** (append to `test/test_ground_stack_footprint.py`; add `ObservationPoints` and `fused_carton_footprint` to its import list)
+- [x] **Step 1: Write the failing tests** (append to `test/test_ground_stack_footprint.py`; add `ObservationPoints` and `fused_carton_footprint` to its import list)
 
 ```python
 def test_fused_footprint_fuses_views_with_explicit_frame_offsets():
@@ -387,12 +387,12 @@ def test_missing_frame_offset_is_a_contract_error():
         )
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_ground_stack_footprint.py -k "fused_footprint or missing_frame_offset"`
 Expected: collection error, `ImportError: cannot import name 'ObservationPoints'`.
 
-- [ ] **Step 3: Implement the shared function**
+- [x] **Step 3: Implement the shared function**
 
 In `utils/ground_stack_footprint.py` add `from typing import Mapping, Sequence` and, after the `SupportPlane` dataclass:
 
@@ -471,7 +471,7 @@ def fused_carton_footprint(
     return polygon, {**metrics, **obb_metrics}
 ```
 
-- [ ] **Step 4: Wire the stage**
+- [x] **Step 4: Wire the stage**
 
 In `src/da3_footprint_stage.py`:
 
@@ -514,7 +514,7 @@ In `src/da3_footprint_stage.py`:
 6. Add `frame_offsets_m=dict(frame_offsets),` to the `FormalSnapshot(...)` call.
 7. In `_masked_observations`: change `observations = {global_id: [] for global_id in mapping_by_id}` to `observations: dict[str, list[ObservationPoints]] = {global_id: [] for global_id in mapping_by_id}`; change the empty-mask append to `observations[global_id].append(ObservationPoints(image_id, np.empty((0, 3), dtype=float)))` and the other append to `observations[global_id].append(ObservationPoints(image_id, points))`; change the return annotation's first element to `dict[str, list[ObservationPoints]]`.
 
-- [ ] **Step 5: Wire the evidence**
+- [x] **Step 5: Wire the evidence**
 
 In `utils/footprint_evidence.py`:
 
@@ -553,7 +553,7 @@ In `utils/footprint_evidence.py`:
     polygon, _ = fused_carton_footprint(parts, plane, frame_offsets_m=frame_offsets_m)
 ```
 
-- [ ] **Step 6: Update the evidence test helper**
+- [x] **Step 6: Update the evidence test helper**
 
 In `test/test_footprint_evidence.py`, add below the imports:
 
@@ -563,12 +563,12 @@ _ZERO_OFFSETS = {image_id: 0.0 for image_id in range(100)}
 
 and add `frame_offsets_m=_ZERO_OFFSETS,` to `_snapshot()` and to the two direct `FormalSnapshot(...)` constructions (in `test_absent_formal_plane_keeps_all_shadow_geometry_unavailable` and in the extreme-plane test near the end of the file).
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass, including the three new tests. The formal value of `test_stage_fuses_global_id_views_and_uses_polygon_union` stays 1.5 ± 0.03.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add utils/ground_stack_footprint.py src/da3_footprint_stage.py utils/footprint_evidence.py \
@@ -596,7 +596,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `fused_carton_footprint` from Task 2.
 - Produces: metric `excluded_observations: list[{"image_id": int, "valid_point_count": int}]`; error message `global id has no observation with at least 32 valid masked points`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `test/test_ground_stack_footprint.py`:
 
@@ -654,12 +654,12 @@ def test_weak_second_view_no_longer_rejects_the_measurement(monkeypatch, tmp_pat
     ]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_ground_stack_footprint.py test/test_da3_footprint_stage.py -k "weak_observation or only_weak or weak_second_view"`
 Expected: 3 FAIL (`observation has fewer than 32 valid masked points`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `fused_carton_footprint` replace from `if any(len(item.points) < OBSERVATION_MIN_POINTS ...` through the `metrics` dict with:
 
@@ -685,12 +685,12 @@ and change the next call to `elevated_projected_points(usable, plane, frame_offs
 
 In `utils/footprint_evidence.py` delete the `if len(points) < 32: raise FootprintError(f"{variant} observation ...")` block in `_fixed_plane_variant_area` and the `if len(points) < 32: raise FootprintError("leave-one-out observation ...")` block in `_fixed_plane_polygon`; the shared function now applies the rule.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass. `test_nonempty_mask_without_valid_da3_points_rejects_total` still rejects: global ID 2 has no usable observation.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add utils/ground_stack_footprint.py utils/footprint_evidence.py \
@@ -731,7 +731,7 @@ C loses whole regions that hold under ~10 % of the points, which happens in fuse
 - Consumes: `fused_carton_footprint` (Task 2) calls `carton_footprint_polygon_from_projected` through the module global, which the capture step relies on.
 - Produces: `carton_footprint_polygon_from_projected(projected) -> (Polygon, metrics)` with `component_point_count`, `cleaned_point_count`, `footprint_area_m2`, `component_diagnostics`, plus `extent_estimator`.
 
-- [ ] **Step 1: Write the candidates**
+- [x] **Step 1: Write the candidates**
 
 `runtime/footprint-fix-validation-20261013/obb_candidates.py`:
 
@@ -775,7 +775,7 @@ def density_core(points, percentile=90.0):
 CANDIDATES = {"current": world_axis_trim, "B_obb_frame": obb_frame_trim, "C_density_core": density_core}
 ```
 
-- [ ] **Step 2: Capture real per-ID inputs and compare**
+- [x] **Step 2: Capture real per-ID inputs and compare**
 
 `runtime/footprint-fix-validation-20261013/compare_obb.py` runs the stage once per dataset with `carton_footprint_polygon_from_projected` wrapped to record each balanced input, then scores every candidate against `current`:
 
@@ -853,11 +853,11 @@ uv run python /home/xingyu/3D_Recognization/runtime/footprint-fix-validation-202
 
 Expected: five JSON lines. `below_0_8` counts IDs where a candidate removed more than 20 % of the current area (possible lost regions); `above_1_05` counts IDs where it kept material the current trimming removed.
 
-- [ ] **Step 3: Decision D4**
+- [x] **Step 3: Decision D4**
 
 Send Rick the synthetic table above and the five JSON lines. Recommended rule: choose B unless it has more `below_0_8` IDs than C on real data; never choose C if `C_density_core.below_0_8` > 0 on any dataset. Record the decision in the Task 4 commit body.
 
-- [ ] **Step 4: Write the failing test for the chosen estimator** (add `carton_footprint_polygon_from_projected` to the import list)
+- [x] **Step 4: Write the failing test for the chosen estimator** (add `carton_footprint_polygon_from_projected` to the import list)
 
 ```python
 def _voxel_rectangle(angle_deg: float, *, chain: bool) -> np.ndarray:
@@ -891,7 +891,7 @@ def test_obb_extent_is_stable_across_orientation_and_sparse_chains():
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_ground_stack_footprint.py -k stable_across_orientation`
 Expected: FAIL with the current estimator (spread 4 %, chain +7.5 % at 30°).
 
-- [ ] **Step 5: Implement the chosen estimator**
+- [x] **Step 5: Implement the chosen estimator**
 
 If D4 = B, add to `utils/ground_stack_footprint.py`:
 
@@ -948,12 +948,12 @@ with `from sklearn.neighbors import NearestNeighbors`, `cleaned = _dense_core_po
 
 In both cases delete `_trim_projected_outliers`.
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass. A 2026-10-13 in-process probe of B and of C against the pre-Task-1 suite failed only tests from the R0-flaky family, so with Task 1 in place every test should pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add utils/ground_stack_footprint.py test/test_ground_stack_footprint.py
@@ -984,7 +984,7 @@ Replace the `<D4 ...>` line with the actual decision and the five summary lines 
   - `estimate_frame_support_offsets(background_points, background_normals, frame_ids, plane, *, image_ids) -> tuple[dict[int, float], dict[str, object]]`
   - report `plane.frame_support_offsets = {"window_m", "min_points", "frames": {"<id>": {"offset_m", "source", "point_count"}}}`, where `source` is `"frame"` or `"selected_plane"`.
 
-- [ ] **Step 1: Write the failing tests** (add `estimate_frame_support_offsets` to the import list)
+- [x] **Step 1: Write the failing tests** (add `estimate_frame_support_offsets` to the import list)
 
 ```python
 def _horizontal_floor(height: float, image_id: int, count: int = 2_000, seed: int = 0):
@@ -1041,12 +1041,12 @@ def test_stage_records_per_frame_support_offsets(monkeypatch, tmp_path):
     assert all(abs(item["offset_m"]) < 1e-6 for item in frames.values())
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_ground_stack_footprint.py test/test_da3_footprint_stage.py -k "frame_support_offsets or shifted_floor"`
 Expected: collection error in `test_ground_stack_footprint.py` (`cannot import name 'estimate_frame_support_offsets'`) and `KeyError: 'frame_support_offsets'` in the stage test. `test_frame_offsets_remove_support_bleed_seen_at_a_shifted_floor` passes once the import exists, because Task 2 already added the parameter; it pins the behaviour and holds for every D4 candidate.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `utils/ground_stack_footprint.py`:
 
@@ -1126,12 +1126,12 @@ In `src/da3_footprint_stage.py`, import `estimate_frame_support_offsets` and rep
         report["plane"]["frame_support_offsets"] = offset_diagnostics
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add utils/ground_stack_footprint.py src/da3_footprint_stage.py \
@@ -1159,7 +1159,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `_horizontal_support_mask`, `_frame_balanced_subsample`, `_adaptive_ransac_plane`, `_fit_plane_svd`.
 - Produces: `refine_support_normal(plane, background_points, background_normals, frame_ids) -> tuple[SupportPlane, dict[str, object]]`; raises `SupportPlaneSelectionError` with diagnostics; report `plane.normal_refinement` with key `angle_to_shared_up_deg`.
 
-- [ ] **Step 1: Write the failing tests** (add `refine_support_normal` to the import list)
+- [x] **Step 1: Write the failing tests** (add `refine_support_normal` to the import list)
 
 ```python
 def _tilted_floor(tilt_deg: float):
@@ -1208,12 +1208,12 @@ def test_stage_reports_support_normal_refinement(monkeypatch, tmp_path):
     assert refinement["max_angle_deg"] == 3.0
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_ground_stack_footprint.py test/test_directional_support_plane.py test/test_da3_footprint_stage.py -k "refinement or tautological"`
 Expected: FAIL (import error, then `p95_residual` present, then `KeyError: 'normal_refinement'`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `select_support_plane_with_direction` delete the line `"p95_residual": plane.p95_residual_m <= 0.010,` from `gates` (keep `p95_residual_m` in `info`).
 
@@ -1319,12 +1319,12 @@ In `src/da3_footprint_stage.py`, import `refine_support_normal`. After the exist
 
 and add `"normal_refinement": normal_refinement,` to the `report["plane"]` dict after `**plane_diagnostics`. Its `selected` entry is built from the refined `plane`. The Task 5 offset block stays after this, so offsets are measured along the refined normal.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add utils/ground_stack_footprint.py src/da3_footprint_stage.py test/test_ground_stack_footprint.py \
@@ -1352,7 +1352,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: the stage's `fused_carton_footprint` import.
 - Produces: `KeyError` propagates out of `run_da3_footprint`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_programming_key_error_is_not_reported_as_a_measurement_rejection(
@@ -1368,21 +1368,21 @@ def test_programming_key_error_is_not_reported_as_a_measurement_rejection(
         stage.run_da3_footprint(str(dataset), save_root)
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_da3_footprint_stage.py -k programming_key_error`
 Expected: FAIL, `DID NOT RAISE <class 'KeyError'>`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Change the `except` tuple to `(FootprintStageError, FootprintError, OSError, ValueError)`. `ValueError` stays because `utils/scene_orientation.py` and `utils/detection_objects.py` report input-contract violations as plain `ValueError`.
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/da3_footprint_stage.py test/test_da3_footprint_stage.py
@@ -1408,7 +1408,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - per-ID `status: "included"|"excluded"`, per-ID `coverage` for excluded IDs
   - report `coverage = {"included_count", "excluded_count", "covered_excluded_count", "uncovered_excluded_ids", "unverifiable_excluded_ids", "buffer_m", "min_covered_fraction"}`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add `from shapely.geometry import box` and `classify_excluded_coverage` to `test/test_ground_stack_footprint.py`:
 
@@ -1510,12 +1510,12 @@ def test_excluded_front_face_outside_union_rejects(monkeypatch, tmp_path):
     assert "not covered" in report["rejection_reason"]
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_ground_stack_footprint.py test/test_da3_footprint_stage.py -k "excluded_coverage or excluded_front_face"`
 Expected: FAIL (import error; then the inside case is rejected with `one or more global ids were rejected: 3`).
 
-- [ ] **Step 3: Implement the classifier**
+- [x] **Step 3: Implement the classifier**
 
 Add `import shapely` to `utils/ground_stack_footprint.py`, then:
 
@@ -1543,7 +1543,7 @@ def classify_excluded_coverage(
     }
 ```
 
-- [ ] **Step 4: Implement the stage rule**
+- [x] **Step 4: Implement the stage rule**
 
 Import `classify_excluded_coverage`, `COVERAGE_BUFFER_M`, `COVERAGE_MIN_FRACTION`. Replace the Task 2 per-ID loop and the following `missing` check through `union = union_footprints(...)` with:
 
@@ -1604,7 +1604,7 @@ Import `classify_excluded_coverage`, `COVERAGE_BUFFER_M`, `COVERAGE_MIN_FRACTION
 
 The existing `coarse_union` / sensitivity block follows unchanged and still uses `polygons` and `precise_polygons`.
 
-- [ ] **Step 5: Align mask-robustness evidence**
+- [x] **Step 5: Align mask-robustness evidence**
 
 In `_fixed_plane_variant_area` replace the `expected_ids` construction and its two checks with:
 
@@ -1618,12 +1618,12 @@ In `_fixed_plane_variant_area` replace the `expected_ids` construction and its t
 
 Mask robustness now measures how the published (included) geometry responds to eroded/dilated masks.
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass. If an existing stage test asserted that rejected-formal mask variants are `accepted`, update it to expect `rejected` with reason `robustness has no formally included global ids` and say so in the commit body.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add utils/ground_stack_footprint.py src/da3_footprint_stage.py utils/footprint_evidence.py \
@@ -1650,7 +1650,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: nothing new.
 - Produces: `component_diagnostics.substantial_component_threshold = ceil(0.20 * largest)` and `rule: "fraction_of_largest"`.
 
-- [ ] **Step 1: Write the failing tests** (replace `test_absolute_32_point_second_component_is_rejected`)
+- [x] **Step 1: Write the failing tests** (replace `test_absolute_32_point_second_component_is_rejected`)
 
 ```python
 def test_small_second_component_relative_to_largest_is_ignored():
@@ -1672,12 +1672,12 @@ def test_second_component_at_twenty_percent_of_largest_is_rejected():
         )
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider test/test_ground_stack_footprint.py -k "relative_to_largest or twenty_percent"`
 Expected: the first FAILS (`multiple substantial components`).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Replace the two threshold lines in `select_footprint_component` with:
 
@@ -1687,12 +1687,12 @@ Replace the two threshold lines in `select_footprint_component` with:
     diagnostics["rule"] = "fraction_of_largest"
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`
 Expected: all pass; `test_low_count_substantial_second_component_is_rejected` (35 vs 29) still rejects.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add utils/ground_stack_footprint.py test/test_ground_stack_footprint.py
@@ -1718,9 +1718,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: everything above; `run.sh` and `summarize.py` from Task 0.
 - Produces: schema `3.0.0`; updated contract; validation record.
 
-- [ ] **Step 1: Bump the schema** in the stage and in the assertion at `test/test_da3_footprint_stage.py:600`, then run `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`. Expected: all pass.
+- [x] **Step 1: Bump the schema** in the stage and in the assertion at `test/test_da3_footprint_stage.py:600`, then run `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE`. Expected: all pass.
 
-- [ ] **Step 2: Update the algorithm document**
+- [x] **Step 2: Update the algorithm document**
 
 In `docs/ground_stack_footprint_algorithm.md`:
 
@@ -1768,7 +1768,7 @@ If D4 = C, use this item 7 instead:
 
 8. In "输出与复核", state that the report schema is `3.0.0`.
 
-- [ ] **Step 3: Run the real-data validation**
+- [x] **Step 3: Run the real-data validation**
 
 ```bash
 bash /home/xingyu/3D_Recognization/runtime/footprint-fix-validation-20261013/run.sh fixed
@@ -1778,7 +1778,7 @@ uv run python /home/xingyu/3D_Recognization/runtime/footprint-fix-validation-202
 
 Expected: five `fixed` lines with `schema` `3.0.0`, a `normal_angle_deg` value and a `frame_offset_range_m` value for every dataset whose plane was selected. Acceptance status is not predetermined; there is no ground-truth area for these scenes.
 
-- [ ] **Step 4: Record the validation**
+- [x] **Step 4: Record the validation**
 
 Append to `docs/ground_stack_footprint_algorithm.md`:
 
@@ -1790,7 +1790,11 @@ fd4–fd8，CPU，SAM3.1 mask cache；baseline 为 `main` 原代码，fixed 为�
 
 followed by a Markdown table built from the two `summarize.py` outputs. Columns: dataset, baseline status / value_m2, fixed status / value_m2, fixed id_outcomes, normal_angle_deg, frame_offset_range_m. Copy the numbers verbatim.
 
-- [ ] **Step 5: Final suite and commit**
+- [x] **Step 5a: Final combined six-file suite** (196 passed in 86.05s; reused after documentation-only edits).
+
+- [x] **Step 5b: Final Task10 commit** (coordinator-owned; schema, documentation and this completed plan are committed together).
+
+- [x] **Whole-branch independent review and finalization** (spec/code/docs/evidence PASS; `final-code-review.md` and `final-review.md` in the retained SDD records).
 
 Run: `uv run python -m pytest -q -p no:cacheprovider $FOOTPRINT_SUITE test/test_web_viewer_export.py`
 Expected: all pass.
@@ -1810,3 +1814,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Option C (per-stack footprint) and any multi-view horizontal-misalignment correction.
 - Deleting the unused legacy plane selector (`fit_support_plane`, `select_support_plane`, `_refine_support_plane`, `_orient_for_objects`, `_best_ransac_plane`) and its tests.
 - Docker image rebuild and any push.
+
+## Actual decisions and validation (2026-10-13; supersedes illustrative expected results)
+
+Tasks0–10 completed. Tasks0–9 have coordinator commits through `4e0f1df`; Task10 schema/documentation and this completion record are committed together. Per-task reports and review fixes are in `.superpowers/sdd/2026-10-13-footprint-area-fixes/`. The preceding implementation snippets and expected numerical examples are planning material, not evidence of the final behavior.
+
+- D1=B: every excluded ID must have >=95% of its visible elevated projected points in the included union buffered20mm; hidden depth and undetected objects remain unmeasured. D2 uses `ceil(.20*largest)` with inclusive rejection. D3 uses numpy seeded RANSAC+SVD, cache algorithm viewer-plane-v2; cross-platform bitwise equality is not claimed.
+- D4=B selected after actual formal per-ID comparisons: B/C paired ratios <0.8 were0/7; newly rejected old-accepted IDs18/22, newly accepted old-rejected20/26. Gates remain unchanged. See `runtime/footprint-fix-validation-20261013/obb-capture/summaries.json`, `obb-outliers.json`, and task-4-report.md. Synthetic fixtures establish bounded tested bias, not density independence or exact rotation invariance.
+- Review corrections: Task3 evidence arithmetic checks now exclude weak observations before numeric guards; Task8 restored local polygons initialization and tested included-ID mask robustness; Task10 outcome summary marks observation-only entries not_evaluated instead of ok. Failure receipts remain retained.
+- Task10 report schema3.0.0 differs from DA3 cache schema-v3/SAM v2. Combined final six-file suite once:196 passed in86.05s, exit0 (`task10-logs/suite.log`). One CPU fixed replay of fd4–fd8: each CLI exit2; overall harness exit0. Each is rejected for uncovered/unverifiable excluded IDs; value_m2 null. No independently measured area or accuracy claim.
+- Baseline ok/total334/702,132/229,222/299,269/518,73/248; fixed333/702,153/229,232/299,290/518,110/248. Final angles and offset ranges, full ID outcomes and coverage counts are recorded verbatim in `docs/ground_stack_footprint_algorithm.md` and baseline-summary.jsonl/fixed-summary.jsonl under the validation root.
+- Final independent review passed specification, code, documentation and evidence checks, including the ten baseline/fixed raw reports. Coordinator owns the final local commit; branch/worktree and evidence are retained. No push, merge, model inference, installs or Docker rebuild.
+- Coordination rulings and process deviations are retained in `.superpowers/sdd/2026-10-13-footprint-area-fixes/progress.md`: existing uv environment/cache reuse; worker write boundaries with coordinator commits; formal-ID-only D4 capture; evidence guard/offset alignment; explicit selection-statistics labeling; exact-floor fixture correction; corrected unevaluated-ID summaries; consolidated final testing. Task9 unnecessarily repeated its successful suite after two diagnostic assertions; both receipts are retained and no further unchanged suite was run.

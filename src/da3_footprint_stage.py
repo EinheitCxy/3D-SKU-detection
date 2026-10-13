@@ -122,7 +122,7 @@ def run_da3_footprint(
         else default_sam3_mask_cache_root(Path(save_root) / dataset.name)
     )
     report: dict[str, Any] = {
-        "schema_version": "2.0.0",
+        "schema_version": "3.0.0",
         "metric": "da3_self_exemplar_ground_footprint_union",
         "unit": "m2",
         "status": "rejected",
