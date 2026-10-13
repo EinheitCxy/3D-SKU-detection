@@ -108,7 +108,7 @@ def validate_outline_document(document, expected_kind=None):
         if not polygon.is_valid or not polygon.exterior.is_simple or polygon.area <= 0:
             raise ValueError('region must be a simple positive-area polygon')
         area = region.get('area_m2')
-        if isinstance(area, bool) or not isinstance(area, (int, float)) or not np.isfinite(area) or not np.isclose(area, polygon.area, atol=1e-6, rtol=1e-6):
+        if isinstance(area, bool) or not isinstance(area, (int, float)) or not np.isfinite(area) or area <= 0 or not np.isclose(area, polygon.area, atol=1e-6, rtol=1e-6):
             raise ValueError('region area_m2 differs from recomputed geometry')
         if any(polygon.intersection(other).area > 1e-10 for other in polygons):
             raise ValueError('regions overlap with positive area')

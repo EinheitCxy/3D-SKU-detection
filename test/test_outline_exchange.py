@@ -69,6 +69,19 @@ def test_empty_manual_and_empty_comparison():
         compare_outlines(document(), reference)
 
 
+@pytest.mark.parametrize('declared_area', [0, -1e-12])
+def test_tiny_region_requires_positive_declared_area(declared_area):
+    data = document('manual')
+    vertices = np.array([[0, 0], [.001, 0], [.001, .001], [0, .001]])
+    data['regions'][0]['vertices_world'] = lift_outline(vertices, data['scene']).tolist()
+    data['regions'][0]['area_m2'] = declared_area
+    data['total_area_m2'] = declared_area
+    with pytest.raises(ValueError, match='region area_m2'):
+        validate_outline_document(data, 'manual')
+    data['regions'][0]['area_m2'] = data['total_area_m2'] = 1e-6
+    assert len(validate_outline_document(data, 'manual')) == 1
+
+
 def test_identical_adjacent_regions_use_union_boundary():
     candidate, reference = document(heaps=2), document('manual', heaps=2)
     for data in (candidate, reference):
