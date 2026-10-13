@@ -24,6 +24,7 @@ from utils.ground_stack_footprint import (
     ObservationPoints,
     SupportPlane,
     fused_carton_footprint,
+    elevated_projected_points,
     project_to_plane,
     union_footprints,
 )
@@ -958,31 +959,27 @@ def _fixed_plane_polygon(
         points = camera.world_points[item.frame_index][item.qualified_mask]
         parts.append(ObservationPoints(int(camera.frame_ids[item.frame_index]), points))
     usable = [part for part in parts if len(part.points) >= OBSERVATION_MIN_POINTS]
-    fused = (
-        np.concatenate([part.points for part in usable])
-        if usable
-        else np.empty((0, 3))
-    )
     try:
         with np.errstate(over="raise", invalid="raise"):
-            heights = (fused - plane.point) @ plane.normal
+            for part in usable:
+                image_id = int(part.image_id)
+                if image_id not in frame_offsets_m:
+                    raise FootprintError(f"missing support offset for image {image_id}")
+                heights = (part.points - plane.point) @ plane.normal - float(
+                    frame_offsets_m[image_id]
+                )
+                _require_finite(
+                    heights,
+                    error_type=EvidenceComputationError,
+                    label="leave-one-out support-plane heights",
+                )
     except FloatingPointError as error:
         raise EvidenceComputationError(
             "leave-one-out support-plane height arithmetic failed"
         ) from error
-    _require_finite(
-        heights,
-        error_type=EvidenceComputationError,
-        label="leave-one-out support-plane heights",
-    )
-    elevated = fused[heights > 0.015]
-    if usable and len(elevated) < 64:
-        raise FootprintError(
-            "leave-one-out global id has fewer than 64 elevated points"
-        )
     try:
         with np.errstate(over="raise", invalid="raise", divide="raise"):
-            projected = project_to_plane(elevated, plane)
+            projected = elevated_projected_points(usable, plane, frame_offsets_m)
             voxel_coordinates = projected / 0.005
     except FloatingPointError as error:
         raise EvidenceComputationError(

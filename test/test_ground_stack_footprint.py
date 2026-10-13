@@ -15,12 +15,55 @@ from utils.ground_stack_footprint import (
     carton_footprint_polygon_from_projected,
     fit_support_plane,
     fused_carton_footprint,
+    estimate_frame_support_offsets,
     project_to_plane,
     select_footprint_component,
     select_support_plane,
     union_footprints,
     voxel_balance_projected,
 )
+
+
+def _horizontal_floor(height, image_id, count=2_000, seed=0):
+    rng = np.random.default_rng(seed + image_id)
+    points = np.column_stack([
+        rng.uniform(0.0, 2.0, count), rng.uniform(0.0, 2.0, count),
+        np.full(count, height),
+    ])
+    return points, np.tile([0.0, 0.0, 1.0], (count, 1)), np.full(count, image_id)
+
+
+def test_frame_support_offsets_follow_each_frames_own_floor():
+    parts = [
+        _horizontal_floor(0.000, 0), _horizontal_floor(0.200, 0, seed=7),
+        _horizontal_floor(0.037, 1), _horizontal_floor(-0.020, 2),
+        _horizontal_floor(0.000, 3, count=500),
+    ]
+    offsets, diagnostics = estimate_frame_support_offsets(
+        np.vstack([part[0] for part in parts]),
+        np.vstack([part[1] for part in parts]),
+        np.concatenate([part[2] for part in parts]),
+        horizontal_support_plane(), image_ids=[0, 1, 2, 3, 4],
+    )
+    assert offsets[0] == pytest.approx(0.0, abs=1e-12)
+    assert offsets[1] == pytest.approx(0.037, abs=1e-12)
+    assert offsets[2] == pytest.approx(-0.020, abs=1e-12)
+    assert offsets[3] == 0.0 and offsets[4] == 0.0
+    assert diagnostics["frames"]["1"]["source"] == "frame"
+    assert diagnostics["frames"]["3"]["source"] == "selected_plane"
+    assert diagnostics["frames"]["4"]["point_count"] == 0
+    assert diagnostics["horizontal_normal_tolerance_deg"] == 15.0
+
+
+def test_frame_offsets_remove_support_bleed_seen_at_a_shifted_floor():
+    plane = horizontal_support_plane()
+    top = carton_points((0.0, 1.0), (0.0, 1.0), height=0.33)
+    bleed = carton_points((1.0, 1.3), (0.0, 1.0), height=0.035)[:6400]
+    observations = [ObservationPoints(1, np.vstack([top, bleed]))]
+    shifted, _ = fused_carton_footprint(observations, plane, frame_offsets_m={1: 0.03})
+    global_only, _ = fused_carton_footprint(observations, plane, frame_offsets_m={1: 0.0})
+    assert shifted.area == pytest.approx(1.0, rel=0.01)
+    assert global_only.area == pytest.approx(1.3, rel=0.01)
 
 
 def _voxel_rectangle(angle_deg: float, *, chain: bool) -> np.ndarray:

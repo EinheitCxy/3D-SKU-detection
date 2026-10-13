@@ -167,6 +167,17 @@ def _numeric_guard_area(helper, plane, geometry, observations, prepared):
     return area
 
 
+def test_fixed_plane_numeric_guard_uses_negative_frame_support_offset():
+    x, y = np.meshgrid(np.linspace(0.0, 1.0, 80), np.linspace(0.0, 1.0, 80))
+    points = np.stack([x, y, np.full_like(x, 0.005)], axis=-1)
+    mask = np.ones(x.shape, dtype=bool)
+    item = _observation(0, mask)
+    prepared = [_PreparedObservation(item, 0, mask, mask, mask)]
+    camera = SimpleNamespace(world_points=points[None], frame_ids=np.array([0]))
+    polygon = _fixed_plane_polygon(camera, prepared, _plane(), {0: -0.020})
+    assert polygon.area == pytest.approx(1.0, rel=0.01)
+
+
 @pytest.mark.parametrize(
     "helper, kind", [("loo", "int64"), ("loo", "height"), ("mask", "height")]
 )

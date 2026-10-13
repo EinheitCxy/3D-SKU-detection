@@ -349,6 +349,30 @@ def _run_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
     return json.loads(Path(result["report_path"]).read_text())
 
 
+def test_stage_records_per_frame_support_offsets(monkeypatch, tmp_path):
+    # The generic fixture's fitted plane tilts slightly toward its low cartons.
+    # Pin its known synthetic floor so the zero-offset expectation is exact.
+    def select_exact_fixture_floor(*args, **kwargs):
+        from utils.ground_stack_footprint import SupportPlane
+
+        return SupportPlane(
+            point=np.array([0.0, 1.0, 0.0]),
+            normal=np.array([0.0, -1.0, 0.0]),
+            u_axis=np.array([1.0, 0.0, 0.0]),
+            v_axis=np.array([0.0, 0.0, 1.0]),
+            inlier_count=10_000,
+            inlier_fraction=1.0,
+            p95_residual_m=0.0,
+        ), {"fixture_source": "known_synthetic_floor"}
+
+    monkeypatch.setattr(stage, "select_support_plane_with_direction", select_exact_fixture_floor)
+    report = _run_and_load(tmp_path, monkeypatch)
+    frames = report["plane"]["frame_support_offsets"]["frames"]
+    assert set(frames) == {"0", "1", "2"}
+    assert all(item["source"] == "frame" for item in frames.values())
+    assert all(abs(item["offset_m"]) < 1e-6 for item in frames.values())
+
+
 def test_area_reuses_shared_orientation_without_refitting(monkeypatch, tmp_path):
     from utils import scene_orientation
 

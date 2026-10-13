@@ -47,6 +47,7 @@ from utils.ground_stack_footprint import (
     ObservationPoints,
     SupportPlaneSelectionError,
     fused_carton_footprint,
+    estimate_frame_support_offsets,
     select_support_plane_with_direction,
     union_footprints,
 )
@@ -254,8 +255,15 @@ def run_da3_footprint(
             },
             **plane_diagnostics,
         }
+        frame_offsets, offset_diagnostics = estimate_frame_support_offsets(
+            background_points,
+            background_normals,
+            background_frames,
+            plane,
+            image_ids=[int(value) for value in cache_frame_ids],
+        )
+        report["plane"]["frame_support_offsets"] = offset_diagnostics
         stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
-        frame_offsets = {int(image_id): 0.0 for image_id in cache_frame_ids}
         active_stage = "per_id_obb_union"
         active_stage_started_at = time.monotonic()
         for global_id, observations in masked_observations.items():

@@ -39,6 +39,69 @@ FUSED_MIN_POINTS = 64
 ELEVATION_THRESHOLD_M = 0.015
 FOOTPRINT_VOXEL_M = 0.005
 OBB_TRIM_FRACTION = 0.005
+HORIZONTAL_NORMAL_TOLERANCE_DEG = 15.0
+FRAME_OFFSET_WINDOW_M = 0.080
+FRAME_OFFSET_MIN_POINTS = 1_000
+FRAME_OFFSET_MODE_WIDTH_M = 0.024
+FRAME_OFFSET_REFINE_M = 0.012
+
+
+def _horizontal_support_mask(normals: np.ndarray, up: np.ndarray) -> np.ndarray:
+    lengths = np.linalg.norm(normals, axis=1)
+    valid = np.isfinite(normals).all(axis=1) & np.isfinite(lengths) & (lengths > 0)
+    agreement = np.zeros(len(normals))
+    agreement[valid] = np.abs(normals[valid] @ up) / lengths[valid]
+    return valid & (agreement >= np.cos(np.deg2rad(HORIZONTAL_NORMAL_TOLERANCE_DEG)))
+
+
+def estimate_frame_support_offsets(
+    background_points: np.ndarray,
+    background_normals: np.ndarray,
+    frame_ids: np.ndarray,
+    plane: SupportPlane,
+    *,
+    image_ids: Sequence[int],
+) -> tuple[dict[int, float], dict[str, object]]:
+    """Estimate each frame's own support height near the selected plane.
+
+    The elevation filter uses this height. Frames with fewer than 1,000 nearby
+    horizontal points retain the selected plane and record that source.
+    """
+    points = np.asarray(background_points, dtype=float)
+    frames = np.asarray(frame_ids)
+    heights = (points - plane.point) @ plane.normal
+    near = _horizontal_support_mask(
+        np.asarray(background_normals, dtype=float), plane.normal
+    )
+    near &= np.isfinite(heights) & (np.abs(heights) <= FRAME_OFFSET_WINDOW_M)
+    offsets: dict[int, float] = {}
+    per_frame: dict[str, dict[str, object]] = {}
+    for image_id in (int(value) for value in image_ids):
+        values = np.sort(heights[near & (frames == image_id)])
+        if len(values) < FRAME_OFFSET_MIN_POINTS:
+            offset, source = 0.0, "selected_plane"
+        else:
+            ends = np.searchsorted(
+                values, values + FRAME_OFFSET_MODE_WIDTH_M, side="right"
+            )
+            start = int(np.argmax(ends - np.arange(len(values))))
+            offset = float(np.median(values[start : ends[start]]))
+            offset = float(
+                np.median(values[np.abs(values - offset) <= FRAME_OFFSET_REFINE_M])
+            )
+            source = "frame"
+        offsets[image_id] = offset
+        per_frame[str(image_id)] = {
+            "offset_m": offset, "source": source, "point_count": int(len(values)),
+        }
+    return offsets, {
+        "window_m": FRAME_OFFSET_WINDOW_M,
+        "min_points": FRAME_OFFSET_MIN_POINTS,
+        "mode_width_m": FRAME_OFFSET_MODE_WIDTH_M,
+        "refine_m": FRAME_OFFSET_REFINE_M,
+        "horizontal_normal_tolerance_deg": HORIZONTAL_NORMAL_TOLERANCE_DEG,
+        "frames": per_frame,
+    }
 
 
 @dataclass(frozen=True)
