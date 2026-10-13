@@ -125,13 +125,14 @@ def extract_stack_outlines(points_xz: np.ndarray, *, options: OutlineOptions,
                        grid_origin_xz_m=((low - pad) * r).tolist(),
                        raw_occupied_cells=int(raw.sum()))
     if frames is not None:
-        frame_values = np.unique(frames)
+        frame_values, frame_inverse = np.unique(frames, return_inverse=True)
         diagnostics['raw_frame_count'] = len(frame_values)
         # Count occupied cells per frame, preserving overlap across frames.
-        triples = np.unique(np.column_stack((frames, indices)), axis=0)
+        triples = np.unique(np.column_stack((frame_inverse, indices)), axis=0)
         values, counts = np.unique(triples[:, 0], return_counts=True)
         diagnostics['frame_cell_counts'] = {
-            str(int(value)): int(count) for value, count in zip(values, counts)}
+            str(int(frame_values[value])): int(count)
+            for value, count in zip(values, counts)}
     if radius_cells:
         dilated = ndimage.distance_transform_edt(~raw) <= radius_cells
         closed = ndimage.distance_transform_edt(dilated) > radius_cells
@@ -149,6 +150,7 @@ def extract_stack_outlines(points_xz: np.ndarray, *, options: OutlineOptions,
     order = np.argsort(point_labels, kind='stable')
     sorted_labels = point_labels[order]
     polygons, issues = [], []
+    represented = np.zeros_like(closed)
     for component_id, bounds in enumerate(slices, start=1):
         row_slice, col_slice = bounds
         mask = labels[bounds] == component_id
@@ -164,10 +166,10 @@ def extract_stack_outlines(points_xz: np.ndarray, *, options: OutlineOptions,
             reason = f'component {component_id}: original support lacks two-dimensional area'
             record['reason'] = reason
             issues.append(reason)
-            diagnostics['unresolved_cells'] += cell_count
             continue
         filled = ndimage.binary_fill_holes(mask, structure=eight)
-        holes, hole_count = ndimage.label(filled & ~mask, structure=eight)
+        # Nested occupied islands are not complementary empty hole cells.
+        holes, hole_count = ndimage.label(filled & ~closed[bounds], structure=eight)
         hole_sizes = np.bincount(holes.ravel(), minlength=hole_count + 1)[1:]
         hole_areas = hole_sizes.astype(float) * r * r
         record['hole_areas_m2'] = hole_areas.tolist()
@@ -175,7 +177,6 @@ def extract_stack_outlines(points_xz: np.ndarray, *, options: OutlineOptions,
             reason = f'component {component_id}: hole exceeds max_hole_area_m2'
             record['reason'] = reason
             issues.append(reason)
-            diagnostics['unresolved_cells'] += cell_count
             continue
         origin = (low + [col_slice.start - pad, row_slice.start - pad]) * r
         geometry = _cell_geometry(filled, float(origin[0]), float(origin[1]), r)
@@ -185,15 +186,33 @@ def extract_stack_outlines(points_xz: np.ndarray, *, options: OutlineOptions,
             reason = f'component {component_id}: cell boundary is not a simple hole-free polygon'
             record['reason'] = reason
             issues.append(reason)
-            diagnostics['unresolved_cells'] += cell_count
             continue
-        filled_count = int(hole_sizes.sum())
+        # Reconcile ownership globally: enclosing fill and an inner heap can
+        # cover the same cells, but every represented cell is counted once.
+        newly_owned = filled & ~represented[bounds]
+        represented_count = int(newly_owned.sum())
+        filled_count = int((newly_owned & ~closed[bounds]).sum())
         record.update(status='represented', filled_hole_cells=filled_count,
-                      represented_cells=cell_count + filled_count,
-                      represented_area_m2=float(geometry.area))
-        diagnostics['filled_hole_cells'] += filled_count
-        diagnostics['represented_cells'] += cell_count + filled_count
-        polygons.extend(shapely.normalize(p) for p in candidates)
+                      represented_cells=represented_count,
+                      covered_by_other_component_cells=int((filled & represented[bounds]).sum()),
+                      represented_area_m2=represented_count * r * r)
+        represented[bounds] |= filled
+    # Rebuild from the unique global coverage, merging an enclosing filled ring
+    # and its island into one exterior instead of emitting overlapping regions.
+    represented_labels, _ = ndimage.label(represented, structure=four)
+    for component_id, bounds in enumerate(ndimage.find_objects(represented_labels), 1):
+        row_slice, col_slice = bounds
+        origin = (low + [col_slice.start - pad, row_slice.start - pad]) * r
+        geometry = _cell_geometry(represented_labels[bounds] == component_id,
+                                  float(origin[0]), float(origin[1]), r)
+        candidates = (geometry,) if isinstance(geometry, Polygon) else tuple(geometry.geoms)
+        # Zero tolerance removes only redundant straight-edge vertices; no
+        # metric displacement or change to topology is permitted.
+        polygons.extend(shapely.normalize(p.simplify(0, preserve_topology=True))
+                        for p in candidates)
+    diagnostics['filled_hole_cells'] = int((represented & ~closed).sum())
+    diagnostics['represented_cells'] = int(represented.sum())
+    diagnostics['unresolved_cells'] = int((closed & ~represented).sum())
     if diagnostics['removed_cells']:
         issues.append('morphology removed original occupied cells')
     polygons.sort(key=lambda p: (*p.bounds, p.area, p.wkb))

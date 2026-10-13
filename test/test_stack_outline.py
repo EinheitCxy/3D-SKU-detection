@@ -192,3 +192,41 @@ def test_two_million_cell_rectangle_uses_exact_cell_edges():
     assert len(result.polygons) == 1
     assert area(result) == pytest.approx(2, abs=1e-10)
     assert_simple(result)
+    assert result.polygons[0].equals(box(0, 0, 1, 2))
+    assert len(result.polygons[0].exterior.coords) == 5
+
+
+@pytest.mark.parametrize('hole_limit, expected_area, expected_cells, complete', [
+    (0.37, 1, 2500, True), (0.01, 0.04, 100, False)])
+def test_nested_island_has_unique_global_coverage(hole_limit, expected_area,
+                                                expected_cells, complete):
+    ring = np.vstack([samples((0, 0, 0.2, 1)), samples((0.8, 0, 1, 1)),
+                      samples((0.2, 0, 0.8, 0.2)), samples((0.2, 0.8, 0.8, 1))])
+    island = samples((0.4, 0.4, 0.6, 0.6))
+    result = run(np.vstack([ring, island]), hole=hole_limit)
+    assert_simple(result)
+    assert len(result.polygons) == 1
+    assert area(result) == pytest.approx(expected_area)
+    assert result.diagnostics['represented_area_m2'] == pytest.approx(expected_area)
+    assert result.diagnostics['represented_cells'] == expected_cells
+    assert sum(c.get('represented_cells', 0) for c in result.diagnostics['components']) == expected_cells
+    assert result.diagnostics['complete'] == complete
+    if complete:
+        assert not result.issues
+        assert result.diagnostics['filled_hole_cells'] == 800
+        assert result.diagnostics['unresolved_cells'] == 0
+        assert result.polygons[0].equals(box(0, 0, 1, 1))
+    else:
+        assert result.issues
+        assert result.diagnostics['unresolved_cells'] == 1600
+        assert result.polygons[0].symmetric_difference(box(0.4, 0.4, 0.6, 0.6)).area < 1e-15
+
+
+def test_uint64_frame_ids_retain_adjacent_large_integer_identity():
+    points = samples((0, 0, 0.1, 0.1))
+    frames = np.full(len(points), 2**63, dtype=np.uint64)
+    frames[-1] = np.uint64(2**63 + 1)
+    result = run(points, frames=frames)
+    assert result.diagnostics['raw_frame_count'] == 2
+    assert result.diagnostics['frame_cell_counts'] == {
+        str(2**63): 24, str(2**63 + 1): 1}
