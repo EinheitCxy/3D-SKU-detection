@@ -92,7 +92,7 @@ export function validateOutlineDocument(value: unknown, manifest: Manifest, kind
     if (!Array.isArray(r.vertices_world) || r.vertices_world.length < 3) fail("区域至少需要三个顶点");
     const region = { id: r.id, vertices_world: r.vertices_world.map(p => numbers(p, 3)), area_m2: 0 };
     const polygon = regionViewPoints(region, scene), area = polygonArea(polygon);
-    if (!agrees(r.area_m2, area)) fail("区域 area_m2 与几何不一致");
+    if (typeof r.area_m2 !== "number" || !Number.isFinite(r.area_m2) || r.area_m2 <= 0 || !agrees(r.area_m2, area)) fail("区域 area_m2 与几何不一致");
     if (polygons.some(other => regionsOverlap(polygon, other))) fail("区域存在正面积重叠");
     polygons.push(polygon); return { ...region, area_m2: area };
   });

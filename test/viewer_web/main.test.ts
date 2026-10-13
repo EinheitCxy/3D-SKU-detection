@@ -14,7 +14,7 @@ function mockSurfelAssets(): SurfelData {
   return assets;
 }
 
-import { bootstrap, candidateLabel, configureViewControlsState, displayPosmValue, selectionModeLabels, selectionModeTransition, selectionSummaryLabels, selectionStateAfterCanvasPick, skuFacetResultLabel, visibleGlobalIdsForFilters } from "../../modules/viewer_web/src/main";
+import { bootstrap, configureRenderModeToggle, candidateLabel, configureViewControlsState, displayPosmValue, selectionModeLabels, selectionModeTransition, selectionSummaryLabels, selectionStateAfterCanvasPick, skuFacetResultLabel, visibleGlobalIdsForFilters } from "../../modules/viewer_web/src/main";
 
 class FakeElement {
   constructor(readonly tagName: string) {}
@@ -22,6 +22,10 @@ class FakeElement {
   textContent = "";
   id = "";
   hidden = false;
+  disabled = false;
+  readonly listeners = new Map<string, (() => void)[]>();
+  addEventListener(name: string, listener: () => void): void { this.listeners.set(name, [...this.listeners.get(name) ?? [], listener]); }
+  click(): void { if (!this.disabled) this.listeners.get("click")?.forEach(listener => listener()); }
   readonly attributes = new Map<string, string>();
   readonly children: FakeElement[] = [];
   append(...children: FakeElement[]): void { this.children.push(...children); }
@@ -221,5 +225,27 @@ describe("recognition task loading", () => {
     } finally {
       Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });
     }
+  });
+});
+
+
+describe("render mode resource availability", () => {
+  it.each(["points", "surfel"] as const)("hides switching when only %s assets are available", (mode) => {
+    const toggle = new FakeElement("button"), setMode = vi.fn(), onSuccess = vi.fn();
+    const bundle = { colors: mode === "points" ? new Uint8Array(3) : null, ...(mode === "surfel" ? { surfels: {} as SurfelData } : {}) };
+    configureRenderModeToggle(toggle as unknown as HTMLButtonElement, bundle, () => mode, setMode, onSuccess);
+    expect(toggle.hidden).toBe(true); expect(toggle.disabled).toBe(true); toggle.click();
+    expect(setMode).not.toHaveBeenCalled(); expect(onSuccess).not.toHaveBeenCalled();
+  });
+  it("updates mode only after the controller successfully switches", () => {
+    const toggle = new FakeElement("button"), bundle = { colors: new Uint8Array(3), surfels: {} as SurfelData };
+    let active: "points" | "surfel" = "points";
+    const order: string[] = [];
+    configureRenderModeToggle(toggle as unknown as HTMLButtonElement, bundle, () => active, mode => { order.push(`set:${mode}`); expect(active).toBe("points"); }, mode => { active = mode; order.push(`updated:${mode}`); });
+    expect(toggle.hidden).toBe(false); toggle.click(); expect(active).toBe("surfel");
+    expect(order).toEqual(["set:surfel", "updated:surfel"]);
+    const failed = new FakeElement("button"), updated = vi.fn();
+    configureRenderModeToggle(failed as unknown as HTMLButtonElement, bundle, () => "points", () => { throw new Error("failed"); }, updated);
+    expect(() => failed.click()).toThrow("failed"); expect(updated).not.toHaveBeenCalled();
   });
 });

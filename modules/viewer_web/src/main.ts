@@ -106,6 +106,24 @@ if (typeof document !== "undefined") {
   void bootstrap(app);
 }
 
+export function configureRenderModeToggle(
+  toggle: HTMLButtonElement,
+  bundle: Pick<ViewerBundle, "colors" | "surfels">,
+  getMode: () => "points" | "surfel",
+  setMode: (mode: "points" | "surfel") => void,
+  onSuccess: (mode: "points" | "surfel") => void,
+): void {
+  const available = bundle.colors !== null && bundle.surfels !== undefined;
+  toggle.hidden = !available;
+  toggle.disabled = !available;
+  toggle.addEventListener("click", () => {
+    if (!available) return;
+    const next = getMode() === "surfel" ? "points" : "surfel";
+    setMode(next);
+    onSuccess(next);
+  });
+}
+
 export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDependencies): Promise<void> {
   const loading = loadingMessage("正在连接点云数据…");
   root.replaceChildren(loading);
@@ -283,9 +301,8 @@ export function mountViewer(root: HTMLElement, bundle: ViewerBundle): void {
   });
   syncSourceToggle();
   const renderToggle = button(activeRenderMode === "surfel" ? "切换到原始点云" : "切换到 Surfel");
-  renderToggle.addEventListener("click", () => {
-    activeRenderMode = activeRenderMode === "surfel" ? "points" : "surfel";
-    controller.setRenderMode(activeRenderMode);
+  configureRenderModeToggle(renderToggle, bundle, () => activeRenderMode, mode => controller.setRenderMode(mode), mode => {
+    activeRenderMode = mode;
     syncPointSizeControl();
     syncSourceToggle();
     renderToggle.textContent = activeRenderMode === "surfel" ? "切换到原始点云" : "切换到 Surfel";

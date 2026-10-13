@@ -170,6 +170,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   let controls: OrbitControls<PerspectiveCamera> | OrbitControls<OrthographicCamera> = perspectiveControls;
   const measurement = new AreaMeasurement();
   const footprints = new FootprintComparison(bundle.manifest);
+  let footprintOverlay: { points: AreaPoint[]; kind: "manual" | "candidate" }[] = [];
   let footprintHandler: ((state: FootprintState) => void) | null = null;
   let measurementHandler: ((state: AreaMeasurementState) => void) | null = null;
   let measurementHover: AreaPoint | null = null;
@@ -495,7 +496,11 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   };
 
   function publishFootprints(): void {
-    footprintHandler?.(footprints.state);
+    const state = footprints.state;
+    footprintOverlay = [state.manual, state.candidate].flatMap(doc => doc === null ? [] : doc.regions.map(region => ({
+      points: regionViewPoints(region, doc.scene), kind: doc.kind,
+    })));
+    footprintHandler?.(state);
     drawMeasurement();
     renderLoop.request();
   }
@@ -531,18 +536,15 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       const p = new Vector3(point[0], sceneCenter.y, point[1]).project(camera);
       return [(p.x + 1) * width / 2, (1 - p.y) * height / 2] as const;
     };
-    const saved = footprints.state;
-    for (const [doc, color, className] of [[saved.manual, "#15803d", "manual-outline"], [saved.candidate, "#7c3aed", "candidate-outline"]] as const) {
-      if (!doc) continue;
-      for (const region of doc.regions) {
-        const outline = document.createElementNS(overlay.namespaceURI, "polygon");
-        outline.setAttribute("class", className);
-        outline.setAttribute("points", regionViewPoints(region, doc.scene).map(project).map(p => p.join(",")).join(" "));
-        outline.setAttribute("fill", "none"); outline.setAttribute("stroke", color);
-        outline.setAttribute("stroke-width", "2.5");
-        if (doc.kind === "candidate") outline.setAttribute("stroke-dasharray", "7 4");
-        overlay.append(outline);
-      }
+    for (const region of footprintOverlay) {
+      const outline = document.createElementNS(overlay.namespaceURI, "polygon");
+      const candidate = region.kind === "candidate";
+      outline.setAttribute("class", candidate ? "candidate-outline" : "manual-outline");
+      outline.setAttribute("points", region.points.map(project).map(p => p.join(",")).join(" "));
+      outline.setAttribute("fill", "none"); outline.setAttribute("stroke", candidate ? "#7c3aed" : "#15803d");
+      outline.setAttribute("stroke-width", "2.5");
+      if (candidate) outline.setAttribute("stroke-dasharray", "7 4");
+      overlay.append(outline);
     }
     const positions = state.vertices.map(project);
     if (positions.length) {

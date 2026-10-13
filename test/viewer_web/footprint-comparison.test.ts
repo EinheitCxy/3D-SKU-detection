@@ -62,6 +62,16 @@ describe("outline exchange", () => {
     const before = store.state, invalid = candidate(); mutate(invalid);
     expect(() => store.importJson(JSON.stringify(invalid), "candidate")).toThrow(); expect(store.state).toEqual(before);
   });
+  it("rejects zero and negative declared area even inside the area tolerance", () => {
+    const small = candidate();
+    small.regions = [worldRegion("small", [[0,0],[0.001,0],[0.001,0.001],[0,0.001]], manifest, 0)];
+    small.total_area_m2 = small.regions[0].area_m2;
+    expect(validateOutlineDocument(small, manifest, "candidate").regions[0].area_m2).toBeCloseTo(1e-6, 12);
+    for (const area of [0, -1e-12]) {
+      const invalid = structuredClone(small); invalid.regions[0].area_m2 = area;
+      expect(() => validateOutlineDocument(invalid, manifest, "candidate")).toThrow(/area_m2/);
+    }
+  });
   it("requires simple geometry, permits incomplete empty candidate and rejects complete empty", () => {
     const c = candidate(); c.regions = []; c.total_area_m2 = 0;
     expect(() => validateOutlineDocument(c, manifest, "candidate")).toThrow();
