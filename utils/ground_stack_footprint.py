@@ -976,15 +976,17 @@ def select_footprint_component(
         "non_noise_point_count": int(len(valid_labels)),
         "component_populations": [int(value) for value in nonzero_populations],
         "substantial_component_threshold": None,
+        "substantial_component_fraction": 0.20,
+        "rule": "fraction_of_largest",
     }
     if len(valid_labels) == 0:
         raise FootprintError("carton footprint has no density component", diagnostics)
-    threshold = min(32, int(np.ceil(0.20 * len(valid_labels))))
+    largest_population = int(populations.max())
+    threshold = int(np.ceil(0.20 * largest_population))
     diagnostics["substantial_component_threshold"] = threshold
     if len(nonzero_populations) > 1 and int(np.sort(nonzero_populations)[-2]) >= threshold:
         raise FootprintError("carton footprint has multiple substantial components", diagnostics)
-    greatest_population = int(populations.max())
-    label = int(np.flatnonzero(populations == greatest_population)[0])
+    label = int(np.flatnonzero(populations == largest_population)[0])
     return projected[labels == label], diagnostics
 
 

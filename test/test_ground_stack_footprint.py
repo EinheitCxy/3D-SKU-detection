@@ -586,9 +586,23 @@ def test_low_count_substantial_second_component_is_rejected():
         )
 
 
-def test_absolute_32_point_second_component_is_rejected():
+def test_small_second_component_relative_to_largest_is_ignored():
     first_component = connected_component_points(168, x_offset=0.0)
     second_component = connected_component_points(32, x_offset=1.0)
+
+    polygon, metrics = carton_footprint_polygon(
+        np.vstack([first_component, second_component]), horizontal_support_plane()
+    )
+
+    assert polygon.area == pytest.approx(0.06 * 0.23, rel=0.05)
+    assert metrics["component_diagnostics"]["substantial_component_threshold"] == 34
+    assert metrics["component_diagnostics"]["rule"] == "fraction_of_largest"
+    assert metrics["component_diagnostics"]["substantial_component_fraction"] == 0.20
+
+
+def test_second_component_at_twenty_percent_of_largest_is_rejected():
+    first_component = connected_component_points(100, x_offset=0.0)
+    second_component = connected_component_points(20, x_offset=1.0)
 
     with pytest.raises(FootprintError, match="multiple substantial components"):
         carton_footprint_polygon(
