@@ -93,3 +93,22 @@ def test_fitted_tilted_plane_keeps_nonzero_offset():
     np.testing.assert_allclose(
         result.rotation @ result.normal_world, [0, 1, 0], atol=1e-6
     )
+
+
+def test_fit_is_bitwise_reproducible_and_versioned():
+    rng = np.random.default_rng(3)
+    count = 30_000
+    floor = np.column_stack(
+        [
+            rng.uniform(-2.0, 2.0, count),
+            1.0 + rng.normal(0.0, 0.005, count),
+            rng.uniform(2.0, 6.0, count),
+        ]
+    )
+    extrinsic = np.array([np.c_[np.eye(3), np.zeros(3)]])
+    first = orientation.fit_scene_orientation(floor, extrinsic)
+    second = orientation.fit_scene_orientation(floor.copy(), extrinsic)
+    assert first.status == "fitted"
+    assert np.array_equal(first.normal_world, second.normal_world)
+    assert first.plane_offset_m == second.plane_offset_m
+    assert orientation.ALGORITHM_VERSION == "viewer-plane-v2"

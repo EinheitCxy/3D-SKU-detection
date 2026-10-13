@@ -14,7 +14,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 SCHEMA_VERSION = 1
-ALGORITHM_VERSION = "viewer-plane-v1"
+ALGORITHM_VERSION = "viewer-plane-v2"
 
 
 @dataclass(frozen=True)
@@ -31,6 +31,52 @@ _PLANE_MIN_INLIER_RATIO = 0.05
 _PLANE_MAX_TILT_DEG = 60.0
 _PLANE_MAX_CANDIDATES = 8
 _PLANE_MAX_BELOW_RATIO = 0.15
+_PLANE_RANSAC_TRIALS = 1_000
+_PLANE_RANSAC_SEED = 13
+_PLANE_RANSAC_BATCH = 32
+
+
+def _seeded_plane_ransac(
+    points: np.ndarray, threshold: float, seed: int
+) -> tuple[np.ndarray, float, np.ndarray] | None:
+    """Deterministic fixed-trial RANSAC followed by an SVD refit on its inliers.
+
+    Replaces Open3D ``segment_plane``, whose parallel sampling is not
+    reproducible even with ``open3d.utility.random.seed``.
+    """
+    generator = np.random.default_rng(seed)
+    best_count = -1
+    best: tuple[np.ndarray, float] | None = None
+    for start in range(0, _PLANE_RANSAC_TRIALS, _PLANE_RANSAC_BATCH):
+        size = min(_PLANE_RANSAC_BATCH, _PLANE_RANSAC_TRIALS - start)
+        triplets = np.stack(
+            [generator.choice(len(points), size=3, replace=False) for _ in range(size)]
+        )
+        first, second, third = (points[triplets[:, column]] for column in range(3))
+        normals = np.cross(second - first, third - first)
+        norms = np.linalg.norm(normals, axis=1)
+        valid = norms > np.finfo(np.float64).eps
+        if not valid.any():
+            continue
+        normals = normals[valid] / norms[valid, None]
+        offsets = -np.einsum("ij,ij->i", normals, first[valid])
+        counts = np.count_nonzero(
+            np.abs(points @ normals.T + offsets) <= threshold, axis=0
+        )
+        index = int(np.argmax(counts))
+        if counts[index] > best_count:
+            best_count = int(counts[index])
+            best = (normals[index], float(offsets[index]))
+    if best is None:
+        return None
+    normal, offset = best
+    inliers = np.flatnonzero(np.abs(points @ normal + offset) <= threshold)
+    centre = points[inliers].mean(axis=0)
+    _, _, vectors = np.linalg.svd(points[inliers] - centre, full_matrices=False)
+    refined = vectors[-1] / np.linalg.norm(vectors[-1])
+    if refined @ normal < 0:
+        refined = -refined
+    return refined, float(-refined @ centre), inliers
 
 
 def fit_scene_orientation(
@@ -61,22 +107,16 @@ def fit_scene_orientation(
     distance_threshold = float(np.clip(median_nn * 3.0, 0.02, 0.15))
     min_inliers = _PLANE_MIN_INLIER_RATIO * len(subsample)
     m_flip = np.diag([1.0, -1.0, -1.0, 1.0])
-    remaining = pcd
-    for _ in range(_PLANE_MAX_CANDIDATES):
-        if len(remaining.points) < max(min_inliers, 3):
+    remaining = np.arange(len(subsample))
+    for candidate_index in range(_PLANE_MAX_CANDIDATES):
+        if len(remaining) < max(min_inliers, 3):
             break
-        plane, inliers = remaining.segment_plane(
-            distance_threshold, ransac_n=3, num_iterations=1000
-        )
-        inliers = np.asarray(inliers)
-        plane_coeffs = np.asarray(plane[:4], dtype=np.float64)
-        norm = float(np.linalg.norm(plane_coeffs[:3]))
-        if not math.isfinite(norm) or norm <= np.finfo(np.float64).eps:
-            logger.warning("RANSAC returned a degenerate plane; skipping candidate")
-            remaining = remaining.select_by_index(inliers, invert=True)
-            continue
-        normal = plane_coeffs[:3] / norm
-        plane_d = plane_coeffs[3] / norm
+        seed = _PLANE_RANSAC_SEED + candidate_index
+        fitted = _seeded_plane_ransac(subsample[remaining], distance_threshold, seed)
+        if fitted is None:
+            logger.warning("RANSAC found no non-degenerate plane; stopping search")
+            break
+        normal, plane_d, inliers = fitted
         if normal @ (camera_mean - subsample.mean(axis=0)) < 0:
             normal = -normal
             plane_d = -plane_d
@@ -99,9 +139,11 @@ def fit_scene_orientation(
                     "sample_count": int(len(subsample)),
                     "tilt_deg": tilt_deg,
                     "below_ratio": below_ratio,
+                    "ransac_trials": _PLANE_RANSAC_TRIALS,
+                    "ransac_seed": seed,
                 },
             )
-        remaining = remaining.select_by_index(inliers, invert=True)
+        remaining = np.delete(remaining, inliers)
     return SceneOrientation(
         "not_found",
         m_flip[:3, :3].copy(),
