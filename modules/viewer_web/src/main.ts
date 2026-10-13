@@ -124,14 +124,14 @@ export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDepen
       const archiveUrl = `${baseUrl.replace(/\/+$/, "")}/${encodeURIComponent(taskId)}/viewer_bundle.zip`;
       const response = await fetchWithProgress(archiveUrl);
       if (!response.ok) throw new Error(`任务数据包下载失败：HTTP ${response.status}`);
-      bundle = await (dependencies?.loadZip ?? loadDockerViewerBundle)(await response.blob(), undefined, "surfel");
+      bundle = await (dependencies?.loadZip ?? loadDockerViewerBundle)(await response.blob(), undefined, renderMode);
     } else {
       const attempts: string[] = [];
       const errors: string[] = [];
       for (const baseUrl of dataCandidates(href)) {
         attempts.push(baseUrl);
         try {
-          bundle = await load(baseUrl, fetchWithProgress, "surfel");
+          bundle = await load(baseUrl, fetchWithProgress, renderMode);
           break;
         } catch (error) {
           errors.push(`${baseUrl} => ${error instanceof Error ? error.message : String(error)}`);
@@ -141,7 +141,7 @@ export async function bootstrap(root: HTMLElement, dependencies?: BootstrapDepen
         throw new Error(`Tried ${attempts.length} data roots but none succeeded.\n${errors.join("\n")}`);
       }
     }
-    {
+    if (renderMode === "surfel") {
       bundle = { ...bundle, surfels: await loadSurfels(bundle, fetchWithProgress) };
     }
     loading.textContent = "数据已就绪，正在初始化三维画面…";

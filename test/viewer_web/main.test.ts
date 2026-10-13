@@ -53,6 +53,20 @@ describe("bootstrap", () => {
     }
   });
 
+  it("loads explicit points assets without requesting surfels", async () => {
+    const previousDocument = globalThis.document;
+    Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: (tag: string) => new FakeElement(tag) } });
+    const bundle = {} as import("../../modules/viewer_web/src/bundle-loader").ViewerBundle;
+    const mount = vi.fn();
+    const load = vi.fn(async () => bundle);
+    try {
+      await bootstrap(new FakeElement("root") as unknown as HTMLElement, { href: "https://viewer.test/?render=points&data=/data/", load, mount });
+      expect(load).toHaveBeenCalledExactlyOnceWith("https://viewer.test/data/", expect.any(Function), "points");
+      expect(loadSurfels).not.toHaveBeenCalled();
+      expect(mount).toHaveBeenCalledExactlyOnceWith(expect.anything(), bundle);
+    } finally { Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument }); }
+  });
+
   it("tries a failing explicit root once and does not fall back to defaults", async () => {
     const root = new FakeElement("root");
     const previousDocument = globalThis.document;
@@ -182,7 +196,6 @@ describe("recognition task loading", () => {
     const calls: string[] = [];
     let mounted = false;
     const bundle = { disposeAssets: () => {} } as unknown as import("../../modules/viewer_web/src/bundle-loader").ViewerBundle;
-    const surfels = mockSurfelAssets();
     try {
       await bootstrap(root as unknown as HTMLElement, {
         href: "https://viewer.test/?recognition_task_id=task%20id&data=/ignored/&render=points",
@@ -192,19 +205,18 @@ describe("recognition task loading", () => {
           return new Response("archive", { status: fail ? 404 : 200 });
         }) as typeof fetch,
         loadZip: async (_archive: Blob, _data: unknown, mode: string) => {
-          expect(mode).toBe("surfel");
+          expect(mode).toBe("points");
           return bundle;
         },
         mount: (_root: HTMLElement, loaded: typeof bundle) => {
-          expect(loaded).toEqual({ ...bundle, surfels });
+          expect(loaded).toBe(bundle);
           mounted = true;
         },
       });
       expect(calls).toHaveLength(1);
       expect(calls[0]).toMatch(/\/task%20id\/viewer_bundle.zip$/);
       expect(mounted).toBe(!fail);
-      if (fail) expect(loadSurfels).not.toHaveBeenCalled();
-      else expect(loadSurfels).toHaveBeenCalledExactlyOnceWith(bundle, expect.any(Function));
+      expect(loadSurfels).not.toHaveBeenCalled();
       if (fail) expect(root.children[0].children[2].textContent).toContain("404");
     } finally {
       Object.defineProperty(globalThis, "document", { configurable: true, value: previousDocument });

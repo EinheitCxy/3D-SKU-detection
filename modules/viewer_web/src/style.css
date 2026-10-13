@@ -128,3 +128,11 @@ input[type="range"] { accent-color: var(--accent); }
 .area-measurement-error { color: #a22b20; }
 .area-measurement-actions { display: flex; flex-wrap: wrap; gap: .35rem; }
 .area-measurement-actions button { padding: .35rem .5rem; font-size: .72rem; }
+
+.manual-outline-summary { color: #15803d; }
+.candidate-outline-summary { color: #7c3aed; overflow-wrap: anywhere; }
+.footprint-comparison-summary { max-height: 18rem; overflow: auto; }
+.area-measurement-panel label { display: block; margin-top: 0.5rem; }
+.area-measurement-panel input[type="file"] { display: block; max-width: 100%; }
+.area-measurement-panel { max-height: 75vh; overflow: auto; }
+.footprint-comparison-summary pre { white-space: pre-wrap; overflow-wrap: anywhere; }

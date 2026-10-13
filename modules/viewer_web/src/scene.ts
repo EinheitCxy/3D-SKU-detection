@@ -33,6 +33,7 @@ import type { ViewerBundle } from "./bundle-loader";
 import type { ObjectIndex } from "./contracts";
 import type { Manifest } from "./contracts";
 import { AreaMeasurement, type AreaPoint, type AreaMeasurementState } from "./area-measurement";
+import { FootprintComparison, footprintAvailability, regionViewPoints, type FootprintState } from "./footprint-comparison";
 import { POINTS_LAYER, createViewerPipeline } from "./edl";
 import { focusedCameraPosition } from "./focus";
 import {
@@ -69,6 +70,12 @@ export interface ViewerSceneController {
   undoAreaMeasurement(): void;
   clearAreaMeasurement(): void;
   setAreaMeasurementHandler(handler: ((state: AreaMeasurementState) => void) | null): void;
+  getFootprintState(): FootprintState;
+  setFootprintHandler(handler: ((state: FootprintState) => void) | null): void;
+  saveAreaMeasurement(): void;
+  clearSavedAreaMeasurements(): void;
+  importOutlineJson(text: string, kind: "manual" | "candidate"): void;
+  exportManualOutlines(): string;
   setRenderMode(mode: "points" | "surfel"): void;
   setSourceSelection(enabled: boolean): void;
   selectGlobalId(globalId: string | null): void;
@@ -124,22 +131,7 @@ export function viewPresetDirection(preset: "fit" | "top" | "isometric"): Vector
 }
 
 export function areaMeasurementAvailability(manifest: Manifest): string | null {
-  if (!manifest.measurement || manifest.measurement.coordinate_unit !== "m") {
-    return "此数据包缺少米制尺度信息，请重新导出支持面积测量的数据包。";
-  }
-  if (manifest.measurement.orientation_status !== "fitted") {
-    return "此数据包尚未确定水平方向，无法测量水平占地面积。";
-  }
-  const m = manifest.world_to_view;
-  const rows = [[m[0], m[1], m[2]], [m[4], m[5], m[6]], [m[8], m[9], m[10]]];
-  const rigid = rows.every((row, i) => rows.every((other, j) =>
-    Math.abs(row.reduce((sum, value, k) => sum + value * other[k], 0) - (i === j ? 1 : 0)) < 1e-5));
-  const matrix = new Matrix4().fromArray(m).transpose();
-  if (!rigid || Math.abs(matrix.determinant() - 1) > 1e-5
-    || m.slice(12).some((value, i) => Math.abs(value - (i === 3 ? 1 : 0)) > 1e-8)) {
-    return "场景变换含缩放或畸变，无法直接按平方米测量。";
-  }
-  return null;
+  return footprintAvailability(manifest);
 }
 
 export function horizontalPointAtNdc(camera: OrthographicCamera, x: number, y: number, height: number): AreaPoint | null {
@@ -177,6 +169,8 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   measurementControls.enabled = false;
   let controls: OrbitControls<PerspectiveCamera> | OrbitControls<OrthographicCamera> = perspectiveControls;
   const measurement = new AreaMeasurement();
+  const footprints = new FootprintComparison(bundle.manifest);
+  let footprintHandler: ((state: FootprintState) => void) | null = null;
   let measurementHandler: ((state: AreaMeasurementState) => void) | null = null;
   let measurementHover: AreaPoint | null = null;
   const overlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -363,6 +357,16 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   setViewPreset("fit", false);
 
   return {
+    getFootprintState() { return footprints.state; },
+    setFootprintHandler(handler) { footprintHandler = handler; handler?.(footprints.state); },
+    saveAreaMeasurement() {
+      footprints.saveDraft(measurement.state, sceneCenter.y);
+      measurement.start();
+      publishFootprints(); publishMeasurement();
+    },
+    clearSavedAreaMeasurements() { footprints.clearManual(); publishFootprints(); },
+    importOutlineJson(text, kind) { footprints.importJson(text, kind); publishFootprints(); },
+    exportManualOutlines() { return footprints.exportManual(); },
     getAreaMeasurementAvailability() { return areaMeasurementAvailability(bundle.manifest); },
     startAreaMeasurement() {
       const unavailable = areaMeasurementAvailability(bundle.manifest);
@@ -490,6 +494,12 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
     },
   };
 
+  function publishFootprints(): void {
+    footprintHandler?.(footprints.state);
+    drawMeasurement();
+    renderLoop.request();
+  }
+
   function publishMeasurement(): void {
     measurementHover = null;
     measurementHandler?.(measurement.state);
@@ -521,6 +531,19 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       const p = new Vector3(point[0], sceneCenter.y, point[1]).project(camera);
       return [(p.x + 1) * width / 2, (1 - p.y) * height / 2] as const;
     };
+    const saved = footprints.state;
+    for (const [doc, color, className] of [[saved.manual, "#15803d", "manual-outline"], [saved.candidate, "#7c3aed", "candidate-outline"]] as const) {
+      if (!doc) continue;
+      for (const region of doc.regions) {
+        const outline = document.createElementNS(overlay.namespaceURI, "polygon");
+        outline.setAttribute("class", className);
+        outline.setAttribute("points", regionViewPoints(region, doc.scene).map(project).map(p => p.join(",")).join(" "));
+        outline.setAttribute("fill", "none"); outline.setAttribute("stroke", color);
+        outline.setAttribute("stroke-width", "2.5");
+        if (doc.kind === "candidate") outline.setAttribute("stroke-dasharray", "7 4");
+        overlay.append(outline);
+      }
+    }
     const positions = state.vertices.map(project);
     if (positions.length) {
       const outline = document.createElementNS(overlay.namespaceURI, state.closed ? "polygon" : "polyline");
