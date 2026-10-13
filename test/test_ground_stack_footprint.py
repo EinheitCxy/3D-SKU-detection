@@ -12,6 +12,7 @@ from utils.ground_stack_footprint import (
     _refine_support_plane,
     _sample_ransac_triplet,
     carton_footprint_polygon,
+    carton_footprint_polygon_from_projected,
     fit_support_plane,
     fused_carton_footprint,
     project_to_plane,
@@ -20,6 +21,38 @@ from utils.ground_stack_footprint import (
     union_footprints,
     voxel_balance_projected,
 )
+
+
+def _voxel_rectangle(angle_deg: float, *, chain: bool) -> np.ndarray:
+    rng = np.random.default_rng(0)
+    points = rng.uniform([-0.20, -0.15], [0.20, 0.15], size=(60_000, 2))
+    if chain:
+        sparse_chain = np.column_stack([0.20 + 0.015 * np.arange(1, 9), np.zeros(8)])
+        points = np.vstack([points, sparse_chain])
+    theta = np.deg2rad(angle_deg)
+    rotation = np.array(
+        [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]]
+    )
+    return voxel_balance_projected(points @ rotation.T, voxel_size_m=0.005)
+
+
+def test_obb_extent_is_stable_across_orientation_and_sparse_chains():
+    truth = 0.40 * 0.30
+    clean_results = [
+        carton_footprint_polygon_from_projected(_voxel_rectangle(angle, chain=False))
+        for angle in (0.0, 15.0, 30.0, 45.0)
+    ]
+    clean = [polygon.area for polygon, _ in clean_results]
+    chained = [
+        carton_footprint_polygon_from_projected(_voxel_rectangle(angle, chain=True))[0].area
+        for angle in (0.0, 15.0, 30.0, 45.0)
+    ]
+    assert (max(clean) - min(clean)) / truth < 0.015
+    assert all(abs(area / truth - 1.0) < 0.025 for area in clean)
+    assert all(with_chain <= without * 1.005 for with_chain, without in zip(chained, clean))
+    for _, metrics in clean_results:
+        assert metrics["extent_estimator"] == "obb_frame_trim_0.005"
+        assert metrics["extent_trim_fraction"] == 0.005
 
 
 def make_plane_grid(point: np.ndarray, normal: np.ndarray) -> np.ndarray:

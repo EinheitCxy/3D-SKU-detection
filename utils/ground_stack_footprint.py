@@ -38,6 +38,7 @@ OBSERVATION_MIN_POINTS = 32
 FUSED_MIN_POINTS = 64
 ELEVATION_THRESHOLD_M = 0.015
 FOOTPRINT_VOXEL_M = 0.005
+OBB_TRIM_FRACTION = 0.005
 
 
 @dataclass(frozen=True)
@@ -388,7 +389,7 @@ def select_support_plane_with_direction(
 
 def carton_footprint_polygon(
     points: np.ndarray, plane: SupportPlane
-) -> tuple[Polygon, dict[str, float | int]]:
+) -> tuple[Polygon, dict[str, float | int | str | dict[str, object]]]:
     """Return the support-plane OBB footprint for one carton point cloud."""
     object_points = _validate_points(points, minimum=64, label="carton")
     _validate_plane(plane)
@@ -405,11 +406,11 @@ def carton_footprint_polygon(
 
 def carton_footprint_polygon_from_projected(
     projected_points: np.ndarray,
-) -> tuple[Polygon, dict[str, float | int | dict[str, object]]]:
+) -> tuple[Polygon, dict[str, float | int | str | dict[str, object]]]:
     """Build a carton OBB from already projected, 2-D balanced support points."""
     projected = _validate_projected_points(projected_points, minimum=64, label="carton")
     component, component_diagnostics = select_footprint_component(projected)
-    cleaned = _trim_projected_outliers(component, lower=0.01, upper=0.99)
+    cleaned = _trim_in_obb_frame(component)
     polygon = MultiPoint(cleaned).convex_hull.minimum_rotated_rectangle
     polygon = _validate_obb_polygon(polygon)
     return polygon, {
@@ -417,6 +418,8 @@ def carton_footprint_polygon_from_projected(
         "cleaned_point_count": int(len(cleaned)),
         "footprint_area_m2": float(polygon.area),
         "component_diagnostics": component_diagnostics,
+        "extent_estimator": "obb_frame_trim_0.005",
+        "extent_trim_fraction": OBB_TRIM_FRACTION,
     }
 
 
@@ -829,14 +832,19 @@ def _validate_projected_points(points: np.ndarray, minimum: int, label: str) -> 
     return array
 
 
-def _trim_projected_outliers(
-    projected: np.ndarray, lower: float, upper: float
-) -> np.ndarray:
-    lower_bounds = np.quantile(projected, lower, axis=0)
-    upper_bounds = np.quantile(projected, upper, axis=0)
-    cleaned = projected[
-        np.all((projected >= lower_bounds) & (projected <= upper_bounds), axis=1)
-    ]
+def _trim_in_obb_frame(points: np.ndarray) -> np.ndarray:
+    """Trim coordinate tails along the component's OBB axes."""
+    rectangle = _validate_obb_polygon(
+        MultiPoint(points).convex_hull.minimum_rotated_rectangle
+    )
+    corners = np.asarray(rectangle.exterior.coords)
+    edges = np.diff(corners[:3], axis=0)
+    axis = edges[int(np.argmax(np.linalg.norm(edges, axis=1)))]
+    axis = axis / np.linalg.norm(axis)
+    local = points @ np.column_stack([axis, [-axis[1], axis[0]]])
+    lower = np.quantile(local, OBB_TRIM_FRACTION, axis=0)
+    upper = np.quantile(local, 1.0 - OBB_TRIM_FRACTION, axis=0)
+    cleaned = points[np.all((local >= lower) & (local <= upper), axis=1)]
     if len(cleaned) < 3:
         raise FootprintError("carton footprint has fewer than three cleaned points")
     return cleaned
