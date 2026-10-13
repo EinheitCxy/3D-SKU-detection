@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping, Sequence
 
 import numpy as np
 from shapely.geometry import MultiPoint, MultiPolygon, Polygon
@@ -31,6 +32,20 @@ class SupportPlane:
     inlier_count: int
     inlier_fraction: float
     p95_residual_m: float
+
+
+OBSERVATION_MIN_POINTS = 32
+FUSED_MIN_POINTS = 64
+ELEVATION_THRESHOLD_M = 0.015
+FOOTPRINT_VOXEL_M = 0.005
+
+
+@dataclass(frozen=True)
+class ObservationPoints:
+    """Valid DA3 world points inside one detection's processed mask."""
+
+    image_id: int
+    points: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -403,6 +418,69 @@ def carton_footprint_polygon_from_projected(
         "footprint_area_m2": float(polygon.area),
         "component_diagnostics": component_diagnostics,
     }
+
+
+def elevated_projected_points(
+    observations: Sequence[ObservationPoints],
+    plane: SupportPlane,
+    frame_offsets_m: Mapping[int, float],
+) -> np.ndarray:
+    """Project points more than 15 mm above their own frame's support surface."""
+    parts: list[np.ndarray] = []
+    for item in observations:
+        image_id = int(item.image_id)
+        if image_id not in frame_offsets_m:
+            raise FootprintError(f"missing support offset for image {image_id}")
+        points = np.asarray(item.points, dtype=float).reshape(-1, 3)
+        heights = (points - plane.point) @ plane.normal - float(frame_offsets_m[image_id])
+        parts.append(points[heights > ELEVATION_THRESHOLD_M])
+    elevated = np.concatenate(parts) if parts else np.empty((0, 3))
+    return project_to_plane(elevated, plane)
+
+
+def fused_carton_footprint(
+    observations: Sequence[ObservationPoints],
+    plane: SupportPlane,
+    *,
+    frame_offsets_m: Mapping[int, float],
+) -> tuple[Polygon, dict[str, object]]:
+    """Fuse every observation of one global ID into its support-plane OBB.
+
+    Shared by the formal stage and both shadow-evidence paths. A raised
+    FootprintError carries the metrics computed before the failure.
+    """
+    if not observations:
+        raise FootprintError("global id has no observations")
+    if any(len(item.points) < OBSERVATION_MIN_POINTS for item in observations):
+        raise FootprintError("observation has fewer than 32 valid masked points")
+    fused = np.concatenate([np.asarray(item.points, dtype=float) for item in observations])
+    metrics: dict[str, object] = {
+        "observations_used": len(observations),
+        "height_median_m": float(np.median((fused - plane.point) @ plane.normal)),
+    }
+    try:
+        projected = elevated_projected_points(observations, plane, frame_offsets_m)
+    except FootprintError as error:
+        raise FootprintError(str(error), {**metrics, **error.diagnostics}) from error
+    metrics["elevated_point_count"] = int(len(projected))
+    if len(projected) < FUSED_MIN_POINTS:
+        raise FootprintError("fused global id has fewer than 64 valid points", metrics)
+    try:
+        balanced = voxel_balance_projected(projected, voxel_size_m=FOOTPRINT_VOXEL_M)
+    except FootprintError as error:
+        raise FootprintError(str(error), {**metrics, **error.diagnostics}) from error
+    metrics["projected_voxel_point_count"] = int(len(balanced))
+    if len(balanced) < FUSED_MIN_POINTS:
+        raise FootprintError(
+            "fused global id has fewer than 64 projected voxel points", metrics
+        )
+    try:
+        polygon, obb_metrics = carton_footprint_polygon_from_projected(balanced)
+    except FootprintError as error:
+        raise FootprintError(
+            str(error), {**metrics, "component_diagnostics": error.diagnostics}
+        ) from error
+    return polygon, {**metrics, **obb_metrics}
 
 
 def union_footprints(polygons: list[Polygon]) -> Polygon | MultiPolygon:

@@ -20,11 +20,11 @@ from shapely.geometry import MultiPolygon, Polygon
 
 from utils.ground_stack_footprint import (
     FootprintError,
+    ObservationPoints,
     SupportPlane,
-    carton_footprint_polygon_from_projected,
+    fused_carton_footprint,
     project_to_plane,
     union_footprints,
-    voxel_balance_projected,
 )
 
 
@@ -61,6 +61,7 @@ class FormalSnapshot:
     polygons: Mapping[str, Polygon]
     union: Polygon | MultiPolygon | None
     rejection_reason: str | None
+    frame_offsets_m: Mapping[int, float]
 
 
 @dataclass(frozen=True)
@@ -298,7 +299,7 @@ def _fixed_plane_variant_area(
         int(image_id): index for index, image_id in enumerate(geometry.frame_ids)
     }
     processed_shape = geometry.world_points.shape[1:3]
-    grouped: dict[str, list[np.ndarray]] = {}
+    grouped: dict[str, list[ObservationPoints]] = {}
     mask_counts: list[dict[str, int]] = []
     for observation in observations:
         image_id = int(observation.image_id)
@@ -326,7 +327,7 @@ def _fixed_plane_variant_area(
                 f"{variant} observation has fewer than 32 valid masked points"
             )
         global_id = str(observation.global_id)
-        grouped.setdefault(global_id, []).append(points)
+        grouped.setdefault(global_id, []).append(ObservationPoints(image_id, points))
         mask_counts.append(
             {
                 "image_id": image_id,
@@ -346,7 +347,8 @@ def _fixed_plane_variant_area(
         )
     polygons: list[Polygon] = []
     for global_id in sorted(expected_ids, key=_global_id_key):
-        fused = np.concatenate(grouped[global_id])
+        group = grouped[global_id]
+        fused = np.concatenate([item.points for item in group])
         try:
             with np.errstate(over="raise", invalid="raise"):
                 heights = (fused - plane.point) @ plane.normal
@@ -359,18 +361,12 @@ def _fixed_plane_variant_area(
             error_type=EvidenceComputationError,
             label=f"{variant} support-plane heights",
         )
-        elevated = fused[heights > 0.015]
-        if len(elevated) < 64:
-            raise FootprintError(
-                f"{variant} global id {global_id} has fewer than 64 elevated points"
+        try:
+            polygon, _ = fused_carton_footprint(
+                group, plane, frame_offsets_m=formal_snapshot.frame_offsets_m
             )
-        projected = project_to_plane(elevated, plane)
-        balanced = voxel_balance_projected(projected, voxel_size_m=0.005)
-        if len(balanced) < 64:
-            raise FootprintError(
-                f"{variant} global id {global_id} has fewer than 64 projected voxel points"
-            )
-        polygon, _ = carton_footprint_polygon_from_projected(balanced)
+        except FootprintError as error:
+            raise FootprintError(f"{variant} global id {global_id}: {error}") from error
         polygons.append(set_precision(polygon, 0.0001))
     union = union_footprints(polygons)
     value_m2 = float(union.area)
@@ -550,6 +546,7 @@ def _build_valid_camera_evidence(
                 group,
                 plane,
                 formal_snapshot.polygons.get(global_id),
+                formal_snapshot.frame_offsets_m,
             )
         per_global_id[global_id] = {
             "distinct_image_id_count": distinct_image_id_count,
@@ -906,6 +903,7 @@ def _leave_one_observation_out(
     observations: Sequence[_PreparedObservation],
     plane: SupportPlane,
     full_polygon: Polygon | None,
+    frame_offsets_m: Mapping[int, float],
 ) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     for removed_index, removed in enumerate(observations):
@@ -926,7 +924,7 @@ def _leave_one_observation_out(
             item for index, item in enumerate(observations) if index != removed_index
         ]
         try:
-            polygon = _fixed_plane_polygon(camera, remaining, plane)
+            polygon = _fixed_plane_polygon(camera, remaining, plane, frame_offsets_m)
             results.append(
                 {
                     **identity,
@@ -949,18 +947,19 @@ def _fixed_plane_polygon(
     camera: _CameraCache,
     observations: Sequence[_PreparedObservation],
     plane: SupportPlane,
+    frame_offsets_m: Mapping[int, float],
 ) -> Polygon:
     if not observations:
         raise FootprintError("leave-one-out has no remaining observations")
-    point_parts: list[np.ndarray] = []
+    parts: list[ObservationPoints] = []
     for item in observations:
         points = camera.world_points[item.frame_index][item.qualified_mask]
         if len(points) < 32:
             raise FootprintError(
                 "leave-one-out observation has fewer than 32 valid masked points"
             )
-        point_parts.append(points)
-    fused = np.concatenate(point_parts)
+        parts.append(ObservationPoints(int(camera.frame_ids[item.frame_index]), points))
+    fused = np.concatenate([part.points for part in parts])
     try:
         with np.errstate(over="raise", invalid="raise"):
             heights = (fused - plane.point) @ plane.normal
@@ -997,12 +996,7 @@ def _fixed_plane_polygon(
         raise EvidenceComputationError(
             "leave-one-out voxel coordinates exceed integer representation"
         )
-    balanced = voxel_balance_projected(projected, voxel_size_m=0.005)
-    if len(balanced) < 64:
-        raise FootprintError(
-            "leave-one-out global id has fewer than 64 projected voxel points"
-        )
-    polygon, _ = carton_footprint_polygon_from_projected(balanced)
+    polygon, _ = fused_carton_footprint(parts, plane, frame_offsets_m=frame_offsets_m)
     _require_finite(
         np.asarray(polygon.exterior.coords, dtype=np.float64),
         np.asarray([polygon.area], dtype=np.float64),

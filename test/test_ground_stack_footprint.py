@@ -4,6 +4,7 @@ import pytest
 import utils.ground_stack_footprint as footprint_geometry
 from utils.ground_stack_footprint import (
     FootprintError,
+    ObservationPoints,
     RansacOutcome,
     SupportPlane,
     SupportPlaneSelectionError,
@@ -12,6 +13,7 @@ from utils.ground_stack_footprint import (
     _sample_ransac_triplet,
     carton_footprint_polygon,
     fit_support_plane,
+    fused_carton_footprint,
     project_to_plane,
     select_footprint_component,
     select_support_plane,
@@ -579,3 +581,38 @@ def test_ambiguous_wall_and_table_preserve_candidate_diagnostics():
         select_support_plane(np.vstack([table, wall]), frame_ids, objects)
 
     assert len(raised.value.diagnostics["candidates"]) >= 2
+
+
+def test_fused_footprint_fuses_views_with_explicit_frame_offsets():
+    plane = horizontal_support_plane()
+    points = carton_points(x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2)
+    polygon, metrics = fused_carton_footprint(
+        [ObservationPoints(0, points[:6400]), ObservationPoints(1, points[6400:])],
+        plane,
+        frame_offsets_m={0: 0.0, 1: 0.0},
+    )
+    assert polygon.area == pytest.approx(1.0)
+    assert metrics["observations_used"] == 2
+    assert metrics["projected_voxel_point_count"] >= 64
+
+
+def test_fused_footprint_rejection_carries_partial_metrics():
+    flat = carton_points(x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.01)
+    with pytest.raises(FootprintError, match="fewer than 64 valid points") as raised:
+        fused_carton_footprint(
+            [ObservationPoints(0, flat)],
+            horizontal_support_plane(),
+            frame_offsets_m={0: 0.0},
+        )
+    assert raised.value.diagnostics["observations_used"] == 1
+    assert raised.value.diagnostics["elevated_point_count"] == 0
+
+
+def test_missing_frame_offset_is_a_contract_error():
+    points = carton_points(x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2)
+    with pytest.raises(FootprintError, match="missing support offset for image 7"):
+        fused_carton_footprint(
+            [ObservationPoints(7, points)],
+            horizontal_support_plane(),
+            frame_offsets_m={},
+        )

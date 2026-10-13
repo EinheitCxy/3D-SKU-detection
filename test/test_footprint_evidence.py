@@ -16,6 +16,9 @@ from utils.footprint_evidence import (
 from utils.ground_stack_footprint import SupportPlane
 
 
+_ZERO_OFFSETS = {image_id: 0.0 for image_id in range(100)}
+
+
 def _plane() -> SupportPlane:
     return SupportPlane(
         point=np.zeros(3),
@@ -37,6 +40,7 @@ def _snapshot(polygon=None) -> FormalSnapshot:
         polygons={"1": polygon},
         union=polygon,
         rejection_reason=None,
+        frame_offsets_m=_ZERO_OFFSETS,
     )
 
 
@@ -259,6 +263,7 @@ def test_absent_formal_plane_keeps_all_shadow_geometry_unavailable(tmp_path):
         polygons={},
         union=None,
         rejection_reason="formal plane selection failed",
+        frame_offsets_m=_ZERO_OFFSETS,
     )
 
     evidence = build_shadow_evidence(
@@ -695,6 +700,7 @@ def test_nonfinite_observation_geometry_math_returns_failed_evidence(tmp_path):
         polygons={"1": polygon},
         union=polygon,
         rejection_reason=None,
+        frame_offsets_m=_ZERO_OFFSETS,
     )
 
     evidence = build_shadow_evidence(

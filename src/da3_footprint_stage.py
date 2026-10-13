@@ -44,12 +44,11 @@ from utils.footprint_evidence import (
 )
 from utils.ground_stack_footprint import (
     FootprintError,
+    ObservationPoints,
     SupportPlaneSelectionError,
-    carton_footprint_polygon_from_projected,
-    project_to_plane,
+    fused_carton_footprint,
     select_support_plane_with_direction,
     union_footprints,
-    voxel_balance_projected,
 )
 from utils.sam3_mask_cache import (
     FrameMaskCacheRequest,
@@ -156,6 +155,7 @@ def run_da3_footprint(
         "library_versions": {"numpy": np.__version__, "shapely": shapely.__version__},
     }
     polygons: dict[str, Any] = {}
+    frame_offsets: dict[int, float] = {}
     union = None
     plane = None
     cache_path = Path(save_root) / dataset.name / "da3_cache" / "predictions.npz"
@@ -197,10 +197,10 @@ def run_da3_footprint(
             report["sam3_mask_cache"]["frames"],
         )
         all_object_points = [
-            points
+            observation.points
             for observations in masked_observations.values()
-            for points in observations
-            if len(points)
+            for observation in observations
+            if len(observation.points)
         ]
         if not all_object_points:
             raise FootprintStageError(
@@ -255,41 +255,20 @@ def run_da3_footprint(
             **plane_diagnostics,
         }
         stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
+        frame_offsets = {int(image_id): 0.0 for image_id in cache_frame_ids}
         active_stage = "per_id_obb_union"
         active_stage_started_at = time.monotonic()
-        for global_id, observation_points in masked_observations.items():
+        for global_id, observations in masked_observations.items():
             per_id = report["per_global_id"][global_id]
-            accepted = [points for points in observation_points if len(points) >= 32]
-            if len(accepted) != len(observation_points):
-                per_id["rejection"] = (
-                    "observation has fewer than 32 valid masked points"
-                )
-                continue
-            fused = np.concatenate(accepted)
-            heights = (fused - plane.point) @ plane.normal
-            elevated = fused[heights > 0.015]
-            if len(elevated) < 64:
-                per_id["rejection"] = "fused global id has fewer than 64 valid points"
-                continue
-            projected = project_to_plane(elevated, plane)
-            balanced_projected = voxel_balance_projected(projected, voxel_size_m=0.005)
-            per_id["projected_voxel_point_count"] = int(len(balanced_projected))
-            if len(balanced_projected) < 64:
-                per_id["rejection"] = (
-                    "fused global id has fewer than 64 projected voxel points"
-                )
-                continue
             try:
-                polygon, metrics = carton_footprint_polygon_from_projected(
-                    balanced_projected
+                polygon, metrics = fused_carton_footprint(
+                    observations, plane, frame_offsets_m=frame_offsets
                 )
             except FootprintError as error:
                 per_id["rejection"] = str(error)
-                per_id["component_diagnostics"] = error.diagnostics
+                per_id.update(error.diagnostics)
                 continue
             per_id.update(metrics)
-            per_id["height_median_m"] = float(np.median(heights))
-            per_id["observations_used"] = len(accepted)
             polygons[global_id] = polygon
         missing = sorted(set(masked_observations) - set(polygons), key=_global_id_key)
         if missing:
@@ -345,6 +324,7 @@ def run_da3_footprint(
         polygons=dict(polygons),
         union=union,
         rejection_reason=report.get("rejection_reason"),
+        frame_offsets_m=dict(frame_offsets),
     )
     shadow_started_at = time.monotonic()
     try:
@@ -627,7 +607,7 @@ def _masked_observations(
     mask_cache_root: Path,
     mask_cache_frames: list[dict[str, object]],
 ) -> tuple[
-    dict[str, list[np.ndarray]],
+    dict[str, list[ObservationPoints]],
     np.ndarray,
     np.ndarray,
     tuple[EvidenceObservation, ...],
@@ -638,7 +618,9 @@ def _masked_observations(
     frame_for_id = {
         int(image_id): index for index, image_id in enumerate(cache["image_ids"])
     }
-    observations = {global_id: [] for global_id in mapping_by_id}
+    observations: dict[str, list[ObservationPoints]] = {
+        global_id: [] for global_id in mapping_by_id
+    }
     evidence_observations: list[EvidenceObservation] = []
     background_points: list[np.ndarray] = []
     background_frames: list[np.ndarray] = []
@@ -728,14 +710,16 @@ def _masked_observations(
             )
             if not processed_mask.any():
                 diagnostic["rejection"] = "processed self-exemplar mask is empty"
-                observations[global_id].append(np.empty((0, 3), dtype=float))
+                observations[global_id].append(
+                    ObservationPoints(image_id, np.empty((0, 3), dtype=float))
+                )
             else:
                 valid = valid_grid & processed_mask
                 points = point_clouds[frame_index][valid]
                 diagnostic["valid_point_count"] = int(len(points))
                 if len(points) < 32:
                     diagnostic["rejection"] = "mask has fewer than 32 valid DA3 points"
-                observations[global_id].append(points)
+                observations[global_id].append(ObservationPoints(image_id, points))
             all_masks |= cv2.dilate(
                 processed_mask.astype(np.uint8),
                 np.ones((5, 5), dtype=np.uint8),
