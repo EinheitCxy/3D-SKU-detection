@@ -1511,3 +1511,16 @@ def test_stage_rejects_non_numeric_affine_or_non_integer_source_sizes(
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert "dtype" in report["rejection_reason"]
+
+
+def test_programming_key_error_is_not_reported_as_a_measurement_rejection(
+    monkeypatch, tmp_path
+):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+
+    def broken(*args, **kwargs):
+        raise KeyError("programming error")
+
+    monkeypatch.setattr(stage, "fused_carton_footprint", broken)
+    with pytest.raises(KeyError, match="programming error"):
+        stage.run_da3_footprint(str(dataset), save_root)

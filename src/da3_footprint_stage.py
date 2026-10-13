@@ -329,7 +329,6 @@ def run_da3_footprint(
         FootprintError,
         OSError,
         ValueError,
-        KeyError,
     ) as error:
         if active_stage is not None and stages_seconds[active_stage] is None:
             stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
