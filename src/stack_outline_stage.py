@@ -13,9 +13,9 @@ from utils.stack_outline import OutlineOptions, extract_stack_outlines
 
 def run_stack_outline(dataset_path, save_root, *, sam3_mask_cache_root, viewer_manifest,
                       output, gap_radius_m, max_hole_area_m2, grid_resolution_m=0.005,
-                      overwrite=False):
+                      max_grid_cells=4_000_000, overwrite=False):
     options = OutlineOptions(gap_radius_m=gap_radius_m, max_hole_area_m2=max_hole_area_m2,
-                             grid_resolution_m=grid_resolution_m)
+                             grid_resolution_m=grid_resolution_m, max_grid_cells=max_grid_cells)
     dataset, save_root, output = Path(dataset_path), Path(save_root), Path(output)
     png = output.with_suffix('.png')
     if not overwrite and (output.exists() or png.exists()):
@@ -106,6 +106,8 @@ def main():
     for name in ('gap-radius-m', 'max-hole-area-m2'):
         parser.add_argument('--' + name, type=float, required=True)
     parser.add_argument('--grid-resolution-m', type=float, default=0.005)
+    parser.add_argument('--max-grid-cells', type=int, default=4_000_000,
+                        help='Explicit raster allocation limit; does not change geometric thresholds')
     parser.add_argument('--overwrite', action='store_true')
     args = vars(parser.parse_args())
     args['dataset_path'] = args.pop('dataset')
