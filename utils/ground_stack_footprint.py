@@ -577,7 +577,7 @@ def carton_footprint_polygon_from_projected(
     }
 
 
-def elevated_projected_points(
+def elevated_world_points(
     observations: Sequence[ObservationPoints],
     plane: SupportPlane,
     frame_offsets_m: Mapping[int, float],
@@ -592,7 +592,12 @@ def elevated_projected_points(
         heights = (points - plane.point) @ plane.normal - float(frame_offsets_m[image_id])
         parts.append(points[heights > ELEVATION_THRESHOLD_M])
     elevated = np.concatenate(parts) if parts else np.empty((0, 3))
-    return project_to_plane(elevated, plane)
+    return elevated
+
+
+def elevated_projected_points(observations, plane, frame_offsets_m):
+    """Project elevated observations onto the support plane (production)."""
+    return project_to_plane(elevated_world_points(observations, plane, frame_offsets_m), plane)
 
 
 def classify_excluded_coverage(

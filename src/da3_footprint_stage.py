@@ -170,19 +170,10 @@ def run_da3_footprint(
     active_stage = "validation_and_io"
     active_stage_started_at = measurement_started_at
     try:
-        mapping_path = (
-            Path(save_root) / dataset.name / "dedup_detections" / "global_mapping.json"
+        cache, image_paths, detections, global_mapping, cache_stat = prepare_da3_inputs(
+            dataset, Path(save_root), report
         )
-        cache_stat = cache_path.stat()
-        cache = _load_cache(cache_path)
         cache_frame_ids = cache["image_ids"]
-        image_paths = _image_paths(dataset / "images")
-        detection_paths = _detection_paths(dataset / "detections_results")
-        _validate_complete_source_ids(cache["image_ids"], image_paths, detection_paths)
-        report["cache"] = _validate_cache(cache, image_paths)
-        detections = _load_detections(detection_paths)
-        global_mapping, global_mapping_sha256 = _load_mapping(mapping_path, detections)
-        report["global_mapping_sha256"] = global_mapping_sha256
         stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
         active_stage = "load_self_exemplar_masks"
         active_stage_started_at = time.monotonic()
@@ -404,6 +395,22 @@ def run_da3_footprint(
         "status": report["status"],
         "report_path": str(report_path),
     }
+
+
+def prepare_da3_inputs(dataset: Path, save_root: Path, report: dict):
+    """Shared strict cache/source/mapping preparation without model inference."""
+    cache_path = save_root / dataset.name / "da3_cache" / "predictions.npz"
+    mapping_path = save_root / dataset.name / "dedup_detections" / "global_mapping.json"
+    cache_stat = cache_path.stat()
+    cache = _load_cache(cache_path)
+    image_paths = _image_paths(dataset / "images")
+    detection_paths = _detection_paths(dataset / "detections_results")
+    _validate_complete_source_ids(cache["image_ids"], image_paths, detection_paths)
+    report["cache"] = _validate_cache(cache, image_paths)
+    detections = _load_detections(detection_paths)
+    global_mapping, mapping_sha256 = _load_mapping(mapping_path, detections)
+    report["global_mapping_sha256"] = mapping_sha256
+    return cache, image_paths, detections, global_mapping, cache_stat
 
 
 def _load_cache(path: Path) -> dict[str, np.ndarray]:
@@ -661,6 +668,7 @@ def _masked_observations(
     per_global_id: dict[str, Any],
     mask_cache_root: Path,
     mask_cache_frames: list[dict[str, object]],
+    *, collect_evidence_masks: bool = True,
 ) -> tuple[
     dict[str, list[ObservationPoints]],
     np.ndarray,
@@ -754,15 +762,16 @@ def _masked_observations(
             per_global_id.setdefault(global_id, {"observations": []})[
                 "observations"
             ].append(diagnostic)
-            evidence_observations.append(
-                EvidenceObservation(
-                    global_id=global_id,
-                    image_id=image_id,
-                    object_id=object_id,
-                    processed_mask=processed_mask.copy(),
-                    valid_mask=valid_grid.copy(),
+            if collect_evidence_masks:
+                evidence_observations.append(
+                    EvidenceObservation(
+                        global_id=global_id,
+                        image_id=image_id,
+                        object_id=object_id,
+                        processed_mask=processed_mask.copy(),
+                        valid_mask=valid_grid.copy(),
+                    )
                 )
-            )
             if not processed_mask.any():
                 diagnostic["rejection"] = "processed self-exemplar mask is empty"
                 observations[global_id].append(
