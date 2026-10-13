@@ -85,3 +85,41 @@ def test_identical_adjacent_regions_use_union_boundary():
 def test_non_object_input_is_domain_error(data):
     with pytest.raises(ValueError, match='object'):
         validate_outline_document(data)
+
+
+@pytest.mark.parametrize('field', ['world_to_view', 'display_bounds', 'vertices_world'])
+@pytest.mark.parametrize('bad_type', ['object', 'null', 'ragged', 'bool', 'string', 'nonfinite'])
+def test_numeric_array_input_boundary(field, bad_type):
+    data = document()
+    container = data['regions'][0] if field == 'vertices_world' else data['scene']
+    original = container[field]
+    if bad_type == 'object':
+        bad = {}
+    elif bad_type == 'null':
+        bad = None
+    elif bad_type == 'ragged':
+        bad = [[1, 2], [3]]
+    else:
+        bad = copy.deepcopy(original)
+        replacement = {'bool': True, 'string': '1.0', 'nonfinite': float('inf')}[bad_type]
+        if field == 'vertices_world':
+            bad[0][0] = replacement
+        else:
+            bad[0] = replacement
+    container[field] = bad
+    with pytest.raises(ValueError, match=field):
+        validate_outline_document(data)
+
+
+@pytest.mark.parametrize('version', [True, '1', 1.0, None, {}])
+def test_version_requires_json_integer(version):
+    data = document(); data['version'] = version
+    with pytest.raises(ValueError, match='version'):
+        validate_outline_document(data)
+
+
+def test_finite_integer_and_float_json_arrays_remain_valid():
+    data = document('manual')
+    data['scene']['world_to_view'] = [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]
+    data['regions'][0]['vertices_world'] = [[0,0,0], [1.0,0,0], [1,0,1.0], [0,0,1]]
+    assert len(validate_outline_document(data, 'manual')) == 1

@@ -4,6 +4,29 @@ from shapely.geometry import Polygon
 from shapely.ops import unary_union
 
 
+def _json_number_array(value, shape, field):
+    """Validate external JSON arrays before float conversion; never coerce types."""
+    def check(node, remaining):
+        if remaining:
+            if not isinstance(node, list):
+                raise ValueError(f'{field} must be a rectangular JSON number array')
+            size = remaining[0]
+            if size is not None and len(node) != size:
+                raise ValueError(f'{field} must have shape {shape}')
+            for item in node:
+                check(item, remaining[1:])
+        elif type(node) not in (int, float):
+            raise ValueError(f'{field} must contain finite JSON numbers, not bool/string/null/object')
+    check(value, shape)
+    try:
+        array = np.asarray(value, dtype=float)
+    except (TypeError, ValueError, OverflowError) as error:
+        raise ValueError(f'{field} must contain finite JSON numbers') from error
+    if not np.isfinite(array).all():
+        raise ValueError(f'{field} must contain finite JSON numbers')
+    return array
+
+
 def validate_scene(scene):
     if not isinstance(scene, dict):
         raise ValueError("scene must be an object")
@@ -13,8 +36,8 @@ def validate_scene(scene):
     count = scene.get('frame_count')
     if isinstance(count, bool) or not isinstance(count, int) or count <= 0:
         raise ValueError('scene frame_count must be a positive integer')
-    transform = np.asarray(scene.get('world_to_view'), dtype=float)
-    bounds = np.asarray(scene.get('display_bounds'), dtype=float)
+    transform = _json_number_array(scene.get('world_to_view'), (16,), 'world_to_view')
+    bounds = _json_number_array(scene.get('display_bounds'), (6,), 'display_bounds')
     if transform.shape != (16,) or not np.isfinite(transform).all():
         raise ValueError('world_to_view must contain 16 finite row-major numbers')
     transform = transform.reshape(4, 4)
@@ -55,7 +78,7 @@ def validate_outline_document(document, expected_kind=None):
     if not isinstance(document, dict):
         raise ValueError("outline document must be an object")
     if (document.get('format') != 'viewer-horizontal-outlines'
-            or document.get('version') != 1 or document.get('coordinate_unit') != 'm'):
+            or type(document.get('version')) is not int or document.get('version') != 1 or document.get('coordinate_unit') != 'm'):
         raise ValueError('unsupported outline format/version/unit')
     kind = document.get('kind')
     if kind not in ('manual', 'candidate') or (expected_kind and kind != expected_kind):
@@ -73,7 +96,7 @@ def validate_outline_document(document, expected_kind=None):
         if not isinstance(identifier, str) or not identifier or identifier in ids:
             raise ValueError('region IDs must be unique nonempty strings')
         ids.add(identifier)
-        vertices = np.asarray(region.get('vertices_world'), dtype=float)
+        vertices = _json_number_array(region.get('vertices_world'), (None, 3), 'vertices_world')
         if vertices.ndim != 2 or vertices.shape[1] != 3 or len(vertices) < 3 or not np.isfinite(vertices).all():
             raise ValueError('region requires at least three finite world vertices')
         if np.array_equal(vertices[0], vertices[-1]):
