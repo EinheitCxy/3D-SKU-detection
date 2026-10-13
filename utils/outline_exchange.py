@@ -121,7 +121,10 @@ def validate_outline_document(document, expected_kind=None):
             raise ValueError('manual document must be a complete reference')
     else:
         complete = document.get('complete')
-        if (not isinstance(complete, bool) or document.get('value_m2') is not None
+        if (not isinstance(complete, bool) or 'value_m2' not in document
+                or document['value_m2'] is not None
+                or not isinstance(document.get('parameters'), dict)
+                or not isinstance(document.get('diagnostics'), dict)
                 or document.get('metric') != 'da3_manual_equivalent_stack_outline_candidate'
                 or document.get('status') != ('candidate' if complete else 'needs_review')
                 or (complete and not polygons)):

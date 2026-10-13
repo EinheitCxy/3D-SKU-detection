@@ -19,6 +19,7 @@ def document(kind='candidate', shift=0, heaps=1):
         regions.append(dict(id=str(index), vertices_world=world.tolist(), area_m2=1.0))
     return dict(format='viewer-horizontal-outlines', version=1, coordinate_unit='m', kind=kind,
                 scene=scene, regions=regions, total_area_m2=float(heaps), complete=True, value_m2=None,
+                parameters={}, diagnostics={},
                 status='candidate' if kind=='candidate' else 'reference',
                 metric='da3_manual_equivalent_stack_outline_candidate' if kind=='candidate' else 'manual_horizontal_outline')
 
@@ -36,6 +37,20 @@ def test_translated_equal_area():
     assert result['relative_area_difference'] == pytest.approx(0)
     assert result['union_iou'] == pytest.approx(1/3)
     assert result['candidate_to_reference_boundary_p95_m'] == pytest.approx(.5)
+
+
+@pytest.mark.parametrize('field, operation', [
+    ('value_m2', 'missing'), ('parameters', 'missing'), ('diagnostics', 'missing'),
+    ('parameters', 'array'), ('diagnostics', 'array'),
+])
+def test_candidate_requires_explicit_metadata(field, operation):
+    data = document()
+    if operation == 'missing':
+        del data[field]
+    else:
+        data[field] = []
+    with pytest.raises(ValueError, match='candidate status'):
+        validate_outline_document(data, 'candidate')
 
 
 def test_wrong_scene_and_overlap():

@@ -72,7 +72,9 @@
 - [x] Run a bounded CPU replay on fd4/fd5 using full cache/mask inputs and correctly oriented newly exported local Viewer manifests as necessary. Freeze one explicitly illustrative parameter setting before results, do not tune to claim success. fd6–fd8 remain unscored without locked human reference boundaries.
 - [x] Retain JSON, PNG, command/status, timings and failure/partial reasons. Clearly distinguish algorithm smoke from manual agreement and physical accuracy. No new inference or deployment.
 - [x] Document executable commands, exact status semantics, examples, known missing human reference validation, and why production OBB was not promoted/replaced.
-- [ ] Independent final code/spec/evidence review; root fixes and targeted retests, then concise handoff with runnable artifact links. No push/merge/deploy without a new request.
+- [x] Independent final code/spec/evidence review; root fixes and targeted retests, then concise handoff with runnable artifact links. No push/merge/deploy without a new request.
+
+Tasks 1–4 are complete for the independent candidate and comparison workflow. Final code/spec/evidence review passed; its metadata-parity finding was fixed and the exchange tests passed (44 cases), followed by scoped reviewer confirmation. fd4/fd5 remain incomplete, fragmented candidates: whole-heap accuracy has not passed, no human-reference agreement is established, and production OBB is not replaced. See `docs/manual_stack_outline.md` and `runtime/manual-outline-20261013/RESULTS.md` in the parent workspace for commands, screenshots and retained failures.
 
 ## Review focus
 
