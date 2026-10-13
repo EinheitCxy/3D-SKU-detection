@@ -44,6 +44,12 @@ FRAME_OFFSET_WINDOW_M = 0.080
 FRAME_OFFSET_MIN_POINTS = 1_000
 FRAME_OFFSET_MODE_WIDTH_M = 0.024
 FRAME_OFFSET_REFINE_M = 0.012
+SUPPORT_NORMAL_BAND_M = 0.100
+SUPPORT_NORMAL_RANSAC_THRESHOLD_M = 0.012
+SUPPORT_NORMAL_MIN_INLIERS = 10_000
+SUPPORT_NORMAL_MAX_ANGLE_DEG = 3.0
+SUPPORT_NORMAL_SEED = 29
+SUPPORT_NORMAL_SAMPLE_MAX = 50_000
 
 
 def _horizontal_support_mask(normals: np.ndarray, up: np.ndarray) -> np.ndarray:
@@ -52,6 +58,88 @@ def _horizontal_support_mask(normals: np.ndarray, up: np.ndarray) -> np.ndarray:
     agreement = np.zeros(len(normals))
     agreement[valid] = np.abs(normals[valid] @ up) / lengths[valid]
     return valid & (agreement >= np.cos(np.deg2rad(HORIZONTAL_NORMAL_TOLERANCE_DEG)))
+
+
+def _plane_axes(normal: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    reference_axis = np.eye(3)[int(np.argmin(np.abs(normal)))]
+    u_axis = np.cross(normal, reference_axis)
+    u_axis /= np.linalg.norm(u_axis)
+    return u_axis, np.cross(normal, u_axis)
+
+
+def refine_support_normal(
+    plane: SupportPlane,
+    background_points: np.ndarray,
+    background_normals: np.ndarray,
+    frame_ids: np.ndarray,
+) -> tuple[SupportPlane, dict[str, object]]:
+    """Refit the selected support normal within a broad shared-up search band.
+
+    Keep its selection point and statistics; those statistics describe the
+    direction-constrained selection, not residuals against the refined normal.
+    Refinement diagnostics remain separate. The 100-mm band permits depth noise
+    and modest tilt; disagreement above 3 degrees rejects the shared orientation.
+    """
+    points = np.asarray(background_points, dtype=float)
+    frames = np.asarray(frame_ids)
+    up = plane.normal
+    band = _horizontal_support_mask(np.asarray(background_normals, dtype=float), up)
+    band &= np.abs((points - plane.point) @ up) <= SUPPORT_NORMAL_BAND_M
+    diagnostics: dict[str, object] = {
+        "method": "seeded_ransac_svd",
+        "band_m": SUPPORT_NORMAL_BAND_M,
+        "ransac_threshold_m": SUPPORT_NORMAL_RANSAC_THRESHOLD_M,
+        "min_inliers": SUPPORT_NORMAL_MIN_INLIERS,
+        "max_angle_deg": SUPPORT_NORMAL_MAX_ANGLE_DEG,
+        "seed": SUPPORT_NORMAL_SEED,
+        "sample_max": SUPPORT_NORMAL_SAMPLE_MAX,
+        "horizontal_normal_tolerance_deg": HORIZONTAL_NORMAL_TOLERANCE_DEG,
+        "band_point_count": int(np.count_nonzero(band)),
+    }
+    if np.count_nonzero(band) < SUPPORT_NORMAL_MIN_INLIERS:
+        raise SupportPlaneSelectionError(
+            "support normal refinement has too few band points", diagnostics
+        )
+    sampled, _ = _frame_balanced_subsample(
+        points[band], frames[band], maximum=SUPPORT_NORMAL_SAMPLE_MAX
+    )
+    diagnostics["sample_count"] = int(len(sampled))
+    try:
+        ransac = _adaptive_ransac_plane(
+            sampled, threshold_m=SUPPORT_NORMAL_RANSAC_THRESHOLD_M,
+            seed=SUPPORT_NORMAL_SEED,
+        )
+    except FootprintError as error:
+        raise SupportPlaneSelectionError(str(error), diagnostics) from error
+    inliers = sampled[
+        np.abs((sampled - ransac.point) @ ransac.normal)
+        <= SUPPORT_NORMAL_RANSAC_THRESHOLD_M
+    ]
+    diagnostics["inlier_count"] = int(len(inliers))
+    if len(inliers) < SUPPORT_NORMAL_MIN_INLIERS:
+        raise SupportPlaneSelectionError(
+            "support normal refinement has too few inliers", diagnostics
+        )
+    _, normal = _fit_plane_svd(inliers)
+    if normal @ up < 0:
+        normal = -normal
+    angle = float(np.degrees(np.arccos(np.clip(normal @ up, -1.0, 1.0))))
+    diagnostics["angle_to_shared_up_deg"] = angle
+    diagnostics["normal"] = normal.tolist()
+    if angle > SUPPORT_NORMAL_MAX_ANGLE_DEG:
+        raise SupportPlaneSelectionError(
+            "support normal disagrees with the shared up direction", diagnostics
+        )
+    u_axis, v_axis = _plane_axes(normal)
+    return SupportPlane(
+        point=plane.point,
+        normal=normal,
+        u_axis=u_axis,
+        v_axis=v_axis,
+        inlier_count=plane.inlier_count,
+        inlier_fraction=plane.inlier_fraction,
+        p95_residual_m=plane.p95_residual_m,
+    ), diagnostics
 
 
 def estimate_frame_support_offsets(
@@ -412,7 +500,6 @@ def select_support_plane_with_direction(
         above_fraction = float(np.mean(above_fractions))
         gates = {
             "inlier_count": count >= 10_000,
-            "p95_residual": plane.p95_residual_m <= 0.010,
             "frame_span": frame_count >= 3 and frame_fraction >= 0.30,
             "in_plane_span": bool(np.all(spans >= 0.30)),
             "hull_area": hull.area >= 0.25,

@@ -349,6 +349,14 @@ def _run_and_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, 
     return json.loads(Path(result["report_path"]).read_text())
 
 
+def test_stage_reports_support_normal_refinement(monkeypatch, tmp_path):
+    report = _run_and_load(tmp_path, monkeypatch)
+    refinement = report["plane"]["normal_refinement"]
+    assert refinement["angle_to_shared_up_deg"] < 0.01
+    assert refinement["max_angle_deg"] == 3.0
+    assert report["plane"]["selected"]["statistics_basis"] == "direction_constrained_selection"
+
+
 def test_stage_records_per_frame_support_offsets(monkeypatch, tmp_path):
     # The generic fixture's fitted plane tilts slightly toward its low cartons.
     # Pin its known synthetic floor so the zero-offset expectation is exact.

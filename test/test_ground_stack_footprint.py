@@ -17,11 +17,41 @@ from utils.ground_stack_footprint import (
     fused_carton_footprint,
     estimate_frame_support_offsets,
     project_to_plane,
+    refine_support_normal,
     select_footprint_component,
     select_support_plane,
     union_footprints,
     voxel_balance_projected,
 )
+
+
+def _tilted_floor(tilt_deg: float):
+    x, y = np.meshgrid(np.linspace(-1.0, 1.0, 200), np.linspace(-1.0, 1.0, 200))
+    tilt = np.deg2rad(tilt_deg)
+    normal = np.array([0.0, -np.sin(tilt), np.cos(tilt)])
+    points = np.column_stack([x.ravel(), y.ravel(), y.ravel() * np.tan(tilt)])
+    return points, np.tile(normal, (len(points), 1)), np.arange(len(points)) % 3, normal
+
+
+def test_support_normal_refinement_recovers_tilted_floor():
+    points, normals, frames, true_normal = _tilted_floor(2.0)
+    original = horizontal_support_plane()
+    refined, diagnostics = refine_support_normal(original, points, normals, frames)
+    assert np.degrees(np.arccos(min(1.0, refined.normal @ true_normal))) < 0.01
+    assert diagnostics["angle_to_shared_up_deg"] == pytest.approx(2.0, abs=0.01)
+    assert abs(refined.u_axis @ refined.normal) < 1e-12
+    assert abs(refined.v_axis @ refined.normal) < 1e-12
+    assert refined.point is original.point
+    assert diagnostics["seed"] == 29
+    assert diagnostics["sample_max"] == 50_000
+    assert diagnostics["horizontal_normal_tolerance_deg"] == 15.0
+
+
+def test_support_normal_refinement_rejects_large_disagreement():
+    points, normals, frames, _ = _tilted_floor(5.0)
+    with pytest.raises(SupportPlaneSelectionError, match="disagrees") as raised:
+        refine_support_normal(horizontal_support_plane(), points, normals, frames)
+    assert raised.value.diagnostics["angle_to_shared_up_deg"] == pytest.approx(5.0)
 
 
 def _horizontal_floor(height, image_id, count=2_000, seed=0):

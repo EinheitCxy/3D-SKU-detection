@@ -48,6 +48,7 @@ from utils.ground_stack_footprint import (
     SupportPlaneSelectionError,
     fused_carton_footprint,
     estimate_frame_support_offsets,
+    refine_support_normal,
     select_support_plane_with_direction,
     union_footprints,
 )
@@ -243,6 +244,17 @@ def run_da3_footprint(
         except SupportPlaneSelectionError as error:
             report["plane"] = {"selected": None, **error.diagnostics}
             raise
+        try:
+            plane, normal_refinement = refine_support_normal(
+                plane, background_points, background_normals, background_frames
+            )
+        except SupportPlaneSelectionError as error:
+            report["plane"] = {
+                "selected": None,
+                **plane_diagnostics,
+                "normal_refinement": error.diagnostics,
+            }
+            raise
         report["plane"] = {
             "selected": {
                 "point": plane.point.tolist(),
@@ -252,8 +264,10 @@ def run_da3_footprint(
                 "inlier_count": plane.inlier_count,
                 "inlier_fraction": plane.inlier_fraction,
                 "p95_residual_m": plane.p95_residual_m,
+                "statistics_basis": "direction_constrained_selection",
             },
             **plane_diagnostics,
+            "normal_refinement": normal_refinement,
         }
         frame_offsets, offset_diagnostics = estimate_frame_support_offsets(
             background_points,

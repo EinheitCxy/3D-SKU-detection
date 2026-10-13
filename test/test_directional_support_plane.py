@@ -13,6 +13,13 @@ def grid(width=1., length=1., height=0.):
     return np.column_stack([x.ravel(), y.ravel(), np.full(x.size, height)])
 
 
+def test_direction_candidates_have_no_tautological_residual_gate():
+    _, diagnostics = select(grid())
+    candidate = diagnostics["candidates"][0]
+    assert "p95_residual" not in candidate["gates"]
+    assert "p95_residual_m" in candidate
+
+
 def select(points, normals=None, frames=None, objects=None, up=None):
     return select_support_plane_with_direction(
         points,
