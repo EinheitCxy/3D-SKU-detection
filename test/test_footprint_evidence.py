@@ -798,3 +798,46 @@ def test_nonfinite_observation_geometry_math_returns_failed_evidence(tmp_path):
 
     assert evidence["status"] == "failed_evidence"
     json.dumps(evidence, allow_nan=False)
+
+
+def test_mask_robustness_uses_only_formally_included_ids():
+    fields = _formal_only_geometry_fields(80, 80)
+    geometry = _GeometryCache(
+        frame_ids=np.array([0]),
+        world_points=fields["world_points"],
+        confidence=fields["world_points_conf"],
+    )
+    included = _observation(0, np.ones((80, 80), dtype=bool))
+    excluded = dataclasses.replace(
+        included,
+        global_id="2",
+        object_id=1,
+        processed_mask=np.zeros((80, 80), dtype=bool),
+    )
+    area, _ = _fixed_plane_variant_area(
+        geometry, [included, excluded], _plane(), _snapshot(), "original"
+    )
+    expected_area, _ = _fixed_plane_variant_area(
+        geometry, [included], _plane(), _snapshot(), "original"
+    )
+    assert area == expected_area
+
+
+@pytest.mark.parametrize("has_formal_ids", [False, True])
+def test_mask_robustness_requires_formally_included_ids(has_formal_ids):
+    fields = _formal_only_geometry_fields(80, 80)
+    geometry = _GeometryCache(
+        frame_ids=np.array([0]),
+        world_points=fields["world_points"],
+        confidence=fields["world_points_conf"],
+    )
+    snapshot = (
+        _snapshot() if has_formal_ids else dataclasses.replace(_snapshot(), polygons={})
+    )
+    reason = (
+        "missing one or more global ids"
+        if has_formal_ids
+        else "has no formally included global ids"
+    )
+    with pytest.raises(FootprintError, match=reason):
+        _fixed_plane_variant_area(geometry, [], _plane(), snapshot, "original")

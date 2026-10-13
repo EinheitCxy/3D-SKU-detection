@@ -1,8 +1,10 @@
 import numpy as np
 import pytest
+from shapely.geometry import box
 
 import utils.ground_stack_footprint as footprint_geometry
 from utils.ground_stack_footprint import (
+    classify_excluded_coverage,
     FootprintError,
     ObservationPoints,
     RansacOutcome,
@@ -747,3 +749,82 @@ def test_global_id_with_only_weak_observations_is_rejected():
     assert raised.value.diagnostics["excluded_observations"] == [
         {"image_id": 0, "valid_point_count": 10}
     ]
+
+
+def _front_face(x0: float, x1: float) -> np.ndarray:
+    return np.column_stack(
+        [np.linspace(x0, x1, 200), np.full(200, 0.5), np.linspace(0.05, 0.3, 200)]
+    )
+
+
+def test_excluded_coverage_classifies_inside_outside_and_empty():
+    plane = horizontal_support_plane()
+    union = box(0.0, 0.0, 1.0, 1.0)
+    inside = classify_excluded_coverage(
+        [ObservationPoints(0, _front_face(0.2, 0.8))], plane, {0: 0.0}, union
+    )
+    outside = classify_excluded_coverage(
+        [ObservationPoints(0, _front_face(1.6, 1.9))], plane, {0: 0.0}, union
+    )
+    empty = classify_excluded_coverage(
+        [ObservationPoints(0, np.empty((0, 3)))], plane, {0: 0.0}, union
+    )
+    assert inside["status"] == "covered" and inside["covered_fraction"] == 1.0
+    assert outside["status"] == "uncovered" and outside["covered_fraction"] == 0.0
+    assert empty == {
+        "status": "unverifiable",
+        "covered_fraction": None,
+        "projected_point_count": 0,
+    }
+
+
+@pytest.mark.parametrize("covered_count,status", [(95, "covered"), (94, "uncovered")])
+def test_excluded_coverage_fraction_boundary(covered_count, status):
+    points = np.vstack(
+        [
+            _front_face(0.2, 0.8)[:covered_count],
+            _front_face(1.6, 1.9)[: 100 - covered_count],
+        ]
+    )
+    result = classify_excluded_coverage(
+        [ObservationPoints(0, points)],
+        horizontal_support_plane(),
+        {0: 0.0},
+        box(0, 0, 1, 1),
+    )
+    assert result == {
+        "status": status,
+        "covered_fraction": covered_count / 100,
+        "projected_point_count": 100,
+    }
+
+
+@pytest.mark.parametrize("distance,status", [(0.019, "covered"), (0.021, "uncovered")])
+def test_excluded_coverage_buffer_boundary(distance, status):
+    points = np.array([[1 + distance, 0.5, 0.1]])
+    result = classify_excluded_coverage(
+        [ObservationPoints(0, points)],
+        horizontal_support_plane(),
+        {0: 0.0},
+        box(0, 0, 1, 1),
+    )
+    assert result["status"] == status
+    assert result["projected_point_count"] == 1
+
+
+def test_excluded_coverage_retains_weak_observations_and_all_components():
+    # Six remote points must count even when their observation cannot fit an OBB.
+    result = classify_excluded_coverage(
+        [
+            ObservationPoints(0, _front_face(0.2, 0.8)[:94]),
+            ObservationPoints(1, _front_face(1.6, 1.9)[:6]),
+        ],
+        horizontal_support_plane(),
+        {0: 0.0, 1: 0.0},
+        box(0, 0, 1, 1),
+    )
+    assert result == {
+        "status": "uncovered",
+        "covered_fraction": 0.94,
+        "projected_point_count": 100,
+    }

@@ -152,7 +152,7 @@ def _put_carton(
 
 
 def make_metric_fixture(
-    tmp_path: Path, mask_factory=None
+    tmp_path: Path, mask_factory=None, extra_face=None
 ) -> tuple[Path, Path, list[Path]]:
     dataset = tmp_path / "metric_dataset"
     images = dataset / "images"
@@ -169,6 +169,8 @@ def make_metric_fixture(
         1: [[18, 22, 82, 102]],
         2: [[62, 24, 126, 104]],
     }
+    if extra_face is not None:
+        boxes[0].append(extra_face[0])
     input_paths: list[Path] = []
     for frame, frame_boxes in boxes.items():
         image_path = images / f"{frame}.png"
@@ -189,6 +191,8 @@ def make_metric_fixture(
     _put_carton(world_points, 0, boxes[0][0], (0.0, 1.0), 0.02)
     _put_carton(world_points, 1, boxes[1][0], (0.0, 1.0), 0.03)
     _put_carton(world_points, 2, boxes[2][0], (0.5, 1.5), 0.80)
+    if extra_face is not None:
+        _put_vertical_face(world_points, 0, *extra_face)
     source_paths = [images / f"{frame}.png" for frame in range(3)]
     np.savez_compressed(
         output / "da3_cache" / "predictions.npz",
@@ -221,6 +225,8 @@ def make_metric_fixture(
         ],
         "2": [{"image_id": 2, "object_id": 0, "bbox": boxes[2][0]}],
     }
+    if extra_face is not None:
+        mapping["3"] = [{"image_id": 0, "object_id": 1, "bbox": extra_face[0]}]
     mapping_path = output / "dedup_detections" / "global_mapping.json"
     mapping_path.write_text(json.dumps(mapping))
     input_paths.extend([output / "da3_cache" / "predictions.npz", mapping_path])
@@ -711,6 +717,8 @@ def test_stage_rejects_total_when_one_global_id_has_no_mask(monkeypatch, tmp_pat
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert "empty" in report["per_global_id"]["2"]["observations"][0]["rejection"]
+    assert report["coverage"]["unverifiable_excluded_ids"] == ["2"]
+    assert report["per_global_id"]["2"]["coverage"]["projected_point_count"] == 0
     geojson = json.loads(
         (Path(result["report_path"]).parent / "footprints.geojson").read_text()
     )
@@ -1524,3 +1532,55 @@ def test_programming_key_error_is_not_reported_as_a_measurement_rejection(
     monkeypatch.setattr(stage, "fused_carton_footprint", broken)
     with pytest.raises(KeyError, match="programming error"):
         stage.run_da3_footprint(str(dataset), save_root)
+
+
+def _put_vertical_face(
+    world_points: np.ndarray,
+    frame: int,
+    bbox: list[int],
+    x_range: tuple[float, float],
+    depth: float,
+) -> None:
+    """A front face with no observable depth: it projects to a line."""
+    x1, y1, x2, y2 = bbox
+    heights = np.linspace(0.30, 0.05, y2 - y1)
+    x_values = np.linspace(*x_range, x2 - x1)
+    x_grid, height_grid = np.meshgrid(x_values, heights, indexing="xy")
+    world_points[frame, y1:y2, x1:x2] = np.stack(
+        [x_grid, 1.0 - height_grid, np.full_like(x_grid, 3.0 + depth)], axis=-1
+    )
+
+
+@pytest.mark.parametrize("x_range,success", [((0.2, 0.8), True), ((1.6, 1.9), False)])
+def test_excluded_front_face_coverage_gate(tmp_path, x_range, success):
+    dataset, save_root, _ = make_metric_fixture(
+        tmp_path, extra_face=([88, 30, 120, 70], x_range, 0.5)
+    )
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+    assert result["success"] is success
+    face = report["per_global_id"]["3"]
+    assert face["status"] == "excluded"
+    assert face["coverage"]["status"] == ("covered" if success else "uncovered")
+    assert report["coverage"]["included_count"] == 2
+    if success:
+        assert report["value_m2"] == pytest.approx(1.5, abs=0.03)
+    else:
+        assert report["value_m2"] is None
+        assert report["coverage"]["uncovered_excluded_ids"] == ["3"]
+        assert "not covered" in report["rejection_reason"]
+
+
+def test_excluded_front_face_with_no_included_footprint_rejects(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+
+    def reject_footprint(*args, **kwargs):
+        raise stage.FootprintError("fixture has no trusted OBB")
+
+    monkeypatch.setattr(stage, "fused_carton_footprint", reject_footprint)
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+    assert result["success"] is False
+    assert report["value_m2"] is None
+    assert report["rejection_reason"] == "no global id produced a trusted footprint"
+    assert all(item["status"] == "excluded" for item in report["per_global_id"].values())

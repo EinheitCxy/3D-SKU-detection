@@ -43,6 +43,9 @@ from utils.footprint_evidence import (
     build_shadow_evidence,
 )
 from utils.ground_stack_footprint import (
+    COVERAGE_BUFFER_M,
+    COVERAGE_MIN_FRACTION,
+    classify_excluded_coverage,
     FootprintError,
     ObservationPoints,
     SupportPlaneSelectionError,
@@ -280,6 +283,7 @@ def run_da3_footprint(
         stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
         active_stage = "per_id_obb_union"
         active_stage_started_at = time.monotonic()
+        excluded_ids: list[str] = []
         for global_id, observations in masked_observations.items():
             per_id = report["per_global_id"][global_id]
             try:
@@ -287,20 +291,50 @@ def run_da3_footprint(
                     observations, plane, frame_offsets_m=frame_offsets
                 )
             except FootprintError as error:
+                per_id["status"] = "excluded"
+                excluded_ids.append(global_id)
                 per_id["rejection"] = str(error)
                 per_id.update(error.diagnostics)
                 continue
+            per_id["status"] = "included"
             per_id.update(metrics)
             polygons[global_id] = polygon
-        missing = sorted(set(masked_observations) - set(polygons), key=_global_id_key)
-        if missing:
-            raise FootprintStageError(
-                "one or more global ids were rejected: " + ", ".join(missing)
-            )
+        if not polygons:
+            raise FootprintStageError("no global id produced a trusted footprint")
         precise_polygons = {
             key: set_precision(polygon, 0.0001) for key, polygon in polygons.items()
         }
         union = union_footprints(list(precise_polygons.values()))
+        coverage = {
+            global_id: classify_excluded_coverage(
+                masked_observations[global_id], plane, frame_offsets, union
+            )
+            for global_id in excluded_ids
+        }
+        for global_id, item in coverage.items():
+            report["per_global_id"][global_id]["coverage"] = item
+        uncovered = sorted(
+            (key for key, item in coverage.items() if item["status"] == "uncovered"),
+            key=_global_id_key,
+        )
+        unverifiable = sorted(
+            (key for key, item in coverage.items() if item["status"] == "unverifiable"),
+            key=_global_id_key,
+        )
+        report["coverage"] = {
+            "included_count": len(polygons),
+            "excluded_count": len(excluded_ids),
+            "covered_excluded_count": len(excluded_ids) - len(uncovered) - len(unverifiable),
+            "uncovered_excluded_ids": uncovered,
+            "unverifiable_excluded_ids": unverifiable,
+            "buffer_m": COVERAGE_BUFFER_M,
+            "min_covered_fraction": COVERAGE_MIN_FRACTION,
+        }
+        if uncovered or unverifiable:
+            raise FootprintStageError(
+                "excluded global ids are not covered by included footprints: "
+                + ", ".join(uncovered + unverifiable)
+            )
         coarse_union = unary_union(
             [set_precision(polygon, 0.001) for polygon in polygons.values()]
         )

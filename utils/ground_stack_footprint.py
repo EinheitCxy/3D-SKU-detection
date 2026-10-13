@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Mapping, Sequence
 
 import numpy as np
+import shapely
 from shapely.geometry import MultiPoint, MultiPolygon, Polygon
 from shapely.ops import unary_union
 from sklearn.cluster import DBSCAN
@@ -33,6 +34,9 @@ class SupportPlane:
     inlier_fraction: float
     p95_residual_m: float
 
+
+COVERAGE_BUFFER_M = 0.020
+COVERAGE_MIN_FRACTION = 0.95
 
 OBSERVATION_MIN_POINTS = 32
 FUSED_MIN_POINTS = 64
@@ -589,6 +593,29 @@ def elevated_projected_points(
         parts.append(points[heights > ELEVATION_THRESHOLD_M])
     elevated = np.concatenate(parts) if parts else np.empty((0, 3))
     return project_to_plane(elevated, plane)
+
+
+def classify_excluded_coverage(
+    observations: Sequence[ObservationPoints],
+    plane: SupportPlane,
+    frame_offsets_m: Mapping[int, float],
+    union: Polygon | MultiPolygon,
+) -> dict[str, object]:
+    """Classify every visible elevated point, including weak observations/components."""
+    projected = elevated_projected_points(observations, plane, frame_offsets_m)
+    if not len(projected):
+        return {
+            "status": "unverifiable",
+            "covered_fraction": None,
+            "projected_point_count": 0,
+        }
+    covered = shapely.covers(union.buffer(COVERAGE_BUFFER_M), shapely.points(projected))
+    fraction = float(np.mean(covered))
+    return {
+        "status": "covered" if fraction >= COVERAGE_MIN_FRACTION else "uncovered",
+        "covered_fraction": fraction,
+        "projected_point_count": int(len(projected)),
+    }
 
 
 def fused_carton_footprint(

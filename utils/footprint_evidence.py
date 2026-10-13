@@ -334,15 +334,11 @@ def _fixed_plane_variant_area(
             }
         )
 
-    expected_ids = {
-        str(observation.global_id) for observation in observations
-    } | {str(global_id) for global_id in formal_snapshot.polygons}
+    expected_ids = {str(global_id) for global_id in formal_snapshot.polygons}
     if not expected_ids:
-        raise FootprintError(f"{variant} robustness has no global ids")
-    if set(grouped) != expected_ids:
-        raise FootprintError(
-            f"{variant} robustness is missing one or more global ids"
-        )
+        raise FootprintError(f"{variant} robustness has no formally included global ids")
+    if not expected_ids <= set(grouped):
+        raise FootprintError(f"{variant} robustness is missing one or more global ids")
     polygons: list[Polygon] = []
     for global_id in sorted(expected_ids, key=_global_id_key):
         group = grouped[global_id]
