@@ -1,6 +1,7 @@
 import dataclasses
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -8,12 +9,17 @@ import pytest
 from shapely.geometry import box
 
 from utils.footprint_evidence import (
+    EvidenceComputationError,
     EvidenceObservation,
     FormalSnapshot,
+    _GeometryCache,
+    _PreparedObservation,
+    _fixed_plane_polygon,
+    _fixed_plane_variant_area,
     _sample_reprojection_indices,
     build_shadow_evidence,
 )
-from utils.ground_stack_footprint import SupportPlane
+from utils.ground_stack_footprint import FootprintError, SupportPlane
 
 
 _ZERO_OFFSETS = {image_id: 0.0 for image_id in range(100)}
@@ -113,6 +119,75 @@ def _observation(
         processed_mask=mask,
         valid_mask=np.ones_like(mask, dtype=bool) if valid_mask is None else valid_mask,
     )
+
+
+def _numeric_guard_fixture(kind: str, extreme_count: int):
+    plane = _plane()
+    if kind == "height":
+        normal = np.full(3, 1.0 / np.sqrt(3.0))
+        u_axis = np.array([1.0, -1.0, 0.0]) / np.sqrt(2.0)
+        plane = dataclasses.replace(
+            plane, normal=normal, u_axis=u_axis, v_axis=np.cross(normal, u_axis)
+        )
+        extreme = np.full(3, 1.7e308)
+    else:
+        extreme = np.array([1e17, 1.0, 0.2])
+    x, y = np.meshgrid(np.linspace(0.0, 1.0, 80), np.linspace(0.0, 1.0, 80))
+    strong = (
+        x[..., None] * plane.u_axis
+        + y[..., None] * plane.v_axis
+        + 0.2 * plane.normal
+    )
+    world_points = np.stack([strong, np.broadcast_to(extreme, strong.shape)])
+    masks = [np.ones((80, 80), dtype=bool), np.zeros((80, 80), dtype=bool)]
+    masks[1].flat[:extreme_count] = True
+    observations = [_observation(index, mask) for index, mask in enumerate(masks)]
+    geometry = _GeometryCache(
+        frame_ids=np.array([0, 1]),
+        world_points=world_points,
+        confidence=np.ones((2, 80, 80)),
+    )
+    prepared = [
+        _PreparedObservation(item, index, mask, mask, mask)
+        for index, (item, mask) in enumerate(zip(observations, masks))
+    ]
+    return plane, geometry, observations, prepared
+
+
+def _numeric_guard_area(helper, plane, geometry, observations, prepared):
+    if helper == "loo":
+        camera = SimpleNamespace(
+            world_points=geometry.world_points, frame_ids=geometry.frame_ids
+        )
+        return _fixed_plane_polygon(camera, prepared, plane, _ZERO_OFFSETS).area
+    snapshot = dataclasses.replace(_snapshot(), plane=plane)
+    area, _ = _fixed_plane_variant_area(
+        geometry, observations, plane, snapshot, "original"
+    )
+    return area
+
+
+@pytest.mark.parametrize(
+    "helper, kind", [("loo", "int64"), ("loo", "height"), ("mask", "height")]
+)
+@pytest.mark.parametrize("extreme_count", [10, 32])
+def test_evidence_numeric_guards_exclude_weak_observations_only(
+    helper, kind, extreme_count
+):
+    fixture = _numeric_guard_fixture(kind, extreme_count)
+    if extreme_count < 32:
+        assert _numeric_guard_area(helper, *fixture) == pytest.approx(1.0)
+    else:
+        reason = "integer representation" if kind == "int64" else "support-plane height"
+        with pytest.raises(EvidenceComputationError, match=reason):
+            _numeric_guard_area(helper, *fixture)
+
+
+@pytest.mark.parametrize("helper", ["loo", "mask"])
+def test_evidence_numeric_guards_reject_all_weak_observations(helper):
+    plane, geometry, observations, prepared = _numeric_guard_fixture("int64", 10)
+    with pytest.raises(FootprintError, match="no observation with at least 32"):
+        _numeric_guard_area(helper, plane, geometry, observations[1:], prepared[1:])
 
 
 def test_evidence_observation_is_processed_space_only() -> None:

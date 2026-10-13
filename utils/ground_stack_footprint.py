@@ -444,22 +444,30 @@ def fused_carton_footprint(
     *,
     frame_offsets_m: Mapping[int, float],
 ) -> tuple[Polygon, dict[str, object]]:
-    """Fuse every observation of one global ID into its support-plane OBB.
+    """Fuse usable observations of one global ID into its support-plane OBB.
 
     Shared by the formal stage and both shadow-evidence paths. A raised
     FootprintError carries the metrics computed before the failure.
     """
     if not observations:
         raise FootprintError("global id has no observations")
-    if any(len(item.points) < OBSERVATION_MIN_POINTS for item in observations):
-        raise FootprintError("observation has fewer than 32 valid masked points")
-    fused = np.concatenate([np.asarray(item.points, dtype=float) for item in observations])
+    usable = [item for item in observations if len(item.points) >= OBSERVATION_MIN_POINTS]
     metrics: dict[str, object] = {
-        "observations_used": len(observations),
-        "height_median_m": float(np.median((fused - plane.point) @ plane.normal)),
+        "observations_used": len(usable),
+        "excluded_observations": [
+            {"image_id": int(item.image_id), "valid_point_count": int(len(item.points))}
+            for item in observations
+            if len(item.points) < OBSERVATION_MIN_POINTS
+        ],
     }
+    if not usable:
+        raise FootprintError(
+            "global id has no observation with at least 32 valid masked points", metrics
+        )
+    fused = np.concatenate([np.asarray(item.points, dtype=float) for item in usable])
+    metrics["height_median_m"] = float(np.median((fused - plane.point) @ plane.normal))
     try:
-        projected = elevated_projected_points(observations, plane, frame_offsets_m)
+        projected = elevated_projected_points(usable, plane, frame_offsets_m)
     except FootprintError as error:
         raise FootprintError(str(error), {**metrics, **error.diagnostics}) from error
     metrics["elevated_point_count"] = int(len(projected))

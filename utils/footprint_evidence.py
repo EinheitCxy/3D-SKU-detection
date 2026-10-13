@@ -19,6 +19,7 @@ from shapely import set_precision
 from shapely.geometry import MultiPolygon, Polygon
 
 from utils.ground_stack_footprint import (
+    OBSERVATION_MIN_POINTS,
     FootprintError,
     ObservationPoints,
     SupportPlane,
@@ -322,10 +323,6 @@ def _fixed_plane_variant_area(
             & _qualified_geometry_grid(geometry, frame_index)
         )
         points = geometry.world_points[frame_index][qualified]
-        if len(points) < 32:
-            raise FootprintError(
-                f"{variant} observation has fewer than 32 valid masked points"
-            )
         global_id = str(observation.global_id)
         grouped.setdefault(global_id, []).append(ObservationPoints(image_id, points))
         mask_counts.append(
@@ -348,7 +345,12 @@ def _fixed_plane_variant_area(
     polygons: list[Polygon] = []
     for global_id in sorted(expected_ids, key=_global_id_key):
         group = grouped[global_id]
-        fused = np.concatenate([item.points for item in group])
+        usable = [item for item in group if len(item.points) >= OBSERVATION_MIN_POINTS]
+        fused = (
+            np.concatenate([item.points for item in usable])
+            if usable
+            else np.empty((0, 3))
+        )
         try:
             with np.errstate(over="raise", invalid="raise"):
                 heights = (fused - plane.point) @ plane.normal
@@ -954,12 +956,13 @@ def _fixed_plane_polygon(
     parts: list[ObservationPoints] = []
     for item in observations:
         points = camera.world_points[item.frame_index][item.qualified_mask]
-        if len(points) < 32:
-            raise FootprintError(
-                "leave-one-out observation has fewer than 32 valid masked points"
-            )
         parts.append(ObservationPoints(int(camera.frame_ids[item.frame_index]), points))
-    fused = np.concatenate([part.points for part in parts])
+    usable = [part for part in parts if len(part.points) >= OBSERVATION_MIN_POINTS]
+    fused = (
+        np.concatenate([part.points for part in usable])
+        if usable
+        else np.empty((0, 3))
+    )
     try:
         with np.errstate(over="raise", invalid="raise"):
             heights = (fused - plane.point) @ plane.normal
@@ -973,7 +976,7 @@ def _fixed_plane_polygon(
         label="leave-one-out support-plane heights",
     )
     elevated = fused[heights > 0.015]
-    if len(elevated) < 64:
+    if usable and len(elevated) < 64:
         raise FootprintError(
             "leave-one-out global id has fewer than 64 elevated points"
         )

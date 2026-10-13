@@ -616,3 +616,28 @@ def test_missing_frame_offset_is_a_contract_error():
             horizontal_support_plane(),
             frame_offsets_m={},
         )
+
+
+def test_weak_observation_is_excluded_instead_of_rejecting_the_global_id():
+    points = carton_points(x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2)
+    polygon, metrics = fused_carton_footprint(
+        [ObservationPoints(0, points), ObservationPoints(1, points[:10])],
+        horizontal_support_plane(),
+        frame_offsets_m={0: 0.0, 1: 0.0},
+    )
+    assert polygon.area == pytest.approx(1.0)
+    assert metrics["observations_used"] == 1
+    assert metrics["excluded_observations"] == [{"image_id": 1, "valid_point_count": 10}]
+
+
+def test_global_id_with_only_weak_observations_is_rejected():
+    points = carton_points(x_range=(0.0, 1.0), y_range=(0.0, 1.0), height=0.2)
+    with pytest.raises(FootprintError, match="no observation with at least 32") as raised:
+        fused_carton_footprint(
+            [ObservationPoints(0, points[:10])],
+            horizontal_support_plane(),
+            frame_offsets_m={0: 0.0},
+        )
+    assert raised.value.diagnostics["excluded_observations"] == [
+        {"image_id": 0, "valid_point_count": 10}
+    ]

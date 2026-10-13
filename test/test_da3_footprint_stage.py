@@ -254,6 +254,31 @@ def masks_with_one_empty(
     return masks
 
 
+def masks_with_tiny_frame_one(
+    image_path: str, bboxes: list[list[float]], *args: object
+) -> list[np.ndarray]:
+    masks = exact_bbox_masks(image_path, bboxes, *args)
+    if Path(image_path).stem == "1":
+        x1, y1 = int(bboxes[0][0]), int(bboxes[0][1])
+        masks[0][:] = False
+        masks[0][y1 + 10 : y1 + 13, x1 + 10 : x1 + 13] = True
+    return masks
+
+
+def test_weak_second_view_no_longer_rejects_the_measurement(monkeypatch, tmp_path):
+    dataset, save_root, _ = make_metric_fixture(
+        tmp_path, mask_factory=masks_with_tiny_frame_one
+    )
+    result = stage.run_da3_footprint(str(dataset), save_root)
+    report = json.loads(Path(result["report_path"]).read_text())
+    assert result["success"] is True
+    assert report["value_m2"] == pytest.approx(1.5, abs=0.03)
+    assert report["per_global_id"]["1"]["observations_used"] == 1
+    assert report["per_global_id"]["1"]["excluded_observations"] == [
+        {"image_id": 1, "valid_point_count": 9}
+    ]
+
+
 def _publish_v2_masks(dataset: Path, save_root: Path, mask_factory) -> None:
     output = save_root / dataset.name
     with np.load(
