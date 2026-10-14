@@ -464,7 +464,7 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
 
         match_ratio = points_in_bbox / len(projected_points)
 
-        if match_ratio < config.projection_match_threshold:
+        if match_ratio < config.min_hit_ratio:
             continue
 
         # 2. 3D几何验证：从目标检出框采样3D点进行比较

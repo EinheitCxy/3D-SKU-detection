@@ -92,7 +92,6 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         "max_points_per_bbox": args.max_points_per_bbox,
         "confidence_threshold": args.confidence_threshold,
         "min_confident_points": args.min_confident_points,
-        "min_hit_ratio": args.min_hit_ratio,
         "seed": args.seed,
         "quiet_outputs": args.quiet_outputs,
         "save_json": args.save_json and not args.quiet_outputs,
@@ -104,7 +103,7 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         ),
     }
     # 可选 3D 阈值覆盖（网格扫描用，None=用 config 默认）
-    for _k in ("plane_normal_alignment_threshold", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
+    for _k in ("min_hit_ratio", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
         _v = getattr(args, _k, None)
         if _v is not None:
             overrides[_k] = _v
@@ -133,7 +132,7 @@ def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
     cfg.seed = args.seed
     # 可选 3D 阈值覆盖（网格扫描用，None=保留 YAML/默认值）
     # 注：main.py concise 路径总是传 --config，本函数是实际生效路径
-    for _k in ("plane_normal_alignment_threshold", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
+    for _k in ("min_hit_ratio", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
         _v = getattr(args, _k, None)
         if _v is not None:
             setattr(cfg, _k, _v)
@@ -345,9 +344,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--max_points_per_bbox", type=int, default=30, help="每个检测框最大采样点数")
     parser.add_argument("--confidence_threshold", type=float, default=0.0, help="点追踪置信度阈值")
     parser.add_argument("--min_confident_points", type=int, default=10, help="每个bbox的最小置信点数")
-    parser.add_argument("--min_hit_ratio", type=float, default=0.5, help="最小命中率阈值")
-    # 可选 3D 阈值覆盖（网格扫描用，default=None 表示用 config 默认）
-    parser.add_argument("--plane_normal_alignment_threshold", type=float, default=None, help="平面法向对齐阈值(覆盖config)")
+    # 可选阈值覆盖（网格扫描用，default=None 表示用 config 默认）
+    parser.add_argument("--min_hit_ratio", type=float, default=None, help="命中率门槛(3D投影/点追踪共用，覆盖config)")
     parser.add_argument("--max_3d_distance", type=float, default=None, help="3D空间距离阈值(覆盖config)")
     parser.add_argument("--max_depth", type=float, default=None, help="最大深度(覆盖config)")
     parser.add_argument("--depth_confidence_threshold", type=float, default=None, help="深度置信度阈值(覆盖config)")

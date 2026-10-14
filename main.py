@@ -1430,10 +1430,10 @@ def main() -> None:
     )
     # 可选 3D 阈值覆盖（网格扫描用，default=None 表示用 config 默认）
     parser.add_argument(
-        "--plane_normal_alignment_threshold",
+        "--min_hit_ratio",
         type=float,
         default=None,
-        help="平面法向对齐阈值(覆盖config)",
+        help="命中率门槛(3D投影/点追踪共用，覆盖config)",
     )
     parser.add_argument(
         "--max_3d_distance", type=float, default=None, help="3D空间距离阈值(覆盖config)"
@@ -1522,7 +1522,7 @@ def main() -> None:
         # 在精简流水线中，先匹配后评估；匹配透传关键参数
         _ov = {}
         for _k in (
-            "plane_normal_alignment_threshold",
+            "min_hit_ratio",
             "max_3d_distance",
             "max_depth",
             "depth_confidence_threshold",
