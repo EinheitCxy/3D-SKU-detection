@@ -35,6 +35,13 @@ Apache-2.0；权重 `facebook/map-anything` 为 CC-BY-NC 4.0，
 - 默认 viewer bundle：`modules/viewer_web/public/data`。
 - 所有相对 `--save_root` 值按仓库根解析，而非调用终端的当前目录。
 - DA3 runner 默认使用根 `.venv/bin/python`；可用 `DA3_VENV_PYTHON` 覆盖。
+- CLI 每次重建起一个 `da3_runner.py` 子进程（加载模型 → 推理 → 退出）。长驻服务调用
+  `DA33DReconstructor.keep_standby_worker()` 后，同 `(python, model_path, device)` 的重建改用
+  预加载待命 worker（`src/da3_worker.py`）：模型已在 CPU 上加载（不建 CUDA context，0 MiB
+  GPU），请求时搬到 GPU 跑 `da3_runner.main(argv, model=...)`，完成后进程退出释放全部显存；
+  取用时后台预加载下一个待命 worker。失败抛 `DA3WorkerError`（含 traceback / stderr 末尾），
+  不回退一次性路径。
+- `predictions.npz` 用未压缩 `np.savez` 写出（fd12 写入 0.18s/78.5 MiB，压缩版 5.3s/67.6 MiB）。
 
 候选宿主环境必须由以下命令创建，且 `OUTPUT_DIR` 必须不存在。脚本使用冻结的根锁文件，
 不会修改根 `.venv` 或 `Depth-Anything-3/.venv`，然后执行 `uv pip check` 和 DA3/SAM3
