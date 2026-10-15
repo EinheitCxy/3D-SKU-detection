@@ -23,6 +23,7 @@ import logging
 import random
 import sys
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from numbers import Integral
 from pathlib import Path
@@ -78,6 +79,13 @@ _CACHE_BOUNDARY_RNG_LOCK = threading.RLock()
 # Lock guarding _BATCH_QUERY_COUNTER for thread-safe allocation under
 # parallel_refs ThreadPoolExecutor (query_id must be unique across threads).
 _BATCH_QUERY_LOCK = threading.Lock()
+
+# Single-slot prefetch of the next reference frame's SAM3 input image, so its
+# CPU decode+resize overlaps the current frame's GPU forward. A new submit
+# replaces the slot; a consumer only uses it when the content key matches.
+_SAM3_INPUT_PREFETCH_LOCK = threading.Lock()
+_SAM3_INPUT_PREFETCH_EXECUTOR: Optional[ThreadPoolExecutor] = None
+_SAM3_INPUT_PREFETCH_SLOT: Optional[Tuple[Tuple[Any, ...], "Future[Tuple[Any, bool]]"]] = None
 
 
 def _sam3_autocast_context(model: Any, device: str) -> Any:
@@ -802,6 +810,79 @@ def _prepare_sam3_input_image(
         return cropped, True
 
     return img, False
+
+
+# Every transform attribute `_prepare_sam3_input_image` (and
+# `_infer_transform_output_size`) reads.
+_SAM3_INPUT_TRANSFORM_FIELDS = (
+    "target_width",
+    "target_height",
+    "padded_width",
+    "padded_height",
+    "final_width",
+    "final_height",
+    "proc_width",
+    "proc_height",
+    "crop_applied",
+    "crop_start_y",
+    "batch_pad_left",
+    "batch_pad_top",
+)
+
+
+def _sam3_input_prefetch_key(
+    image_path: Path, transform: ImageTransformBase
+) -> Tuple[Any, ...]:
+    """Content key for a prepared SAM3 input: file identity plus transform fields."""
+    resolved = Path(image_path).resolve()
+    stat = resolved.stat()
+    fields = tuple(
+        (name, getattr(transform, name, None)) for name in _SAM3_INPUT_TRANSFORM_FIELDS
+    )
+    return (str(resolved), stat.st_mtime_ns, stat.st_size, fields)
+
+
+def _load_sam3_input_image(
+    image_path: Path, transform: ImageTransformBase
+) -> Tuple[Any, bool]:
+    from PIL import Image
+
+    with Image.open(image_path) as source_image:
+        return _prepare_sam3_input_image(source_image.convert("RGB"), transform)
+
+
+def _submit_sam3_input_prefetch(
+    image_path: Path, transform: ImageTransformBase
+) -> None:
+    """Prepare a frame's SAM3 input in the background, replacing the slot."""
+    global _SAM3_INPUT_PREFETCH_EXECUTOR, _SAM3_INPUT_PREFETCH_SLOT
+    key = _sam3_input_prefetch_key(image_path, transform)
+    with _SAM3_INPUT_PREFETCH_LOCK:
+        if _SAM3_INPUT_PREFETCH_EXECUTOR is None:
+            _SAM3_INPUT_PREFETCH_EXECUTOR = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="sam3-input-prefetch"
+            )
+        future = _SAM3_INPUT_PREFETCH_EXECUTOR.submit(
+            _load_sam3_input_image, Path(image_path), transform
+        )
+        _SAM3_INPUT_PREFETCH_SLOT = (key, future)
+
+
+def _take_sam3_input_image(
+    image_path: Path, transform: ImageTransformBase
+) -> Tuple[Any, bool]:
+    """Use the prefetched input when its key matches, else prepare inline."""
+    global _SAM3_INPUT_PREFETCH_SLOT
+    key = _sam3_input_prefetch_key(image_path, transform)
+    with _SAM3_INPUT_PREFETCH_LOCK:
+        slot = _SAM3_INPUT_PREFETCH_SLOT
+        future = None
+        if slot is not None and slot[0] == key:
+            future = slot[1]
+            _SAM3_INPUT_PREFETCH_SLOT = None
+    if future is not None:
+        return future.result()
+    return _load_sam3_input_image(image_path, transform)
 
 
 def map_mask_to_final_space(
@@ -2035,8 +2116,13 @@ def get_self_exemplar_masks_for_reference(
     frame_detections: Sequence[dict[str, object]],
     matching_object_ids: Sequence[int],
     transform: ImageTransformBase,
+    prefetch_next: Optional[Tuple[Path, ImageTransformBase]] = None,
 ) -> dict[int, np.ndarray]:
-    """Load or publish a complete processed-space SAM3 frame for matching."""
+    """Load or publish a complete processed-space SAM3 frame for matching.
+
+    On a cache miss, ``prefetch_next=(image_path, transform)`` starts preparing
+    the next reference frame's SAM3 input before this frame's forward.
+    """
     if not config.enable_sam3_mask_sampling:
         return {}
     if not config.sam3_checkpoint_path:
@@ -2071,12 +2157,9 @@ def get_self_exemplar_masks_for_reference(
         if not ordered_ids:
             return {}
 
-        from PIL import Image
-
-        with Image.open(request.image_path) as source_image:
-            processed_image, aligned = _prepare_sam3_input_image(
-                source_image.convert("RGB"), transform
-            )
+        processed_image, aligned = _take_sam3_input_image(request.image_path, transform)
+        if prefetch_next is not None:
+            _submit_sam3_input_prefetch(*prefetch_next)
         if not aligned or processed_image.size != (
             request.processed_shape_hw[1],
             request.processed_shape_hw[0],
