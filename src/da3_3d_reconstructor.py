@@ -44,6 +44,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from da3_defaults import DEFAULT_PROCESS_RES
 
+from .da3_worker import DA3StandbyPool, keep_standby, standby_pool  # noqa: E402
 from .reconstructor_base import ReconstructorBase, register_reconstructor  # noqa: E402
 
 # ---- DA3 重建器 ----
@@ -55,6 +56,10 @@ class DA33DReconstructor(ReconstructorBase):
 
     通过 subprocess 调用根 .venv 运行 DA3 推理。DA3/SAM3 源码保留在仓库中，由子进程
     从仓库路径导入；结果缓存到 da3_cache/predictions.npz。
+
+    CLI 每次重建起一个 da3_runner.py 进程。长驻服务调用 keep_standby_worker() 后，同
+    (python, model_path, device) 的重建改用预加载的待命 worker（src/da3_worker.py）：
+    模型已在 CPU 上加载好，单次请求后进程退出释放全部 GPU 显存。
     """
 
     # HuggingFace 默认模型；可通过 model_path 覆盖
@@ -83,6 +88,27 @@ class DA33DReconstructor(ReconstructorBase):
         if not self.DA3_RUNNER.exists():
             raise FileNotFoundError(f"DA3 runner 脚本不存在: {self.DA3_RUNNER}")
         self._active_cache_dir: Optional[Path] = None
+
+    def _worker_key(self) -> tuple[str, str, str]:
+        return (
+            str(self.da3_venv_python),
+            self.model_path or self.DEFAULT_HF_REPO,
+            self.device,
+        )
+
+    def keep_standby_worker(self) -> DA3StandbyPool:
+        """登记并启动本 key 的待命 worker 池（长驻服务启动时调用）。"""
+        return keep_standby(*self._worker_key())
+
+    def _run_runner(self, cmd: List[str]) -> Any:
+        """有待命池时交给预加载 worker（返回前进程已退出），否则一次性 subprocess。"""
+        import subprocess
+
+        pool = standby_pool(self._worker_key())
+        if pool is None:
+            return subprocess.run(cmd, capture_output=True, text=True)
+        pool.acquire().run(cmd[2:])  # 去掉 python/runner，其余即 runner argv
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     def prepare_reconstruction(
         self, *, output_path: Path, save_predictions: bool
@@ -155,7 +181,7 @@ class DA33DReconstructor(ReconstructorBase):
         logger.info(f"DA3 subprocess: {' '.join(cmd)}")
         t0 = time.time()
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True)
+            proc = self._run_runner(cmd)
             if proc.returncode != 0:
                 raise RuntimeError(
                     f"DA3 runner 失败 (exit={proc.returncode}):\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"

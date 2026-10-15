@@ -77,12 +77,12 @@ flowchart TB
     mask["读参考图 SAM mask<br/>空 mask 不足点则跳过匹配"]
     sample["从 mask 网格采样世界点<br/>限制数量、检查深度/置信度"]
     project["目标相机：Xc = R Xw + t<br/>像素 p = K Xc / Zc"]
-    hit["统计投影落入各目标 bbox 的比例<br/>3D 候选门槛 projection_match_threshold"]
+    hit["统计投影落入各目标 bbox 的比例<br/>3D 候选门槛 min_hit_ratio=0.3"]
     geometry["命中目标 bbox 后进行几何验证<br/>目标缓存深度自洽、质心距离、平面评分"]
     rank["combined_score 排序候选<br/>无通过候选则不建立边"]
     unique["目标框唯一性分配<br/>竞争失败者尝试下一候选"]
     save["保存 ref/target object ID 与 hit_ratio<br/>文本 summary 是当前去重输入"]
-    limits["现存边界<br/>目标几何采样使用 bbox；非目标 mask<br/>参考采样高斯中心的坐标空间待核实"]
+    limits["现存边界<br/>目标几何采样使用 bbox；非目标 mask<br/>参考高斯中心与 mask 坐标系错位，实际为均匀采样"]
     refs --> mask
     mask --> sample
     sample --> project
@@ -110,7 +110,7 @@ flowchart TB
 
 ### 匹配采样和投影
 
-参考 mask 内先按高斯权重挑选最多 700 个候选像素（70×10），σ=0.3，归一化距离超过 3σ 的权重为零；过滤后随机保留最多 70 个世界点，至少需要 10 个。**这 70 个点只用于匹配，Viewer 商品点不受此上限约束。**
+参考 mask 内设计为按高斯权重挑选最多 700 个候选像素（70×10），σ=0.3，归一化距离超过 3σ 的权重为零；过滤后随机保留最多 70 个世界点，至少需要 10 个。当前 3D 路径把原图坐标 bbox 作为高斯中心，而 mask 位于 processed 网格，fd6 前 6 帧 225/225 个物体权重全零，实际退化为 mask 内均匀挑选。**这 70 个点只用于匹配，Viewer 商品点不受此上限约束。**
 
 对目标相机计算 `q=K E [X_world,1]ᵀ`，保留 `q.z>0.1` 的投影，`p=(q.x/q.z,q.y/q.z)`。有效投影少于 5 个跳过。目标框超过 5 个时，先按落框点数取 Top-5；否则所有目标框进入几何验证。
 
@@ -124,15 +124,15 @@ flowchart TB
 | 3D 参考采样上限/下限 | 70 / 10 | `max_3d_points_per_bbox` 与有效点门槛 |
 | 深度范围 | (0.3, 8.0) | 匹配采样过滤；不是 Viewer 全量有效性条件 |
 | DA3 深度/点置信度 | >1.5 | 匹配采样；Pi3X 默认 >0.05 |
-| 投影命中率 r | ≥0.3 | `projection_match_threshold`，3D 候选门槛 |
+| 投影命中率 r | ≥0.3 | `min_hit_ratio`，3D 候选门槛（与点追踪共用同一参数） |
 | 质心距离 d | ≤0.5 | 参考和目标世界点均值的距离 |
 | 目标缓存深度自洽 | 差值 <0.3 | `Z(E_target X)` 与目标缓存深度一致性 |
-| 去重层命中率 | 通常 ≥0.4 | `deduplicate_sequence` 默认；独立脚本 CLI 默认 0.0，必须看入口 |
-| YAML `max_points_per_bbox=50`、`confidence_threshold=0.5`、`min_hit_ratio=0.4` | 点追踪参数 | 不应直接写成当前 3D 采样上限和投影门槛 |
+| 去重层命中率 | pipeline 为 0.0 | `main.py` 的 `run_dedup_sequence` 传 0.0（不筛边）；独立脚本 CLI 默认 0.0；`deduplicate_sequence` 函数默认 0.4 |
+| YAML `max_points_per_bbox=50`、`confidence_threshold=0.5`、`min_confident_points=10` | 仅点追踪参数 | 不是 3D 采样上限或门槛 |
 
 命中率 `r = 落入目标框点数 / 有效投影总点数`。SVD 拟合平面，令 `a=|n_ref·n_target|`、`e=目标平面残差`、`g=max(0,1−d/dmax)`、`c=a·max(0,1−e/dmax)`：有参考平面时 `score=0.5r+0.2g+0.3c`，没有时 `score=0.6r+0.4g`。
 
-当前 `plane_normal_alignment_threshold=0.2` 没有成为硬拒绝条件；法向只参加评分。也没有逐点双向跨视图一致性或全局相机优化。所有候选按组合分数降序进行图像对内贪心唯一性分配：ref、target 都未占用才接受，竞争失败的参考还能尝试下一候选；不是 Hungarian 最优分配。
+法向不做硬拒绝，只参加评分。也没有逐点双向跨视图一致性或全局相机优化。所有候选按组合分数降序进行图像对内贪心唯一性分配：ref、target 都未占用才接受，竞争失败的参考还能尝试下一候选；不是 Hungarian 最优分配。
 
 源码：[SAM 实现](../utils/sam3_utils.py)、[匹配主流程](../utils/matching_algorithms.py)、[几何与唯一性](../utils/geometry_3d.py)、[后端参数模板](../utils/config.py)、[YAML](../config.yaml)。
 
@@ -325,7 +325,7 @@ CPU 侧像素切向量不等于最终屏幕面片尺寸。shader 对归一化 U/
 ## 🔎 当前仍需独立处理的边界
 
 - 并查集只保证每组件每图最多一个检测；错误边仍能把不同实体连在一起，漏边仍会重复计数。gid 是本次运行生成的编号，不是跨任务永久身份。
-- 当前参考 SAM 高斯采样传入 `mask_space="final"`，同时传原图 bbox；高斯中心可能与 processed mask 不在同一坐标系。该潜在问题已从调用链发现，尚未通过针对性实验验证影响，本次没有修改匹配算法。
+- 当前参考 SAM 高斯采样传入 `mask_space="final"`，同时传原图 bbox；高斯中心与 processed mask 不在同一坐标系，fd6 实测权重全零，实际为均匀采样。
 - 目标几何采用 bbox，不采用目标 mask；未启用真正的多视图几何一致性融合。商品完整不等于轮廓、深度和归属都已正确。
 - 背景独立预算修复“预算归零”，但最大平面过滤仍可能删除背板，聚类也可能删除细杆。应在恢复后的画面有明确局部缺失时再定位具体过滤阶段。
 - 零面积 U/V、深度门槛、遮挡及视角空白仍可能导致 Surfel 孔洞；全量 SAM 点可以在原始点云中存在但不生成可见 Surfel 像素。

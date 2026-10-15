@@ -28,10 +28,10 @@ inference:
   # 说明: 该段仅作为SKUMatchingConfig的覆盖项，未填写字段使用utils/config.py内的默认值
 
   # 匹配参数
-  max_points_per_bbox: 50  # 每个检测框最大采样点数，点越多匹配越准但计算越慢
-  confidence_threshold: 0.5  # 点追踪置信度阈值(0-1)，低于此值的追踪点被忽略
-  min_confident_points: 10  # 最小置信点数，少于此数的物体跳过匹配
-  min_hit_ratio: 0.4  # 最小命中率阈值(0-1)，落入目标框的点比例需超过此值才算匹配
+  max_points_per_bbox: 50  # 仅点追踪：每个检测框最大查询点数（3D 路径每物体采样上限是 max_3d_points_per_bbox，类默认 70）
+  confidence_threshold: 0.5  # 仅点追踪：追踪点置信度阈值(0-1)，低于此值的追踪点被忽略
+  min_confident_points: 10  # 仅点追踪：最小置信点数，少于此数的物体跳过匹配
+  min_hit_ratio: 0.3  # 命中率门槛(0-1)：3D 投影点/追踪点落入目标框的比例需达到此值（3D 与点追踪共用）
   min_3d_sample_points: 10  # 3D采样最少有效点数(货架小bbox可调低，如5)
   pairing_3d: "next"  # 3D配对策略: all=参考图与所有目标匹配，next=只与下一张匹配(环形)
 

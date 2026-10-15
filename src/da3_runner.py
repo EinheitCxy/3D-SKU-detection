@@ -192,8 +192,9 @@ def _parse_args(argv=None) -> argparse.Namespace:
     return ap.parse_args(argv)
 
 
-def main() -> None:
-    args = _parse_args()
+def main(argv=None, model=None) -> None:
+    """One reconstruction request; ``model`` is a preloaded model from da3_worker."""
+    args = _parse_args(argv)
     args.model_path = _validate_model_id(args.model_path)
     if args.seed is not None:
         random.seed(args.seed)
@@ -224,7 +225,8 @@ def main() -> None:
         raise SystemExit("CUDA device requested but unavailable; refusing CPU fallback")
     device = torch.device(args.device)
     t0 = time.time()
-    model = DepthAnything3.from_pretrained(args.model_path).to(device)
+    if model is None:
+        model = DepthAnything3.from_pretrained(args.model_path).to(device)
     model.eval()
     logger.info(f"[da3_runner] model loaded on {device} ({time.time()-t0:.1f}s)")
 
@@ -291,7 +293,7 @@ def main() -> None:
     # Passing a path ending in `.partial` makes NumPy append `.npz`; use a
     # file object so the parent can atomically rename this exact sibling path.
     with out.open("wb") as stream:
-        np.savez_compressed(
+        np.savez(
             stream,
             depth=depth[..., None].astype(
                 np.float32
@@ -325,6 +327,16 @@ def main() -> None:
             frame_alignment_map_values=map_values,
         )
     logger.info(f"[da3_runner] saved {out} (total {time.time()-t0:.1f}s)")
+
+
+def load_model(model_path: str, device: str):
+    """Load the DA3 model as main() does, on CPU (no CUDA context) for a standby worker."""
+    model_path = _validate_model_id(model_path)
+    if "cuda" in device and not torch.cuda.is_available():
+        raise SystemExit("CUDA device requested but unavailable; refusing CPU fallback")
+    from depth_anything_3.api import DepthAnything3
+
+    return DepthAnything3.from_pretrained(model_path)
 
 
 def _sha256_file(path: Path) -> str:

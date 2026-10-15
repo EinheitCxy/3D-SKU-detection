@@ -23,6 +23,7 @@ import logging
 import random
 import sys
 import threading
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager, nullcontext
 from numbers import Integral
 from pathlib import Path
@@ -78,6 +79,13 @@ _CACHE_BOUNDARY_RNG_LOCK = threading.RLock()
 # Lock guarding _BATCH_QUERY_COUNTER for thread-safe allocation under
 # parallel_refs ThreadPoolExecutor (query_id must be unique across threads).
 _BATCH_QUERY_LOCK = threading.Lock()
+
+# Single-slot prefetch of the next reference frame's SAM3 input image, so its
+# CPU decode+resize overlaps the current frame's GPU forward. A new submit
+# replaces the slot; a consumer only uses it when the content key matches.
+_SAM3_INPUT_PREFETCH_LOCK = threading.Lock()
+_SAM3_INPUT_PREFETCH_EXECUTOR: Optional[ThreadPoolExecutor] = None
+_SAM3_INPUT_PREFETCH_SLOT: Optional[Tuple[Tuple[Any, ...], "Future[Tuple[Any, bool]]"]] = None
 
 
 def _sam3_autocast_context(model: Any, device: str) -> Any:
@@ -407,7 +415,10 @@ def _get_sam3_batch_components(
         bpe_path = None
 
     if _sam31_mode():
-        model = _build_sam31_multiplex_model(bpe_path)
+        # Random init is pure waste here: _load_sam31_ckpt overwrites every
+        # initialised tensor and fails if the checkpoint leaves one uncovered.
+        with _skip_param_init():
+            model = _build_sam31_multiplex_model(bpe_path)
         model = _load_sam31_ckpt(model, checkpoint_path)
     else:
         model = build_sam3_image_model(
@@ -446,6 +457,70 @@ def _get_sam3_batch_components(
 # 复数->real/imag 后 missing=0)。已验证:
 #   - 同图同框 mask 与 3.0 IoU 0.99x (fd4 1.JPG 3 bbox)
 #   - 整模型推理必须包 bf16 autocast (sam31 vitdet MLP 融合算子硬编码 bf16)
+
+# In-place initialisers skipped by `_skip_param_init`. Patched on every module
+# that binds them by name: torch.nn.init itself, MultiheadAttention's module
+# (`from torch.nn.init import xavier_uniform_, ...`) and sam3 vitdet (timm
+# `trunc_normal_`), which together account for the build-time init cost.
+_PARAM_INIT_FN_NAMES = (
+    "uniform_",
+    "normal_",
+    "trunc_normal_",
+    "constant_",
+    "ones_",
+    "zeros_",
+    "eye_",
+    "dirac_",
+    "xavier_uniform_",
+    "xavier_normal_",
+    "kaiming_uniform_",
+    "kaiming_normal_",
+    "orthogonal_",
+    "sparse_",
+)
+_PARAM_INIT_PATCH_LOCK = threading.Lock()
+
+# State tensors the 3.1 checkpoint does not supply directly; they are computed
+# deterministically at construction and verified after loading:
+#   - persistent `<blk>.attn.freqs_cis` (complex RoPE table): the checkpoint
+#     stores it, but only its real/imag split is loaded, so it must equal the
+#     checkpoint tensor bit for bit;
+#   - non-persistent text causal mask: must equal `build_causal_mask()`.
+_SAM31_CONSTRUCTED_STATE_SUFFIX = ".attn.freqs_cis"
+_SAM31_CONSTRUCTED_NONPERSISTENT_BUFFERS = frozenset(
+    {"backbone.language_backbone.encoder.attn_mask"}
+)
+
+
+@contextmanager
+def _skip_param_init() -> Iterator[None]:
+    """Turn parameter initialisers into no-ops while a SAM3.1 model is built.
+
+    Only safe when every initialised tensor is overwritten afterwards; the
+    caller must load the checkpoint through `_load_sam31_ckpt`, which fails on
+    incomplete coverage. The patch is process-global for its duration, so it
+    is serialized and must only wrap model construction.
+    """
+    _ensure_sam3_in_path()
+    import torch.nn.modules.activation as torch_activation
+
+    import sam3.model.vitdet as sam3_vitdet  # type: ignore
+
+    def _no_init(tensor: torch.Tensor, *_args: Any, **_kwargs: Any) -> torch.Tensor:
+        return tensor
+
+    with _PARAM_INIT_PATCH_LOCK:
+        originals = []
+        for module in (torch.nn.init, torch_activation, sam3_vitdet):
+            for name in _PARAM_INIT_FN_NAMES:
+                if hasattr(module, name):
+                    originals.append((module, name, getattr(module, name)))
+                    setattr(module, name, _no_init)
+        try:
+            yield
+        finally:
+            for module, name, original in reversed(originals):
+                setattr(module, name, original)
 
 
 def _build_sam31_multiplex_model(bpe_path: Optional[Union[str, Path]]) -> Any:
@@ -492,21 +567,60 @@ def _load_sam31_ckpt(model: Any, checkpoint_path: str) -> Any:
 
     ckpt 存复数合并张量 <blk>.attn.freqs_cis (complex64×32); use_rope_real=True 的
     模型期望拆分 freqs_cis_real/imag。转换后 strict load missing/unexpected 必须为 0。
+
+    The model may be built without random init (`_skip_param_init`), so the
+    checkpoint must cover every parameter and buffer except the constructed
+    state listed in `_SAM31_CONSTRUCTED_*`, which is verified here instead.
     """
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     if "model" in ckpt and isinstance(ckpt["model"], dict):
         ckpt = ckpt["model"]
     det = {k.replace("detector.", "", 1): v for k, v in ckpt.items() if k.startswith("detector.")}
-    own = model.state_dict().copy()
-    for k in list(det):
-        if k.endswith(".attn.freqs_cis"):
+    own = model.state_dict()
+    loaded: Dict[str, torch.Tensor] = {}
+    ckpt_freqs_cis: Dict[str, torch.Tensor] = {}
+    for k, v in det.items():
+        if k.endswith(_SAM31_CONSTRUCTED_STATE_SUFFIX):
+            if not torch.is_complex(v):
+                raise RuntimeError(f"SAM3.1 checkpoint {k} is not a complex tensor")
             base = k[: -len("freqs_cis")]
-            v = det.pop(k)
-            if torch.is_complex(v):
-                own[base + "freqs_cis_real"] = v.real
-                own[base + "freqs_cis_imag"] = v.imag
-    own.update(det)
-    res = model.load_state_dict(own, strict=True)
+            loaded[base + "freqs_cis_real"] = v.real
+            loaded[base + "freqs_cis_imag"] = v.imag
+            ckpt_freqs_cis[k] = v
+        else:
+            loaded[k] = v
+
+    uncovered = sorted(set(own) - set(loaded))
+    not_constructed = [
+        k
+        for k in uncovered
+        if not k.endswith(_SAM31_CONSTRUCTED_STATE_SUFFIX) or k not in ckpt_freqs_cis
+    ]
+    if not_constructed:
+        raise RuntimeError(
+            f"SAM3.1 checkpoint leaves {len(not_constructed)} tensors uninitialized: "
+            f"{not_constructed[:5]}"
+        )
+    nonpersistent = sorted(
+        name for name, _ in model.named_buffers() if name not in own
+    )
+    unknown_nonpersistent = [
+        k for k in nonpersistent if k not in _SAM31_CONSTRUCTED_NONPERSISTENT_BUFFERS
+    ]
+    if unknown_nonpersistent:
+        raise RuntimeError(
+            "SAM3.1 model has unverified non-persistent buffers: "
+            f"{unknown_nonpersistent[:5]}"
+        )
+    for k in uncovered:
+        if not torch.equal(own[k], ckpt_freqs_cis[k]):
+            raise RuntimeError(f"SAM3.1 constructed buffer {k} differs from checkpoint")
+    for k in nonpersistent:
+        encoder = model.get_submodule(k.rsplit(".", 1)[0])
+        if not torch.equal(model.get_buffer(k), encoder.build_causal_mask()):
+            raise RuntimeError(f"SAM3.1 constructed buffer {k} is not the causal mask")
+
+    res = model.load_state_dict({**own, **loaded}, strict=True)
     if res.missing_keys or res.unexpected_keys:
         raise RuntimeError(
             f"SAM3.1 strict load failed: missing={len(res.missing_keys)} "
@@ -532,7 +646,13 @@ def _fill_sam31_before_embed(batch: Any) -> None:
             fi.input_boxes_before_embed = fi.input_boxes
 
 
-def _run_sam3_forward(batch: Any, model: Any, device: str) -> Any:
+def _run_sam3_forward(
+    batch: Any,
+    model: Any,
+    device: str,
+    *,
+    backbone_cache: Optional[Dict[str, Any]] = None,
+) -> Any:
     """Run SAM3 batch forward, dispatching on the active model family.
 
     Dual (3.0): model(batch) under the dtype-inferred autocast context (unchanged).
@@ -541,6 +661,12 @@ def _run_sam3_forward(batch: Any, model: Any, device: str) -> Any:
         forward_grounding directly (the official Sam3Processor path) and wrap the
         output in a SAM3Output. sam31 vitdet MLP 融合算子硬编码 bf16 -> 必须 bf16
         autocast (不能走 _sam3_autocast_context, 它按首参 dtype= fp32 -> disable)。
+        Only the sam3 neck is computed; grounding never reads the interactive or
+        propagation necks.
+
+    backbone_cache (3.1 only): a dict owned by the caller for batches that share
+    one image and one text batch (the query batches of a single frame). The
+    first call stores the image/text encodings and later calls reuse them.
     """
     if _sam31_mode():
         _fill_sam31_before_embed(batch)
@@ -549,10 +675,27 @@ def _run_sam3_forward(batch: Any, model: Any, device: str) -> Any:
         with torch.inference_mode(), torch.autocast(
             device_type="cuda", dtype=torch.bfloat16, enabled=True
         ):
-            backbone_out.update(model.backbone.forward_image(batch.img_batch))
-            backbone_out.update(
-                model.backbone.forward_text(batch.find_text_batch, device=device)
-            )
+            text_batch = list(batch.find_text_batch)
+            if backbone_cache is None or "image" not in backbone_cache:
+                image_out = model.backbone.forward_image(
+                    batch.img_batch,
+                    need_interactive_out=False,
+                    need_propagation_out=False,
+                )
+                text_out = model.backbone.forward_text(
+                    batch.find_text_batch, device=device
+                )
+                if backbone_cache is not None:
+                    backbone_cache.update(
+                        image=image_out, text=text_out, text_batch=text_batch
+                    )
+            else:
+                if text_batch != backbone_cache["text_batch"]:
+                    raise RuntimeError("SAM3.1 backbone cache reused for another text batch")
+                image_out = backbone_cache["image"]
+                text_out = backbone_cache["text"]
+            backbone_out.update(image_out)
+            backbone_out.update(text_out)
             geo_prompt = model._get_geo_prompt_from_find_input(fit)
             out = model.forward_grounding(
                 backbone_out=backbone_out,
@@ -667,6 +810,79 @@ def _prepare_sam3_input_image(
         return cropped, True
 
     return img, False
+
+
+# Every transform attribute `_prepare_sam3_input_image` (and
+# `_infer_transform_output_size`) reads.
+_SAM3_INPUT_TRANSFORM_FIELDS = (
+    "target_width",
+    "target_height",
+    "padded_width",
+    "padded_height",
+    "final_width",
+    "final_height",
+    "proc_width",
+    "proc_height",
+    "crop_applied",
+    "crop_start_y",
+    "batch_pad_left",
+    "batch_pad_top",
+)
+
+
+def _sam3_input_prefetch_key(
+    image_path: Path, transform: ImageTransformBase
+) -> Tuple[Any, ...]:
+    """Content key for a prepared SAM3 input: file identity plus transform fields."""
+    resolved = Path(image_path).resolve()
+    stat = resolved.stat()
+    fields = tuple(
+        (name, getattr(transform, name, None)) for name in _SAM3_INPUT_TRANSFORM_FIELDS
+    )
+    return (str(resolved), stat.st_mtime_ns, stat.st_size, fields)
+
+
+def _load_sam3_input_image(
+    image_path: Path, transform: ImageTransformBase
+) -> Tuple[Any, bool]:
+    from PIL import Image
+
+    with Image.open(image_path) as source_image:
+        return _prepare_sam3_input_image(source_image.convert("RGB"), transform)
+
+
+def _submit_sam3_input_prefetch(
+    image_path: Path, transform: ImageTransformBase
+) -> None:
+    """Prepare a frame's SAM3 input in the background, replacing the slot."""
+    global _SAM3_INPUT_PREFETCH_EXECUTOR, _SAM3_INPUT_PREFETCH_SLOT
+    key = _sam3_input_prefetch_key(image_path, transform)
+    with _SAM3_INPUT_PREFETCH_LOCK:
+        if _SAM3_INPUT_PREFETCH_EXECUTOR is None:
+            _SAM3_INPUT_PREFETCH_EXECUTOR = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="sam3-input-prefetch"
+            )
+        future = _SAM3_INPUT_PREFETCH_EXECUTOR.submit(
+            _load_sam3_input_image, Path(image_path), transform
+        )
+        _SAM3_INPUT_PREFETCH_SLOT = (key, future)
+
+
+def _take_sam3_input_image(
+    image_path: Path, transform: ImageTransformBase
+) -> Tuple[Any, bool]:
+    """Use the prefetched input when its key matches, else prepare inline."""
+    global _SAM3_INPUT_PREFETCH_SLOT
+    key = _sam3_input_prefetch_key(image_path, transform)
+    with _SAM3_INPUT_PREFETCH_LOCK:
+        slot = _SAM3_INPUT_PREFETCH_SLOT
+        future = None
+        if slot is not None and slot[0] == key:
+            future = slot[1]
+            _SAM3_INPUT_PREFETCH_SLOT = None
+    if future is not None:
+        return future.result()
+    return _load_sam3_input_image(image_path, transform)
 
 
 def map_mask_to_final_space(
@@ -1504,6 +1720,131 @@ def sample_3d_points_from_mask(
     return wp
 
 
+def _self_exemplar_masks_from_processed_results(
+    processed_results: Dict[int, Dict[str, Any]],
+    query_id_to_local_idx: Dict[int, int],
+    batch_bboxes: List[List[float]],
+    w: int,
+    h: int,
+) -> List[np.ndarray]:
+    """Extract each query's top-1 PostProcessImage mask, clipped to its bbox."""
+    batch_result_masks = [np.zeros((h, w), dtype=bool) for _ in batch_bboxes]
+    for query_id, local_idx in query_id_to_local_idx.items():
+        if query_id not in processed_results:
+            logger.warning(f"Query ID {query_id} not found for bbox {local_idx}")
+            continue
+        masks_tensor = processed_results[query_id].get("masks")
+        if masks_tensor is None or len(masks_tensor) == 0:
+            logger.warning(f"No masks returned for bbox {local_idx}")
+            continue
+
+        # Convert masks to numpy (max_dets_per_img=1 确保只返回1个最佳mask)
+        if isinstance(masks_tensor, torch.Tensor):
+            masks_np = masks_tensor.squeeze(1).cpu().numpy().astype(bool)
+        else:
+            masks_np = np.stack(
+                [m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor],
+                axis=0,
+            )
+        best_mask = masks_np[0]
+        if best_mask.shape != (h, w):
+            best_mask = _resize_mask_nearest(best_mask, width=w, height=h)
+        # Defensive: clip to bbox to avoid leaking pixels from nearby objects
+        x1, y1, x2, y2 = _clamp_bbox_xyxy_to_image(
+            batch_bboxes[local_idx], width=w, height=h
+        )
+        batch_result_masks[local_idx] = clip_mask_to_bbox(best_mask, (x1, y1, x2, y2))
+    return batch_result_masks
+
+
+def _sam31_self_exemplar_top1_masks(
+    output: Any,
+    batch: Any,
+    postprocessor: Any,
+    query_id_to_local_idx: Dict[int, int],
+    batch_bboxes: List[List[float]],
+    w: int,
+    h: int,
+) -> List[np.ndarray]:
+    """`process_results` + top-1 extraction, upsampling only each query's kept mask.
+
+    PostProcessImage upsamples every detection above the threshold to the
+    original size, copies all of them to the CPU and only then keeps the
+    top-1 per query. This applies the same scores, threshold and topk first,
+    then runs the same bilinear interpolate + sigmoid > 0.5 on the chosen
+    masks; interpolation is per mask, so the pixels are identical.
+    """
+    from sam3.model.data_misc import interpolate  # type: ignore
+
+    if (
+        postprocessor.max_dets_per_img != 1
+        or postprocessor.detection_threshold <= 0
+        or not postprocessor.use_presence
+        or postprocessor.iou_type != "segm"
+        or not postprocessor.use_original_sizes_mask
+    ):
+        raise RuntimeError("SAM3.1 top-1 masks require the self-exemplar postprocessor")
+    find_stages = list(output)
+    if (
+        output.loss_stages is not None
+        or len(find_stages) != 1
+        or len(batch.find_metadatas) != 1
+    ):
+        raise RuntimeError("SAM3.1 self-exemplar expects a single find stage")
+    outputs = find_stages[0]
+    meta = batch.find_metadatas[0]
+
+    probs = outputs["pred_logits"].sigmoid()
+    probs = probs * outputs["presence_logit_dec"].sigmoid().unsqueeze(1)
+    scores = probs.cpu().max(-1)[0]
+    keep = scores > postprocessor.detection_threshold
+
+    row_query_ids = [int(q) for q in meta.coco_image_id.tolist()]
+    if sorted(row_query_ids) != sorted(query_id_to_local_idx):
+        raise RuntimeError("SAM3.1 output rows do not match the batch queries")
+    target_sizes = meta.original_size.unique(dim=0)
+    if target_sizes.shape[0] != 1:
+        raise RuntimeError("SAM3.1 self-exemplar batch mixes image sizes")
+    target_hw = (int(target_sizes[0, 0]), int(target_sizes[0, 1]))
+
+    batch_result_masks = [np.zeros((h, w), dtype=bool) for _ in batch_bboxes]
+    rows: List[int] = []
+    dets: List[int] = []
+    for row, query_id in enumerate(row_query_ids):
+        kept_idx = keep[row].nonzero().squeeze(1)
+        if len(kept_idx) == 0:
+            logger.warning(f"No masks returned for bbox {query_id_to_local_idx[query_id]}")
+            continue
+        kept_scores = scores[row][keep[row]]
+        best = int(torch.topk(kept_scores, 1, dim=0)[1]) if len(kept_scores) > 1 else 0
+        rows.append(row)
+        dets.append(int(kept_idx[best]))
+    if not rows:
+        return batch_result_masks
+
+    pred_masks = outputs["pred_masks"]
+    selected = pred_masks[
+        torch.tensor(rows, device=pred_masks.device),
+        torch.tensor(dets, device=pred_masks.device),
+    ]
+    upsampled = (
+        interpolate(
+            selected.unsqueeze(1), target_hw, mode="bilinear", align_corners=False
+        ).sigmoid()
+        > 0.5
+    )
+    upsampled_np = upsampled.squeeze(1).cpu().numpy().astype(bool)
+    for best_mask, row in zip(upsampled_np, rows):
+        local_idx = query_id_to_local_idx[row_query_ids[row]]
+        if best_mask.shape != (h, w):
+            best_mask = _resize_mask_nearest(best_mask, width=w, height=h)
+        x1, y1, x2, y2 = _clamp_bbox_xyxy_to_image(
+            batch_bboxes[local_idx], width=w, height=h
+        )
+        batch_result_masks[local_idx] = clip_mask_to_bbox(best_mask, (x1, y1, x2, y2))
+    return batch_result_masks
+
+
 def sam3_masks_self_exemplar(
     image_path: Union[str, Path, Any],
     bboxes_xyxy: List[List[float]],
@@ -1554,30 +1895,6 @@ def sam3_masks_self_exemplar(
     if len(bboxes_xyxy) == 0:
         return []
 
-    # 清空CUDA缓存，为SAM3腾出显存空间
-    # 这对于已经加载了其他大模型（如VGGT）的情况特别重要
-    if device.startswith("cuda") and torch.cuda.is_available():
-        # NOTE(Cycle6): 移除 PI3_SCENE_CACHE.clear() —— scene_data 是只读 npz cache，
-        # 跨 ref 复用可省去重复 scene_data_build（11次->1次）。
-        # OOM 监控由 smoke 验证；若显存累积则恢复 clear。
-
-        # 强制垃圾回收和清空缓存
-        import gc
-
-        gc.collect()
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()  # 等待所有CUDA操作完成
-
-        mem_allocated = torch.cuda.memory_allocated() / 1024**3
-        mem_reserved = torch.cuda.memory_reserved() / 1024**3
-        mem_free = (
-            torch.cuda.get_device_properties(0).total_memory
-            - torch.cuda.memory_allocated()
-        ) / 1024**3
-        logger.info(
-            f"GPU memory before SAM3: allocated={mem_allocated:.2f}GB, reserved={mem_reserved:.2f}GB, free={mem_free:.2f}GB"
-        )
-
     # Load batch inference components
     model, transform, postprocessor = _get_sam3_batch_components(
         checkpoint_path=checkpoint_path,
@@ -1612,6 +1929,11 @@ def sam3_masks_self_exemplar(
         )
     else:
         logger.info(f"Processing {num_bboxes} bboxes in single batch")
+
+    sam31 = _sam31_mode()
+    # All batches of this frame share the image and the "visual" text prompt,
+    # so the 3.1 image/text encodings are computed once per frame.
+    backbone_cache: Optional[Dict[str, Any]] = {} if sam31 else None
 
     # 存储所有批次的结果
     all_result_masks: List[np.ndarray] = []
@@ -1653,108 +1975,27 @@ def sam3_masks_self_exemplar(
         with torch.inference_mode():
             torch.backends.cuda.matmul.allow_tf32 = True
             torch.backends.cudnn.allow_tf32 = True
-            output = _run_sam3_forward(batch, model, device)
-
-        # Postprocess results
-        processed_results = postprocessor.process_results(output, batch.find_metadatas)
-        del output
-
-        # 提取当前批次的结果
-        batch_result_masks: List[np.ndarray] = [
-            np.zeros((h, w), dtype=bool) for _ in batch_bboxes
-        ]
-
-        for query_id, local_idx in query_id_to_local_idx.items():
-            bbox = batch_bboxes[local_idx]
-
-            if query_id not in processed_results:
-                logger.warning(
-                    f"Query ID {query_id} not found for batch {batch_idx}, bbox {local_idx}"
-                )
-                continue
-
-            result = processed_results[query_id]
-            masks_tensor = result.get("masks")
-
-            if masks_tensor is None or len(masks_tensor) == 0:
-                logger.warning(
-                    f"No masks returned for batch {batch_idx}, bbox {local_idx}"
-                )
-                continue
-
-            # Convert masks to numpy (max_dets_per_img=1 确保只返回1个最佳mask)
-            if isinstance(masks_tensor, torch.Tensor):
-                masks_np = masks_tensor.squeeze(1).cpu().numpy().astype(bool)
-            else:
-                masks_np = np.stack(
-                    [m.squeeze().cpu().numpy().astype(bool) for m in masks_tensor],
-                    axis=0,
-                )
-
-            # 取第一个mask (postprocessor已经按score排序，只保留Top-1)
-            best_mask = (
-                masks_np[0] if len(masks_np) > 0 else np.zeros((h, w), dtype=bool)
+            output = _run_sam3_forward(
+                batch, model, device, backbone_cache=backbone_cache
             )
 
-            # Ensure mask is correct size
-            if best_mask.shape != (h, w):
-                best_mask = _resize_mask_nearest(best_mask, width=w, height=h)
-
-            # Defensive: clip to bbox to avoid leaking pixels from nearby objects
-            x1, y1, x2, y2 = _clamp_bbox_xyxy_to_image(bbox, width=w, height=h)
-            best_mask = clip_mask_to_bbox(best_mask, (x1, y1, x2, y2))
-            batch_result_masks[local_idx] = best_mask
-
-        # 将当前批次的结果添加到总结果中
+        if sam31:
+            batch_result_masks = _sam31_self_exemplar_top1_masks(
+                output, batch, postprocessor, query_id_to_local_idx, batch_bboxes, w, h
+            )
+        else:
+            processed_results = postprocessor.process_results(
+                output, batch.find_metadatas
+            )
+            batch_result_masks = _self_exemplar_masks_from_processed_results(
+                processed_results, query_id_to_local_idx, batch_bboxes, w, h
+            )
+        del output, batch
         all_result_masks.extend(batch_result_masks)
-        del processed_results
-
-        # 批次间清理GPU缓存（仅清理临时tensors，不清理模型）
-        if (
-            device.startswith("cuda")
-            and torch.cuda.is_available()
-            and batch_idx < num_batches - 1
-        ):
-            import gc
-
-            # 显式删除所有批次临时变量（从大到小的顺序）
-            # 1. batch 是输入的GPU tensor
-            del batch
-            # 2. datapoint 包含transform后的数据
-            del datapoint
-            # 3. batch_result_masks 包含numpy数组（虽然在CPU但也占内存）
-            del batch_result_masks
-            # 4. 其他辅助变量
-            del query_id_to_local_idx, batch_bboxes
-
-            # 强制垃圾回收
-            gc.collect()
-            # empty_cache只清理未被引用的tensors，模型权重仍保留在GPU
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()  # 等待所有CUDA操作完成
-
-            # 记录清理后的显存状态
-            mem_allocated = torch.cuda.memory_allocated() / 1024**3
-            mem_free = (
-                torch.cuda.get_device_properties(0).total_memory
-                - torch.cuda.memory_allocated()
-            ) / 1024**3
-            logger.debug(
-                f"Cleared GPU cache after batch {batch_idx + 1}: allocated={mem_allocated:.2f}GB, free={mem_free:.2f}GB"
-            )
 
     logger.info(
         f"Self-exemplar segmentation complete: {len(all_result_masks)} masks for {num_bboxes} bboxes ({num_batches} batches)"
     )
-
-    # SAM3推理完成后，立即清理GPU显存
-    if device.startswith("cuda") and torch.cuda.is_available():
-        import gc
-
-        gc.collect()
-        torch.cuda.empty_cache()
-        logger.info("GPU cache cleared after SAM3 inference")
-
     return all_result_masks
 
 
@@ -1857,6 +2098,16 @@ def _processed_frame_request(
     )
 
 
+# Inference arguments of the matching self-exemplar producer; they must agree
+# with the v2 cache `inference_contract` in `_processed_frame_request`.
+_MATCHING_SELF_EXEMPLAR_ARGS: Dict[str, Any] = {
+    "detection_threshold": 0.5,
+    "fallback_size": 1008,
+    "skip_resize": False,
+    "max_batch_size": 32,
+}
+
+
 def get_self_exemplar_masks_for_reference(
     config: SKUMatchingConfig,
     *,
@@ -1865,8 +2116,13 @@ def get_self_exemplar_masks_for_reference(
     frame_detections: Sequence[dict[str, object]],
     matching_object_ids: Sequence[int],
     transform: ImageTransformBase,
+    prefetch_next: Optional[Tuple[Path, ImageTransformBase]] = None,
 ) -> dict[int, np.ndarray]:
-    """Load or publish a complete processed-space SAM3 frame for matching."""
+    """Load or publish a complete processed-space SAM3 frame for matching.
+
+    On a cache miss, ``prefetch_next=(image_path, transform)`` starts preparing
+    the next reference frame's SAM3 input before this frame's forward.
+    """
     if not config.enable_sam3_mask_sampling:
         return {}
     if not config.sam3_checkpoint_path:
@@ -1901,12 +2157,9 @@ def get_self_exemplar_masks_for_reference(
         if not ordered_ids:
             return {}
 
-        from PIL import Image
-
-        with Image.open(request.image_path) as source_image:
-            processed_image, aligned = _prepare_sam3_input_image(
-                source_image.convert("RGB"), transform
-            )
+        processed_image, aligned = _take_sam3_input_image(request.image_path, transform)
+        if prefetch_next is not None:
+            _submit_sam3_input_prefetch(*prefetch_next)
         if not aligned or processed_image.size != (
             request.processed_shape_hw[1],
             request.processed_shape_hw[0],
@@ -1921,10 +2174,7 @@ def get_self_exemplar_masks_for_reference(
             bboxes_xyxy=ordered_bboxes,
             checkpoint_path=str(config.sam3_checkpoint_path),
             device=device,
-            detection_threshold=0.5,
-            fallback_size=1008,
-            skip_resize=False,
-            max_batch_size=32,
+            **_MATCHING_SELF_EXEMPLAR_ARGS,
         )
         if len(masks) != len(ordered_ids):
             raise RuntimeError("SAM3 self-exemplar returned an incomplete frame")
@@ -1939,3 +2189,32 @@ def get_self_exemplar_masks_for_reference(
         int(object_id): np.asarray(mask, dtype=bool)
         for object_id, mask in result.masks_by_object_id.items()
     }
+
+
+def warmup_sam3_self_exemplar(config: SKUMatchingConfig) -> None:
+    """Load the matching SAM3 model and run one tiny forward ahead of requests.
+
+    Uses the same code root, checkpoint, device and inference arguments as
+    `get_self_exemplar_masks_for_reference`, so the cached components are the
+    ones matching reuses, and absorbs first-call CUDA overhead. RNG state is
+    preserved so later sampling is unaffected.
+    """
+    if not config.enable_sam3_mask_sampling:
+        return
+    if not config.sam3_checkpoint_path:
+        raise ValueError("SAM3 enabled but sam3_checkpoint_path is empty.")
+    set_sam3_code_root(config.sam3_code_root)
+    device = normalize_device(config.device)
+
+    from PIL import Image
+
+    image = Image.new("RGB", (64, 64))
+    image.paste((255, 255, 255), (16, 16, 48, 48))
+    with _preserve_cache_boundary_rng(device):
+        sam3_masks_self_exemplar(
+            image_path=image,
+            bboxes_xyxy=[[16.0, 16.0, 48.0, 48.0]],
+            checkpoint_path=str(config.sam3_checkpoint_path),
+            device=device,
+            **_MATCHING_SELF_EXEMPLAR_ARGS,
+        )

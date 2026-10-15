@@ -69,8 +69,13 @@ def _matching_sam3_masks(
     reference_image_idx: int,
     ref_bboxes: List[Dict],
     transform: ImageTransformBase,
+    next_transform: Optional[ImageTransformBase] = None,
 ) -> Dict[int, np.ndarray]:
-    """Get the complete frame cache while retaining matching's original IDs."""
+    """Get the complete frame cache while retaining matching's original IDs.
+
+    ``next_transform`` belongs to frame ``reference_image_idx + 1`` (the next
+    serial reference); when given, that frame's SAM3 input is prefetched.
+    """
     if not config.enable_sam3_mask_sampling:
         return {}
     if image_paths is None or not (0 <= reference_image_idx < len(image_paths)):
@@ -84,6 +89,12 @@ def _matching_sam3_masks(
             image_id = int(Path(image_paths[reference_image_idx]).stem)
         except ValueError as exc:
             raise ValueError("SAM3 enabled but reference image ID is not numeric.") from exc
+    next_idx = reference_image_idx + 1
+    prefetch_next = (
+        (Path(image_paths[next_idx]), next_transform)
+        if next_transform is not None and next_idx < len(image_paths)
+        else None
+    )
     return get_self_exemplar_masks_for_reference(
         config,
         image_path=Path(image_paths[reference_image_idx]),
@@ -91,6 +102,7 @@ def _matching_sam3_masks(
         frame_detections=frame_objects,
         matching_object_ids=[int(bbox["object_id"]) for bbox in ref_bboxes],
         transform=transform,
+        prefetch_next=prefetch_next,
     )
 
 
@@ -497,6 +509,11 @@ def find_correspondences_3d_mapping(
             image_paths=image_paths,
             ref_bboxes=ref_bboxes,
             transform=ref_transform,
+            next_transform=(
+                transforms_info[reference_image_idx + 1]
+                if reference_image_idx + 1 < len(transforms_info)
+                else None
+            ),
         )
     _t_mask_post = time.perf_counter()
     StageTimer.record("mask_postprocess", time.perf_counter() - _t_mask_post)

@@ -164,9 +164,7 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
         "min_depth",
         "max_depth",
         "max_3d_points_per_bbox",
-        "projection_match_threshold",
         "max_3d_distance",
-        "plane_normal_alignment_threshold",
         "enable_3d_mapping",
         "pairing_3d",
         "min_3d_sample_points",
@@ -274,8 +272,7 @@ class SKUMatchingConfig:
     confidence_threshold: float = 0.5            # 点追踪置信度阈值
     min_confident_points: int = 5                # 最小置信点数
     min_3d_sample_points: int = 10             # 3D采样最少有效点数(不足则跳过该物体)，货架小bbox可调低
-    min_hit_ratio: float = 0.4         # 最小命中率阈值
-    projection_match_threshold: float = 0.3       # 3D投影匹配阈值
+    min_hit_ratio: float = 0.3                   # 命中率门槛：3D 投影点/追踪点落入目标框的最小比例（两种算法共用）
 
     # === 3D重建参数 ===
     enable_3d_mapping: bool = False  # 是否启用3D映射匹配
@@ -288,7 +285,6 @@ class SKUMatchingConfig:
     # === 3D几何验证参数 ===（基于实际场景：宽2.4m×高1.5m×深2.9m）
     max_3d_distance: float = 0.8                 # 最大3D空间距离阈值(米)
     depth_consistency_threshold: float = 0.5     # 深度一致性阈值(米)，用于3D点采样端cache自洽性验证
-    plane_normal_alignment_threshold: float = 0.2  # 平面法向对齐阈值(|cos|夹角)，低于此值(夹角>78°)判非同面拒绝；放宽因环绕多视角下同平面法向估计有视角偏转
 
     # === 3D验证性能优化参数 ===
     max_3d_validation_candidates: int = 5        # 最大3D验证候选框数量（预筛选Top-K，减少昂贵的3D采样）
@@ -378,6 +374,9 @@ class SKUMatchingConfig:
         if self.min_confident_points > self.max_points_per_bbox:
             raise ValueError(f"min_confident_points ({self.min_confident_points}) cannot exceed max_points_per_bbox ({self.max_points_per_bbox})")
         
+        if not (0.0 <= self.min_hit_ratio <= 1.0):
+            raise ValueError(f"min_hit_ratio must be in [0,1], got {self.min_hit_ratio}")
+
         if self.min_bbox_area <= 0:
             raise ValueError(f"min_bbox_area must be positive, got {self.min_bbox_area}")
         
@@ -387,9 +386,6 @@ class SKUMatchingConfig:
                 raise ValueError(f"pairing_3d must be 'all' or 'next', got {self.pairing_3d}")
             if self.min_depth >= self.max_depth:
                 raise ValueError(f"min_depth ({self.min_depth}) must be less than max_depth ({self.max_depth})")
-            
-            if not (0.0 <= self.projection_match_threshold <= 1.0):
-                raise ValueError(f"projection_match_threshold must be in [0,1], got {self.projection_match_threshold}")
             
             if self.max_3d_distance <= 0:
                 raise ValueError(f"max_3d_distance must be positive, got {self.max_3d_distance}")
@@ -477,6 +473,9 @@ class SKUMatchingConfig:
                 "max_3d_distance": 0.5,                 # 米: 同物体跨视角中心应<0.1m, 0.5 容采样抖动
                 "depth_consistency_threshold": 0.3,     # 米: 采样端cache自洽性检查容差
             })
+            # DA3 的 world_points 由同一 depth 反投影 (src/da3_runner.py:306)，深度自洽检查恒通过；
+            # world_points_conf 与 depth_conf 是同一数组 (src/da3_runner.py:336-338)，两道 conf 门等价。
+            # 字段保留：对其他后端仍有意义。
         elif backend == "mapanything":
             # mapanything: metric 米制深度（几何阈值同 da3）+ 原样 conf（未激活，越高越好）。
             # conf 阈值于 2026-09-16 冒烟一次定档: conf∈[1,24], 有效中位≈5.0,
