@@ -34,7 +34,7 @@ export async function loadDockerViewerBundle(
   mode: DockerRenderMode = "surfel",
 ): Promise<ViewerBundle> {
   assertLittleEndian();
-  const entries = parseFlatStoredZip(await archive.arrayBuffer(), mode);
+  const entries = await parseFlatZip(await archive.arrayBuffer(), mode);
   const manifest = validateManifest(parseJson(entries, "manifest.json"));
   const positions = decodePositions(requiredEntry(entries, "positions.f32.bin"));
   const pointCount = positions.length / 3;
@@ -54,16 +54,13 @@ export async function loadDockerViewerBundle(
   return {
     manifest, objects, skuMasterData, positions, colors, normals, pointCount,
     generationUrl: "docker-zip://viewer/",
-    resolveAssetUrl(relativePath) {
-      const url = assets.urls.get(relativePath);
-      if (url === undefined) throw new Error(`数据包缺少资源：${relativePath}`);
-      return url;
-    },
+    resolveAssetUrl: assets.resolve,
+    readAssetBytes: assets.read,
     disposeAssets: assets.dispose,
   };
 }
 
-function parseFlatStoredZip(buffer: ArrayBuffer, mode: DockerRenderMode): ReadonlyMap<string, Uint8Array> {
+async function parseFlatZip(buffer: ArrayBuffer, mode: DockerRenderMode): Promise<ReadonlyMap<string, Uint8Array<ArrayBuffer>>> {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
   const eocdOffset = findEndOfCentralDirectory(view);
@@ -73,7 +70,7 @@ function parseFlatStoredZip(buffer: ArrayBuffer, mode: DockerRenderMode): Readon
   if (view.getUint16(eocdOffset + 8, true) !== entryCount) throw new Error("数据包 ZIP 跨越多个磁盘");
   if (entryCount === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff) throw new Error("不支持 ZIP64 数据包");
   if (centralOffset + centralSize > eocdOffset) throw new Error("数据包 ZIP 中央目录无效");
-  const entries = new Map<string, Uint8Array>();
+  const entries = new Map<string, Uint8Array<ArrayBuffer>>();
   let cursor = centralOffset;
   for (let index = 0; index < entryCount; index += 1) {
     if (cursor + 46 > centralOffset + centralSize || view.getUint32(cursor, true) !== 0x02014b50) throw new Error("数据包 ZIP 中央目录条目无效");
@@ -87,11 +84,17 @@ function parseFlatStoredZip(buffer: ArrayBuffer, mode: DockerRenderMode): Readon
     const localOffset = view.getUint32(cursor + 42, true);
     const entryEnd = cursor + 46 + nameLength + extraLength + commentLength;
     if (entryEnd > centralOffset + centralSize) throw new Error("数据包 ZIP 条目长度无效");
-    if ((flags & 1) !== 0 || compression !== 0 || compressedSize !== uncompressedSize) throw new Error("数据包 ZIP 条目必须使用未加密的 ZIP_STORED");
+    if ((flags & 1) !== 0 || (compression !== 0 && compression !== 8) || (compression === 0 && compressedSize !== uncompressedSize)) throw new Error("数据包 ZIP 条目必须使用未加密的 ZIP_STORED 或 ZIP_DEFLATED");
     const name = decodeName(bytes.subarray(cursor + 46, cursor + 46 + nameLength));
     assertMemberName(name, mode);
     if (entries.has(name)) throw new Error(`数据包 ZIP 包含重复成员：${name}`);
-    entries.set(name, localContent(bytes, view, localOffset, name, compressedSize));
+    const compressed = localContent(bytes, view, localOffset, name, compressedSize, compression, centralOffset);
+    // Sequential inflation bounds peak memory. Stored arrays own their bytes so a
+    // long-lived TypedArray cannot retain the entire archive (including JPEGs).
+    const content = compression === 8
+      ? await inflateEntry(compressed, uncompressedSize, name)
+      : name.endsWith(".bin") ? compressed.slice() : compressed;
+    entries.set(name, content);
     cursor = entryEnd;
   }
   if (cursor !== centralOffset + centralSize) throw new Error("数据包 ZIP 中央目录大小无效");
@@ -116,14 +119,37 @@ function findEndOfCentralDirectory(view: DataView): number {
   throw new Error("数据包 ZIP 缺少结束记录");
 }
 
-function localContent(bytes: Uint8Array, view: DataView, offset: number, name: string, size: number): Uint8Array {
+function localContent(bytes: Uint8Array<ArrayBuffer>, view: DataView, offset: number, name: string, size: number, compression: number, contentLimit: number): Uint8Array<ArrayBuffer> {
   if (offset + 30 > bytes.length || view.getUint32(offset, true) !== 0x04034b50) throw new Error(`数据包 ZIP 本地条目无效：${name}`);
   const nameLength = view.getUint16(offset + 26, true);
   const extraLength = view.getUint16(offset + 28, true);
   const localName = decodeName(bytes.subarray(offset + 30, offset + 30 + nameLength));
   const contentStart = offset + 30 + nameLength + extraLength;
-  if (localName !== name || contentStart + size > bytes.length) throw new Error(`数据包 ZIP 本地条目内容无效：${name}`);
-  return bytes.slice(contentStart, contentStart + size);
+  if (localName !== name || contentStart + size > contentLimit || view.getUint16(offset + 8, true) !== compression || (view.getUint16(offset + 6, true) & 1) !== 0) throw new Error(`数据包 ZIP 本地条目内容无效：${name}`);
+  return bytes.subarray(contentStart, contentStart + size);
+}
+
+async function inflateEntry(content: Uint8Array<ArrayBuffer>, expectedSize: number, name: string): Promise<Uint8Array<ArrayBuffer>> {
+  const input = new ReadableStream<Uint8Array<ArrayBuffer>>({
+    start(controller) { controller.enqueue(content); controller.close(); },
+  });
+  const reader = input.pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+  const output = new Uint8Array(expectedSize);
+  let offset = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value.byteLength > output.byteLength - offset) throw new Error(`ZIP decompressed size mismatch: ${name}`);
+      output.set(value, offset);
+      offset += value.byteLength;
+    }
+    if (offset !== expectedSize) throw new Error(`ZIP decompressed size mismatch: ${name}`);
+    return output;
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw new Error(`ZIP DEFLATE decode failed: ${name}`, { cause: error });
+  } finally { reader.releaseLock(); }
 }
 
 function decodeName(value: Uint8Array): string {
@@ -140,52 +166,60 @@ function assertMemberName(name: string, mode: DockerRenderMode): void {
   throw new Error(`数据包 ZIP 包含不支持的成员：${name}`);
 }
 
-function requiredEntry(entries: ReadonlyMap<string, Uint8Array>, name: string): Uint8Array {
+function requiredEntry(entries: ReadonlyMap<string, Uint8Array<ArrayBuffer>>, name: string): Uint8Array<ArrayBuffer> {
   const entry = entries.get(name);
   if (entry === undefined) throw new Error(`数据包 ZIP 缺少必需成员：${name}`);
   return entry;
 }
 
-function parseJson(entries: ReadonlyMap<string, Uint8Array>, name: string): unknown {
+function parseJson(entries: ReadonlyMap<string, Uint8Array<ArrayBuffer>>, name: string): unknown {
   try { return JSON.parse(textDecoder.decode(requiredEntry(entries, name))) as unknown; }
   catch (error) { throw new Error(`数据包 ZIP JSON 无效：${name}`, { cause: error }); }
 }
 
-function decodePositions(content: Uint8Array): Float32Array {
+function decodePositions(content: Uint8Array<ArrayBuffer>): Float32Array {
   if (content.byteLength % (Float32Array.BYTES_PER_ELEMENT * 3) !== 0) throw new Error("数据包 ZIP positions 数据形状无效");
-  return new Float32Array(copyArrayBuffer(content));
+  return new Float32Array(content.buffer, content.byteOffset, content.byteLength / Float32Array.BYTES_PER_ELEMENT);
 }
 
-function decodeComponents<T extends Int8Array | Uint8Array>(content: Uint8Array, pointCount: number, name: string, Constructor: { new(buffer: ArrayBuffer): T; readonly BYTES_PER_ELEMENT: number }): T {
+function decodeComponents<T extends Int8Array | Uint8Array>(content: Uint8Array<ArrayBuffer>, pointCount: number, name: string, Constructor: { new(buffer: ArrayBuffer, byteOffset: number, length: number): T; readonly BYTES_PER_ELEMENT: number }): T {
   if (content.byteLength !== pointCount * 3 * Constructor.BYTES_PER_ELEMENT) throw new Error(`数据包 ZIP ${name} 数据形状无效`);
-  return new Constructor(copyArrayBuffer(content));
+  return new Constructor(content.buffer, content.byteOffset, content.byteLength / Constructor.BYTES_PER_ELEMENT);
 }
 
-function copyArrayBuffer(content: Uint8Array): ArrayBuffer {
-  const copy = new Uint8Array(content.byteLength);
-  copy.set(content);
-  return copy.buffer;
-}
-
-function createAssetUrls(entries: ReadonlyMap<string, Uint8Array>, objects: ViewerBundle["objects"], mode: DockerRenderMode): { urls: ReadonlyMap<string, string>; dispose(): void } {
+function createAssetUrls(entries: ReadonlyMap<string, Uint8Array<ArrayBuffer>>, objects: ViewerBundle["objects"], mode: DockerRenderMode): { resolve(name: string): string; read(name: string): Uint8Array<ArrayBuffer>; dispose(): void } {
   const names = new Set<string>();
   for (const object of Object.values(objects)) for (const observation of object.observations) names.add(observation.thumbnail);
   if (mode === "surfel") for (const name of SURFEL_FILES) if (!COMMON_FILES.has(name)) names.add(name);
   if (mode === "surfel" && entries.has(SURFEL_SCALE_FILE)) names.add(SURFEL_SCALE_FILE);
   if (mode === "surfel") for (const name of entries.keys()) if (/^surfel-texture-\d+\.jpg$/.test(name)) names.add(name);
   const urls = new Map<string, string>();
+  const sources = new Map<string, Uint8Array<ArrayBuffer>>();
   try {
     for (const name of names) {
-      const content = entries.get(name);
-      if (content === undefined) throw new Error(`数据包 ZIP 缺少资源：${name}`);
-      const type = name.endsWith(".jpg") ? "image/jpeg" : "application/octet-stream";
-      urls.set(name, URL.createObjectURL(new Blob([copyArrayBuffer(content)], { type })));
+      const content = requiredEntry(entries, name);
+      if (name.endsWith(".jpg")) {
+        urls.set(name, URL.createObjectURL(new Blob([content], { type: "image/jpeg" })));
+      } else {
+        // JSON still views the archive; retain only its small member allocation.
+        sources.set(name, name.endsWith(".bin") ? content : content.slice());
+      }
     }
     return {
-      urls,
+      resolve(name) {
+        const existing = urls.get(name);
+        if (existing !== undefined) return existing;
+        const content = sources.get(name);
+        if (content === undefined) throw new Error(`数据包缺少资源：${name}`);
+        const url = URL.createObjectURL(new Blob([content], { type: "application/octet-stream" }));
+        urls.set(name, url);
+        return url;
+      },
+      read: name => requiredEntry(sources, name),
       dispose() {
         for (const url of urls.values()) URL.revokeObjectURL(url);
         urls.clear();
+        sources.clear();
       },
     };
   } catch (error) {

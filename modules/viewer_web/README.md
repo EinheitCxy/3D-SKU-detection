@@ -59,7 +59,7 @@ http://localhost:5173/?recognition_task_id=54ea08a0-a238-4a72-880d-662ffc65250e
 
 默认 COS 基址是 `https://snapshot-video-1305849923.cos.ap-shanghai.myqcloud.com/global-id-mapping`。如需更换，在本目录 `.env.local` 中设置 `VITE_COS_VIEWER_BASE_URL`，然后重启开发服务或重新构建。COS 需要允许浏览器来源的跨域 GET。
 
-任务 ZIP 使用 Docker 导出的扁平 ZIP_STORED 格式；SKU 主数据由本目录 `masterdata.json` 独立提供（与 Docker Viewer 同一份紧凑主数据），只在加载任务时请求。更新主数据后需重新构建；缩略图和 Surfel 资源使用 Blob URL，在加载失败或页面退出时释放。
+任务 ZIP 使用 Docker 导出的扁平 ZIP：二进制 `.bin` 成员采用 DEFLATE level 1，JSON/JPEG 保持 STORED；加载器也读取已有的全 STORED 包。SKU 主数据由本目录 `masterdata.json` 独立提供（与 Docker Viewer 同一份紧凑主数据），只在加载任务时请求。更新主数据后需重新构建；缩略图和 JPEG 按需使用 Blob URL，在加载失败或页面退出时释放；Surfel JSON 和二进制数组直接从已解包成员读取，避免 Blob/fetch 往返。压缩包加载需要浏览器支持 `DecompressionStream("deflate-raw")`。
 
 ## Minimal schema 3.0.0
 
@@ -222,3 +222,5 @@ Surfel 模式下的“局部来源优选（实验）”按钮可即时开关并�
 测量期间暂停商品画布点选，Fit / Top / Iso 和 Focus 暂不可用。只有数据包提供有效米制尺度和方向信息时才能开始；缺少信息会显示原因，不把模型原始尺度标成平方米。旧包需使用更新后的导出器重新导出，可复用重建与匹配缓存，无需重新推理。显示的小数位不代表真实测量精度，结果仍受重建尺度、水平方向和人工选点误差影响。
 
 结果是手工闭合 polygon 的**水平投影面积**，不是任意斜面或商品表面积，也不等同于后端自动 footprint 结果。结果仅保留在当前页面，不写回识别或 SKU 数据。本次功能仅修改本地 Viewer，未更新或部署 Docker。
+
+2026-10-16 存储优化部署顺序：先更新支持 DEFLATE 的本地、中英文 Viewer，再更新后端打包器。旧前端只接受 STORED，无法加载新压缩包；已有任务无需重打包也可由新前端读取。

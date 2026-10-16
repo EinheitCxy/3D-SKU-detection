@@ -57,7 +57,11 @@ def test_pack_members_are_flat_and_complete(tmp_path: Path) -> None:
             "surfel-depth.f16.bin", "surfel-scale.f16.bin", "surfel-texture-0.jpg", "surfel-texture-1.jpg",
             "thumbs/1.jpg", "thumbs/2.jpg",
         }
-        assert all(info.compress_type == zipfile.ZIP_STORED for info in archive.infolist())
+        for info in archive.infolist():
+            assert info.compress_type == (
+                zipfile.ZIP_DEFLATED if info.filename.endswith(".bin") else zipfile.ZIP_STORED
+            )
+            assert archive.read(info) == (generation / info.filename).read_bytes()
     assert size == archive_path.stat().st_size
 
 

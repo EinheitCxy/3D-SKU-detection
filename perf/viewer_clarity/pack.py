@@ -23,5 +23,9 @@ def pack_bundle(generation_dir: Path, out_zip: Path) -> int:
     out_zip.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_STORED) as archive:
         for name in members:
-            archive.write(generation_dir / name, name)
+            archive.write(
+                generation_dir / name, name,
+                compress_type=zipfile.ZIP_DEFLATED if name.endswith(".bin") else zipfile.ZIP_STORED,
+                compresslevel=1,
+            )
     return out_zip.stat().st_size

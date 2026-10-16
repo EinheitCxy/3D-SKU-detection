@@ -1,3 +1,4 @@
+import { deflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DataUtils } from "three";
 import { loadDockerViewerBundle } from "../../modules/viewer_web/src/docker-zip-loader";
@@ -46,32 +47,36 @@ function staticLoader(entries: ReadonlyMap<string, Uint8Array>) {
   return { fetcher, load: () => loadSurfels(bundle, fetcher) };
 }
 
-function storedZip(entries: ReadonlyMap<string, Uint8Array>): Blob {
+function storedZip(entries: ReadonlyMap<string, Uint8Array>, compressArrays = false): Blob {
   const parts: ArrayBuffer[] = [];
   const directory: ArrayBuffer[] = [];
   let offset = 0;
   let directorySize = 0;
   for (const [name, content] of entries) {
     const nameBytes = encoder.encode(name);
+    const compression = compressArrays && name.endsWith(".bin") ? 8 : 0;
+    const payload = compression === 8 ? deflateRawSync(content) : content;
     const local = new ArrayBuffer(30);
     const lv = new DataView(local);
     lv.setUint32(0, 0x04034b50, true);
     lv.setUint16(4, 20, true);
-    lv.setUint32(18, content.byteLength, true);
+    lv.setUint16(8, compression, true);
+    lv.setUint32(18, payload.byteLength, true);
     lv.setUint32(22, content.byteLength, true);
     lv.setUint16(26, nameBytes.byteLength, true);
-    parts.push(local, nameBytes.buffer, content.slice().buffer);
+    parts.push(local, nameBytes.buffer, new Uint8Array(payload).buffer);
     const central = new ArrayBuffer(46);
     const cv = new DataView(central);
     cv.setUint32(0, 0x02014b50, true);
     cv.setUint16(4, 20, true);
     cv.setUint16(6, 20, true);
-    cv.setUint32(20, content.byteLength, true);
+    cv.setUint16(10, compression, true);
+    cv.setUint32(20, payload.byteLength, true);
     cv.setUint32(24, content.byteLength, true);
     cv.setUint16(28, nameBytes.byteLength, true);
     cv.setUint32(42, offset, true);
     directory.push(central, nameBytes.buffer);
-    offset += 30 + nameBytes.byteLength + content.byteLength;
+    offset += 30 + nameBytes.byteLength + payload.byteLength;
     directorySize += 46 + nameBytes.byteLength;
   }
   const end = new ArrayBuffer(22);
@@ -96,10 +101,15 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Surfel sampling scales", () => {
-  it.each([2, 3])("loads v%i from a ZIP with scale and native tangents kept separate", async version => {
-    const bundle = await loadDockerViewerBundle(storedZip(assets(version)), {});
+  it.each([[2, false], [3, false], [2, true], [3, true]] as const)("loads v%i from a ZIP (compressed=%s) with exact shared binary views", async (version, compressArrays) => {
+    const bundle = await loadDockerViewerBundle(storedZip(assets(version), compressArrays), {});
     try {
-      const data = await loadSurfels(bundle);
+      const fetcher = vi.fn(fetch);
+      const data = await loadSurfels(bundle, fetcher);
+      expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([bundle.resolveAssetUrl("surfel-texture-0.jpg")]);
+      expect(data.u.buffer).toBe(bundle.readAssetBytes!("surfel-u.f16.bin").buffer);
+      expect(data.u.byteLength).toBe(12);
+      expect(bundle.positions.buffer.byteLength).toBe(24);
       try {
         expect(Array.from(data.scale, DataUtils.fromHalfFloat)).toEqual(version === 3 ? [0.5, 8, 2, 1] : [1, 1, 1, 1]);
         expect(Array.from(data.u, DataUtils.fromHalfFloat)).toEqual([1, 0, 0, 1, 0, 0]);

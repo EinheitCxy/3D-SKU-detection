@@ -10,6 +10,8 @@ import {
 import type { SurfelData } from "./surfel-loader";
 
 export interface ViewerBundle {
+  /** Borrowed member bytes; valid until disposeAssets. Static bundles use their URLs. */
+  readonly readAssetBytes?: (relativePath: string) => Uint8Array<ArrayBuffer>;
   readonly disposeAssets?: () => void;
   readonly surfels?: SurfelData;
   readonly manifest: Manifest;

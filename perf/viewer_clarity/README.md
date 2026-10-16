@@ -4,7 +4,7 @@ These scripts implement the locked WP-T protocol in `docs/superpowers/plans/2026
 
 ## Bundle tools
 
-`pack_bundle(generation_dir, out_zip)` writes the flat `ZIP_STORED` Viewer archive used by the mapping service. It supports Surfel schema 2 and 3; schema 3 includes `surfel-scale.f16.bin`.
+`pack_bundle(generation_dir, out_zip)` writes the flat Viewer archive used by the mapping service: `.bin` members use DEFLATE level 1 and JSON/JPEG members use STORED. The Viewer must support DEFLATE before these new archives are published. It supports Surfel schema 2 and 3; schema 3 includes `surfel-scale.f16.bin`.
 
 `crop_bundle(generation_dir, out_dir, center_fraction=0.4)` uses the product points' 1–99% bounds after `manifest.world_to_view`, takes the centered fraction in view X/Y, and retains all view depth. It applies the same point mask to point-aligned binary arrays, remaps object ranges, removes empty GIDs, prunes unused thumbnails, and writes `crop.json` with removed GIDs and counts. The output directory must not already exist.
 

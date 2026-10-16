@@ -32,7 +32,12 @@ export async function loadSurfels(bundle: ViewerBundle, fetcher: typeof fetch = 
     if (!response.ok) throw new Error(`Surfel asset ${name}: HTTP ${response.status}`);
     return response;
   };
-  const metadata = await (await fetchAsset("surfel.json")).json();
+  const readBinary = async (name: string): Promise<Uint8Array<ArrayBuffer>> => bundle.readAssetBytes
+    ? bundle.readAssetBytes(name)
+    : new Uint8Array(await (await fetchAsset(name)).arrayBuffer());
+  const metadata = bundle.readAssetBytes
+    ? JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bundle.readAssetBytes("surfel.json")))
+    : await (await fetchAsset("surfel.json")).json();
   const version = validateSurfelVersion(metadata);
   if (metadata.point_count !== bundle.pointCount || !dimensions(metadata.grid_size)
     || !Array.isArray(metadata.frames) || metadata.frames.length < 1 || metadata.frames.length > 256) {
@@ -44,16 +49,18 @@ export async function loadSurfels(bundle: ViewerBundle, fetcher: typeof fetch = 
       || !/^surfel-texture-\d+\.jpg$/.test(frame.texture)) throw new Error("Invalid Surfel source frame");
   }
   const halfs = async (name: string, size: number) => {
-    const buffer = await (await fetchAsset(name)).arrayBuffer();
-    if (buffer.byteLength !== size * 2) throw new Error(`Surfel ${name} shape mismatch`);
-    const values = new Uint16Array(buffer);
+    const content = await readBinary(name);
+    if (content.byteLength !== size * 2) throw new Error(`Surfel ${name} shape mismatch`);
+    // Direct callers can provide an unaligned ZIP member view.
+    const aligned = content.byteOffset % 2 === 0 ? content : content.slice();
+    const values = new Uint16Array(aligned.buffer, aligned.byteOffset, size);
     if (!values.every(x => (x & 0x7c00) !== 0x7c00)) throw new Error(`Surfel ${name} contains nonfinite values`);
     return values;
   };
   const frameIndices = async () => {
-    const buffer = await (await fetchAsset("surfel-frame.u8.bin")).arrayBuffer();
-    if (buffer.byteLength !== bundle.pointCount) throw new Error("Surfel frame shape mismatch");
-    return new Uint8Array(buffer);
+    const content = await readBinary("surfel-frame.u8.bin");
+    if (content.byteLength !== bundle.pointCount) throw new Error("Surfel frame shape mismatch");
+    return content;
   };
   const [u, v, frames, depth, scale] = await Promise.all([
     halfs("surfel-u.f16.bin", bundle.pointCount * 3), halfs("surfel-v.f16.bin", bundle.pointCount * 3),
