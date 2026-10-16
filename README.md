@@ -299,3 +299,9 @@ docker run -d --name global-id-mapping-local --gpus '"device=2"' -p 8011:80 \
 ```
 
 8011 服务固定 GPU2：GPU0 被其他进程占用约 30GB，`--gpus all` 默认落在 GPU0 会在匹配阶段 CUDA OOM。验证：video3 前 6 帧真实请求 HTTP 200（约 82 秒），SAM3 从 `/app/sam31` 加载，186 个对象归并为 125 个 `global_id`，COS `global-id-mapping/smoke-sam31-20260918/viewer_bundle.zip` 可下载（27.4MB）；8011 与临时 8012 容器返回的 `global_skus` 完全一致。旧容器保留为 `global-id-mapping-local-before-sam31-20260918`（已停止）。
+
+## 2026-10-16 Viewer ZIP 压缩
+
+Viewer ZIP 的 `.bin` 成员采用无损 DEFLATE level 1，JSON/JPEG 继续 STORED；文件名、解码后的二进制内容与 schema 不变。打包使用文件流读取，避免额外的完整成员 bytes。先更新支持 DEFLATE 的三份 Viewer，再部署此打包器；旧前端只接受 STORED。此次仅调整打包压缩，不改变所在服务版本的上传时序。
+
+配套核心优化逐页完成 GLB 量化及最终 PNG 编码；默认画质参数与 BSON 字段不变。测量与边界见核心仓库 `docs/viewer_speed_storage.md`。源码发布不代表运行容器已更新。

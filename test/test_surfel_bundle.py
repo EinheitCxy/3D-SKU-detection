@@ -17,7 +17,14 @@ def test_pack_preserves_declared_surfel_assets(tmp_path, version):
     }))
     if version == 3:
         (tmp_path / "surfel-scale.f16.bin").write_bytes(b"\x00\x38\x00\x40")
+    (tmp_path / "thumbs").mkdir()
+    (tmp_path / "thumbs" / "item.jpg").write_bytes(b"thumbnail")
     with zipfile.ZipFile(io.BytesIO(pack_viewer_bundle(tmp_path))) as archive:
+        for member in archive.infolist():
+            assert member.compress_type == (
+                zipfile.ZIP_DEFLATED if member.filename.endswith(".bin") else zipfile.ZIP_STORED
+            )
+            assert archive.read(member) == (tmp_path / member.filename).read_bytes()
         assert ("surfel-scale.f16.bin" in archive.namelist()) == (version == 3)
         if version == 3:
             assert archive.read("surfel-scale.f16.bin") == b"\x00\x38\x00\x40"

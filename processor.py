@@ -263,9 +263,13 @@ def pack_viewer_bundle(generation_dir: Path) -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
         for name in names:
-            archive.writestr(name, (generation_dir / name).read_bytes())
+            archive.write(
+                generation_dir / name, name,
+                compress_type=zipfile.ZIP_DEFLATED if name.endswith(".bin") else zipfile.ZIP_STORED,
+                compresslevel=1,
+            )
         for path in thumbs:
-            archive.writestr(f"thumbs/{path.name}", path.read_bytes())
+            archive.write(path, f"thumbs/{path.name}")
     return buffer.getvalue()
 
 
