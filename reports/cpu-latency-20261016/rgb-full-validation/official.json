@@ -1,0 +1,844 @@
+{
+  "phase": "official",
+  "status": "completed",
+  "raw": [
+    {
+      "label": "B1",
+      "raw_export_wall_s": 157.39404551684856,
+      "export_complete": true,
+      "compare_passed": true,
+      "dilation_wall_s": 57.70274669677019,
+      "output_bytes": 121513344,
+      "pages": 31,
+      "capture_array_bytes": 670092600,
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/B1.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 157.39394317567348,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 107.00855853036046,
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/B1.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 50.383313819766045
+        }
+      },
+      "complete_prequantization_rgba_geometry_equal": true,
+      "source_object_lod_input_and_selection_equal": true,
+      "final_accessor_payloads_equal": true,
+      "final_decoded_rgba_equal": true,
+      "full_document_associations_equal": true,
+      "output_size_equal": true,
+      "thread_affinities": {
+        "2807": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2871": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2872": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2873": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4695": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4696": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4697": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5290": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5389": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5390": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5391": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5392": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5841": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5842": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5843": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "7775": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "C1",
+      "raw_export_wall_s": 120.49878037720919,
+      "export_complete": true,
+      "compare_passed": true,
+      "dilation_wall_s": 24.36805373430252,
+      "output_bytes": 121513344,
+      "pages": 31,
+      "capture_array_bytes": 670092600,
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/C1.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 120.49867049232125,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 71.94793782383204,
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/C1.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 48.550343945622444
+        }
+      },
+      "complete_prequantization_rgba_geometry_equal": true,
+      "source_object_lod_input_and_selection_equal": true,
+      "final_accessor_payloads_equal": true,
+      "final_decoded_rgba_equal": true,
+      "full_document_associations_equal": true,
+      "output_size_equal": true,
+      "thread_affinities": {
+        "2807": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2871": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2872": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2873": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4695": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4696": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4697": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5290": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5389": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5390": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5391": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5392": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5841": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5842": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5843": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "7775": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "C2",
+      "raw_export_wall_s": 118.5134458206594,
+      "export_complete": true,
+      "compare_passed": true,
+      "dilation_wall_s": 24.042807932943106,
+      "output_bytes": 121513344,
+      "pages": 31,
+      "capture_array_bytes": 670092600,
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/C2.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 118.51331152394414,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 70.4791718609631,
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/C2.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 48.029242750257254
+        }
+      },
+      "complete_prequantization_rgba_geometry_equal": true,
+      "source_object_lod_input_and_selection_equal": true,
+      "final_accessor_payloads_equal": true,
+      "final_decoded_rgba_equal": true,
+      "full_document_associations_equal": true,
+      "output_size_equal": true,
+      "thread_affinities": {
+        "2807": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2871": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2872": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2873": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4695": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4696": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4697": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5290": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5389": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5390": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5391": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5392": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5841": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5842": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5843": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "7775": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "B2",
+      "raw_export_wall_s": 149.62611985579133,
+      "export_complete": true,
+      "compare_passed": true,
+      "dilation_wall_s": 55.58240332081914,
+      "output_bytes": 121513344,
+      "pages": 31,
+      "capture_array_bytes": 670092600,
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/B2.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 149.62598974630237,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 102.26241562888026,
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/B2.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 47.35856128484011
+        }
+      },
+      "complete_prequantization_rgba_geometry_equal": true,
+      "source_object_lod_input_and_selection_equal": true,
+      "final_accessor_payloads_equal": true,
+      "final_decoded_rgba_equal": true,
+      "full_document_associations_equal": true,
+      "output_size_equal": true,
+      "thread_affinities": {
+        "2807": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2871": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2872": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2873": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4695": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4696": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4697": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5290": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5389": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5390": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5391": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5392": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5841": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5842": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5843": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "7775": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    }
+  ],
+  "failures": [],
+  "metrics": {
+    "minimum_paired_complete_cpu_export_saving_s": 31.11267403513193,
+    "quality_contract_violation_count": 0,
+    "nonimproving_pair_count": 0
+  },
+  "binding": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/artifacts/artifact-86e661cb4c15-98a006db/binding.json",
+  "numerical_import_thread_affinities": {
+    "2807": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "2871": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "2872": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "2873": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "4695": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "4696": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "4697": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5290": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5389": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5390": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5391": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5392": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5841": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5842": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5843": [
+      3,
+      22,
+      27,
+      29
+    ]
+  },
+  "environment": {
+    "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+    "affinity": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "env": {
+      "UV_CACHE_DIR": "/tmp/autoresearch-uv-cache",
+      "OMP_NUM_THREADS": "4",
+      "OPENBLAS_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4",
+      "CUDA_VISIBLE_DEVICES": "",
+      "TMPDIR": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/tmp"
+    },
+    "argv": [
+      "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/run.py",
+      "--phase",
+      "official"
+    ],
+    "pid": 2807
+  },
+  "input_counts": {
+    "frames": 29,
+    "points": 2402589
+  },
+  "attempted_labels": [
+    "B1",
+    "C1",
+    "C2",
+    "B2"
+  ],
+  "resources": {
+    "cpu_process_seconds_including_children": 1323.846443,
+    "aggregate_peak_rss_gib": 2.251983642578125,
+    "self_ru_maxrss_gib": 2.251983642578125,
+    "rss_sampling_interval_s": 0.1,
+    "rss_samples": 5910,
+    "children_observed": false,
+    "gpu_seconds": 0,
+    "official_wall_seconds": 604.5365919210017,
+    "enforced_disk_upper_bound_bytes": 603979776,
+    "cycle_new_storage_gib": 0.5625,
+    "measured_linked_disk_bytes": 110228,
+    "max_output_size_bytes": 121513344,
+    "address_space_limit_bytes": 12884901888,
+    "single_file_limit_bytes": 268435456,
+    "cpu_limit_seconds": 2000
+  },
+  "baseline_reference_array_bytes": 670092600,
+  "baseline_glb_ram_bytes": 121431912,
+  "core": {
+    "status": "complete",
+    "runs": [
+      {
+        "label": "B1",
+        "export_complete": true,
+        "compare_passed": true,
+        "raw_export_wall_s": 157.39404551684856
+      },
+      {
+        "label": "C1",
+        "export_complete": true,
+        "compare_passed": true,
+        "raw_export_wall_s": 120.49878037720919
+      },
+      {
+        "label": "C2",
+        "export_complete": true,
+        "compare_passed": true,
+        "raw_export_wall_s": 118.5134458206594
+      },
+      {
+        "label": "B2",
+        "export_complete": true,
+        "compare_passed": true,
+        "raw_export_wall_s": 149.62611985579133
+      }
+    ],
+    "primary_saving_s": 31.11267403513193
+  },
+  "paired_savings_s": [
+    36.89526513963938,
+    31.11267403513193
+  ],
+  "resource_scope": "No subprocesses created. RSS sampled self and direct children at 0.1s plus self ru_maxrss; sampled aggregate may miss subinterval peaks. Disk is enforced structural bound (one BIN + one output each <=256MiB plus <=64MiB metadata), not measured unlinked-temp peak."
+}

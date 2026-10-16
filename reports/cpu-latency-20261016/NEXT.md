@@ -1,38 +1,26 @@
-# 下一轮耗时测试方案（未执行）
+# 后续耗时优化
 
-旧实验仍为 inconclusive；原失败、缺失 B2、CPU 争用及验证开销不一致的结论保留。
-本方案不修改旧 EvaluationSpec，不恢复旧实验，不代表新预算或执行已获批准。
+RGB 完整对照已按新合同执行并通过独立验收，仓库源码已集成切片实现，相关测试 59 passed。完整导出两对分别节省 36.895 s、31.113 s，见[新结果与限制](rgb-full-validation/README.md)。首轮 inconclusive、原 B2 缺失及 continuation 不能补证的结论保留在[历史报告](README.md)。
 
-## 先完成 RGB 完整导出对照
+Rick 已取消累计 worker 调用数和 worker wall 配额；仍采用 medium leaf、最多 3 个并行 worker，每项任务有有限 timeout。本轮批准的 2,400 CPU s、0 GPU、12 GiB RAM、1 GiB 新文件范围只覆盖 RGB 对照、评估与集成。下面的新候选需要单独确定硬件预算与接受标准，尚未执行。
 
-- 使用独占、显式指定的四个 CPU；先检查可用集合与占用，禁止与 encoding 并发。
-- 固定 seed=0，使用旧 generation `c9c3be6802144fcf97a942085b118422`。
-- 新合同先固定输入、候选、CPU、采集边界、预算、失败条件和接受标准，再运行。
-- 两个相反顺序的 pair 为 B1→C1、C2→B2，共四次完整 export。
-- 每次 timer 都覆盖完整 export 与完全相同的 page-copy 采集 hook。
-- prequantization RGBA/geometry 与 final GLB 比较均移至各次 timer 停止后。
-- raw wall 原样保留，不扣除验证开销；逐次保留次数、原始耗时及失败原因。
-- 仅四次完整导出且比较全部通过，才报告 `min(B1-C1, B2-C2)`。
-- 任一次失败立即停止并保留 partial，primary 留空，禁止成功子集接受或续跑补齐。
-- 历史 B 单次约 370–396 CPU s、C 约 272–283 CPU s；四次约 1284–1358 CPU s。
-- 建议新循环总额度 2400 CPU s：RGB完整对照与比较2000 s、工程smoke100 s、余量300 s；0 GPU。
-- 可分两条各不超过 600 s wall 的命令，每条完成一个 pair；否则给出充分 timeout。
-- 分命令必须显式传递全部原始记录和参照；不能把两次独立 core 调用合并当作完整序列。
-- 新循环另申请最多3次medium leaf调用、累计worker wall1200 s、峰值RAM12 GiB、新文件不超过1 GiB；只做RGB验证与独立评估，encoding/DBSCAN本轮只保留方案。
-- 最多一次完整官方四导出序列，不默认重试；代码、CPU选择、指标与资源在结果前固定。通过独立验收才集成既有RGB补丁；不发布。
+## 优先：atlas 编码并行
 
-## 随后探索
+- 以已经接受的 RGB 切片版本作为 baseline，只增加编码并行这一项变化。
+- 沿用候选中的最多两个编码线程、有界 page 队列和单 BIN writer；页面交给编码线程后保持只读，按原 page 顺序收尾，限制内存，异常直接传播。
+- 保持 MEDIANCUT、128 色、dither=NONE、PNG optimize=True、纹理采样、Surfel 长边约束及 GLB 结构。比较编码结果、完整 decoded RGBA、几何/关联和文件大小。
+- 复用已验证的完整 B1/C1/C2/B2 计时流程：每臂相同 capture、timer 外比较、全部完成且两对都改善才接受；保留原始耗时和失败 partial，不默认重试。
+- 单独运行 benchmark，预先固定 CPU 集合与线程数；固定亲和性不等于独占共享主机。先跑小 smoke，再执行一次完整序列并独立评估。
+- 首张页 pilot 的约 2.952/1.517 s 仅是串行/并行组件观察，不能推断完整导出收益。建议另设 2,400 CPU s、0 GPU、12 GiB RAM、1 GiB 临时文件预算，执行前固定是否足够覆盖共享主机波动及比较成本。
 
-- Encoding：先做串行/有界线程编码的完整 export 对照，使用相同采集、比较和资源规则。
-- 首张页 pilot 只作组件诊断，不能代替 full-export 指标。
-- DBSCAN：先固定任务内只读 orientation JSON，禁止触发原 cache 的重算或写回。
-- 再按预先固定的相机与质量条件做真实 Viewer 对比，不能仅凭过滤数量接受。
+## 随后：NN/SOR 与 matching 重叠
 
-`perf/surfel_latency.py` 仅提供依赖注入的四次计时核心及 CPU 列表校验。
-它还不是完整 scene runner；caller 负责产物、page-copy、比较、亲和性及中断持久化。
-本次仅用假 clock/export 验证工程行为，没有新的真实场景耗时或性能收益结论。
+沿已有依赖分析，提前计算初始 NN 距离统计和 SOR 原始 mask；它们是现有清理流程，不是新增步骤。最终商品保护 OR、`min_remaining_ratio` 与实际筛选仍等待 SAM 标签，DBSCAN 的输入也依赖该筛选，不能把整段过滤提前。
 
-后续可探索 [pointcloud_filter.py](../../utils/pointcloud_filter.py) 的 NN median/SOR 原始 mask
-提前计算并与 matching 重叠；实际 apply 的 min_remaining_ratio 和商品保护 OR 仍等待最终标签。
-DBSCAN 的输入依赖该 apply 结果，不能整段提前；这只是依赖分析，尚未验证收益。
-另见已有 [COS 渐进交付草案](../../docs/superpowers/specs/2026-10-16-progressive-cos-delivery-design.md)。
+独立诊断的原生 NN/SOR 分别为 3.811/6.420 s；实际可隐藏时间受 matching 窗口、CPU 争用和数据准备限制，尚无重叠收益证据。验证应以最终保留点/标签等价和 Viewer 可用时间为准。几何/纹理提前准备已与 matching 重叠 2.999 s，是此前实现，不能再次计作新增收益。
+
+## DBSCAN 与渐进交付
+
+DBSCAN-off 对照应先从任务内冻结 JSON 只读取得 orientation，禁止重算或写回原 sidecar；随后在固定相机下比较真实 Viewer 的背景噪点与主体完整性。首轮没有可用的正式质量/耗时结论，因此默认暂不改。
+
+GLB、匹配结果分别交付 COS 并异步加载仍是[渐进交付设计草案](../../docs/superpowers/specs/2026-10-16-progressive-cos-delivery-design.md)。这涉及服务接口和前端状态流，尚未在本轮实现或部署；没有首屏提速实测。

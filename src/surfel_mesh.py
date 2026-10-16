@@ -72,25 +72,23 @@ def _bilinear(image, x, y):
 
 
 def _dilate_rgb(tiles):
-    """Extend nearest encountered opaque color without changing coverage alpha."""
+    """Extend RGB with the original round and first-direction tie semantics."""
     known = tiles[..., 3] != 0
+    directions = ((slice(None), slice(None, -1), slice(None), slice(1, None)),
+                  (slice(None), slice(1, None), slice(None), slice(None, -1)),
+                  (slice(None, -1), slice(None), slice(1, None), slice(None)),
+                  (slice(1, None), slice(None), slice(None, -1), slice(None)))
     for _ in range(tiles.shape[1] + tiles.shape[2]):
         if known.all():
             break
         old = known.copy()
-        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
-            shifted = np.roll(old, (dy, dx), axis=(1, 2))
-            if dy == 1:
-                shifted[:, 0] = False
-            elif dy == -1:
-                shifted[:, -1] = False
-            if dx == 1:
-                shifted[:, :, 0] = False
-            elif dx == -1:
-                shifted[:, :, -1] = False
-            fill = shifted & ~known
-            tiles[..., :3][fill] = np.roll(tiles[..., :3], (dy, dx), axis=(1, 2))[fill]
-            known |= fill
+        for sy, sx, dy, dx in directions:
+            source = (slice(None), sy, sx)
+            destination = (slice(None), dy, dx)
+            fill = old[source] & ~known[destination]
+            rgb = tiles[source][..., :3][fill]
+            tiles[destination][..., :3][fill] = rgb
+            known[destination] |= fill
     return tiles
 
 

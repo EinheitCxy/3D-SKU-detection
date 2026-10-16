@@ -2,9 +2,10 @@
 from io import BytesIO
 
 import numpy as np
+import pytest
 from PIL import Image
 
-from src.surfel_mesh import bake_surfel_pages
+from src.surfel_mesh import _dilate_rgb, bake_surfel_pages
 
 
 def fixture(n=1):
@@ -207,3 +208,63 @@ def test_zero_and_negative_camera_depth_are_skipped_without_warnings():
         page, = bake_surfel_pages(**args)
     assert page['surfel_count'] == 1
     np.testing.assert_array_equal(page['positions'][:, 2], np.ones(4))
+
+
+def _roll_dilate_rgb_reference(tiles):
+    """Extend nearest encountered opaque color without changing coverage alpha."""
+    known = tiles[..., 3] != 0
+    for _ in range(tiles.shape[1] + tiles.shape[2]):
+        if known.all():
+            break
+        old = known.copy()
+        for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)):
+            shifted = np.roll(old, (dy, dx), axis=(1, 2))
+            if dy == 1:
+                shifted[:, 0] = False
+            elif dy == -1:
+                shifted[:, -1] = False
+            if dx == 1:
+                shifted[:, :, 0] = False
+            elif dx == -1:
+                shifted[:, :, -1] = False
+            fill = shifted & ~known
+            tiles[..., :3][fill] = np.roll(tiles[..., :3], (dy, dx), axis=(1, 2))[fill]
+            known |= fill
+    return tiles
+
+
+@pytest.mark.parametrize('shape', [
+    (0, 3, 4, 4), (2, 0, 4, 4), (2, 3, 0, 4), (1, 0, 0, 4),
+    (1, 1, 1, 4), (2, 1, 7, 4), (2, 7, 1, 4), (3, 5, 7, 4),
+])
+@pytest.mark.parametrize('coverage', ['known', 'transparent', 'mixed'])
+def test_dilate_rgb_matches_original_roll_rgba_in_place(shape, coverage):
+    rng = np.random.default_rng(42)
+    tiles = rng.integers(0, 256, size=shape, dtype=np.uint8)
+    if coverage == 'known':
+        tiles[..., 3] = rng.integers(1, 256, size=shape[:-1], dtype=np.uint8)
+    elif coverage == 'transparent':
+        tiles[..., 3] = 0
+    else:
+        tiles[..., 3] *= rng.integers(0, 2, size=shape[:-1], dtype=np.uint8)
+    alpha = tiles[..., 3].copy()
+    expected = _roll_dilate_rgb_reference(tiles.copy())
+    actual = _dilate_rgb(tiles)
+    assert actual is tiles
+    np.testing.assert_array_equal(actual, expected)  # Includes transparent RGB.
+    np.testing.assert_array_equal(actual[..., 3], alpha)
+
+
+def test_dilate_rgb_first_direction_wins_tie():
+    tiles = np.zeros((1, 3, 3, 4), dtype=np.uint8)
+    tiles[0, 1, 0] = [10, 20, 30, 1]
+    tiles[0, 1, 2] = [40, 50, 60, 255]
+    tiles[0, 0, 1] = [70, 80, 90, 128]
+    tiles[0, 2, 1] = [100, 110, 120, 255]
+    alpha = tiles[..., 3].copy()
+    expected = _roll_dilate_rgb_reference(tiles.copy())
+    actual = _dilate_rgb(tiles)
+    assert actual is tiles
+    np.testing.assert_array_equal(actual[0, 1, 1], [10, 20, 30, 0])
+    np.testing.assert_array_equal(actual, expected)
+    np.testing.assert_array_equal(actual[..., 3], alpha)

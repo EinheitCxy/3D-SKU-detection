@@ -2,6 +2,8 @@
 
 本文件是项目唯一 profiling 入口。正式基线为 **267.565 秒**，Viewer 在 **121.214 秒**可用，ZIP 在 **129.371 秒**就绪。原始运行和本轮独立组件诊断都位于 [同一记录目录](../runtime/video3-full-profile-20261016/)，不再引用旧 fd2–4、旧 Docker 或旧组件计时作为性能基线。
 
+最新优化：RGB 切片延展已通过新的完整 video3 对照、独立评估和集成测试；两对完整 GLB 导出分别节省 **36.895 s、31.113 s**。见[已接受结果](../reports/cpu-latency-20261016/rgb-full-validation/README.md)。尚未重跑修改后的完整流水线，上述全链路基线保持原值。
+
 ## 固定口径
 
 - 输入：`fd-videos/3.json` 的 29 帧、711 个检测/分类；对应视频时刻 0、1.5…42.0 秒。旧独立 JPEG 已清理，本轮从视频 frame 0、45…1260 还原 JPEG quality=95，1080×1920。输入准备 2.345 秒单列，不计入主链路。
@@ -190,10 +192,27 @@ RGB 延展 56.040 秒、调色板量化 21.652 秒、PNG 编码 22.399 秒合计
 
 后续优化优先围绕 DBSCAN、tile RGB 延展、PNG 量化/编码及冷进程网络构造设计单变量验证；不从本轮诊断直接承诺提速比例或省略质量验收。
 
-## 2026-10-16 CPU 优化实验收尾：无候选通过验收
+## 2026-10-16 首轮 CPU 实验：未通过验收，保留历史结论
 
 本轮仅在 runtime 实现 RGB 切片延展与 bounded 两 worker atlas 编码候选，未集成生产；独立评估对 dilation/encoding 为 inconclusive，DBSCAN-off 为 debuggable（smoke 失败，未进入正式比较）。既有 Surfel 提前准备不是本轮新增。唯一全链路基线仍为 **267.565 s**，Viewer **121.214 s**，GLB **137.389 s**。
 
 Dilation 原始 B1/C1/C2 为 169.464647/133.610064/126.081133 s，原 B2 被 CPU 限额中断；独立 B2 continuation 为 156.874763 s。直接算术差为 35.854583 与 30.793630 s，仅供诊断：同核干扰、timer 内不同验证开销、中断后的新进程、累计 1,200 CPU s bound 冲突和缺失 B2 baked reference 阻断正式接受。C1/C2 完整 baked RGBA/geometry 与 final typed arrays、associations、31 张 decoded RGBA atlas 比较未发现差异，已完成文件均为 121,513,344 bytes；continuation 对历史 GLB 的 final 比较通过，不能补证缺失的量化前比较。
 
 Encoding 只有首张真实页两副本的 smoke/pilot，正式运行因同核重叠取消；DBSCAN runner 调用可写 orientation API 导致 sidecar 重算，内容已恢复但原 filesystem metadata 未保留。这些协议失败不证明算法回归，也不证明 GLB 或 Viewer 已正式提速。controller failed-stage transition 仍 blocked，未 promotion 或修复状态。完整证据、资源实测/保守预留的区分、限制与未来最小验证建议见 [Git 内精简报告与原始数值](../reports/cpu-latency-20261016/README.md)（详细本机记录为 `runtime/latency-optimization-20261016/FINAL_REPORT.md`）。
+
+## 2026-10-16 RGB 新对照：已接受并集成
+
+新的 `rgb-02-full-export` 合同只比较原实现与同一份切片候选；固定 video3 generation、seed=0、四个 CPU 的线程亲和性，单进程完成 B1/C1/C2/B2，未与其他本研究 benchmark 并发。主机仍共享。每臂在 timer 内执行相同的完整 page-copy，所有语义比较都在 timer 外，不扣除采集开销。
+
+| Arm | 完整导出 raw wall (s) | RGB 延展子区间 (s) |
+|---|---:|---:|
+| B1 原实现 | 157.394 | 57.703 |
+| C1 切片 | 120.499 | 24.368 |
+| C2 切片 | 118.513 | 24.043 |
+| B2 原实现 | 149.626 | 55.582 |
+
+两对完整导出节省为 **36.895 s、31.113 s**，按预先固定规则取最小值 **31.113 s**。四次均完成，31 页量化前 RGBA（包括透明 RGB）、几何及来源/对象关联、最终 GLB accessor payload、解码 RGBA 和文件大小比较全部通过；每份 121,513,344 bytes、2,564,994 个三角面。
+
+源码修改仅为 `src/surfel_mesh.py::_dilate_rgb`，用局部切片替代 `np.roll`，保留扩散轮次、方向优先级、alpha 和既有 Surfel 长边/直径约束。现有 mesh/GLB 测试 **59 passed**，其中新增 25 个回归用例。独立评估全部 hard gates 通过，已在新循环接受；旧循环的 inconclusive 结论不变。
+
+正式对照消耗 1,323.846 CPU s，runner wall 604.537 s（外层命令 605.378 s），RSS 峰值 2.252 GiB，0 GPU。磁盘 0.5625 GiB 是包含临时 BIN 的受限结构上界，非实测峰值。这里只证明单场景、该采集协议下的两对收益；没有新的全链路、Viewer 首屏或稳定百分比结论。完整原始记录、独立评估及集成结果见[精简归档](../reports/cpu-latency-20261016/rgb-full-validation/README.md)，后续编码并行与 NN/SOR 方案见[下一步](../reports/cpu-latency-20261016/NEXT.md)。

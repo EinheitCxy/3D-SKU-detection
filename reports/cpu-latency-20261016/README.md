@@ -2,9 +2,11 @@
 
 本目录保存可随 Git 审查的精简结果与候选补丁；模型、Viewer generation、GLB、cache、controller 工作状态和过程日志保留在本机 runtime，不进入提交。该归档复制已有结果，没有重跑实验。
 
+最新状态：新的 RGB 完整对照已通过独立验收并集成，详见 [RGB 新对照](rgb-full-validation/README.md)。两对完整 GLB 导出节省 **36.895 s、31.113 s**，集成测试 **59 passed**。以下保留首轮失败与未完成实验的原始结论。
+
 完整流水线基线：video3、29 帧、711 observations、385 global IDs、2,402,589 Viewer 点；总耗时 **267.565 s**，Viewer 可用 **121.214 s**，ZIP 就绪 **129.371 s**，GLB 阶段 **137.389 s**。完整运行仅一次，设备和参数见 [pipeline summary](results/pipeline-summary.json) 与 [组件表](results/pipeline-detailed-tables.json)；组件独立诊断不拼接或替换正式总量。
 
-## 结果与限制
+## 首轮结果与限制（历史）
 
 | 方向 | 实现 / 验证 | 本轮决定 |
 |---|---|---|
@@ -38,6 +40,6 @@ Encoding 32 项相关测试通过；首张真实页两份副本的串行/线程�
 
 下一步先修正计时工具：统一 timer 范围、baseline/candidate 相同验证动作、显式且不重叠的 CPU 分配、保留失败 partial，orientation 从冻结 JSON 读取。新的完整对照需先确定足够预算并预先固定规则；本归档不修改历史阈值或原始结果。生产源码和过滤默认均未因本轮改变。
 
-## 计时工具修订
+## 计时工具修订（新对照之前）
 
 新增 `perf/surfel_latency.py` 与 15 项工程测试：固定 B1/C1/C2/B2，两个 arm 使用同一采集 hook，比较发生在 export timer 结束后，失败保留 partial 且 primary 为空，CPU IDs 显式校验。测试使用假 clock/export，15 passed in 0.05 s；没有新的真实场景计时。该 core 尚未接入完整 scene runner，也不负责实际亲和性、page copy、逐次持久化和信号处理。见 [测试记录](results/test-repair.json) 与 [下一轮方案](NEXT.md)。

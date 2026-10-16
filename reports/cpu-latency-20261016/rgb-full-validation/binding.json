@@ -1,0 +1,94 @@
+{
+  "evaluation_spec_id": "rgb-02-full-export",
+  "baseline_candidate_id": "baseline-rgb-02",
+  "candidate_artifact_id": "artifact-30a7e69979fe-6a03f72c",
+  "baseline_artifact_id": "artifact-709b65780dd7-fd871eb4",
+  "generation": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+  "manifest": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422/manifest.json",
+  "surfel_metadata": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422/surfel.json",
+  "frame_count": 29,
+  "input_point_count": 2402589,
+  "seed": 0,
+  "cpu_ids": [
+    29,
+    27,
+    22,
+    3
+  ],
+  "environment": {
+    "UV_CACHE_DIR": "/tmp/autoresearch-uv-cache",
+    "OMP_NUM_THREADS": "4",
+    "OPENBLAS_NUM_THREADS": "4",
+    "MKL_NUM_THREADS": "4",
+    "CUDA_VISIBLE_DEVICES": "",
+    "TMPDIR": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/tmp"
+  },
+  "export": {
+    "radius": 2.0,
+    "tile_size": 8,
+    "atlas_size": 2048,
+    "batch_size": 1024,
+    "lod": true,
+    "palette_colors": 128,
+    "global_id": null,
+    "delivery_mode": "streamed",
+    "quantizer": "MEDIANCUT",
+    "dither": "NONE",
+    "png_optimize": true
+  },
+  "arm_order": [
+    "B1",
+    "C1",
+    "C2",
+    "B2"
+  ],
+  "pairs": [
+    [
+      "B1",
+      "C1"
+    ],
+    [
+      "B2",
+      "C2"
+    ]
+  ],
+  "same_process": true,
+  "capture_inside_each_raw_timer": true,
+  "comparison_outside_each_raw_timer": true,
+  "official_sequences": 1,
+  "retry_count": 0,
+  "limits": {
+    "smoke_cpu_seconds": 100,
+    "official_cpu_seconds_including_comparison": 2000,
+    "reserve_cpu_seconds": 300,
+    "cycle_cpu_seconds": 2400,
+    "smoke_wall_seconds": 120,
+    "official_wall_seconds": 900,
+    "peak_rss_gib": 12,
+    "new_disk_gib": 1,
+    "gpu_seconds": 0,
+    "address_space_bytes": 12884901888,
+    "single_file_bytes": 268435456
+  },
+  "commands": {
+    "smoke": "UV_CACHE_DIR=/tmp/autoresearch-uv-cache uv run --no-sync python /home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/run.py --phase smoke",
+    "official": "UV_CACHE_DIR=/tmp/autoresearch-uv-cache uv run --no-sync python /home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/run.py --phase official"
+  },
+  "outputs": {
+    "smoke": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/smoke.json",
+    "official": "/home/xingyu/3D_Recognization/runtime/rgb-dilation-validation-20261016/.research/cycles/rgb-02/tasks/execute-compare/official.json"
+  },
+  "binding_read_rule": "Read coordinator-frozen registered copy of this JSON or this exact original binding; do not auto-select CPUs or substitute generation.",
+  "storage_policy": {
+    "simultaneous_exports": 1,
+    "simultaneous_large_files": 2,
+    "maximum_large_file_bytes": 268435456,
+    "retain_baseline_glb_in_ram": true,
+    "retain_baseline_and_current_pages_in_ram": true,
+    "delete_own_current_glb_after_comparison": true,
+    "raw_atlas_disk_copies": false,
+    "metadata_budget_bytes": 67108864,
+    "aggregate_upper_bound_bytes": 603979776,
+    "unlinked_temp_included_in_bound": true
+  }
+}

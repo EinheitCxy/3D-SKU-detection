@@ -1,0 +1,41 @@
+{
+  "argv": [
+    "uv",
+    "run",
+    "--no-sync",
+    "--project",
+    "/home/xingyu/3D_Recognization",
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "test/test_surfel_mesh.py",
+    "test/test_surfel_glb.py",
+    "--import-mode=importlib"
+  ],
+  "cwd": "/home/xingyu/3D_Recognization",
+  "started_at": "2026-10-16T08:04:28.563630+00:00",
+  "finished_at": "2026-10-16T08:04:37.142168+00:00",
+  "environment": {
+    "UV_CACHE_DIR": "/tmp/autoresearch-uv-cache",
+    "CUDA_VISIBLE_DEVICES": "",
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1"
+  },
+  "cpu_limit_seconds": 100,
+  "timeout_seconds": 100,
+  "wall_seconds": 8.57856048643589,
+  "cpu_seconds": 9.387438,
+  "cpu_usage": {
+    "self_user": 0.5844659999999999,
+    "self_system": 0.376424,
+    "children_user": 7.316424,
+    "children_system": 1.1101239999999999
+  },
+  "returncode": 0,
+  "stop_reason": null,
+  "error": null,
+  "stdout": "...........................................................              [100%]\n59 passed in 5.18s\n",
+  "stderr": ""
+}
