@@ -155,28 +155,36 @@ def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size):
     return corners, _dilate_rgb(tiles)
 
 
-def _page(corners, tiles, count, columns, tile_size):
+def _page(corners, tiles, count, columns, tile_size, image_format):
     columns = min(columns, count)
     rows = (count + columns - 1) // columns
     stride = tile_size + 2
     padded = np.zeros((rows * columns, stride, stride, 4), dtype=np.uint8)
     padded[:count] = tiles[:count]
     image = padded.reshape(rows, columns, stride, stride, 4).transpose(0, 2, 1, 3, 4).reshape(rows * stride, columns * stride, 4)
-    stream = BytesIO()
-    Image.fromarray(image).save(stream, format='PNG')
     slot = np.arange(count)
     origin = np.stack((slot % columns, slot // columns), axis=1) * stride + 1
     # UV bounds lie at inner tile edges: texel centers map to disk sample centers.
     uv = (origin[:, None] + np.array([[0, 0], [tile_size, 0], [tile_size, tile_size], [0, tile_size]])[None]) / [columns * stride, rows * stride]
     indices = np.arange(count, dtype=np.uint32)[:, None, None] * 4 + np.array([[0, 1, 2], [0, 2, 3]], dtype=np.uint32)
-    return dict(positions=corners[:count].reshape(-1, 3).copy(), uv=uv.astype(np.float32).reshape(-1, 2),
-                indices=indices.reshape(-1, 3), image_png=stream.getvalue(), surfel_count=count)
+    page = dict(positions=corners[:count].reshape(-1, 3).copy(), uv=uv.astype(np.float32).reshape(-1, 2),
+                indices=indices.reshape(-1, 3), surfel_count=count)
+    if image_format == 'rgba':
+        page['image_rgba'] = image
+    else:
+        stream = BytesIO()
+        Image.fromarray(image).save(stream, format='PNG')
+        page['image_png'] = stream.getvalue()
+    return page
 
 
 def bake_surfel_pages(*, positions, u, v, scales, frame_indices, depths, frames,
-                      read_asset, radius=2.0, tile_size=8, atlas_size=2048, batch_size=1024):
+                      read_asset, radius=2.0, tile_size=8, atlas_size=2048, batch_size=1024,
+                      image_format='png'):
     """Yield independent bounded atlas pages in source-frame order."""
     tile_size, atlas_size, batch_size = map(operator.index, (tile_size, atlas_size, batch_size))
+    if image_format not in ('png', 'rgba'):
+        raise ValueError("image_format must be 'png' or 'rgba'")
     if tile_size < 2 or atlas_size < tile_size + 2 or atlas_size > 2048 or batch_size < 1:
         raise ValueError('Require tile_size >= 2, tile_size + 2 <= atlas_size <= 2048, batch_size >= 1')
     if not np.isfinite(radius) or radius <= 0:
@@ -223,7 +231,7 @@ def bake_surfel_pages(*, positions, u, v, scales, frame_indices, depths, frames,
                 filled += take
                 offset += take
                 if filled == capacity:
-                    yield _page(page_corners, page_tiles, filled, columns, tile_size)
+                    yield _page(page_corners, page_tiles, filled, columns, tile_size, image_format)
                     filled = 0
     if filled:
-        yield _page(page_corners, page_tiles, filled, columns, tile_size)
+        yield _page(page_corners, page_tiles, filled, columns, tile_size, image_format)

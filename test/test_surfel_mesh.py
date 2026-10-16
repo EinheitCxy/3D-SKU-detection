@@ -161,6 +161,17 @@ def test_multiple_pages_have_compact_valid_dimensions():
     assert pages[1]['indices'].max() == 3
 
 
+def test_raw_atlas_pages_preserve_geometry_and_transparent_rgb():
+    encoded = list(bake_surfel_pages(**fixture(5)))
+    raw = list(bake_surfel_pages(**fixture(5), image_format='rgba'))
+    assert len(raw) == len(encoded) == 2
+    for actual, expected in zip(raw, encoded):
+        assert 'image_png' not in actual
+        np.testing.assert_array_equal(actual['image_rgba'], decode(expected))
+        for key in ('positions', 'uv', 'indices', 'surfel_count'):
+            np.testing.assert_array_equal(actual[key], expected[key])
+
+
 def test_all_invisible_yields_no_pages():
     args = fixture()
     args['depths'][:] = 0

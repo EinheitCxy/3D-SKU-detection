@@ -9,8 +9,6 @@ from contextlib import contextmanager
 from functools import partial
 import json
 from pathlib import Path, PurePosixPath
-import shutil
-import struct
 import tempfile
 import time
 import zipfile
@@ -166,7 +164,16 @@ def _load(read, global_id):
 def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
                       atlas_size=2048, radius=2.0, lod=False):
     """Export selected DA3 surfels without overwriting an existing destination."""
+    report, _ = _export_surfel_glb(source, output, global_id=global_id,
+                                 tile_size=tile_size, atlas_size=atlas_size,
+                                 radius=radius, lod=lod)
+    return report
+
+
+def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
+                       atlas_size=2048, radius=2.0, lod=False, image_encoder=None):
     from src.surfel_mesh import bake_surfel_pages
+    from src.surfel_glb_compact import _CompactWriter, _write_glb
 
     started = time.monotonic()
     output = Path(output)
@@ -210,6 +217,8 @@ def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
                 inputs[key] = inputs[key][chosen]
         selected_count = len(inputs["positions"])
         document["nodes"] = [{"mesh": 0, "matrix": matrix.T.reshape(-1).tolist()}]
+        compact = _CompactWriter(document, binary) if image_encoder is not None else None
+        compact_seconds = 0.
 
         def buffer_view(data, target=None):
             padding = (-binary.tell()) % 4
@@ -231,25 +240,32 @@ def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             document["accessors"].append(record)
             return index
 
+        page_options = {"image_format": "rgba"} if compact is not None else {}
         for page in bake_surfel_pages(**inputs, radius=radius, tile_size=tile_size,
-                                      atlas_size=atlas_size):
+                                      atlas_size=atlas_size, **page_options):
             positions = np.asarray(page["positions"], dtype="<f4")
             uv = np.asarray(page["uv"], dtype="<f4")
             indices = np.asarray(page["indices"], dtype="<u4").reshape(-1)
-            position_accessor = accessor(positions, "VEC3", 5126, 34962, True)
-            uv_accessor = accessor(uv, "VEC2", 5126, 34962)
-            index_accessor = accessor(indices, "SCALAR", 5125, 34963)
-            image_view = buffer_view(page["image_png"])
-            document["images"].append({"bufferView": image_view, "mimeType": "image/png"})
+            if compact is not None:
+                compact_started = time.monotonic()
+                compact.geometry(positions, uv, indices, page_count)
+                compact.image(image_encoder(page["image_rgba"]))
+                compact_seconds += time.monotonic() - compact_started
+            else:
+                position_accessor = accessor(positions, "VEC3", 5126, 34962, True)
+                uv_accessor = accessor(uv, "VEC2", 5126, 34962)
+                index_accessor = accessor(indices, "SCALAR", 5125, 34963)
+                image_view = buffer_view(page["image_png"])
+                document["images"].append({"bufferView": image_view, "mimeType": "image/png"})
+                document["meshes"][0]["primitives"].append({
+                    "attributes": {"POSITION": position_accessor, "TEXCOORD_0": uv_accessor},
+                    "indices": index_accessor, "material": page_count, "mode": 4})
             document["textures"].append({"source": page_count, "sampler": 0})
             document["materials"].append({
                 "doubleSided": True, "alphaMode": "MASK", "alphaCutoff": .5,
                 "extensions": {"KHR_materials_unlit": {}},
                 "pbrMetallicRoughness": {"baseColorTexture": {"index": page_count},
                                          "metallicFactor": 0, "roughnessFactor": 1}})
-            document["meshes"][0]["primitives"].append({
-                "attributes": {"POSITION": position_accessor, "TEXCOORD_0": uv_accessor},
-                "indices": index_accessor, "material": page_count, "mode": 4})
             triangle_count += len(indices) // 3
             baked_count += page["surfel_count"]
             page_count += 1
@@ -257,29 +273,16 @@ def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             raise ValueError("Selected Surfels have no visible, nondegenerate geometry to export")
         if not 0 <= baked_count <= selected_count:
             raise ValueError("Baker emitted an invalid Surfel count")
-        binary.write(b"\0" * ((-binary.tell()) % 4))
-        binary_length = binary.tell()
-        document["buffers"] = [{"byteLength": binary_length}]
-        encoded = json.dumps(document, separators=(",", ":"), allow_nan=False).encode()
-        encoded += b" " * ((-len(encoded)) % 4)
-        length = 12 + 8 + len(encoded) + 8 + binary_length
-        if length > 0xFFFFFFFF:
-            raise ValueError("GLB exceeds the 4 GiB format size limit; export an explicit global-id subset")
-        output.parent.mkdir(parents=True, exist_ok=True)
-        # Exclusive creation protects concurrent writers; only remove our own partial file.
-        stream = output.open("xb")
-        try:
-            with stream:
-                stream.write(struct.pack("<4sII", b"glTF", 2, length))
-                stream.write(struct.pack("<I4s", len(encoded), b"JSON"))
-                stream.write(encoded)
-                stream.write(struct.pack("<I4s", binary_length, b"BIN\0"))
-                binary.seek(0)
-                shutil.copyfileobj(binary, stream)
-        except BaseException:
-            output.unlink(missing_ok=True)
-            raise
-    return {"source": str(source), "output": str(output), "global_id": global_id,
+        compact_report = None
+        if compact is not None:
+            compact_started = time.monotonic()
+            compact_report = compact.finish(output)
+            compact_seconds += time.monotonic() - compact_started
+            compact_report.update(source_bytes=None, elapsed_seconds=compact_seconds)
+            length = None  # No full-precision intermediate GLB is generated.
+        else:
+            length = _write_glb(document, binary, output)
+    report = {"source": str(source), "output": str(output), "global_id": global_id,
             "input_point_count": point_count, "point_count": point_count,
             "selected_point_count": selected_count, "lod": lod_report,
             "lod_removed_point_count": point_count - selected_count,
@@ -287,9 +290,10 @@ def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             "skipped_surfel_count": selected_count - baked_count,
             "triangle_count": triangle_count,
             "atlas_pages": page_count, "glb_bytes": length,
-            "elapsed_seconds": time.monotonic() - started,
+            "elapsed_seconds": time.monotonic() - started - compact_seconds,
             "tile_size": tile_size, "atlas_size": atlas_size, "radius": radius,
             "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"}
+    return report, compact_report
 
 
 def export_scene_glb(
@@ -303,41 +307,29 @@ def export_scene_glb(
 ):
     """Build the compact LOD delivery file from existing Viewer assets on CPU.
 
-    The intermediate full-precision GLB is request-local and always removed.
-    No inference or Viewer bundle repacking is needed.
+    Atlas pages are quantized and encoded once, directly into the final BIN
+    stream. No full-precision GLB or intermediate PNG is generated.
+    Consequently bake.glb_bytes, compact.source_bytes and
+    compact.texture_bytes_before are None. Bake time excludes the separately
+    reported compact time (geometry quantization, PNG encoding and final write).
     """
-    from src.surfel_glb_compact import compact_surfel_glb
-    from src.surfel_glb_texture import compact_png, rgba_png
+    from src.surfel_glb_texture import encode_atlas
 
     output = Path(output)
     if output.exists():
         raise FileExistsError(output)
-    image_transform = (
-        rgba_png
-        if palette_colors is None
-        else partial(compact_png, colors=palette_colors)
-    )
     output.parent.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
-    with tempfile.TemporaryDirectory(prefix="surfel-glb-", dir=output.parent) as work:
-        intermediate = Path(work) / "baked.glb"
-        bake = export_surfel_glb(
-            source,
-            intermediate,
-            radius=radius,
-            tile_size=tile_size,
-            lod=lod,
-        )
-        compact = compact_surfel_glb(
-            intermediate, output, image_transform=image_transform
-        )
-    # Do not expose paths to intermediates that have already been removed.
+    bake, compact = _export_surfel_glb(
+        source, output, radius=radius, tile_size=tile_size, lod=lod,
+        image_encoder=partial(encode_atlas, colors=palette_colors),
+    )
     bake.pop("output")
-    compact.pop("source")
     return {"output": str(output), "glb_bytes": output.stat().st_size,
             "elapsed_seconds": time.monotonic() - started,
             "radius": radius, "tile_size": tile_size, "lod": lod,
             "palette_colors": palette_colors,
+            "delivery_mode": "streamed",
             "bake": bake, "compact": compact}
 
 

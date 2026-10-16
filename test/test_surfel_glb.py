@@ -50,10 +50,13 @@ def fake_baker(monkeypatch):
         stream = BytesIO()
         Image.new("RGBA", (4, 4), (255, 0, 0, 255)).save(stream, format="PNG")
         for center in kwargs["positions"]:
+            image = (dict(image_rgba=np.full((4, 4, 4), [255, 0, 0, 255], dtype=np.uint8))
+                     if kwargs.get("image_format") == "rgba"
+                     else dict(image_png=stream.getvalue()))
             yield dict(positions=np.array([center] * 4, dtype="<f4"),
                        uv=np.array([[0, 0], [1, 0], [1, 1], [0, 1]], dtype="<f4"),
                        indices=np.array([[0, 1, 2], [0, 2, 3]], dtype="<u4"),
-                       image_png=stream.getvalue(), surfel_count=1)
+                       **image, surfel_count=1)
 
     monkeypatch.setattr("src.surfel_mesh.bake_surfel_pages", bake)
     return captured
@@ -249,15 +252,67 @@ def test_scene_delivery_accepts_unquantized_custom_bake_parameters(bundle, tmp_p
         assert image.size == (24, 12)
 
 
-def test_scene_delivery_removes_intermediate_on_compaction_failure(bundle, tmp_path, monkeypatch):
+@pytest.mark.parametrize("stage", ["encode", "write"])
+def test_scene_delivery_leaves_no_partial_output_on_failure(bundle, tmp_path, monkeypatch, stage):
     from src.surfel_glb import export_scene_glb
 
-    def fail(source, output, **kwargs):
-        assert source.is_file()
-        raise RuntimeError("compact failed")
+    def fail(*args, **kwargs):
+        if stage == "write":
+            args[1].write(b"partial")
+        raise RuntimeError("export failed")
 
-    monkeypatch.setattr("src.surfel_glb_compact.compact_surfel_glb", fail)
+    target = ("src.surfel_glb_texture.encode_atlas" if stage == "encode"
+              else "src.surfel_glb_compact.shutil.copyfileobj")
+    monkeypatch.setattr(target, fail)
     output = tmp_path / "delivery" / "scene.glb"
-    with pytest.raises(RuntimeError, match="compact failed"):
+    with pytest.raises(RuntimeError, match="export failed"):
         export_scene_glb(bundle, output)
     assert list(output.parent.iterdir()) == []
+
+
+def assert_same_compact_assets(left_path, right_path):
+    """Compare geometry and PNG payloads independently of BIN chunk packing order."""
+    left, left_binary = parse(left_path)
+    right, right_binary = parse(right_path)
+
+    def payload(document, binary, index):
+        view = document["bufferViews"][index]
+        start = view["byteOffset"]
+        metadata = {key: value for key, value in view.items() if key != "byteOffset"}
+        return metadata, binary[start:start + view["byteLength"]]
+
+    for key in set(left) - {"accessors", "bufferViews", "images", "buffers"}:
+        assert left[key] == right[key], key
+    assert len(left["accessors"]) == len(right["accessors"])
+    for a, b in zip(left["accessors"], right["accessors"]):
+        assert {k: v for k, v in a.items() if k != "bufferView"} == {
+            k: v for k, v in b.items() if k != "bufferView"}
+        assert payload(left, left_binary, a["bufferView"]) == payload(right, right_binary, b["bufferView"])
+    assert len(left["images"]) == len(right["images"])
+    for a, b in zip(left["images"], right["images"]):
+        assert a["mimeType"] == b["mimeType"] == "image/png"
+        assert payload(left, left_binary, a["bufferView"]) == payload(right, right_binary, b["bufferView"])
+
+
+@pytest.mark.parametrize("palette_colors", [None, 128])
+def test_streamed_delivery_matches_two_stage_geometry_and_textures(
+    bundle, tmp_path, fake_baker, palette_colors
+):
+    from functools import partial
+    from src.surfel_glb import export_scene_glb
+    from src.surfel_glb_compact import compact_surfel_glb
+    from src.surfel_glb_texture import compact_png, rgba_png
+
+    baked, old, direct = (tmp_path / name for name in ("baked.glb", "old.glb", "direct.glb"))
+    export_surfel_glb(bundle, baked, lod=True)
+    transform = rgba_png if palette_colors is None else partial(compact_png, colors=palette_colors)
+    before = compact_surfel_glb(baked, old, image_transform=transform)
+    report = export_scene_glb(bundle, direct, palette_colors=palette_colors)
+    assert_same_compact_assets(old, direct)
+    for key in ("geometry_bytes_before", "geometry_bytes_after", "texture_bytes_after",
+                "max_position_error", "max_uv_error", "triangle_count", "primitive_count"):
+        assert report["compact"][key] == before[key]
+    assert report["bake"]["glb_bytes"] is None
+    assert report["compact"]["source_bytes"] is None
+    assert report["compact"]["texture_bytes_before"] is None
+    assert report["delivery_mode"] == "streamed"

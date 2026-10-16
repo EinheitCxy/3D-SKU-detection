@@ -39,7 +39,9 @@ Docker 服务在现有 Viewer generation 目录生成后，调用 `src.surfel_gl
 
 GLB 在 Docker 请求临时目录内生成，以原始 `bytes` 放入响应的 `scene_glb` 字段，由现有 `bson.dumps` 编码为 BSON binary；不使用 Base64，不上传 COS，也不塞入 ZIP。成功响应为 `{"global_skus": [...], "scene_glb": <binary>}`；原 Viewer ZIP 的 COS 上传保持不变。普通加载器需支持标准 `KHR_materials_unlit` 和 `KHR_mesh_quantization`。
 
-该入口默认使用上一轮减量方案：半径2.0、8×8纹理tile、2×2保守LOD、16-bit几何和128种RGB索引PNG；导出函数可显式覆盖前述实验参数。中间和最终GLB文件均随请求临时目录清理；最终内容在清理前读成bytes返回。导出、读取或原Viewer ZIP上传失败均抛出错误。BSON编码和客户端下载会完整持有GLB，响应大小与内存占用随文件大小增加。
+该入口默认使用上一轮减量方案：半径2.0、8×8纹理tile、2×2保守LOD、16-bit几何和128种RGB索引PNG；导出函数可显式覆盖前述实验参数。现在逐页直接完成几何量化和最终 PNG 编码，不再生成中间完整 GLB，也不重复编解码 PNG；最终 BIN 使用临时文件流，最终 GLB 在请求临时目录清理前读成 bytes 返回。导出、读取或原Viewer ZIP上传失败均抛出错误。BSON编码和客户端下载会完整持有GLB，响应大小与内存占用随文件大小增加。
+
+直通导出报告包含 `delivery_mode="streamed"`。未生成的中间 `bake.glb_bytes`、`compact.source_bytes` 和 `compact.texture_bytes_before` 为 `null`；`bake.elapsed_seconds` 不包含另报的 compact 时间。独立 bake/compact CLI 的报告保持原口径。
 
 这是额外的CPU步骤，会延长同步 `/api` 请求；当前约236万点样例的LOD烘焙曾耗时约155秒，之后还需压缩和传输响应，不能视为固定时限。实际文件大小随场景变化；117.16 MB仅为现有样例。运行容器须更新后，新任务才会生成该文件；旧任务不会自动补齐。
 

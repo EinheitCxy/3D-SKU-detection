@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from src.surfel_glb_texture import compact_png, rgba_png
+from src.surfel_glb_texture import compact_png, encode_atlas, rgba_png
 
 
 def test_indexed_texture_preserves_alpha_and_simple_colors():
@@ -54,3 +54,14 @@ def test_rgba_png_preserves_transparent_rgb_and_binary_alpha():
         decoded = np.asarray(result)
     np.testing.assert_array_equal(decoded, source)
     assert set(np.unique(decoded[..., 3])) == {0, 255}
+
+
+@pytest.mark.parametrize("colors", [None, 64, 128])
+def test_direct_rgba_encoding_matches_png_roundtrip(colors):
+    rng = np.random.default_rng(9)
+    source = rng.integers(0, 256, (24, 32, 4), dtype=np.uint8)
+    source[..., 3] = (source[..., 3] >= 128) * 255
+    raw = BytesIO()
+    Image.fromarray(source).save(raw, format="PNG")
+    expected = rgba_png(raw.getvalue()) if colors is None else compact_png(raw.getvalue(), colors)
+    assert encode_atlas(source, colors) == expected
