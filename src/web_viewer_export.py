@@ -409,6 +409,38 @@ def _sample_product_points(
     return np.sort(np.concatenate(selected))
 
 
+def _select_background_voxels(
+    points: np.ndarray,
+    confidence: np.ndarray,
+    background: np.ndarray,
+    voxel_size: float,
+) -> np.ndarray:
+    """Keep each voxel's first highest-confidence point, in first-seen voxel order."""
+    if len(background) == 0:
+        return np.empty(0, dtype=np.int64)
+    scaled = np.floor(points[background] / voxel_size)
+    limits = np.iinfo(np.int64)
+    if (
+        not np.isfinite(scaled).all()
+        or np.any(scaled < limits.min)
+        or np.any(scaled > limits.max)
+    ):
+        raise WebViewerExportError("DA3 voxel keys exceed int64 representation")
+    voxels = scaled.astype(np.int64)
+    # lexsort is stable: equal confidence within a voxel retains input order.
+    order = np.lexsort((
+        -confidence[background], voxels[:, 2], voxels[:, 1], voxels[:, 0],
+    ))
+    sorted_voxels = voxels[order]
+    starts = np.concatenate((
+        [0], np.flatnonzero(np.any(sorted_voxels[1:] != sorted_voxels[:-1], axis=1)) + 1,
+    ))
+    # A later winner must not change the voxel's first-seen position: this order
+    # also feeds fixed-seed background sampling.
+    first_seen = np.minimum.reduceat(order, starts)
+    return background[order[starts[np.argsort(first_seen)]]]
+
+
 def _sample_points(
     cache: dict[str, Any],
     objects: dict[str, Any],
@@ -516,21 +548,7 @@ def _sample_points(
     colors = flat_colors[valid][keep_filter]
     protected = np.flatnonzero(labels >= 0)
     background = np.flatnonzero(labels < 0)
-    scaled = np.floor(points[background] / voxel_size)
-    limits = np.iinfo(np.int64)
-    if (
-        not np.isfinite(scaled).all()
-        or np.any(scaled < limits.min)
-        or np.any(scaled > limits.max)
-    ):
-        raise WebViewerExportError("DA3 voxel keys exceed int64 representation")
-    selected: dict[tuple[int, int, int], int] = {}
-    for index, values in zip(background, scaled.astype(np.int64)):
-        voxel = tuple(int(value) for value in values)
-        previous = selected.get(voxel)
-        if previous is None or confidence[index] > confidence[previous]:
-            selected[voxel] = index
-    background_keep = np.fromiter(selected.values(), dtype=np.int64, count=len(selected))
+    background_keep = _select_background_voxels(points, confidence, background, voxel_size)
     background_budget = MAX_BACKGROUND_POINTS
     sample_group = None
     if adaptive_surfels:

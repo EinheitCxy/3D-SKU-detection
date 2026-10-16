@@ -199,6 +199,32 @@ def _stable_geometry(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+def test_background_voxels_preserve_winners_ties_and_first_seen_order():
+    points = np.asarray([
+        [2.1, 0.0, 1.0], [-0.1, 0.0, 1.0], [0.1, 0.0, 1.0],
+        [2.8, 0.0, 1.0], [-0.8, 0.0, 1.0], [2.5, 0.0, 1.0],
+        [0.2, 0.0, 1.0], [-0.5, 0.0, 1.0],
+    ])
+    confidence = np.asarray([1, 4, 2, 3, 4, 3, 5, 100], dtype=np.float32)
+    # The last point represents a protected product and must not compete.
+    background = np.arange(7)
+    selected = exporter._select_background_voxels(points, confidence, background, 1.0)
+    assert np.array_equal(selected, [3, 1, 6])
+
+
+def test_background_voxels_empty_and_large_negative_keys():
+    points = np.asarray([[-1e12, 0, 1], [-1e12, 0, 1], [1e12, 0, 1]])
+    confidence = np.asarray([-1, -0.0, 0.0], dtype=np.float32)
+    assert np.array_equal(
+        exporter._select_background_voxels(points, confidence, np.arange(3), 0.005),
+        [1, 2],
+    )
+    selected = exporter._select_background_voxels(
+        points, confidence, np.empty(0, dtype=np.int64), 0.005
+    )
+    assert selected.shape == (0,) and selected.dtype == np.int64
+
+
 def test_tuning_requires_surfel_export(exporter_inputs):
     with pytest.raises(WebViewerExportError, match="tuning requires Surfel export"):
         export_web_viewer_bundle(
