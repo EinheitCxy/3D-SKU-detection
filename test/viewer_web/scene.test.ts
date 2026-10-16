@@ -19,6 +19,19 @@ describe("point-only scene", () => {
     expect(selectionRangesForGlobalIds({ "1": { point_ranges: [[0, 2]] }, "2": { point_ranges: [[2, 5]] } } as never, new Set(["1", "2"]))).toEqual([[0, 2], [2, 5]]);
   });
 
+  it("reuses visibility set before point mode and keeps source RGB immutable", () => {
+    const colors = new Uint8Array([10, 20, 30]);
+    const visibility = new Uint8BufferAttribute(new Uint8Array([0]), 1).setUsage(DynamicDrawUsage);
+    const points = createPoints({ positions: new Float32Array([0, 0, 0]), colors,
+      normals: new Int8Array([0, 0, 127]) } as never, new Matrix4(), visibility);
+    expect(points.geometry.getAttribute("aVisible")).toBe(visibility);
+    const displayedColors = points.geometry.getAttribute("aColor").array as Uint8Array;
+    displayedColors[0] = 200;
+    expect(colors[0]).toBe(10);
+    points.geometry.dispose();
+    (points.material as ShaderMaterial).dispose();
+  });
+
   it("keeps custom fog includes on standalone preprocessor lines", () => {
     const points = createPoints({ positions: new Float32Array([0, 0, 0]), colors: new Uint8Array([1, 2, 3]), normals: new Int8Array([0, 0, 127]) } as never, new Matrix4());
     const material = points.material as ShaderMaterial;

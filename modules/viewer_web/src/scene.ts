@@ -195,17 +195,12 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   scene.add(worldGroup);
 
   let renderMode: "points" | "surfel" = bundle.surfels ? "surfel" : "points";
-  const points = bundle.colors ? createPoints(bundle, worldGroup.matrix) : null;
-  if (points) {
-    points.visible = renderMode === "points";
-    points.layers.set(POINTS_LAYER);
-    worldGroup.add(points);
-  }
-  const pointMaterial = points?.material as ShaderMaterial | undefined;
-  const pointColorAttribute = points?.geometry.getAttribute("aColor") as Uint8BufferAttribute | undefined;
-  const pointVisibilityAttribute = points
-    ? points.geometry.getAttribute("aVisible") as Uint8BufferAttribute
-    : new Uint8BufferAttribute(new Uint8Array(bundle.pointCount).fill(1), 1).setUsage(DynamicDrawUsage);
+  let points: Points | null = null;
+  let pointMaterial: ShaderMaterial | undefined;
+  let pointColorAttribute: Uint8BufferAttribute | undefined;
+  const pointVisibilityAttribute = new Uint8BufferAttribute(
+    new Uint8Array(bundle.pointCount).fill(1), 1,
+  ).setUsage(DynamicDrawUsage);
   const surfels = bundle.surfels ? createSurfelRenderer(renderer, camera, bundle, worldGroup.matrix,
     pointVisibilityAttribute) : null;
   const bounds = bundle.manifest.display_bounds;
@@ -223,7 +218,7 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   measurementCamera.far = camera.far;
   camera.updateProjectionMatrix();
   scene.fog = new Fog(background, sceneRadius * FOG_NEAR_RADII, sceneRadius * FOG_FAR_RADII);
-  const pipeline = points ? createViewerPipeline(renderer, scene, camera) : null;
+  let pipeline: ReturnType<typeof createViewerPipeline> | null = null;
 
   let selectedGlobalIdForCamera: string | null = null;
   let pickHandler: ((globalId: string) => void) | null = null;
@@ -269,6 +264,22 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
   const resizeObserver = new ResizeObserver(resize);
   resizeObserver.observe(container);
   resize();
+  if (renderMode === "points") ensurePoints();
+
+  function ensurePoints(): void {
+    if (points) return;
+    points = createPoints(bundle, worldGroup.matrix, pointVisibilityAttribute);
+    points.layers.set(POINTS_LAYER);
+    worldGroup.add(points);
+    pointMaterial = points.material as ShaderMaterial;
+    pointColorAttribute = points.geometry.getAttribute("aColor") as Uint8BufferAttribute;
+    // Selection and visibility can change before the first switch to points.
+    applySelectionColors(pointColorAttribute.array as Uint8Array, bundle.colors!, [], previousTintedRanges);
+    pointMaterial.uniforms.uSize.value = pointSizes.points;
+    pipeline = createViewerPipeline(renderer, scene, camera);
+    resize();
+  }
+
 
   const onPointerDown = (event: PointerEvent) => {
     if (event.isPrimary && event.button === 0) {
@@ -400,8 +411,9 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
       renderLoop.request();
     },
     setRenderMode(mode) {
-      if (mode === "points" && !points) throw new Error("数据包缺少原始点云颜色");
+      if (mode === "points" && !bundle.colors) throw new Error("数据包缺少原始点云颜色");
       if (mode === "surfel" && !surfels) throw new Error("数据包缺少 Surfel 数据");
+      if (mode === "points") ensurePoints();
       renderMode = mode;
       currentPointSize = pointSizes[mode];
       updateRaycasterThreshold();
@@ -586,9 +598,9 @@ export function createViewerScene(container: HTMLElement, bundle: ViewerBundle):
         previousTintedRanges,
         ranges,
       );
-      previousTintedRanges = ranges;
       queueSelectionAttributeUpdates(pointColorAttribute, changed);
     }
+    previousTintedRanges = ranges;
     renderLoop.request();
   }
 
@@ -647,17 +659,17 @@ void main() { if (vVisible < 0.5) discard; vec2 centered = gl_PointCoord - vec2(
 }
 `;
 
-export function createPoints(bundle: ViewerBundle, worldMatrix: Matrix4): Points {
+export function createPoints(bundle: ViewerBundle, worldMatrix: Matrix4, visibility?: Uint8BufferAttribute): Points {
   if (bundle.colors === null) throw new Error("Points mode requires per-point RGB");
   const geometry = new BufferGeometry();
   geometry.setAttribute("position", new Float32BufferAttribute(bundle.positions, 3));
   geometry.setAttribute(
     "aColor",
-    new Uint8BufferAttribute(bundle.colors.slice(), 3, true).setUsage(DynamicDrawUsage),
+    new Uint8BufferAttribute(bundle.colors, 3, true).setUsage(DynamicDrawUsage),
   );
   geometry.setAttribute(
     "aVisible",
-    new Uint8BufferAttribute(
+    visibility ?? new Uint8BufferAttribute(
       new Uint8Array(bundle.positions.length / 3).fill(1),
       1,
       false,
