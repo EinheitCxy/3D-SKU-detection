@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from utils.sam3_mask_cache import (
+    PVS_INFERENCE_CONTRACT,
     FrameMaskCacheError,
     FrameMaskCacheRequest,
     ProcessedDetectionPrompt,
@@ -40,14 +41,7 @@ def request(
             [[0.5, 0.0, 0.0], [0.0, 0.5, 0.0]], dtype=np.float64
         ),
         detections=detections,
-        inference_contract={
-            "api": "self_exemplar",
-            "threshold": 0.5,
-            "image_size": 1008,
-            "max_batch_size": 32,
-            "max_dets_per_query": 1,
-            "clip_to_bbox": True,
-        },
+        inference_contract=PVS_INFERENCE_CONTRACT.copy(),
     )
 
 
@@ -73,7 +67,7 @@ def changed_request(
     if field == "inference_contract":
         return dataclasses.replace(
             request_,
-            inference_contract={**request_.inference_contract, "threshold": 0.4},
+            inference_contract={**request_.inference_contract, "mask_logit_threshold": 0.4},
         )
     raise AssertionError(f"unknown request field: {field}")
 
@@ -589,14 +583,7 @@ def _concurrent_worker(
         detections=(
             ProcessedDetectionPrompt(7, (0.0, 0.0, 8.0, 8.0), (0.0, 0.0, 4.0, 4.0)),
         ),
-        inference_contract={
-            "api": "self_exemplar",
-            "threshold": 0.5,
-            "image_size": 1008,
-            "max_batch_size": 32,
-            "max_dets_per_query": 1,
-            "clip_to_bbox": True,
-        },
+        inference_contract=PVS_INFERENCE_CONTRACT.copy(),
     )
 
     def compute() -> dict[int, np.ndarray]:
@@ -635,3 +622,25 @@ def test_two_processes_compute_one_complete_frame(tmp_path: Path) -> None:
         assert worker.exitcode == 0
     assert sorted(queue.get(timeout=2) for _ in workers) == ["hit", "miss"]
     assert counter.read_text() == "1"
+
+
+def test_self_exemplar_manifest_cannot_satisfy_pvs_request(tmp_path):
+    req = request(tmp_path)
+    expected = {7: np.ones((4, 4), dtype=bool)}
+    load_or_compute_frame_masks(req, lambda: expected)
+    manifest_path = req.cache_root / "entries" / "7" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["schema"] = "sam3_self_exemplar_processed_mask_cache_v1"
+    manifest["inference"]["api"] = "self_exemplar"
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(FrameMaskCacheError):
+        load_complete_frame_masks(req)
+    recomputed = []
+
+    def compute():
+        recomputed.append(True)
+        return expected
+
+    actual = load_or_compute_frame_masks(req, compute)
+    assert recomputed == [True]
+    np.testing.assert_array_equal(actual.masks_by_object_id[7], expected[7])

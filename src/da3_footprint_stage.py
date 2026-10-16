@@ -55,6 +55,7 @@ from utils.sam3_mask_cache import (
     FrameMaskCacheRequest,
     FrameMaskCacheError,
     ProcessedDetectionPrompt,
+    PVS_INFERENCE_CONTRACT,
     SCHEMA as SAM3_MASK_CACHE_SCHEMA,
     load_complete_frame_masks,
     map_source_bbox_to_processed,
@@ -80,14 +81,6 @@ _CACHE_FIELDS = {
 _MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
 _PATCH_SIZE = 14
 _PREPROCESS_METHOD = "upper_bound_resize"
-_SELF_EXEMPLAR_INFERENCE_CONTRACT = {
-    "api": "self_exemplar",
-    "threshold": 0.5,
-    "image_size": 1008,
-    "max_batch_size": 32,
-    "max_dets_per_query": 1,
-    "clip_to_bbox": True,
-}
 _GENERATION_ARTIFACTS = {
     "measurement_report": "measurement_report.json",
     "footprints_geojson": "footprints.geojson",
@@ -119,14 +112,14 @@ def run_da3_footprint(
     )
     report: dict[str, Any] = {
         "schema_version": "2.0.0",
-        "metric": "da3_self_exemplar_ground_footprint_union",
+        "metric": "da3_pvs_ground_footprint_union",
         "unit": "m2",
         "status": "rejected",
         "value_m2": None,
         "global_mapping_sha256": None,
         "cache": {},
         "mask_contract": {
-            "source": "sam3_self_exemplar",
+            "source": "sam3_pvs",
             "coordinate_space": "da3_processed_pixels",
             "cache_schema": SAM3_MASK_CACHE_SCHEMA,
         },
@@ -144,7 +137,7 @@ def run_da3_footprint(
             "clock": "time.monotonic",
             "stages_seconds": {
                 "validation_and_io": None,
-                "load_self_exemplar_masks": None,
+                "load_pvs_masks": None,
                 "scene_orientation": None,
                 "select_support_plane": None,
                 "per_id_obb_union": None,
@@ -179,7 +172,7 @@ def run_da3_footprint(
         global_mapping, global_mapping_sha256 = _load_mapping(mapping_path, detections)
         report["global_mapping_sha256"] = global_mapping_sha256
         stages_seconds[active_stage] = time.monotonic() - active_stage_started_at
-        active_stage = "load_self_exemplar_masks"
+        active_stage = "load_pvs_masks"
         active_stage_started_at = time.monotonic()
         (
             masked_observations,
@@ -675,20 +668,20 @@ def _masked_observations(
             processed_shape_hw=(height, width),
             source_to_processed_affine=affine,
             detections=prompts,
-            inference_contract=_SELF_EXEMPLAR_INFERENCE_CONTRACT,
+            inference_contract=PVS_INFERENCE_CONTRACT.copy(),
         )
         try:
             cache_result = load_complete_frame_masks(request)
         except FrameMaskCacheError as error:
             raise FootprintStageError(
-                "canonical self-exemplar mask cache is incomplete; "
+                "canonical PVS mask cache is incomplete; "
                 "run SKU matching first"
             ) from error
         masks_by_object_id = cache_result.masks_by_object_id
         expected_object_ids = {int(item["object_id"]) for item in frame_detections}
         if set(masks_by_object_id) != expected_object_ids:
             raise FootprintStageError(
-                "canonical self-exemplar mask cache is incomplete; "
+                "canonical PVS mask cache is incomplete; "
                 "run SKU matching first"
             )
         mask_cache_frames.append(
@@ -705,7 +698,7 @@ def _masked_observations(
             processed_mask = np.asarray(masks_by_object_id[object_id], dtype=bool)
             if processed_mask.shape != (height, width):
                 raise FootprintStageError(
-                    "canonical self-exemplar mask cache is incomplete; "
+                    "canonical PVS mask cache is incomplete; "
                     "run SKU matching first"
                 )
             global_id = lookup[(image_id, item["object_id"])]
@@ -727,7 +720,7 @@ def _masked_observations(
                 )
             )
             if not processed_mask.any():
-                diagnostic["rejection"] = "processed self-exemplar mask is empty"
+                diagnostic["rejection"] = "processed PVS mask is empty"
                 observations[global_id].append(np.empty((0, 3), dtype=float))
             else:
                 valid = valid_grid & processed_mask

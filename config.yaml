@@ -39,9 +39,8 @@ inference:
   enable_sam3_mask_sampling: true  # 是否启用SAM3分割mask引导采样，从物体mask内采样而非整个bbox
   sam3_checkpoint_path: "sam31/checkpoints/sam3.1_multiplex.pt"  # 相对仓库根的 SAM3.1 权重路径（本机链接到 modelscope 快照）
   sam3_code_root: "sam31/"  # SAM3 代码树根（默认模型为 SAM3.1，用 sam31/ 代码树）
-  sam3_mask_cache_root: ""  # 默认解析为 <output>/sam3_mask_cache_sam31/v2（SAM3.1 专用缓存根，防止复用 SAM3.0 mask）；显式传 --sam3_mask_cache_root 时以此为准
-  sam3_self_exemplar_threshold: 0.5  # self-exemplar检测阈值(0-1)，控制分割mask的置信度过滤
-  sam3_max_batch_size: 32  # self-exemplar每批最多bbox数(128/64 OOM,32通过);fd6实测sam3 -38% wall-clock -15% R -0.51pt边界
+  sam3_mask_cache_root: ""  # 默认解析为 <output>/sam3_mask_cache_sam31_pvs/v2（PVS 专用缓存根，隔离 self-exemplar mask）；显式传 --sam3_mask_cache_root 时以此为准
+  sam3_max_batch_size: 4  # PVS canonical cache 固定每批4框，整图只编码一次
 
 # 检出框可视化配置 (modules/draw_detection_boxes.py)
 visualization:
@@ -72,7 +71,7 @@ accuracy:
   output: null  # 评估报告输出路径，null=自动生成到accuracy_results/目录
 
 # 地堆 footprint 面积配置（--mode ground-stack-area）
-# 指标：da3_self_exemplar_ground_footprint_union —— matching 生成的 self-exemplar mask
+# 指标：da3_pvs_ground_footprint_union —— matching 生成的 PVS mask
 # 投影每个 carton OBB 到支撑平面后的多边形并集（m²）；要求 DA3 cache、global_mapping.json 与完整 v2 mask cache。
 ground_stack_footprint:
-  metric: "da3_self_exemplar_ground_footprint_union"  # 并集面积，不是 bbox 面积算术和
+  metric: "da3_pvs_ground_footprint_union"  # 并集面积，不是 bbox 面积算术和

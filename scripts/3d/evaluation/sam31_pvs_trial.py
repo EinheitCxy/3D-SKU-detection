@@ -17,46 +17,9 @@ sys.path.insert(0, str(ROOT / "sam31"))
 import numpy as np
 from PIL import Image, ImageDraw
 import torch
-import torch.nn.functional as F
-from torchvision.transforms import v2
 
 from utils.detection_objects import flatten_detection_objects
-from utils.sam3_utils import clip_mask_to_bbox
-
-
-def load_model(checkpoint: Path):
-    from sam3.model_builder import build_sam3_multiplex_video_model
-
-    # The upstream constructor precomputes CUDA position encodings even when
-    # building parameters on CPU. CUDA_VISIBLE_DEVICES selects the owned GPU.
-    model = build_sam3_multiplex_video_model(
-        checkpoint_path=None,
-        load_from_HF=False,
-        device="cpu",
-        use_fa3=False,
-        use_rope_real=False,
-        compile=False,
-    )
-    state = torch.load(checkpoint, map_location="cpu", weights_only=True, mmap=True)
-    if "model" in state:
-        state = state["model"]
-    # The released combined checkpoint shares its detector's vision backbone
-    # with the tracker; the standalone native tracker owns that backbone.
-    weights = {
-        key.removeprefix("tracker.model."): value
-        for key, value in state.items()
-        if key.startswith("tracker.model.")
-    }
-    weights.update(
-        {
-            key.removeprefix("detector."): value
-            for key, value in state.items()
-            if key.startswith("detector.backbone.vision_backbone.")
-        }
-    )
-    model.load_state_dict(weights, strict=True)
-    model = model.eval().cuda()
-    return model, len(weights)
+from utils.sam31_pvs import load_model, predict
 
 
 def load_frame(dataset: Path, frame: str, max_side: int):
@@ -82,71 +45,6 @@ def load_frame(dataset: Path, frame: str, max_side: int):
         raise ValueError(f"Invalid XYXY boxes in frame {frame}")
     boxes *= np.asarray([size[0] / original_wh[0], size[1] / original_wh[1]] * 2)
     return image, boxes, image_path, original_wh
-
-
-@torch.inference_mode()
-def predict(model, image: Image.Image, boxes: np.ndarray, batch_size: int):
-    transform = v2.Compose(
-        [
-            v2.ToImage(),
-            v2.Resize((1008, 1008)),
-            v2.ToDtype(torch.float32, scale=True),
-            v2.Normalize(mean=[0.5] * 3, std=[0.5] * 3),
-        ]
-    )
-    image_tensor = transform(image).unsqueeze(0).cuda()
-    box_tensor = torch.as_tensor(boxes, device="cuda")
-    box_tensor = box_tensor * box_tensor.new_tensor(
-        [1008 / image.width, 1008 / image.height] * 2
-    )
-    torch.cuda.synchronize()
-    start = time.perf_counter()
-    with torch.autocast("cuda", dtype=torch.bfloat16):
-        # Native forward_image projects the two high-resolution feature levels
-        # with interactive conv_s0/conv_s1 once for all box batches.
-        output = model.forward_image(image_tensor, need_interactive_out=True)
-        features = [entry.tensors for entry in output["interactive"]["backbone_fpn"]]
-        memory = model.interactivity_no_mem_embed.reshape(1, 256, 1, 1)
-        image_embedding = features[-1] + memory
-        torch.cuda.synchronize()
-        encoder_s = time.perf_counter() - start
-        masks, scores, presence, raw_areas = [], [], [], []
-        for offset in range(0, len(boxes), batch_size):
-            batch_boxes = box_tensor[offset : offset + batch_size]
-            # Labels 2/3 are the native SAM top-left/bottom-right box corners,
-            # exactly as used by SAM3InteractiveImagePredictor._predict.
-            point_inputs = {
-                "point_coords": batch_boxes.reshape(-1, 2, 2),
-                "point_labels": torch.tensor([[2, 3]], device="cuda", dtype=torch.int32)
-                .expand(len(batch_boxes), -1),
-            }
-            result = model._forward_sam_heads(
-                image_embedding,
-                point_inputs=point_inputs,
-                interactive_high_res_features=features[:2],
-                multimask_output=False,
-                multiplex_state=None,
-                objects_to_interact=list(range(len(batch_boxes))),
-            )
-            logits = F.interpolate(
-                result["high_res_masks"], size=(image.height, image.width),
-                mode="bilinear", align_corners=False,
-            )
-            if not torch.isfinite(logits).all() or not torch.isfinite(result["ious"]).all():
-                raise RuntimeError("PVS returned nonfinite masks or quality scores")
-            batch_masks = (logits[:, 0] > 0).cpu().numpy()
-            if len(batch_masks) != len(batch_boxes):
-                raise RuntimeError("PVS did not return one mask per box")
-            for box, mask in zip(boxes[offset : offset + batch_size], batch_masks):
-                raw_areas.append(int(mask.sum()))
-                masks.append(clip_mask_to_bbox(mask, box))
-            scores.extend(result["ious"][:, 0].float().cpu().tolist())
-            presence.extend(result["object_score_logits"].flatten().float().cpu().tolist())
-        torch.cuda.synchronize()
-    return np.stack(masks), scores, presence, raw_areas, {
-        "encoder_s": encoder_s,
-        "inference_and_postprocess_s": time.perf_counter() - start,
-    }
 
 
 def save_frame(output: Path, frame: str, image, boxes, masks, scores, presence, raw_areas):

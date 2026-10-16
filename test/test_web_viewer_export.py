@@ -5,6 +5,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from utils.sam3_mask_cache import PVS_INFERENCE_CONTRACT
+
 import main as main_module
 import src.web_viewer_export as exporter
 from src.web_viewer_export import WebViewerExportError, export_web_viewer_bundle
@@ -146,14 +148,7 @@ def _write_mask_cache(root: Path) -> None:
                 processed_bbox_xyxy=(0.9609375, 0.9609375, 1.0390625, 1.0),
             ),
         ),
-        inference_contract={
-            "api": "self_exemplar",
-            "threshold": 0.5,
-            "image_size": 1008,
-            "max_batch_size": 32,
-            "max_dets_per_query": 1,
-            "clip_to_bbox": True,
-        },
+        inference_contract=PVS_INFERENCE_CONTRACT.copy(),
     )
     load_or_compute_frame_masks(
         request,

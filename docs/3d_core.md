@@ -133,13 +133,17 @@ Docker BSON 服务通过 Starlette thread pool 执行同步处理：解码、处
 
 ## Footprint 与 SAM3 cache
 
-运行顺序是 canonical contract：matching 必须完成 **全部** `batch_all_refs` references；`--mode ground-stack-area` 是独立的后端计量阶段，`--mode viewer-web` 可在 dedup 后直接发布产品 bundle。matching 是唯一的 SAM3 producer；它在默认 `enable_sam3_mask_sampling: true` 下以 self-exemplar 生成每个 frame 的完整 processed-space masks。master gate 为 false 时 matching 走既有 bbox sampling 且不发布 cache，任何需要实例点标签的 export 必须 fail closed。
+运行顺序是 canonical contract：matching 必须完成 **全部** `batch_all_refs` references；`--mode ground-stack-area` 是独立的后端计量阶段，`--mode viewer-web` 可在 dedup 后直接发布产品 bundle。matching 是唯一的 SAM3 producer；它在默认 `enable_sam3_mask_sampling: true` 下以 SAM3.1 PVS 生成每个 frame 的完整 processed-space masks。master gate 为 false 时 matching 走既有 bbox sampling 且不发布 cache，任何需要实例点标签的 export 必须 fail closed。
 
 v2 cache 的每个 payload 是 processed DA3 grid 上 `(object_count, height, width)` bool masks，以 little-endian `np.packbits` 无损打包到 `masks.npz`；manifest 以 `object_id` 绑定 mask，而非依赖数组位置。partial、mismatched 或 corrupt frame 不能命中。`sam3_mask_cache/v1` 与 v2 不兼容，v1 从不读取、迁移、复制、fallback 或自动删除。
 
-`--mode ground-stack-area` 只读取 matching 已发布的 v2 cache、metric DA3 cache 与去重映射，不导入、加载或推理 SAM3，也不会因 cache miss 重算。它为每个 `global_id` 从全部有效观测重建 OBB，并在支撑平面上取 polygon union，得到 `da3_self_exemplar_ground_footprint_union`（m²）。缺少任何 canonical mask 或必要几何会发布 `rejected`/`null`，不会伪造部分结果。该 metric 是新 baseline，不能与旧 `da3_ground_footprint_union` 面积比较。
+`--mode ground-stack-area` 只读取 matching 已发布的 v2 cache、metric DA3 cache 与去重映射，不导入、加载或推理 SAM3，也不会因 cache miss 重算。它为每个 `global_id` 从全部有效观测重建 OBB，并在支撑平面上取 polygon union，得到 `da3_pvs_ground_footprint_union`（m²）。缺少任何 canonical mask 或必要几何会发布 `rejected`/`null`，不会伪造部分结果。该 metric 是新 baseline，不能与旧 `da3_ground_footprint_union` 面积比较。
 
-面积入口使用统一默认目录 `sam3_mask_cache_sam31/v2`，也接收 `--sam3_mask_cache_root` 指定 matching 实际发布的目录；显式目录不完整时直接拒绝，不尝试默认目录。DA3 输入及报告中的 cache schema 均为 3。
+PVS 使用现有 SAM3.1 multiplex 权重的 native tracker / interactive neck；整图 encoder 为 1008×1008，固定 batch=4，FP32 weights / BF16 autocast，只支持 CUDA。框为输入 processed 图像空间 XYXY，输出恢复到该图像尺寸并按 round 边界裁框。保留原生 presence/stability selection，不以空 mask 重试或填满 bbox。matching 与 warmup 共用同一 PVS model cache。
+
+PVS cache schema 为 `sam31_pvs_processed_mask_cache_v1`，与旧 self-exemplar schema 不兼容；默认新目录保留旧缓存。面积报告同步使用 `da3_pvs_ground_footprint_union` 与 `mask_contract.source=sam3_pvs`，不能把 mask 来源改变当作面积准确率提升。
+
+面积入口使用统一默认目录 `sam3_mask_cache_sam31_pvs/v2`，也接收 `--sam3_mask_cache_root` 指定 matching 实际发布的目录；显式目录不完整时直接拒绝，不尝试默认目录。DA3 输入及报告中的 cache schema 均为 3。
 
 DA3 Viewer 和面积阶段共用 `utils/scene_orientation.py`，在实际 `predictions.npz` 旁保存 `scene_orientation.json`。方向命中直接复用；文件重建后失效重算，格式错误则报错。方向读取与 NPZ 文件状态绑定，避免跨重建坐标复用；不扫描其他 Viewer bundle，也不以 Viewer 的居中平移定义地面。面积用这个方向约束水平面高度搜索，并复用 Surfel 网格切线排除墙面。报告分别记录 `orientation.cache_event` 和 `plane.method`；没有可靠拟合方向时拒绝计量。最低可见水平面不等于已识别真实地板。规则与限制见 [面积算法说明](ground_stack_footprint_algorithm.md)。
 

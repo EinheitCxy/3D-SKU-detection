@@ -1110,11 +1110,11 @@ def test_root_parallel_refs_publish_real_complete_frame_cache(
         transform.image_id = frame_id
         return transform
 
-    def fake_self_exemplar(*, bboxes_xyxy, **_kwargs):
+    def fake_pvs(*, bboxes_xyxy, **_kwargs):
         producer_calls.append(bboxes_xyxy)
         return [np.ones((3, 4), dtype=bool) for _ in bboxes_xyxy]
 
-    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", fake_self_exemplar)
+    monkeypatch.setattr(sam3_utils, "sam31_masks_from_bboxes", fake_pvs)
 
     class FakeSystem:
         def __init__(self, config):
@@ -1151,7 +1151,7 @@ def test_root_parallel_refs_publish_real_complete_frame_cache(
                     ref_bboxes = extract_bboxes_from_detections(
                         detections, frame_id, self.config
                     )
-                    sam3_utils.get_self_exemplar_masks_for_reference(
+                    sam3_utils.get_pvs_masks_for_reference(
                         self.config,
                         image_path=Path(image_paths[frame_id]),
                         image_id=frame_id,

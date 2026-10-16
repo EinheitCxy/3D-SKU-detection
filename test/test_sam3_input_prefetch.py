@@ -65,16 +65,16 @@ def test_matching_key_hit_uses_prefetched_image(monkeypatch, frames, tmp_path):
     threads = _count_prepares(monkeypatch)
     seen: list[bytes] = []
 
-    def fake_self_exemplar(*, image_path, bboxes_xyxy, **_kwargs):
+    def fake_pvs(*, image_path, bboxes_xyxy, **_kwargs):
         seen.append(image_path.tobytes())
         return [np.ones((3, 4), dtype=bool) for _ in bboxes_xyxy]
 
-    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", fake_self_exemplar)
+    monkeypatch.setattr(sam3_utils, "sam31_masks_from_bboxes", fake_pvs)
     config = _config(tmp_path / "cache" / "v2")
     detections = [{"position": [0.0, 0.0, 4.0, 4.0]}]
     transforms = [_transform(0), _transform(1)]
 
-    sam3_utils.get_self_exemplar_masks_for_reference(
+    sam3_utils.get_pvs_masks_for_reference(
         config,
         image_path=frames[0],
         image_id=0,
@@ -83,7 +83,7 @@ def test_matching_key_hit_uses_prefetched_image(monkeypatch, frames, tmp_path):
         transform=transforms[0],
         prefetch_next=(frames[1], transforms[1]),
     )
-    sam3_utils.get_self_exemplar_masks_for_reference(
+    sam3_utils.get_pvs_masks_for_reference(
         config,
         image_path=frames[1],
         image_id=1,
@@ -107,7 +107,7 @@ def test_matching_key_hit_uses_prefetched_image(monkeypatch, frames, tmp_path):
 def test_cache_hit_submits_no_prefetch(monkeypatch, frames, tmp_path):
     monkeypatch.setattr(
         sam3_utils,
-        "sam3_masks_self_exemplar",
+        "sam31_masks_from_bboxes",
         lambda *, bboxes_xyxy, **_k: [np.ones((3, 4), dtype=bool) for _ in bboxes_xyxy],
     )
     config = _config(tmp_path / "cache" / "v2")
@@ -118,8 +118,8 @@ def test_cache_hit_submits_no_prefetch(monkeypatch, frames, tmp_path):
         matching_object_ids=[0],
         transform=_transform(0),
     )
-    sam3_utils.get_self_exemplar_masks_for_reference(config, **kwargs)
-    sam3_utils.get_self_exemplar_masks_for_reference(
+    sam3_utils.get_pvs_masks_for_reference(config, **kwargs)
+    sam3_utils.get_pvs_masks_for_reference(
         config, **kwargs, prefetch_next=(frames[1], _transform(1))
     )
     assert sam3_utils._SAM3_INPUT_PREFETCH_SLOT is None

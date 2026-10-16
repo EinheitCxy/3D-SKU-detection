@@ -24,7 +24,7 @@ from .geometry_3d import (
 )
 from .transforms import ImageTransformBase, bind_da3_transforms_from_cache
 from .sam3_utils import (
-    get_self_exemplar_masks_for_reference,
+    get_pvs_masks_for_reference,
     sample_3d_points_from_mask,
     sample_points_from_mask,
 )
@@ -95,7 +95,7 @@ def _matching_sam3_masks(
         if next_transform is not None and next_idx < len(image_paths)
         else None
     )
-    return get_self_exemplar_masks_for_reference(
+    return get_pvs_masks_for_reference(
         config,
         image_path=Path(image_paths[reference_image_idx]),
         image_id=int(image_id),

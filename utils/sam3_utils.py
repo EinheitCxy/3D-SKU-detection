@@ -35,6 +35,7 @@ import torch
 from .config import SKUMatchingConfig
 from .sam3_mask_cache import (
     FrameMaskCacheRequest,
+    PVS_INFERENCE_CONTRACT,
     ProcessedDetectionPrompt,
     load_or_compute_frame_masks,
     map_source_bbox_to_processed,
@@ -71,6 +72,9 @@ _SAM3_PREDICT_INST_CACHE: Dict[Tuple[str, str, str], Tuple[object, object]] = {}
 
 # Cache for batch inference API (model + transform + postprocessor)
 _SAM3_BATCH_API_CACHE: Dict[Tuple[Any, ...], Tuple[object, object, object]] = {}
+
+# Native PVS trackers, shared by matching and warmup.
+_SAM31_PVS_CACHE: Dict[Tuple[str, str, str], Any] = {}
 
 # Global counter for batch inference query IDs
 _BATCH_QUERY_COUNTER = 0
@@ -2087,28 +2091,45 @@ def _processed_frame_request(
         processed_shape_hw=(processed_height, processed_width),
         source_to_processed_affine=affine,
         detections=tuple(prompts),
-        inference_contract={
-            "api": "self_exemplar",
-            "threshold": 0.5,
-            "image_size": 1008,
-            "max_batch_size": 32,
-            "max_dets_per_query": 1,
-            "clip_to_bbox": True,
-        },
+        inference_contract=PVS_INFERENCE_CONTRACT.copy(),
     )
 
 
-# Inference arguments of the matching self-exemplar producer; they must agree
-# with the v2 cache `inference_contract` in `_processed_frame_request`.
-_MATCHING_SELF_EXEMPLAR_ARGS: Dict[str, Any] = {
-    "detection_threshold": 0.5,
-    "fallback_size": 1008,
-    "skip_resize": False,
-    "max_batch_size": 32,
-}
+def sam31_masks_from_bboxes(
+    *,
+    image_path: Any,
+    bboxes_xyxy: Sequence[Sequence[float]],
+    checkpoint_path: str,
+    device: str,
+    max_batch_size: int = 4,
+) -> List[np.ndarray]:
+    """PVS masks in input order and image space; retain empty masks unchanged."""
+    if not len(bboxes_xyxy):
+        return []
+    if max_batch_size < 1:
+        raise ValueError("PVS max_batch_size must be positive")
+    boxes = np.asarray(bboxes_xyxy, dtype=np.float32)
+    if boxes.shape != (len(bboxes_xyxy), 4) or not np.isfinite(boxes).all():
+        raise ValueError("PVS boxes must be finite XYXY arrays")
+    if np.any(boxes[:, 2:] <= boxes[:, :2]):
+        raise ValueError("PVS boxes must have positive area")
+    device = normalize_device(device)
+    if torch.device(device).type != "cuda":
+        raise ValueError("SAM3.1 PVS requires a CUDA device")
+    code_root = _ensure_sam3_in_path()
+    key = (str(Path(checkpoint_path).resolve()), device, str(code_root.resolve()))
+    from .sam31_pvs import load_model, predict
+
+    if key not in _SAM31_PVS_CACHE:
+        model, _ = load_model(Path(checkpoint_path), device=device)
+        _SAM31_PVS_CACHE[key] = model
+    masks, *_ = predict(
+        _SAM31_PVS_CACHE[key], image_path, boxes, max_batch_size, device=device
+    )
+    return list(masks)
 
 
-def get_self_exemplar_masks_for_reference(
+def get_pvs_masks_for_reference(
     config: SKUMatchingConfig,
     *,
     image_path: Path,
@@ -2127,7 +2148,9 @@ def get_self_exemplar_masks_for_reference(
         return {}
     if not config.sam3_checkpoint_path:
         raise ValueError("SAM3 enabled but sam3_checkpoint_path is empty.")
-    # Optional alternate SAM3 code tree (sam31/ for the 3.1 checkpoint).
+    if config.sam3_max_batch_size != PVS_INFERENCE_CONTRACT["max_batch_size"]:
+        raise ValueError("canonical PVS cache requires sam3_max_batch_size=4")
+    # Use the SAM3.1 tree before the first lazy SAM import.
     set_sam3_code_root(config.sam3_code_root)
     cache_root = Path(config.sam3_mask_cache_root)
     if cache_root.name != "v2":
@@ -2169,15 +2192,15 @@ def get_self_exemplar_masks_for_reference(
             list(prompts_by_id[object_id].processed_bbox_xyxy)
             for object_id in ordered_ids
         ]
-        masks = sam3_masks_self_exemplar(
+        masks = sam31_masks_from_bboxes(
             image_path=processed_image,
             bboxes_xyxy=ordered_bboxes,
             checkpoint_path=str(config.sam3_checkpoint_path),
             device=device,
-            **_MATCHING_SELF_EXEMPLAR_ARGS,
+            max_batch_size=PVS_INFERENCE_CONTRACT["max_batch_size"],
         )
         if len(masks) != len(ordered_ids):
-            raise RuntimeError("SAM3 self-exemplar returned an incomplete frame")
+            raise RuntimeError("SAM3.1 PVS returned an incomplete frame")
         return {
             object_id: np.asarray(mask, dtype=bool)
             for object_id, mask in zip(ordered_ids, masks)
@@ -2191,11 +2214,11 @@ def get_self_exemplar_masks_for_reference(
     }
 
 
-def warmup_sam3_self_exemplar(config: SKUMatchingConfig) -> None:
+def warmup_sam3_pvs(config: SKUMatchingConfig) -> None:
     """Load the matching SAM3 model and run one tiny forward ahead of requests.
 
     Uses the same code root, checkpoint, device and inference arguments as
-    `get_self_exemplar_masks_for_reference`, so the cached components are the
+    `get_pvs_masks_for_reference`, so the cached components are the
     ones matching reuses, and absorbs first-call CUDA overhead. RNG state is
     preserved so later sampling is unaffected.
     """
@@ -2211,10 +2234,10 @@ def warmup_sam3_self_exemplar(config: SKUMatchingConfig) -> None:
     image = Image.new("RGB", (64, 64))
     image.paste((255, 255, 255), (16, 16, 48, 48))
     with _preserve_cache_boundary_rng(device):
-        sam3_masks_self_exemplar(
+        sam31_masks_from_bboxes(
             image_path=image,
             bboxes_xyxy=[[16.0, 16.0, 48.0, 48.0]],
             checkpoint_path=str(config.sam3_checkpoint_path),
             device=device,
-            **_MATCHING_SELF_EXEMPLAR_ARGS,
+            max_batch_size=PVS_INFERENCE_CONTRACT["max_batch_size"],
         )

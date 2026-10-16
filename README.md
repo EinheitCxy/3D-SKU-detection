@@ -170,7 +170,7 @@ docker run --rm --gpus all -p 8011:80 global-id-mapping:da3-self-contained
 
 ```bash
 # DA3 重建、完整 batch-all-refs 3D matching 和去重；默认输出 Output/。
-# matching 是唯一会运行 SAM3 self-exemplar 并发布 v2 processed-mask cache 的阶段。
+# matching 是唯一会运行 SAM3.1 PVS 并发布 v2 processed-mask cache 的阶段。
 CUDA_VISIBLE_DEVICES=2 uv run python main.py --mode pipeline \
   --dataset imdata/floor_display2 --algorithm 3d \
   --recon_backend da3 --match_backend da3 \
@@ -229,11 +229,15 @@ uv run python scripts/publish_viewer_masterdata.py \
 
 ## Canonical SAM3 processed-mask workflow
 
-matching 是唯一的 SAM3 producer。默认 `enable_sam3_mask_sampling: true` 时，它只使用 self-exemplar，并为每个 detection frame 一次性发布完整的 `sam3_mask_cache/v2` processed-space bool mask；payload 用 little-endian `np.packbits` 无损保存。`enable_sam3_mask_sampling: false` 仅保留既有 bbox sampling，且不会发布 cache，因此 footprint 与 viewer export 会 fail closed，提示先运行 matching。
+matching 是唯一的 SAM3 producer。默认 `enable_sam3_mask_sampling: true` 时，使用 SAM3.1 框提示实例分割（PVS）：整图编码一次，以检测框作为 corner prompts，按固定 batch=4 返回一框一个 bool mask，裁到对应 bbox；空 mask 原样保留，不做中心点重试。模型要求 CUDA，使用现有 `sam31/checkpoints/sam3.1_multiplex.pt`，只加载 tracker 与共享 vision backbone。
+
+每个 detection frame 一次性发布完整的 DA3 processed-space masks，默认目录为 `sam3_mask_cache_sam31_pvs/v2`，manifest schema 为 `sam31_pvs_processed_mask_cache_v1`，payload 使用 little-endian `np.packbits`。旧 `sam3_mask_cache_sam31/v2` 的 self-exemplar masks 不被默认读取；即使显式指定旧目录，旧 schema 也不能命中。`sam3_max_batch_size` 必须为 4，encoder 固定 1008×1008；PVS 不使用 self-exemplar 的 confidence threshold。`enable_sam3_mask_sampling: false` 保留 bbox sampling 且不发布 cache，footprint 与 Viewer export 缺少 cache 时会报错。
+
+独立可视化和同条件 benchmark 见 [PVS 试验说明](scripts/3d/evaluation/README.md)。独立试验输出在等比缩小图像空间；matching 输出在 DA3 processed space，两者不能混用。
 
 运行顺序是硬约束：先完成 **完整 batch-all-refs matching**；`ground-stack-area` 是独立的后端计量阶段，`viewer-web` 可在 dedup 后直接发布产品 bundle。Viewer exporter 不导入、加载或推理 SAM3；matching 的 processed-mask cache 仍是点标签发布的输入，cache miss 会 fail closed。
 
-`sam3_mask_cache/v1` 与 v2 不兼容：v1 从不被读取、迁移、复制或删除。v2 的 formal metric 是 `da3_self_exemplar_ground_footprint_union`，viewer bundle schema 是 `3.0.0`；它们与旧面积输出和 bundle `1.0.0`、`2.0.0` 不可数值比较，旧 bundle 必须按上述顺序重新生成。
+`sam3_mask_cache/v1` 与 v2 不兼容：v1 从不被读取、迁移、复制或删除。v2 的 formal metric 是 `da3_pvs_ground_footprint_union`，viewer bundle schema 是 `3.0.0`；它们与旧面积输出和 bundle `1.0.0`、`2.0.0` 不可数值比较，旧 bundle 必须按上述顺序重新生成。
 
 DA3 bbox 的 source→processed 映射唯一权威是 `predictions.npz` 中每帧完整的 `source_to_processed_affine`（2×3）及其 processed grid。该 affine 可能同时编码 resize、pixel-center、patch rounding 与 crop offset；`x'=sx*x+(sx-1)/2`、`y'=sy*y+(sy-1)/2` 仅是没有额外 crop 的 simple-resize 例子，绝不能据此重算或替代 cache。matching 缺少显式 cache affine/shape 会 fail closed；旧 scale-only 或含 raw out-of-grid bbox 的 v2 entries 均不能命中，须完整重跑 matching → footprint → export。
 
@@ -285,9 +289,9 @@ CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
 
 ## Ground footprint
 
-`ground-stack-area` 从 matching 发布的 processed-space self-exemplar masks 为每个去重 `global_id` 取多视图 metric 点云，投影到推断支撑平面后以 OBB polygon union 计算 `da3_self_exemplar_ground_footprint_union`（m²）。它不是包装表面积、正面面积、SAM3 mask 面积或 bbox 面积。任何对象缺少足够几何时整次结果为 `rejected` 与 `value_m2: null`，不会发布部分总量；本指标是新 baseline，不可与旧 `da3_ground_footprint_union` 面积直接比较。
+`ground-stack-area` 从 matching 发布的 processed-space PVS masks 为每个去重 `global_id` 取多视图 metric 点云，投影到推断支撑平面后以 OBB polygon union 计算 `da3_pvs_ground_footprint_union`（m²）。它不是包装表面积、正面面积、SAM3 mask 面积或 bbox 面积。任何对象缺少足够几何时整次结果为 `rejected` 与 `value_m2: null`，不会发布部分总量；本指标是新 baseline，不可与旧 `da3_ground_footprint_union` 面积直接比较。
 
-面积阶段默认读取 `sam3_mask_cache_sam31/v2`；matching 使用自定义缓存目录时，面积命令也必须传入相同的 `--sam3_mask_cache_root`，不会搜索其他目录或重新运行分割。
+面积阶段默认读取 `sam3_mask_cache_sam31_pvs/v2`；matching 使用自定义缓存目录时，面积命令也必须传入相同的 `--sam3_mask_cache_root`，不会搜索其他目录或重新运行分割。
 
 面积与 DA3 Viewer 共享 `da3_cache/scene_orientation.json`：已有有效方向直接复用，缺失或重建文件变化时才运行现有 Viewer 摆正算法。方向与同一份 `predictions.npz` 关联，保存法向、参考平面高度和拟合状态；不把 Viewer 的居中原点当地面。面积固定该方向，用 Surfel 的网格切线验证背景局部水平性，再选择有多帧支持的最低可见水平面；不再要求其占全部背景 10%、商品距平面不超过 80 mm，或可见地面 hull 覆盖商品。点数、跨帧、二维宽度和商品位于平面上方的检查仍保留。报告记录方向缓存命中情况；命中时不重新拟合方向。
 

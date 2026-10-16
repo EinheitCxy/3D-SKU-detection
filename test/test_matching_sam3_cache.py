@@ -204,7 +204,7 @@ def test_removed_self_exemplar_key_is_rejected(tmp_path: Path) -> None:
 
     with pytest.raises(
         ValueError,
-        match="sam3_use_self_exemplar was removed; self-exemplar is now the only SAM3 mode",
+        match="sam3_use_self_exemplar was removed; matching now uses SAM3.1 PVS",
     ):
         build_matching_config_from_yaml(config_path, algorithm="3d", backend="da3")
 
@@ -343,7 +343,7 @@ def test_matching_publishes_complete_frame_once_and_restores_rng(
     config = _config(tmp_path / "sam3_mask_cache" / "v2")
     calls: list[list[tuple[float, float, float, float]]] = []
 
-    def fake_self_exemplar(*, image_path, bboxes_xyxy, **_kwargs):
+    def fake_pvs(*, image_path, bboxes_xyxy, **_kwargs):
         random.random()
         np.random.random()
         torch.rand(1)
@@ -355,13 +355,13 @@ def test_matching_publishes_complete_frame_once_and_restores_rng(
             masks.append(mask)
         return masks
 
-    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", fake_self_exemplar)
+    monkeypatch.setattr(sam3_utils, "sam31_masks_from_bboxes", fake_pvs)
     random.seed(17)
     np.random.seed(17)
     torch.manual_seed(17)
     before = _snapshot_rng()
 
-    masks = sam3_utils.get_self_exemplar_masks_for_reference(
+    masks = sam3_utils.get_pvs_masks_for_reference(
         config,
         image_path=image_path,
         image_id=7,
@@ -379,7 +379,7 @@ def test_matching_publishes_complete_frame_once_and_restores_rng(
     )
 
     warm_before = _snapshot_rng()
-    warm_masks = sam3_utils.get_self_exemplar_masks_for_reference(
+    warm_masks = sam3_utils.get_pvs_masks_for_reference(
         config,
         image_path=image_path,
         image_id=7,
@@ -409,13 +409,13 @@ def test_matching_never_inspects_a_v1_sibling(
     config = _config(tmp_path / "sam3_mask_cache" / "v2")
     calls = 0
 
-    def fake_self_exemplar(*, bboxes_xyxy, **_kwargs):
+    def fake_pvs(*, bboxes_xyxy, **_kwargs):
         nonlocal calls
         calls += 1
         return [np.zeros((3, 4), dtype=bool) for _ in bboxes_xyxy]
 
-    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", fake_self_exemplar)
-    masks = sam3_utils.get_self_exemplar_masks_for_reference(
+    monkeypatch.setattr(sam3_utils, "sam31_masks_from_bboxes", fake_pvs)
+    masks = sam3_utils.get_pvs_masks_for_reference(
         config,
         image_path=image_path,
         image_id=8,
@@ -440,15 +440,15 @@ def test_concurrent_references_share_one_complete_frame_producer(
     config = _config(tmp_path / "sam3_mask_cache" / "v2")
     producer_calls = 0
 
-    def fake_self_exemplar(*, bboxes_xyxy, **_kwargs):
+    def fake_pvs(*, bboxes_xyxy, **_kwargs):
         nonlocal producer_calls
         producer_calls += 1
         return [np.ones((3, 4), dtype=bool) for _ in bboxes_xyxy]
 
-    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", fake_self_exemplar)
+    monkeypatch.setattr(sam3_utils, "sam31_masks_from_bboxes", fake_pvs)
 
     def load_for_reference() -> dict[int, np.ndarray]:
-        return sam3_utils.get_self_exemplar_masks_for_reference(
+        return sam3_utils.get_pvs_masks_for_reference(
             config,
             image_path=image_path,
             image_id=9,
@@ -480,7 +480,7 @@ def test_disabled_sam3_gate_writes_no_cache(tmp_path: Path) -> None:
     config.enable_sam3_mask_sampling = False
 
     assert (
-        sam3_utils.get_self_exemplar_masks_for_reference(
+        sam3_utils.get_pvs_masks_for_reference(
             config,
             image_path=image_path,
             image_id=10,
@@ -537,11 +537,11 @@ def test_empty_and_filtered_reference_frames_publish_complete_v2_entries(
     )
     producer_batches: list[list[list[float]]] = []
 
-    def fake_self_exemplar(*, bboxes_xyxy, **_kwargs):
+    def fake_pvs(*, bboxes_xyxy, **_kwargs):
         producer_batches.append(bboxes_xyxy)
         return [np.ones((3, 4), dtype=bool) for _ in bboxes_xyxy]
 
-    monkeypatch.setattr(sam3_utils, "sam3_masks_self_exemplar", fake_self_exemplar)
+    monkeypatch.setattr(sam3_utils, "sam31_masks_from_bboxes", fake_pvs)
     images = torch.zeros((3, 3, 3, 4), dtype=torch.float32)
     for reference_idx in range(3):
         correspondences, points = matching_algorithms.find_correspondences_3d_mapping(

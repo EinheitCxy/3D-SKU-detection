@@ -9,6 +9,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from utils.sam3_mask_cache import PVS_INFERENCE_CONTRACT
+
 from src import da3_footprint_stage as stage
 from src.da3_runner import (
     _preprocess_geometry,
@@ -299,14 +301,7 @@ def _publish_v2_masks(dataset: Path, save_root: Path, mask_factory) -> None:
             processed_shape_hw=processed_shape,
             source_to_processed_affine=affine,
             detections=tuple(prompts),
-            inference_contract={
-                "api": "self_exemplar",
-                "threshold": 0.5,
-                "image_size": 1008,
-                "max_batch_size": 32,
-                "max_dets_per_query": 1,
-                "clip_to_bbox": True,
-            },
+            inference_contract=PVS_INFERENCE_CONTRACT.copy(),
         )
         masks = mask_factory(str(image_path), [item["position"] for item in objects])
         load_or_compute_frame_masks(
@@ -599,11 +594,11 @@ def test_stage_fuses_global_id_views_and_uses_polygon_union(monkeypatch, tmp_pat
 
     assert report["schema_version"] == "2.0.0"
     assert report["cache"]["schema_version"] == 3
-    assert report["metric"] == "da3_self_exemplar_ground_footprint_union"
+    assert report["metric"] == "da3_pvs_ground_footprint_union"
     assert report["mask_contract"] == {
-        "source": "sam3_self_exemplar",
+        "source": "sam3_pvs",
         "coordinate_space": "da3_processed_pixels",
-        "cache_schema": "sam3_self_exemplar_processed_mask_cache_v1",
+        "cache_schema": "sam31_pvs_processed_mask_cache_v1",
     }
     assert report["status"] == "accepted"
     assert report["value_m2"] == pytest.approx(1.5, abs=0.03)
@@ -960,7 +955,7 @@ def test_stage_consumes_v2_masks_without_sam3_producer(monkeypatch, tmp_path):
         "hit",
     ]
     assert "sam3_source_masks" not in report["performance"]["stages_seconds"]
-    assert report["performance"]["stages_seconds"]["load_self_exemplar_masks"] >= 0.0
+    assert report["performance"]["stages_seconds"]["load_pvs_masks"] >= 0.0
     stage_source = Path(stage.__file__).read_text()
     assert "import torch" not in stage_source
     assert "utils.sam3_utils" not in stage_source
@@ -993,7 +988,7 @@ def test_stage_uses_only_explicit_mask_cache_root(monkeypatch, tmp_path, cache_p
         )
     else:
         assert report["rejection_reason"] == (
-            "canonical self-exemplar mask cache is incomplete; run SKU matching first"
+            "canonical PVS mask cache is incomplete; run SKU matching first"
         )
 
 
@@ -1009,7 +1004,7 @@ def test_missing_v2_cache_rejects_with_canonical_message(monkeypatch, tmp_path):
     assert report["status"] == "rejected"
     assert report["value_m2"] is None
     assert report["rejection_reason"] == (
-        "canonical self-exemplar mask cache is incomplete; run SKU matching first"
+        "canonical PVS mask cache is incomplete; run SKU matching first"
     )
     assert calls == []
 
@@ -1058,7 +1053,7 @@ def test_v2_cache_contract_mismatch_rejects_without_sam3_producer(
 
     assert result["success"] is False
     assert report["rejection_reason"] == (
-        "canonical self-exemplar mask cache is incomplete; run SKU matching first"
+        "canonical PVS mask cache is incomplete; run SKU matching first"
     )
     assert calls == []
 

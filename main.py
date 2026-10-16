@@ -1419,7 +1419,7 @@ def main() -> None:
         "--sam3_mask_cache_root",
         type=str,
         default=None,
-        help="SAM3 mask 缓存根目录（默认 <output_dir>/sam3_mask_cache_sam31/v2）。"
+        help="SAM3 mask 缓存根目录（默认 <output_dir>/sam3_mask_cache_sam31_pvs/v2）。"
         "节点缓存 v2 key 无 checkpoint 身份，换 checkpoint 必须换根以免跨版本复用。",
     )
     parser.add_argument(

@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=2 uv run --no-sync python scripts/3d/evaluation/sam31_pvs_t
 
 计时在 GPU synchronize 后覆盖 encoder、box decoder、mask CPU回传和 bbox clipping；不含输入预处理、模型加载或文件写入，加载单列。没有预热，首帧可能包含首次执行开销。显存限制只约束本进程 PyTorch allocator，不代表设备总显存上限。
 
-此入口只做独立试验，不修改默认分割模式，不发布 matching cache。非空 mask 数不代表准确率；切换生产路径前仍需同图同框的 self-exemplar 对比及 matching 验证。
+此入口只做独立试验，不发布 matching cache。推理核心与默认 matching PVS 共用 `utils/sam31_pvs.py`；matching 保留 DA3 processed-space 对齐与完整帧缓存。非空 mask 数不代表准确率，matching 质量和面积准确率需要单独评估。
 
 ## 同条件 PVS / self-exemplar 比较
 
@@ -39,4 +39,10 @@ CUDA_VISIBLE_DEVICES=2 uv run --no-sync python scripts/3d/evaluation/sam31_pvs_c
 
 `results.json` 保留各次耗时、非空mask、空mask的object_id、重复间差异像素数及allocated/reserved峰值；另由nvidia-smi按本进程PID采样显存，观测峰值可能漏过短峰。每张图最后一次结果保存在 `<dataset>/<frame>/masks.npz`，不会发布到生产缓存。
 
-总耗时节省百分比为 `100 × (1 − ΣPVS每图中位耗时 / Σself-exemplar每图中位耗时)`。共同batch=4的结果不能替代生产batch=32或完整3D流水线的性能结论。
+总耗时节省百分比为 `100 × (1 − ΣPVS每图中位耗时 / Σself-exemplar每图中位耗时)`。共同 batch=4 的结果不能替代旧生产 batch=32 或完整 3D 流水线的性能结论；当前 PVS 默认 batch=4。
+
+## 2026-10-16 已完成对照
+
+11 个场景、24 张图、1,523 个框（每图6–300），每图3次：PVS 每轮1,523个非空 mask，self-exemplar 每轮1,487个。逐图中位耗时合计 42.5929s → 7.3038s，节省82.85%；峰值 allocated 5.9119 → 3.0297GiB，reserved 6.6387 → 3.1914GiB。PVS 单独加载8.55s，baseline 5.14s；加载不计入上述节省比例。
+
+硬件为 GPU2 RTX4090D 24GiB；两方法独立进程串行、共同 batch=4、各预热一次。原始逐次记录、最后一轮 masks 和 nohup 日志保存在本地 `runtime/sam31-pvs-compare-20261016/`，不纳入 Git；此结果只描述模型驻留后的 SAM 图像 API，不代表完整流水线或分割准确率。

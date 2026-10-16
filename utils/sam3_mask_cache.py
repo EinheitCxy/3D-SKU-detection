@@ -1,4 +1,4 @@
-"""Processed-space, complete-frame SAM3 self-exemplar mask cache."""
+"""Processed-space, complete-frame SAM3.1 PVS mask cache."""
 
 from __future__ import annotations
 
@@ -19,15 +19,20 @@ from typing import Callable, Iterator, Literal, Mapping, Sequence
 import numpy as np
 
 
-SCHEMA = "sam3_self_exemplar_processed_mask_cache_v1"
+SCHEMA = "sam31_pvs_processed_mask_cache_v1"
 _SAFE_INTEGER_LIMIT = (1 << 53) - 1
-_INFERENCE_CONTRACT = {
-    "api": "self_exemplar",
-    "threshold": 0.5,
+PVS_INFERENCE_CONTRACT = {
+    "api": "sam31_pvs",
     "image_size": 1008,
-    "max_batch_size": 32,
-    "max_dets_per_query": 1,
+    "max_batch_size": 4,
+    "multimask_output": False,
+    "mask_logit_threshold": 0.0,
     "clip_to_bbox": True,
+    "bbox_rounding": "round",
+    "empty_mask_retry": False,
+    "dynamic_multimask_via_stability": True,
+    "stability_delta": 0.05,
+    "stability_threshold": 0.98,
 }
 
 
@@ -171,22 +176,13 @@ def _validated_request(request: FrameMaskCacheRequest) -> _ValidatedRequest:
         inference = dict(request.inference_contract)
     except (TypeError, ValueError) as exc:
         raise FrameMaskCacheError("inference contract is invalid") from exc
-    if set(inference) != set(_INFERENCE_CONTRACT):
+    if set(inference) != set(PVS_INFERENCE_CONTRACT):
         raise FrameMaskCacheError(
             "inference contract keys do not match the v2 contract"
         )
-    if (
-        inference["api"] != "self_exemplar"
-        or type(inference["threshold"]) is not float
-        or inference["threshold"] != 0.5
-        or type(inference["image_size"]) is not int
-        or inference["image_size"] != 1008
-        or type(inference["max_batch_size"]) is not int
-        or inference["max_batch_size"] != 32
-        or type(inference["max_dets_per_query"]) is not int
-        or inference["max_dets_per_query"] != 1
-        or type(inference["clip_to_bbox"]) is not bool
-        or inference["clip_to_bbox"] is not True
+    if any(
+        type(inference[key]) is not type(expected) or inference[key] != expected
+        for key, expected in PVS_INFERENCE_CONTRACT.items()
     ):
         raise FrameMaskCacheError(
             "inference contract values do not match the v2 contract"
@@ -230,7 +226,7 @@ def _validated_request(request: FrameMaskCacheRequest) -> _ValidatedRequest:
             "processed_shape_hw": [processed_height, processed_width],
             "source_to_processed_affine": affine_values.tolist(),
             "detections": manifest_detections,
-            "inference": _INFERENCE_CONTRACT.copy(),
+            "inference": PVS_INFERENCE_CONTRACT.copy(),
         },
         object_ids=tuple(object_ids),
         processed_bboxes=tuple(processed_bboxes),

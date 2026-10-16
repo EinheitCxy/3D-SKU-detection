@@ -30,6 +30,7 @@ from utils.sam3_mask_cache import (
     FrameMaskCacheError,
     FrameMaskCacheRequest,
     ProcessedDetectionPrompt,
+    PVS_INFERENCE_CONTRACT,
     SCHEMA as SAM3_MASK_CACHE_SCHEMA,
     load_complete_frame_masks,
     map_source_bbox_to_processed,
@@ -622,14 +623,7 @@ def _instance_labels_v2(
                 )
             )
     grid = np.full(flat_count, -1, dtype=np.int32).reshape(frame_count, height, width)
-    contract = {
-        "api": "self_exemplar",
-        "threshold": 0.5,
-        "image_size": 1008,
-        "max_batch_size": 32,
-        "max_dets_per_query": 1,
-        "clip_to_bbox": True,
-    }
+
     for image_id, instances in by_image.items():
         frame = frame_for_image.get(image_id)
         if frame is None:
@@ -657,7 +651,7 @@ def _instance_labels_v2(
             processed_shape_hw=(height, width),
             source_to_processed_affine=affine,
             detections=prompts,
-            inference_contract=contract,
+            inference_contract=PVS_INFERENCE_CONTRACT.copy(),
         )
         try:
             result = load_complete_frame_masks(request)

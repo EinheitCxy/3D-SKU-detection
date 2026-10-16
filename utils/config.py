@@ -42,13 +42,8 @@ def get_optimal_device_config(verbose: bool = True):
 
 
 def default_sam3_mask_cache_root(output_dir: Path | str) -> Path:
-    """默认 SAM3 mask 磁盘缓存根目录（当前默认模型为 SAM3.1）。
-
-    leaf 必须恰好为 "v2"（utils/sam3_utils.py 强制 cache_root.name == "v2"，且
-    缓存 manifest 不含 checkpoint 身份）；父目录按模型隔离为 sam3_mask_cache_sam31，
-    使默认 SAM3.1 运行绝不静默复用旧模型（SAM3.0）在 sam3_mask_cache/v2 下算出的 mask。
-    """
-    return Path(output_dir) / "sam3_mask_cache_sam31" / "v2"
+    """PVS 专用 processed-mask 根目录；保留既有 self-exemplar 缓存。"""
+    return Path(output_dir) / "sam3_mask_cache_sam31_pvs" / "v2"
 
 
 # ============ YAML config helpers ============
@@ -125,7 +120,7 @@ def build_matching_config_from_yaml(path: str | Path, algorithm: str | None = No
 
     if "sam3_use_self_exemplar" in section:
         raise ValueError(
-            "sam3_use_self_exemplar was removed; self-exemplar is now the only SAM3 mode"
+            "sam3_use_self_exemplar was removed; matching now uses SAM3.1 PVS"
         )
 
     algo = (algorithm or section.get("algorithm") or "point_tracking").lower()
@@ -247,13 +242,13 @@ class SKUMatchingConfig:
     # 目标：在 bbox 点采样前先用 SAM3 预测 mask，再从 mask 内采样点
     enable_sam3_mask_sampling: bool = True       # 是否启用 SAM3 mask 引导采样
     sam3_checkpoint_path: Optional[str] = None   # sam3.pt 本地路径（禁用 HF 下载）
-    sam3_code_root: Optional[str] = None         # SAM3 代码树根（默认 sam3/；3.1 用 sam31/）
+    sam3_code_root: Optional[str] = "sam31/"     # matching 使用 SAM3.1 PVS 代码树
     sam3_mask_cache_root: str = ""               # matching 显式传入的 canonical v2 cache 根目录
-    sam3_self_exemplar_threshold: float = 0.5    # self-exemplar检测阈值
+    sam3_self_exemplar_threshold: float = 0.5    # 独立 self-exemplar API 参数；PVS 不使用
     sam3_device: str = "auto"                   # SAM3单独设备: auto/cuda/cpu
     sam3_max_queries_per_forward: int = 16       # self-exemplar时每次forward的最大query数（降低显存峰值）
     sam3_batch_image_size: int = 1008            # batch API resize尺寸（默认1008，显存紧张可降到768/640）
-    sam3_max_batch_size: int = 5                  # self-exemplar每批最多bbox数(单ref一次forward的batch上限,大值=少forward overhead)
+    sam3_max_batch_size: int = 4                  # canonical PVS cache 固定每批4框
     sam3_max_dets_per_query: int = 8             # batch API每个query保留的最大候选数（越小越省显存）
     sam3_min_cuda_free_gb: float = 10.0          # sam3_device=auto 时启用 CUDA 的最小可用显存(GB)
 
