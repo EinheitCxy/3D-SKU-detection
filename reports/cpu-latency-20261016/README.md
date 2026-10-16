@@ -37,3 +37,7 @@ Encoding 32 项相关测试通过；首张真实页两份副本的串行/线程�
 - [资源记账](results/resource-accounting.json)：9 次 medium worker 调用、0 GPU；已知实测 CPU 1580.893551 s，另有 1168 s 未测量任务的保守额度。两者之和是预算记账组成，不能称为完整实测 CPU；并发 RSS、临时磁盘峰值未完整测量。
 
 下一步先修正计时工具：统一 timer 范围、baseline/candidate 相同验证动作、显式且不重叠的 CPU 分配、保留失败 partial，orientation 从冻结 JSON 读取。新的完整对照需先确定足够预算并预先固定规则；本归档不修改历史阈值或原始结果。生产源码和过滤默认均未因本轮改变。
+
+## 计时工具修订
+
+新增 `perf/surfel_latency.py` 与 15 项工程测试：固定 B1/C1/C2/B2，两个 arm 使用同一采集 hook，比较发生在 export timer 结束后，失败保留 partial 且 primary 为空，CPU IDs 显式校验。测试使用假 clock/export，15 passed in 0.05 s；没有新的真实场景计时。该 core 尚未接入完整 scene runner，也不负责实际亲和性、page copy、逐次持久化和信号处理。见 [测试记录](results/test-repair.json) 与 [下一轮方案](NEXT.md)。

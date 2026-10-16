@@ -1,0 +1,17 @@
+{
+  "purpose": "Timing-core engineering tests only; no new official performance run",
+  "worker_allocation_charged_s": 140,
+  "provider_worker_duration_s": null,
+  "coordinator_late_receipt_elapsed_s": 197.527363,
+  "usage_note": "Full finite allocation charged conservatively. Late coordinator receipt includes post-return idle/analysis time; it is not a provider worker-duration measurement. Exact provider usage unavailable.",
+  "calls_total": 10,
+  "worker_allocation_charge_total_s": 3577.541203,
+  "cpu_seconds_measured": null,
+  "cpu_allowance_held_s": 60,
+  "gpu_seconds": 0,
+  "pytest_command": "UV_CACHE_DIR=/tmp/surfel-latency-uv-cache CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 uv run --no-sync python -m pytest -q test/perf/test_surfel_latency.py",
+  "result": "15 passed in 0.05s",
+  "initial_environment_error": "Default uv cache was read-only; same test command rerun with writable /tmp UV_CACHE_DIR",
+  "real_scene_benchmark_run": false,
+  "old_evaluation_spec_modified": false
+}
