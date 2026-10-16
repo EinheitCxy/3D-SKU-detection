@@ -1,0 +1,222 @@
+{
+  "phase": "official",
+  "status": "failed",
+  "runs": [
+    {
+      "label": "B1",
+      "raw_export_wall_s": 169.46464700251818,
+      "verification_overhead_s": 0.2056041844189167,
+      "complete_export_wall_s": 169.25904281809926,
+      "dilation_wall_s": 62.8722285553813,
+      "cpu_s": 396.42508,
+      "peak_rss_gib": 1.4183540344238281,
+      "output_bytes": 121513344,
+      "pages": 31,
+      "baked_pages_full_rgba_geometry_equal": true,
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/B1.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 169.46435656398535,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 116.62974654883146,
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/B1.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 52.83275303989649
+        }
+      }
+    },
+    {
+      "label": "C1",
+      "raw_export_wall_s": 133.61006398499012,
+      "verification_overhead_s": 5.942014813423157,
+      "complete_export_wall_s": 127.66804917156696,
+      "dilation_wall_s": 25.877508521080017,
+      "cpu_s": 283.3297160000001,
+      "peak_rss_gib": 1.5861778259277344,
+      "output_bytes": 121513344,
+      "pages": 31,
+      "baked_pages_full_rgba_geometry_equal": true,
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/C1.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 133.60994482040405,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 81.883190497756,
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/C1.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 51.72636052593589
+        }
+      },
+      "final_arrays_decoded_rgba_associations_equal": true
+    },
+    {
+      "label": "C2",
+      "raw_export_wall_s": 126.08113261312246,
+      "verification_overhead_s": 5.614753942936659,
+      "complete_export_wall_s": 120.4663786701858,
+      "dilation_wall_s": 24.582379281520844,
+      "cpu_s": 272.44977199999994,
+      "peak_rss_gib": 1.6117401123046875,
+      "output_bytes": 121513344,
+      "pages": 31,
+      "baked_pages_full_rgba_geometry_equal": true,
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/C2.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 126.08100531250238,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 77.24026053398848,
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/C2.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 48.82954550161958
+        }
+      },
+      "final_arrays_decoded_rgba_associations_equal": true
+    }
+  ],
+  "failures": [
+    {
+      "class": "resource",
+      "signal": 24
+    },
+    {
+      "class": "implementation",
+      "error": "SystemExit(3)",
+      "traceback": "Traceback (most recent call last):\n  File \"/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/run.py\", line 96, in <module>\n    report=glb.export_scene_glb(generation,output)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/src/surfel_glb.py\", line 323, in export_scene_glb\n    bake, compact = _export_surfel_glb(\n                    ^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/src/surfel_glb.py\", line 244, in _export_surfel_glb\n    for page in bake_surfel_pages(**inputs, radius=radius, tile_size=tile_size,\n  File \"/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/run.py\", line 79, in baker\n    for page in original_baker(**kwargs):\n  File \"frozen_baseline.py\", line 224, in bake_surfel_pages\n  File \"frozen_baseline.py\", line 154, in _bake_batch\n  File \"/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/execute-dilation/run.py\", line 22, in stop\n    result['status']='failed';result['failures'].append({'class':'resource','signal':sig});save();raise SystemExit(3)\n                                                                                                  ^^^^^^^^^^^^^^^^^^^\nSystemExit: 3\n"
+    }
+  ],
+  "seed": 0,
+  "environment": {
+    "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+    "thread_env": {
+      "OMP_NUM_THREADS": "4",
+      "OPENBLAS_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4"
+    },
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+  "timing_note": "Whole export includes generation loading and final close. Page-reference copy/equality instrumentation overhead measured and subtracted; raw wall retained. Final GLB parsing/decode comparisons outside export timer. Fixed <=1 GiB RAM reference bound, no queued production work.",
+  "wall_s": 507.8634464070201,
+  "cpu_seconds_including_children": 1119.9258299999997,
+  "peak_rss_gib": 1.6117401123046875
+}

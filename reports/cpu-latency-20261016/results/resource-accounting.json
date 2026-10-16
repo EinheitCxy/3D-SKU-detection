@@ -1,0 +1,22 @@
+{
+  "known_measured_cpu_seconds": 1580.893551,
+  "unknown_encoding_official_cpu_seconds": null,
+  "unknown_filter_cpu_seconds": null,
+  "conservative_withheld_cpu_seconds": 1168,
+  "known_plus_withheld_cpu_seconds": 2748.893551,
+  "cpu_budget_seconds": 3600,
+  "design_worker_charge_seconds": 674.453,
+  "execution_worker_charge_to_date_seconds": 2517.505726,
+  "worker_budget_seconds": 3600,
+  "calls_used": 9,
+  "calls_limit": 10,
+  "gpu_seconds": 0,
+  "new_retained_bytes_at_closeout": 1702900,
+  "peak_new_storage_measured": false,
+  "aggregate_concurrent_rss_measured": false,
+  "production_integrated_candidates": 0,
+  "note": "Known plus withheld is accounting allowance, not total measured CPU. No additional heavy runs. Root runtime files are retained evidence, temporary output GLBs were removed. Synthesis final worker cost to be appended by coordinator. Final synthesis charge includes dispatch-to-observation overhead, provider duration unavailable.",
+  "synthesis_charged_wall_seconds": 245.582477,
+  "total_worker_charged_seconds": 3437.5412029999998,
+  "execution_worker_charge_final_seconds": 2763.088203
+}

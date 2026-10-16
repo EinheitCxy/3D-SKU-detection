@@ -1,0 +1,999 @@
+{
+  "receipt": {
+    "status": "complete",
+    "start_unix": 1792129449.2335808,
+    "start_monotonic": 18389205.42034288,
+    "stages": [
+      {
+        "name": "core",
+        "command": [
+          "uv",
+          "run",
+          "--no-project",
+          "/home/xingyu/3D_Recognization/.venv/bin/python",
+          "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_core.py"
+        ],
+        "start": 18389205.42060612,
+        "end": 18389328.4219695,
+        "seconds": 123.00136337801814,
+        "returncode": 0,
+        "processes": [
+          {
+            "pid": 1022101,
+            "ppid": 1019412,
+            "argv": [
+              "uv",
+              "run",
+              "--no-project",
+              "/home/xingyu/3D_Recognization/.venv/bin/python",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_core.py"
+            ]
+          },
+          {
+            "pid": 1022106,
+            "ppid": 1022101,
+            "argv": [
+              "/home/xingyu/3D_Recognization/.venv/bin/python",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_core.py"
+            ]
+          },
+          {
+            "pid": 1022223,
+            "ppid": 1022106,
+            "argv": [
+              "uv",
+              "run",
+              "--no-project",
+              "/home/xingyu/3D_Recognization/.venv/bin/python",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_da3.py",
+              "/home/xingyu/3D_Recognization/src/da3_runner.py",
+              "--input_dir",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/dataset/images",
+              "--output_npz",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/outputs/dataset/da3_cache/predictions.npz.partial",
+              "--model_path",
+              "/home/xingyu/.cache/huggingface/hub/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+              "--device",
+              "cuda",
+              "--process_res",
+              "504"
+            ]
+          },
+          {
+            "pid": 1022226,
+            "ppid": 1022223,
+            "argv": [
+              "/home/xingyu/3D_Recognization/.venv/bin/python",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_da3.py",
+              "/home/xingyu/3D_Recognization/src/da3_runner.py",
+              "--input_dir",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/dataset/images",
+              "--output_npz",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/outputs/dataset/da3_cache/predictions.npz.partial",
+              "--model_path",
+              "/home/xingyu/.cache/huggingface/hub/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+              "--device",
+              "cuda",
+              "--process_res",
+              "504"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "delivery",
+        "command": [
+          "uv",
+          "run",
+          "--no-project",
+          "/home/xingyu/3D_Recognization/.venv/bin/python",
+          "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_delivery.py"
+        ],
+        "start": 18389328.42297591,
+        "end": 18389472.98471088,
+        "seconds": 144.56173497065902,
+        "returncode": 0,
+        "processes": [
+          {
+            "pid": 1035624,
+            "ppid": 1019412,
+            "argv": [
+              "uv",
+              "run",
+              "--no-project",
+              "/home/xingyu/3D_Recognization/.venv/bin/python",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_delivery.py"
+            ]
+          },
+          {
+            "pid": 1035627,
+            "ppid": 1035624,
+            "argv": [
+              "/home/xingyu/3D_Recognization/.venv/bin/python",
+              "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_delivery.py"
+            ]
+          }
+        ]
+      }
+    ],
+    "end_monotonic": 18389472.985462673,
+    "elapsed_s": 267.56511979177594
+  },
+  "events": [
+    {
+      "name": "restore_frames_and_adapt_json",
+      "start": 18389203.04883488,
+      "end": 18389205.394638874,
+      "seconds": 2.3458039946854115,
+      "pid": 1019412,
+      "thread": "MainThread"
+    },
+    {
+      "name": "core_process_wall",
+      "start": 18389205.42060612,
+      "end": 18389328.4219695,
+      "seconds": 123.00136337801814,
+      "pid": 1019412,
+      "thread": "MainThread",
+      "exit_code": 0
+    },
+    {
+      "name": "core_imports",
+      "start": 18389205.485775765,
+      "end": 18389210.357540768,
+      "seconds": 4.871765002608299,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "core_pipeline",
+      "start": 18389210.358179282,
+      "end": 18389326.637554616,
+      "seconds": 116.27937533333898,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "validate_dataset",
+      "start": 18389210.358235504,
+      "end": 18389210.358284656,
+      "seconds": 4.9151480197906494e-05,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "run_reconstruction",
+      "start": 18389210.37491572,
+      "end": 18389234.93641175,
+      "seconds": 24.561496030539274,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "da3_imports",
+      "start": 18389210.49857639,
+      "end": 18389214.996319715,
+      "seconds": 4.49774332344532,
+      "pid": 1022226,
+      "thread": "MainThread"
+    },
+    {
+      "name": "da3_runner_main",
+      "start": 18389214.996592466,
+      "end": 18389233.271914303,
+      "seconds": 18.27532183751464,
+      "pid": 1022226,
+      "thread": "MainThread"
+    },
+    {
+      "name": "da3_load_cpu",
+      "start": 18389215.599293888,
+      "end": 18389228.504568513,
+      "seconds": 12.905274625867605,
+      "pid": 1022226,
+      "thread": "MainThread"
+    },
+    {
+      "name": "da3_inference_api",
+      "start": 18389230.449406374,
+      "end": 18389232.90238445,
+      "seconds": 2.4529780745506287,
+      "pid": 1022226,
+      "thread": "MainThread"
+    },
+    {
+      "name": "da3_backprojection",
+      "start": 18389232.90641681,
+      "end": 18389233.0094719,
+      "seconds": 0.10305508971214294,
+      "pid": 1022226,
+      "thread": "MainThread"
+    },
+    {
+      "name": "da3_npz_write",
+      "start": 18389233.047109272,
+      "end": 18389233.265475217,
+      "seconds": 0.21836594492197037,
+      "pid": 1022226,
+      "thread": "MainThread"
+    },
+    {
+      "name": "prepare_web_viewer_geometry",
+      "start": 18389234.937349245,
+      "end": 18389237.936809104,
+      "seconds": 2.999459858983755,
+      "pid": 1022106,
+      "thread": "surfel-prepare_0"
+    },
+    {
+      "name": "run_sku_matching",
+      "start": 18389234.937432352,
+      "end": 18389252.124805875,
+      "seconds": 17.187373522669077,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "_load_da3_cache",
+      "start": 18389234.93772137,
+      "end": 18389235.12653695,
+      "seconds": 0.18881557881832123,
+      "pid": 1022106,
+      "thread": "surfel-prepare_0"
+    },
+    {
+      "name": "grid_tangents",
+      "start": 18389235.126694996,
+      "end": 18389236.971807584,
+      "seconds": 1.8451125882565975,
+      "pid": 1022106,
+      "thread": "surfel-prepare_0"
+    },
+    {
+      "name": "pvs_model_load",
+      "start": 18389235.42498656,
+      "end": 18389243.374473576,
+      "seconds": 7.949487015604973,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "prepare_surfel_textures",
+      "start": 18389236.97203332,
+      "end": 18389237.936378263,
+      "seconds": 0.9643449410796165,
+      "pid": 1022106,
+      "thread": "surfel-prepare_0"
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389243.374725655,
+      "end": 18389243.789649397,
+      "seconds": 0.4149237424135208,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.2703038975596428,
+        "inference_and_postprocess_s": 0.3984067514538765
+      },
+      "box_count": 28
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389244.053652376,
+      "end": 18389244.20812189,
+      "seconds": 0.15446951240301132,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06492594256997108,
+        "inference_and_postprocess_s": 0.13620500639081
+      },
+      "box_count": 30
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389244.40477377,
+      "end": 18389244.58404613,
+      "seconds": 0.1792723573744297,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06117715686559677,
+        "inference_and_postprocess_s": 0.1594233699142933
+      },
+      "box_count": 48
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389244.846531775,
+      "end": 18389245.01733079,
+      "seconds": 0.17079901695251465,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.061584290117025375,
+        "inference_and_postprocess_s": 0.15333963558077812
+      },
+      "box_count": 25
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389245.19095377,
+      "end": 18389245.328867126,
+      "seconds": 0.13791335746645927,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06172892451286316,
+        "inference_and_postprocess_s": 0.12055889517068863
+      },
+      "box_count": 25
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389245.495244335,
+      "end": 18389245.646210495,
+      "seconds": 0.15096615999937057,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06173161044716835,
+        "inference_and_postprocess_s": 0.13372991234064102
+      },
+      "box_count": 30
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389245.83271186,
+      "end": 18389245.979646664,
+      "seconds": 0.14693480357527733,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06168503314256668,
+        "inference_and_postprocess_s": 0.12908174470067024
+      },
+      "box_count": 30
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389246.142570272,
+      "end": 18389246.295030136,
+      "seconds": 0.15245986357331276,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06104126572608948,
+        "inference_and_postprocess_s": 0.12625712901353836
+      },
+      "box_count": 27
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389246.456201777,
+      "end": 18389246.59202516,
+      "seconds": 0.13582338392734528,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06136259064078331,
+        "inference_and_postprocess_s": 0.11960063129663467
+      },
+      "box_count": 31
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389246.79166672,
+      "end": 18389246.94009898,
+      "seconds": 0.14843225851655006,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.061348553746938705,
+        "inference_and_postprocess_s": 0.1327730156481266
+      },
+      "box_count": 38
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389247.176829703,
+      "end": 18389247.32319644,
+      "seconds": 0.14636673778295517,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.0606703907251358,
+        "inference_and_postprocess_s": 0.12906724214553833
+      },
+      "box_count": 36
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389247.50747208,
+      "end": 18389247.60938367,
+      "seconds": 0.10191158950328827,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06074400618672371,
+        "inference_and_postprocess_s": 0.08536296337842941
+      },
+      "box_count": 10
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389247.681688927,
+      "end": 18389247.768185362,
+      "seconds": 0.08649643510580063,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.060845497995615005,
+        "inference_and_postprocess_s": 0.07066160067915916
+      },
+      "box_count": 2
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389247.82226739,
+      "end": 18389247.915777344,
+      "seconds": 0.09350995346903801,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06182007119059563,
+        "inference_and_postprocess_s": 0.07796527445316315
+      },
+      "box_count": 5
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389247.995465484,
+      "end": 18389248.116132643,
+      "seconds": 0.12066715955734253,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06127883866429329,
+        "inference_and_postprocess_s": 0.10435758531093597
+      },
+      "box_count": 24
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389248.30388004,
+      "end": 18389248.43255225,
+      "seconds": 0.12867220863699913,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06066484749317169,
+        "inference_and_postprocess_s": 0.11127106472849846
+      },
+      "box_count": 28
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389248.610779252,
+      "end": 18389248.759602092,
+      "seconds": 0.1488228403031826,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.060635294765233994,
+        "inference_and_postprocess_s": 0.132193423807621
+      },
+      "box_count": 34
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389248.930486795,
+      "end": 18389249.053013973,
+      "seconds": 0.12252717837691307,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06154201552271843,
+        "inference_and_postprocess_s": 0.10697346553206444
+      },
+      "box_count": 23
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389249.195782173,
+      "end": 18389249.324176077,
+      "seconds": 0.12839390337467194,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06105312705039978,
+        "inference_and_postprocess_s": 0.11172746866941452
+      },
+      "box_count": 28
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389249.472667746,
+      "end": 18389249.58916824,
+      "seconds": 0.11650049313902855,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.060664091259241104,
+        "inference_and_postprocess_s": 0.09731291607022285
+      },
+      "box_count": 19
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389249.709513415,
+      "end": 18389249.818445098,
+      "seconds": 0.10893168300390244,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.061367712914943695,
+        "inference_and_postprocess_s": 0.09256978705525398
+      },
+      "box_count": 15
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389249.926634926,
+      "end": 18389250.03806078,
+      "seconds": 0.11142585426568985,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.0614926815032959,
+        "inference_and_postprocess_s": 0.09513142332434654
+      },
+      "box_count": 16
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389250.156366717,
+      "end": 18389250.27864804,
+      "seconds": 0.12228132411837578,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06126701086759567,
+        "inference_and_postprocess_s": 0.10609021782875061
+      },
+      "box_count": 22
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389250.419221815,
+      "end": 18389250.540456392,
+      "seconds": 0.12123457714915276,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.061371371150016785,
+        "inference_and_postprocess_s": 0.10510533303022385
+      },
+      "box_count": 22
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389250.690536115,
+      "end": 18389250.814454596,
+      "seconds": 0.12391848117113113,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06063780561089516,
+        "inference_and_postprocess_s": 0.10426590964198112
+      },
+      "box_count": 23
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389250.980909556,
+      "end": 18389251.09469807,
+      "seconds": 0.11378851532936096,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.061264678835868835,
+        "inference_and_postprocess_s": 0.09791901707649231
+      },
+      "box_count": 20
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389251.234280337,
+      "end": 18389251.35388937,
+      "seconds": 0.1196090318262577,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06077615171670914,
+        "inference_and_postprocess_s": 0.10394284874200821
+      },
+      "box_count": 22
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389251.53481252,
+      "end": 18389251.655354165,
+      "seconds": 0.12054164335131645,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06137017160654068,
+        "inference_and_postprocess_s": 0.10487104952335358
+      },
+      "box_count": 24
+    },
+    {
+      "name": "pvs_predict",
+      "start": 18389251.833813235,
+      "end": 18389251.9632558,
+      "seconds": 0.12944256514310837,
+      "pid": 1022106,
+      "thread": "MainThread",
+      "metrics": {
+        "encoder_s": 0.06075843796133995,
+        "inference_and_postprocess_s": 0.11256733909249306
+      },
+      "box_count": 26
+    },
+    {
+      "name": "run_dedup_sequence",
+      "start": 18389252.124906823,
+      "end": 18389252.259345416,
+      "seconds": 0.13443859294056892,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "export_web_viewer_bundle",
+      "start": 18389252.259482086,
+      "end": 18389326.63588977,
+      "seconds": 74.37640768289566,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "_generate_thumbnails",
+      "start": 18389252.294445474,
+      "end": 18389253.864763856,
+      "seconds": 1.5703183822333813,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "get_scene_orientation",
+      "start": 18389253.864921503,
+      "end": 18389257.614153992,
+      "seconds": 3.749232489615679,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "_sample_points",
+      "start": 18389257.614289664,
+      "end": 18389322.627550103,
+      "seconds": 65.01326043903828,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "_instance_labels_v2",
+      "start": 18389257.84256089,
+      "end": 18389258.26680327,
+      "seconds": 0.42424237728118896,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "filter_scene_points",
+      "start": 18389258.713679027,
+      "end": 18389318.809680097,
+      "seconds": 60.09600106999278,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "_median_nn_distance",
+      "start": 18389259.04666105,
+      "end": 18389262.52678565,
+      "seconds": 3.4801246002316475,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "_select_background_voxels",
+      "start": 18389319.09326994,
+      "end": 18389319.755236708,
+      "seconds": 0.6619667671620846,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "prepare_surfels",
+      "start": 18389322.62783917,
+      "end": 18389322.813365325,
+      "seconds": 0.18552615493535995,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "_publish_bundle",
+      "start": 18389326.520183284,
+      "end": 18389326.634086348,
+      "seconds": 0.11390306428074837,
+      "pid": 1022106,
+      "thread": "MainThread"
+    },
+    {
+      "name": "delivery_process_wall",
+      "start": 18389328.42297591,
+      "end": 18389472.98471088,
+      "seconds": 144.56173497065902,
+      "pid": 1019412,
+      "thread": "MainThread",
+      "exit_code": 0
+    },
+    {
+      "name": "delivery_imports",
+      "start": 18389328.479850426,
+      "end": 18389332.03897598,
+      "seconds": 3.559125553816557,
+      "pid": 1035627,
+      "thread": "MainThread"
+    },
+    {
+      "name": "zip_pack",
+      "start": 18389332.03919997,
+      "end": 18389334.790973842,
+      "seconds": 2.7517738714814186,
+      "pid": 1035627,
+      "thread": "MainThread",
+      "bytes": 79632287
+    },
+    {
+      "name": "glb_export",
+      "start": 18389334.791162577,
+      "end": 18389472.180388104,
+      "seconds": 137.38922552764416,
+      "pid": 1035627,
+      "thread": "MainThread"
+    }
+  ],
+  "packages": {
+    "torch": "2.7.1",
+    "torchvision": "0.22.1",
+    "numpy": "1.26.4",
+    "open3d": "0.19.0",
+    "xformers": "0.0.31",
+    "opencv-python-headless": "4.11.0.86"
+  },
+  "input": {
+    "frames": 29,
+    "objects": 711,
+    "fps": 30.0,
+    "video_frame_indices": [
+      0,
+      45,
+      90,
+      135,
+      180,
+      225,
+      270,
+      315,
+      360,
+      405,
+      450,
+      495,
+      540,
+      585,
+      630,
+      675,
+      720,
+      765,
+      810,
+      855,
+      900,
+      945,
+      990,
+      1035,
+      1080,
+      1125,
+      1170,
+      1215,
+      1260
+    ],
+    "frame_times_s": [
+      0.0,
+      1.5,
+      3.0,
+      4.5,
+      6.0,
+      7.5,
+      9.0,
+      10.5,
+      12.0,
+      13.5,
+      15.0,
+      16.5,
+      18.0,
+      19.5,
+      21.0,
+      22.5,
+      24.0,
+      25.5,
+      27.0,
+      28.5,
+      30.0,
+      31.5,
+      33.0,
+      34.5,
+      36.0,
+      37.5,
+      39.0,
+      40.5,
+      42.0
+    ],
+    "image_shape": [
+      1920,
+      1080,
+      3
+    ],
+    "classification": "reused from 3.json; canonical adapter domain 51",
+    "source_images": "restored from video; historical JPEGs no longer present; JPEG quality 95",
+    "seconds": 2.3454087637364864
+  },
+  "elapsed_s": 267.56511979177594,
+  "viewer_ready_s": 121.2137434668839,
+  "zip_ready_s": 129.3706309609115,
+  "preparation_overlap_s": 2.9993767514824867,
+  "preparation_outside_matching_s": 8.310750126838684e-05,
+  "pvs": {
+    "calls": 29,
+    "boxes": 711,
+    "wall_s": 4.057036630809307,
+    "encoder_s": 1.98711346834898,
+    "encoder_and_decoder_postprocess_s": 3.558732021600008
+  },
+  "memory": {
+    "target_gpu_sampled_peak_mib": 15132.0,
+    "other_gpu_sampled_min_mib": 7316.0,
+    "other_gpu_sampled_max_mib": 7316.0,
+    "device_sampled_peak_mib": 22462.0,
+    "process_tree_rss_sampled_peak_bytes": 15210856448,
+    "process_lifetime_peaks": [
+      {
+        "pid": 1022226,
+        "argv": [
+          "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_da3.py",
+          "/home/xingyu/3D_Recognization/src/da3_runner.py",
+          "--input_dir",
+          "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/dataset/images",
+          "--output_npz",
+          "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/outputs/dataset/da3_cache/predictions.npz.partial",
+          "--model_path",
+          "/home/xingyu/.cache/huggingface/hub/models--depth-anything--DA3NESTED-GIANT-LARGE-1.1/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+          "--device",
+          "cuda",
+          "--process_res",
+          "504"
+        ],
+        "rss_hwm_kib": 14657020,
+        "cpu_user_s": 22.414899,
+        "cpu_system_s": 4.764032,
+        "peak_scope": "process lifetime; no allocator resets",
+        "cuda_allocated_peak_bytes": 12251022848,
+        "cuda_reserved_peak_bytes": 15422455808,
+        "cuda_allocated_final_bytes": 8519680,
+        "driver_peak_mib": 15132.0
+      },
+      {
+        "pid": 1022106,
+        "argv": [
+          "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_core.py"
+        ],
+        "rss_hwm_kib": 5330136,
+        "cpu_user_s": 174.384049,
+        "cpu_system_s": 11.294364,
+        "peak_scope": "process lifetime; no allocator resets",
+        "cuda_allocated_peak_bytes": 3341922304,
+        "cuda_reserved_peak_bytes": 3527409664,
+        "cuda_allocated_final_bytes": 2476861440,
+        "driver_peak_mib": 3788.0
+      },
+      {
+        "pid": 1035627,
+        "argv": [
+          "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/profile_delivery.py"
+        ],
+        "rss_hwm_kib": 975812,
+        "cpu_user_s": 176.504018,
+        "cpu_system_s": 163.183598,
+        "peak_scope": "process lifetime; no allocator resets",
+        "driver_peak_mib": null
+      },
+      {
+        "pid": 1019412,
+        "argv": [
+          "runtime/video3-full-profile-20261016/run_profile.py"
+        ],
+        "rss_hwm_kib": 824552,
+        "cpu_user_s": 52.699447,
+        "cpu_system_s": 76.765703,
+        "peak_scope": "process lifetime; no allocator resets",
+        "driver_peak_mib": null
+      }
+    ]
+  },
+  "output": {
+    "frames": 29,
+    "global_ids": 385,
+    "point_count": 2402589,
+    "matching_summaries": 29,
+    "mask_manifests": 29,
+    "zip_members": 751,
+    "zip_uncompressed_members_bytes": 117265123,
+    "files_bytes": {
+      "predictions.npz": 110514827,
+      "viewer_bundle.zip": 79632287,
+      "scene.glb": 121513344,
+      "viewer_generation": 117265123
+    },
+    "triangle_count": 2564994,
+    "atlas_pages": 31
+  },
+  "glb": {
+    "output": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/scene.glb",
+    "glb_bytes": 121513344,
+    "elapsed_seconds": 137.38774405792356,
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128,
+    "delivery_mode": "streamed",
+    "bake": {
+      "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+      "global_id": null,
+      "input_point_count": 2402589,
+      "point_count": 2402589,
+      "selected_point_count": 1297863,
+      "lod": {
+        "input_count": 2402589,
+        "selected_count": 1297863,
+        "removed_count": 1104726,
+        "eligible_blocks": 452701,
+        "reduced_blocks": 368242
+      },
+      "lod_removed_point_count": 1104726,
+      "baked_surfel_count": 1282497,
+      "skipped_surfel_count": 15366,
+      "triangle_count": 2564994,
+      "atlas_pages": 31,
+      "glb_bytes": null,
+      "elapsed_seconds": 94.21534051001072,
+      "tile_size": 8,
+      "atlas_size": 2048,
+      "radius": 2.0,
+      "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+    },
+    "compact": {
+      "geometry_bytes_before": 133379688,
+      "geometry_bytes_after": 76949820,
+      "texture_bytes_before": null,
+      "texture_bytes_after": 44482041,
+      "max_position_error": 7.593196089850096e-05,
+      "max_uv_error": 7.6175900194375146e-06,
+      "triangle_count": 2564994,
+      "output": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/scene.glb",
+      "glb_bytes": 121513344,
+      "primitive_count": 93,
+      "source_bytes": null,
+      "elapsed_seconds": 43.163994278758764
+    }
+  }
+}

@@ -1,0 +1,125 @@
+--- a/src/surfel_glb.py
++++ b/src/surfel_glb.py
+@@ -170,6 +170,43 @@
+     return report
+ 
+ 
++def _encoded_pages(pages, encoder):
++    """Own at most two uncommitted pages; only the caller writes BIN data."""
++    from collections import deque
++    from concurrent.futures import ThreadPoolExecutor
++
++    pending = deque()
++    executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="atlas-encode")
++    pages = iter(pages)
++    try:
++        while True:
++            if len(pending) == 2:
++                page, future = pending.popleft()
++                page["encoded_png"] = future.result()
++                yield page
++            try:
++                original = next(pages)
++            except StopIteration:
++                break
++            rgba = np.array(original["image_rgba"], copy=True, order="C")
++            page = {key: np.array(original[key], copy=True, order="C")
++                    for key in ("positions", "uv", "indices")}
++            page["surfel_count"] = original["surfel_count"]
++            del original
++            pending.append((page, executor.submit(encoder, rgba)))
++            del rgba
++        while pending:
++            page, future = pending.popleft()
++            page["encoded_png"] = future.result()
++            yield page
++    finally:
++        for _, future in pending:
++            future.cancel()
++        if hasattr(pages, "close"):
++            pages.close()
++        executor.shutdown(wait=True, cancel_futures=True)
++
++
+ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
+                        atlas_size=2048, radius=2.0, lod=False, image_encoder=None):
+     from src.surfel_mesh import bake_surfel_pages
+@@ -241,34 +278,39 @@
+             return index
+ 
+         page_options = {"image_format": "rgba"} if compact is not None else {}
+-        for page in bake_surfel_pages(**inputs, radius=radius, tile_size=tile_size,
+-                                      atlas_size=atlas_size, **page_options):
+-            positions = np.asarray(page["positions"], dtype="<f4")
+-            uv = np.asarray(page["uv"], dtype="<f4")
+-            indices = np.asarray(page["indices"], dtype="<u4").reshape(-1)
+-            if compact is not None:
+-                compact_started = time.monotonic()
+-                compact.geometry(positions, uv, indices, page_count)
+-                compact.image(image_encoder(page["image_rgba"]))
+-                compact_seconds += time.monotonic() - compact_started
+-            else:
+-                position_accessor = accessor(positions, "VEC3", 5126, 34962, True)
+-                uv_accessor = accessor(uv, "VEC2", 5126, 34962)
+-                index_accessor = accessor(indices, "SCALAR", 5125, 34963)
+-                image_view = buffer_view(page["image_png"])
+-                document["images"].append({"bufferView": image_view, "mimeType": "image/png"})
+-                document["meshes"][0]["primitives"].append({
+-                    "attributes": {"POSITION": position_accessor, "TEXCOORD_0": uv_accessor},
+-                    "indices": index_accessor, "material": page_count, "mode": 4})
+-            document["textures"].append({"source": page_count, "sampler": 0})
+-            document["materials"].append({
+-                "doubleSided": True, "alphaMode": "MASK", "alphaCutoff": .5,
+-                "extensions": {"KHR_materials_unlit": {}},
+-                "pbrMetallicRoughness": {"baseColorTexture": {"index": page_count},
+-                                         "metallicFactor": 0, "roughnessFactor": 1}})
+-            triangle_count += len(indices) // 3
+-            baked_count += page["surfel_count"]
+-            page_count += 1
++        pages = bake_surfel_pages(**inputs, radius=radius, tile_size=tile_size,
++                                  atlas_size=atlas_size, **page_options)
++        if compact is not None:
++            pages = _encoded_pages(pages, image_encoder)
++        from contextlib import closing
++        with closing(pages):
++            for page in pages:
++                positions = np.asarray(page["positions"], dtype="<f4")
++                uv = np.asarray(page["uv"], dtype="<f4")
++                indices = np.asarray(page["indices"], dtype="<u4").reshape(-1)
++                if compact is not None:
++                    compact_started = time.monotonic()
++                    compact.geometry(positions, uv, indices, page_count)
++                    compact.image(page["encoded_png"])
++                    compact_seconds += time.monotonic() - compact_started
++                else:
++                    position_accessor = accessor(positions, "VEC3", 5126, 34962, True)
++                    uv_accessor = accessor(uv, "VEC2", 5126, 34962)
++                    index_accessor = accessor(indices, "SCALAR", 5125, 34963)
++                    image_view = buffer_view(page["image_png"])
++                    document["images"].append({"bufferView": image_view, "mimeType": "image/png"})
++                    document["meshes"][0]["primitives"].append({
++                        "attributes": {"POSITION": position_accessor, "TEXCOORD_0": uv_accessor},
++                        "indices": index_accessor, "material": page_count, "mode": 4})
++                document["textures"].append({"source": page_count, "sampler": 0})
++                document["materials"].append({
++                    "doubleSided": True, "alphaMode": "MASK", "alphaCutoff": .5,
++                    "extensions": {"KHR_materials_unlit": {}},
++                    "pbrMetallicRoughness": {"baseColorTexture": {"index": page_count},
++                                             "metallicFactor": 0, "roughnessFactor": 1}})
++                triangle_count += len(indices) // 3
++                baked_count += page["surfel_count"]
++                page_count += 1
+         if page_count == 0 or baked_count == 0:
+             raise ValueError("Selected Surfels have no visible, nondegenerate geometry to export")
+         if not 0 <= baked_count <= selected_count:
+@@ -311,7 +353,9 @@
+     stream. No full-precision GLB or intermediate PNG is generated.
+     Consequently bake.glb_bytes, compact.source_bytes and
+     compact.texture_bytes_before are None. Bake time excludes the separately
+-    reported compact time (geometry quantization, PNG encoding and final write).
++    reported main-thread compact time (geometry quantization and final write).
++    Bake residual includes producer work and ordered encoder waiting; concurrent
++    worker durations are not summed into the public wall-time partition.
+     """
+     from src.surfel_glb_texture import encode_atlas
+ 

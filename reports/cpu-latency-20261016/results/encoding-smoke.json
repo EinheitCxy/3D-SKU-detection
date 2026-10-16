@@ -1,0 +1,63 @@
+{
+  "seed": 0,
+  "generation": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+  "runs": [],
+  "failures": [],
+  "source_identity": "registered source snapshot exact text matches live named exporter/encoder/writer",
+  "environment": {
+    "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+    "numpy": "1.26.4",
+    "pillow": "12.3.0",
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "threads": {
+      "OMP_NUM_THREADS": "4",
+      "OPENBLAS_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4"
+    }
+  },
+  "pytest_exit": 0,
+  "pilot_input": {
+    "page": "first real full page, two owned copies",
+    "shape": [
+      2040,
+      2040,
+      4
+    ]
+  },
+  "pilot_blocks": [
+    {
+      "serial": {
+        "wall_s": 2.9518755190074444,
+        "cpu_s": 3.0083330000000075
+      },
+      "threads": {
+        "wall_s": 1.5173836909234524,
+        "cpu_s": 2.967554
+      },
+      "saving_s": 1.434491828083992
+    },
+    {
+      "threads": {
+        "wall_s": 1.5349169038236141,
+        "cpu_s": 2.953513000000001
+      },
+      "serial": {
+        "wall_s": 2.927315466105938,
+        "cpu_s": 2.989381999999999
+      },
+      "saving_s": 1.3923985622823238
+    }
+  ],
+  "pilot_exact_png_and_decoded_rgba": true,
+  "pilot_survives": true,
+  "status": "smoke_passed",
+  "total_wall_s": 23.666902117431164,
+  "total_cpu_s": 57.929624000000004,
+  "peak_rss_gib": 1.0617523193359375,
+  "task_disk_bytes": 198940
+}

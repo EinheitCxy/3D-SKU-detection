@@ -1,0 +1,96 @@
+{
+  "phase": "official",
+  "label": "B2-continuation",
+  "status": "completed",
+  "failures": [],
+  "seed": 0,
+  "peak_new_disk_limit_mib": 300,
+  "environment": {
+    "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+    "numpy": "1.26.4",
+    "pillow": "12.3.0",
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ],
+    "thread_vars": {
+      "OMP_NUM_THREADS": "4",
+      "OPENBLAS_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4"
+    }
+  },
+  "binding_self_check": "passed",
+  "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+  "comparison_reference": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/scene.glb",
+  "baked_page_reference_available": false,
+  "wall_s": 169.36675844341516,
+  "cpu_seconds_including_children": 389.849827,
+  "peak_rss_gib": 1.0244560241699219,
+  "retained_task_bytes": 36242,
+  "raw_export_wall_s": 156.874762583524,
+  "export_cpu_s": 370.622129,
+  "dilation_wall_s": 57.48179807886481,
+  "output_bytes": 121513344,
+  "production_report": {
+    "output": "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/continue-dilation/B2.glb",
+    "glb_bytes": 121513344,
+    "elapsed_seconds": 156.8744811564684,
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128,
+    "delivery_mode": "streamed",
+    "bake": {
+      "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+      "global_id": null,
+      "input_point_count": 2402589,
+      "point_count": 2402589,
+      "selected_point_count": 1297863,
+      "lod": {
+        "input_count": 2402589,
+        "selected_count": 1297863,
+        "removed_count": 1104726,
+        "eligible_blocks": 452701,
+        "reduced_blocks": 368242
+      },
+      "lod_removed_point_count": 1104726,
+      "baked_surfel_count": 1282497,
+      "skipped_surfel_count": 15366,
+      "triangle_count": 2564994,
+      "atlas_pages": 31,
+      "glb_bytes": null,
+      "elapsed_seconds": 106.79941429942846,
+      "tile_size": 8,
+      "atlas_size": 2048,
+      "radius": 2.0,
+      "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+    },
+    "compact": {
+      "geometry_bytes_before": 133379688,
+      "geometry_bytes_after": 76949820,
+      "texture_bytes_before": null,
+      "texture_bytes_after": 44482041,
+      "max_position_error": 7.593196089850096e-05,
+      "max_uv_error": 7.6175900194375146e-06,
+      "triangle_count": 2564994,
+      "output": "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261016/execution/.research/cycles/cpu-01/tasks/continue-dilation/B2.glb",
+      "glb_bytes": 121513344,
+      "primitive_count": 93,
+      "source_bytes": null,
+      "elapsed_seconds": 50.073218036442995
+    }
+  },
+  "in_export_page_verification_overhead_s": 0.0,
+  "comparison": {
+    "document_associations_equal": true,
+    "typed_geometry_uv_indices_equal": true,
+    "all_decoded_rgba_including_transparent_equal": true,
+    "same_size": true,
+    "image_count": 31,
+    "accessor_count": 279,
+    "wall_s": 7.345216054469347,
+    "outside_export_timer": true
+  }
+}

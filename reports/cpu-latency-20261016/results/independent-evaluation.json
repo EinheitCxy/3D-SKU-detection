@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "role": "independent-advisory-evaluator",
+  "status": "completed",
+  "recommendation": "inconclusive",
+  "evaluation_spec_id": "cpu-01-export-v1",
+  "evaluation_cycle_checkpoint_id": "evaluation-cycle-b6f84a1d4bc6bb0f94040eaaa54afce6241516fbb14e064e2df92836c432d60a",
+  "comparison_target": "baseline-cpu-01",
+  "authority": "Task-local evaluation-brief.md authorizes advisory closeout only. No controller transition, integration or promotion authorized by this report.",
+  "partial_blinding": "Planner rationale and desired verdict excluded; registered raw results, runner/tests/patches/receipts inspected. Registered retry execution-results narrative used only for factual receipt/limitations cross-check.",
+  "identity_check": {
+    "registered_command_receipts_match_spec_and_checkpoint": true,
+    "locked_spec_copies_same_content": true,
+    "frozen_mesh_source_artifact": "artifact-4d0ef1b9f1e2-43ced2a8",
+    "generation": "c9c3be6802144fcf97a942085b118422",
+    "seed": 0,
+    "baseline_identity": "baseline-cpu-01",
+    "approved_gate_receipt_in_registered_inputs": false,
+    "note": "Brief supplies authority and identity; no independent approved-gate artifact supplied. No new hashes generated."
+  },
+  "gate_order": [
+    "execution_validity",
+    "contract_comparability",
+    "evidence_completeness"
+  ],
+  "primary_metric": {
+    "name": "minimum_paired_complete_cpu_export_saving_s",
+    "value": null,
+    "units": "s",
+    "reason": "No candidate satisfies ordered hard gates and two valid complete opposed-order pairs."
+  },
+  "candidates": {
+    "dilation": {
+      "recommendation": "inconclusive",
+      "execution_valid": false,
+      "comparable": false,
+      "evidence_complete": false,
+      "official": false,
+      "official_metric_eligible": false,
+      "integration_eligible": false,
+      "primary_metric": null,
+      "first_failed_gate": "execution_validity",
+      "gate_decisions": [
+        {
+          "gate": "execution_validity",
+          "status": "fail",
+          "evidence": "Official rc3 / SIGXCPU in B2 after completed B1,C1,C2. SIGXCPU and generic SystemExit implementation record describe one resource event, not two algorithm failures."
+        },
+        {
+          "gate": "contract_comparability",
+          "status": "not_scored_after_prior_failure",
+          "known_issues": "Original B1 overlaps encoding official on CPUs0-3; B1 capture0.205604s vs C1/C2 compare5.942015/5.614754s are included in raw timings. Adjusted fields cannot replace locked raw primary."
+        },
+        {
+          "gate": "evidence_completeness",
+          "status": "not_scored_after_prior_failure",
+          "known_issues": "Original B2 and second complete pair absent."
+        }
+      ],
+      "quality": {
+        "observed_mismatches": 0,
+        "global_quality_violation_count": null,
+        "smoke": "31 synthetic cases,15 existing mesh tests and1024-point real batch/1020 baked passed.",
+        "full_scene": "C1/C2 match B1 complete baked RGBA and geometry plus final document/associations,typed geometry/UV/indices,decoded31 RGBA atlases including transparent RGB; all completed outputs121513344bytes."
+      }
+    },
+    "encoding": {
+      "recommendation": "inconclusive",
+      "execution_valid": false,
+      "comparable": false,
+      "evidence_complete": false,
+      "official": false,
+      "official_metric_eligible": false,
+      "integration_eligible": false,
+      "primary_metric": null,
+      "first_failed_gate": "execution_validity",
+      "gate_decisions": [
+        {
+          "gate": "execution_validity",
+          "status": "fail",
+          "evidence": "Official cancelled for same-CPU overlap; supervisor130,0 completed official exports. No algorithmic failure established."
+        },
+        {
+          "gate": "contract_comparability",
+          "status": "not_scored_after_prior_failure",
+          "known_issues": "CPU0-3 overlap with dilation."
+        },
+        {
+          "gate": "evidence_completeness",
+          "status": "not_scored_after_prior_failure",
+          "known_issues": "No complete-export pairs,official CPU or official peakRSS."
+        }
+      ],
+      "quality": {
+        "pilot_exact_png_and_decoded_rgba": true,
+        "full_official_quality": null,
+        "pilot_component_savings_s": [
+          1.434491828083992,
+          1.3923985622823238
+        ],
+        "note": "Smoke first-page two-copy encoder timing is component-only and cannot establish complete-export benefit. Patch uses <=2 workers, ordered queue and caller BIN writer; no full official proof."
+      }
+    },
+    "filter": {
+      "recommendation": "debuggable",
+      "execution_valid": false,
+      "comparable": false,
+      "evidence_complete": false,
+      "official": false,
+      "official_metric_eligible": false,
+      "integration_eligible": false,
+      "primary_metric": null,
+      "first_failed_gate": "execution_validity",
+      "gate_decisions": [
+        {
+          "gate": "execution_validity",
+          "status": "fail",
+          "evidence": "Smoke rc1; no official pairs. Failed runner freeze() calls writable get_scene_orientation on original cache path before export."
+        },
+        {
+          "gate": "contract_comparability",
+          "status": "not_scored_after_prior_failure",
+          "known_issues": "Before/after orientation sidecars differ,including normal/rotation/inlier count; NPZ ctime differs although size/mtime/inode stable. Cache identity invalidation and unintended orientation recomputation conflict with frozen orientation contract. This does not establish NPZ data-content corruption."
+        },
+        {
+          "gate": "evidence_completeness",
+          "status": "not_scored_after_prior_failure",
+          "known_issues": "No official timings,per-stage retained removal evidence or required real Viewer quality comparisons; exact smoke traceback not in registered inputs."
+        }
+      ],
+      "quality": {
+        "quality_contract_violation_count": null,
+        "status": "unassessed",
+        "input_write": "Manifest records scene_orientation.json rewritten then content restored; original filesystem metadata not retained. No production-default change established."
+      }
+    },
+    "dilation-b2-retry": {
+      "recommendation": "inconclusive",
+      "execution_valid": true,
+      "comparable": false,
+      "evidence_complete": false,
+      "official": false,
+      "official_metric_eligible": false,
+      "integration_eligible": false,
+      "primary_metric": null,
+      "first_failed_gate": "contract_comparability",
+      "gate_decisions": [
+        {
+          "gate": "execution_validity",
+          "status": "pass_standalone_only",
+          "evidence": "Registered authorized one-shot continuation rc0,170.155s command,389.849827 CPU s within separate500CPU-s bound. This does not heal original failed execution. Cumulative dilation1522.963927CPU s exceeds original1200 bound; no registered amendment waiving original candidate bound."
+        },
+        {
+          "gate": "contract_comparability",
+          "status": "fail",
+          "evidence": "New process after interrupted B2; no matched inline page instrumentation,original C2 includes5.614754s inline checks; original B1 same-core competing encoder. Shared-host/opposed-order continuity not established. Comparator is retained historical scene.glb,not retained B1 file; direct B1-to-reference comparison identity is not supplied."
+        },
+        {
+          "gate": "evidence_completeness",
+          "status": "not_scored_after_prior_failure",
+          "known_issues": "Retry baked-page reference unavailable; quantized final RGBA equality cannot prove missing prequantization equality. No complete four-export valid run under original bound."
+        }
+      ],
+      "quality": {
+        "final_glb_comparison_passed": true,
+        "comparison_reference": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/scene.glb",
+        "output_bytes": 121513344,
+        "accessor_count": 279,
+        "decoded_rgba_atlas_count": 31,
+        "baked_page_reference_available": false,
+        "quality_contract_violation_count": null,
+        "observed_final_mismatches": 0,
+        "comparison_outside_export_timer": true
+      }
+    }
+  },
+  "diagnostic_only": {
+    "raw_export_wall_s": {
+      "B1": 169.46464700251818,
+      "C1": 133.61006398499012,
+      "C2": 126.08113261312246,
+      "B2_retry": 156.874762583524
+    },
+    "paired_raw_savings_s": [
+      35.85458301752806,
+      30.793629970401525
+    ],
+    "min_s": 30.793629970401525,
+    "max_s": 35.85458301752806,
+    "nonimproving_observed_pairs": 0,
+    "not_an_accepted_primary": true,
+    "uncertainty": "Two observations on one shared host; interrupted sequence and unequal instrumentation prevent causal or population inference. No CI or stable speedup percentage."
+  },
+  "resources": {
+    "dilation_smoke_cpu_s": 13.18827,
+    "dilation_original_official_cpu_s": 1119.9258299999997,
+    "retry_command_cpu_s": 389.849827,
+    "retry_export_cpu_s": 370.622129,
+    "dilation_all_measured_cpu_s": 1522.9639269999998,
+    "original_dilation_bound_cpu_s": 1200,
+    "retry_separate_bound_cpu_s": 500,
+    "encoding_smoke_cpu_s": 57.929624000000004,
+    "encoding_official_cpu_s": null,
+    "filter_cpu_s": null,
+    "known_measured_cycle_cpu_s": 1580.893551,
+    "encoding_withheld_allowance_cpu_s": 1120,
+    "filter_withheld_allowance_cpu_s": 48,
+    "withheld_allowances_are_measured_usage": false,
+    "cycle_bound_cpu_s": 3600,
+    "dilation_peak_rss_gib": 1.6117401123046875,
+    "retry_peak_rss_gib": 1.0244560241699219,
+    "aggregate_concurrent_peak_rss_gib": null,
+    "cycle_peak_new_storage_gib": null,
+    "gpu_seconds": 0,
+    "gpu_evidence": "CPU-only runners disable CUDA and contain no inference commands; no independent device telemetry supplied."
+  },
+  "integration_eligible": false,
+  "controller_state_modified": false,
+  "experiments_run": false,
+  "cheapest_necessary_future_action": "Keep production unchanged. First register an explicit decision on dilation cumulative 1200-CPU-s bound and obtain controller-valid task/acceptance authority. Only if future execution is approved, acquire one complete matched-instrumentation B1,C1,C2,B2 sequence on non-overlapping reserved CPUs with retained full baked-page and final-GLB comparisons under an explicit cumulative budget. No implicit retry. Encoding needs fresh complete pairs after interference is resolved; filter needs its input cache binding and write containment fixed before any rerun, then real fixed-camera Viewer quality review.",
+  "artifact_ids": [
+    "artifact-1c92ddf6b444-48383e5f",
+    "artifact-ac9a2508b0fe-230fcd8e",
+    "artifact-1975bc1ddd63-06f4ec33",
+    "artifact-7942697a43f1-755c6480",
+    "artifact-6bf93bd97981-263488c3",
+    "artifact-baa8722543e0-baec979d",
+    "artifact-824ae5259fe2-b0d06793",
+    "artifact-6c878230bf6e-088194e1",
+    "artifact-9adc0ac4e74a-7e5a6793",
+    "artifact-1de1f635767c-604529fb",
+    "artifact-1c92ddf6b444-6226cca3",
+    "artifact-6ed21e612302-813737f7",
+    "artifact-3c3d8a2d2d8a-7134d18e",
+    "artifact-96a7925e6659-52ab9c9f",
+    "artifact-7f3495933d36-b5a648e6",
+    "artifact-add962c5016b-6b8a6691",
+    "artifact-aff93ea32032-b4f15eee",
+    "artifact-a3f747e7e84d-7d3b53fc",
+    "artifact-9a183a7ee7ac-23ff0656",
+    "artifact-cb6d02a9ad52-6c9c4963",
+    "artifact-8073dfc42fec-7cf54c3e",
+    "artifact-a3a203653cb9-b2e46bef",
+    "artifact-d9fbf578e759-6b487b7a",
+    "artifact-ddbab2c96f81-8484f586",
+    "artifact-a00256ee9df6-ebb18e90",
+    "artifact-0ca116e73080-2bb6ae4c"
+  ],
+  "limitations": [
+    "Single fixed 29-frame diagnostic scene; no heldout generalization or seed replication.",
+    "Original official failure and original missing B2 remain part of the record.",
+    "Unknown CPU and aggregate RSS/storage cannot be represented as measured zeros.",
+    "Final GLB comparison does not recover missing prequantization RGBA.",
+    "No end-to-end request-to-Viewer/GLB or GPU speedup conclusion."
+  ]
+}

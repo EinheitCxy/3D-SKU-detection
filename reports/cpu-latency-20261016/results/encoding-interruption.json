@@ -1,0 +1,18 @@
+{
+  "status": "interrupted",
+  "failure_class": "resource_protocol_interruption",
+  "reason": "Coordinator cancelled official due encoding and dilation both bound CPUs 0-3; cancellation is not algorithm failure. No retry in this task.",
+  "started_at": "2026-10-16T06:39:42.904151+00:00",
+  "cancel_requested_at": "2026-10-16T06:41:32.713781+00:00",
+  "controller_cancel_status": "cancelled",
+  "supervisor_session_exit_code": 130,
+  "completed_official_exports": 0,
+  "official_cpu_seconds_including_children": null,
+  "official_peak_rss_gib": null,
+  "warning": "Controller state still says running; cross-tool PID namespace issue suspected. Owner session closed with Ctrl-C. Child termination must be confirmed by Coordinator through host-visible ownership check.",
+  "smoke_measured_cpu_seconds": 57.929624000000004,
+  "receipt_pointers": [
+    "../../../../../../runs/encoding-official/cancel-request.json",
+    "../../../../../../runs/encoding-official/state.json"
+  ]
+}

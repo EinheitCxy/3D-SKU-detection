@@ -1,0 +1,49 @@
+{
+  "phase": "smoke",
+  "status": "completed",
+  "runs": [],
+  "failures": [],
+  "seed": 0,
+  "environment": {
+    "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+    "thread_env": {
+      "OMP_NUM_THREADS": "4",
+      "OPENBLAS_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4"
+    },
+    "affinity": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+  "synthetic_cases": 31,
+  "existing_mesh_tests": [
+    "test_flat_patch_orientation_and_texel_centers",
+    "test_depth_edge_clips_native_boundary",
+    "test_source_depth_test_rejects_interior_even_with_continuous_neighbors",
+    "test_scale_applies_after_footprint_clamp_within_final_cap_and_degenerate_skipped",
+    "test_final_diameter_cap_limits_radius_and_anisotropic_scale_bake_geometry",
+    "test_final_diameter_cap_preserves_skew_plane_short_value_and_major_direction",
+    "test_final_diameter_cap_limits_both_axes_of_oversize_isotropic_footprint",
+    "test_final_diameter_cap_leaves_small_footprint_unchanged",
+    "test_final_diameter_cap_tracks_native_grid_at_different_depths",
+    "test_multiple_pages_have_compact_valid_dimensions",
+    "test_raw_atlas_pages_preserve_geometry_and_transparent_rgb",
+    "test_all_invisible_yields_no_pages",
+    "test_resized_source_texture_uses_half_pixel_mapping",
+    "test_smaller_texture_layer_preserves_zero_padding_filter",
+    "test_zero_and_negative_camera_depth_are_skipped_without_warnings"
+  ],
+  "real_batch": {
+    "selected": 1024,
+    "baked": 1020,
+    "geometry_and_rgba_equal": true
+  },
+  "encoding_pilot": "not applicable: candidate changes dilation only; no encoding concurrency",
+  "wall_s": 5.756613459438086,
+  "cpu_seconds_including_children": 13.18827,
+  "peak_rss_gib": 0.6924858093261719
+}
