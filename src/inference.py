@@ -93,8 +93,6 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         "confidence_threshold": args.confidence_threshold,
         "min_confident_points": args.min_confident_points,
         "seed": args.seed,
-        "quiet_outputs": args.quiet_outputs,
-        "save_json": args.save_json and not args.quiet_outputs,
         "output_dir": output_dir,
         "sam3_mask_cache_root": str(
             Path(args.sam3_mask_cache_root)
@@ -102,6 +100,8 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
             else default_sam3_mask_cache_root(args.output_dir)
         ),
     }
+    if args.quiet_outputs is not None:
+        overrides["quiet_outputs"] = args.quiet_outputs
     # 可选 3D 阈值覆盖（网格扫描用，None=用 config 默认）
     for _k in ("min_hit_ratio", "max_3d_distance", "max_depth", "depth_confidence_threshold", "min_3d_sample_points", "pairing_3d"):
         _v = getattr(args, _k, None)
@@ -109,9 +109,12 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
             overrides[_k] = _v
 
     if algorithm_type == "point_tracking":
-        return SKUMatchingConfig.for_point_tracking(**overrides)
-    backend = overrides.pop("backend", args.backend)
-    return SKUMatchingConfig.for_3d_mapping(backend=backend, **overrides)
+        cfg = SKUMatchingConfig.for_point_tracking(**overrides)
+    else:
+        backend = overrides.pop("backend", args.backend)
+        cfg = SKUMatchingConfig.for_3d_mapping(backend=backend, **overrides)
+    cfg.save_json = bool(args.save_json) and not cfg.quiet_outputs
+    return cfg
 
 
 def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
@@ -127,7 +130,8 @@ def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
     )
     # Override a few runtime knobs from CLI
     cfg.device = args.device
-    cfg.quiet_outputs = cfg.quiet_outputs or args.quiet_outputs
+    if args.quiet_outputs is not None:
+        cfg.quiet_outputs = args.quiet_outputs
     cfg.save_json = bool(args.save_json) and not cfg.quiet_outputs
     cfg.seed = args.seed
     # 可选 3D 阈值覆盖（网格扫描用，None=保留 YAML/默认值）
@@ -338,7 +342,10 @@ def main(argv: Sequence[str] | None = None) -> None:
     # 系统参数
     parser.add_argument("--device", type=str, default="cuda", help="计算设备 (cuda/cpu)")
     parser.add_argument("--seed", type=int, default=42, help="随机种子")
-    parser.add_argument("--quiet_outputs", action="store_true", help="不生成调试图片和可选JSON；保留去重需要的匹配摘要")
+    parser.add_argument(
+        "--quiet_outputs", action=argparse.BooleanOptionalAction, default=None,
+        help="默认不生成调试图片和可选JSON；--no-quiet_outputs 恢复；保留去重需要的匹配摘要",
+    )
     parser.add_argument("--save_json", action="store_true", help="保存结果为JSON文件")
     # 匹配参数
     parser.add_argument("--max_points_per_bbox", type=int, default=30, help="每个检测框最大采样点数")

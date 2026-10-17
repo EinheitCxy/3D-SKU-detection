@@ -434,7 +434,7 @@ class SKUDetectionMain:
         parallel_refs: int = 1,
         match_overrides: dict = None,
         enable_profiling: bool = False,
-        quiet_outputs: bool = False,
+        quiet_outputs: bool = True,
         sam3_mask_cache_root: Optional[str] = None,
     ) -> StepResult:
         """匹配全部或单个参考帧；任一参考帧失败直接传播，保留 profiling 清理。"""
@@ -515,7 +515,7 @@ class SKUDetectionMain:
         backend: str = "vggt",
         match_overrides: dict = None,
         enable_profiling: bool = False,
-        quiet_outputs: bool = False,
+        quiet_outputs: bool = True,
         sam3_mask_cache_root: Optional[str] = None,
     ) -> StepResult:
         """运行单个参考图片的SKU匹配推理（内部使用）。
@@ -557,8 +557,7 @@ class SKUDetectionMain:
             "--backend",
             backend,
         ]
-        if quiet_outputs:
-            argv.append("--quiet_outputs")
+        argv.append("--quiet_outputs" if quiet_outputs else "--no-quiet_outputs")
         if save_json and not quiet_outputs:
             argv.append("--save_json")
         if enable_profiling:
@@ -991,7 +990,7 @@ class SKUDetectionMain:
         algorithm: str = "point_tracking",
         model_path: str | None = None,
         evaluate_accuracy: bool = True,
-        quiet_outputs: bool = False,
+        quiet_outputs: bool = True,
     ) -> Dict[str, bool]:
         """运行 SKU 计数流水线；无人工标注的服务请求可显式关闭准确率评估。"""
         logger.info("开始完整的SKU计数流水线（包含3D重建）")
@@ -1124,6 +1123,8 @@ class SKUDetectionMain:
         self,
         dataset_path: str,
         algorithm: str = "point_tracking",
+        *,
+        quiet_outputs: bool = True,
         **matching_options,
     ) -> Dict[str, bool]:
         """CLI 与交互菜单共享的匹配、评估流程；匹配失败不执行评估。"""
@@ -1131,14 +1132,18 @@ class SKUDetectionMain:
             raise ValueError(f"数据集验证失败: {dataset_path}")
         match_backend = self.match_backend if "3d" in algorithm else "vggt"
         self.run_sku_matching(
-            dataset_path, algorithm, backend=match_backend, **matching_options
+            dataset_path, algorithm, backend=match_backend,
+            quiet_outputs=quiet_outputs, **matching_options
         )
-        self.run_accuracy_evaluation(
-            dataset_path, backend=match_backend if "3d" in algorithm else "pt"
-        )
-        return {"validation": True, "matching": True, "accuracy_evaluation": True}
+        summary = {"validation": True, "matching": True}
+        if not quiet_outputs:
+            self.run_accuracy_evaluation(
+                dataset_path, backend=match_backend if "3d" in algorithm else "pt"
+            )
+            summary["accuracy_evaluation"] = True
+        return summary
 
-    def interactive_mode(self) -> None:
+    def interactive_mode(self, *, quiet_outputs: bool = True) -> None:
         """交互模式"""
         self.show_banner()
 
@@ -1183,7 +1188,9 @@ class SKUDetectionMain:
                             break
                         logger.warning(f"无效的后端 '{backend}'，请重新输入")
                     self.match_backend = backend
-                self.run_complete_pipeline(self.default_dataset, algorithm)
+                self.run_complete_pipeline(
+                    self.default_dataset, algorithm, quiet_outputs=quiet_outputs
+                )
             elif choice == "2":
                 algorithm = (
                     input("选择算法 (point_tracking/3d/both) [默认: both]: ").strip()
@@ -1202,7 +1209,9 @@ class SKUDetectionMain:
                             break
                         logger.warning(f"无效的后端 '{backend}'，请重新输入")
                     self.match_backend = backend
-                self.run_concise_pipeline(self.default_dataset, algorithm)
+                self.run_concise_pipeline(
+                    self.default_dataset, algorithm, quiet_outputs=quiet_outputs
+                )
             elif choice == "3":
                 dataset_name = input(
                     "输入数据集名称 (如 floor_display2，或仅输入数字如 15): "
@@ -1285,6 +1294,12 @@ def main() -> None:
         data = load_yaml_config(config_path)
         yaml_main = extract_main_settings(data)
         yaml_recon = extract_reconstruction_settings(data)
+        yaml_inference = data.get("inference")
+        quiet_outputs_default = yaml_main.get(
+            "quiet_outputs",
+            yaml_inference.get("quiet_outputs", True)
+            if isinstance(yaml_inference, dict) else True,
+        )
     except Exception as e:
         logger.error(f"YAML 配置文件读取失败: {config_path}, 错误: {e}")
         sys.exit(1)
@@ -1369,7 +1384,11 @@ def main() -> None:
         default=True,
         help="运行本地分类；--no-classifier 使用外部 enriched detections",
     )
-    parser.add_argument("--quiet_outputs", action="store_true", help="完整pipeline关闭额外调试图片和辅助报告")
+    parser.add_argument(
+        "--quiet_outputs", action=argparse.BooleanOptionalAction,
+        default=bool(quiet_outputs_default),
+        help="默认关闭额外调试图片和辅助报告；--no-quiet_outputs 显式恢复",
+    )
     parser.add_argument(
         "--save_json",
         action="store_true",
@@ -1512,7 +1531,7 @@ def main() -> None:
     )
 
     if args.mode == "interactive":
-        app.interactive_mode()
+        app.interactive_mode(quiet_outputs=args.quiet_outputs)
     elif args.mode == "pipeline":
         app.run_complete_pipeline(
             args.dataset, args.algorithm, model_path=args.recon_model_path,
@@ -1542,6 +1561,7 @@ def main() -> None:
             parallel_refs=args.parallel_refs,
             match_overrides=_ov,
             enable_profiling=args.enable_profiling,
+            quiet_outputs=args.quiet_outputs,
             sam3_mask_cache_root=args.sam3_mask_cache_root,
         )
     elif args.mode == "analyzer":

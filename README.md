@@ -351,9 +351,9 @@ Docker Viewer 导出不传入主数据参数，跳过主数据读取和文件生
 
 ## 静默辅助输出
 
-`uv run python main.py --mode pipeline --dataset <目录> --algorithm 3d --quiet_outputs` 关闭原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON 与最终 Viewer 数据仍按流程需要生成；日志保留。
+pipeline、concise 和 matching 默认启用 `quiet_outputs`，不保存原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON、源帧和最终 Viewer 数据仍按流程需要生成；Viewer 纹理、商品缩略图与日志保留。恢复辅助输出时显式使用 `--no-quiet_outputs`；正向 `--quiet_outputs` 仍有效。主入口配置优先级为 CLI > YAML `main.quiet_outputs` > `inference.quiet_outputs` > 默认 True。
 
-Docker `run_mapping_request` 默认启用此选项。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不新增持久 outputs。普通本地 pipeline 默认保留调试输出。
+Docker `run_mapping_request` 继续默认启用此选项。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不删除已有历史图片。
 
 ## 商品点预算更新（2026-09-10）
 

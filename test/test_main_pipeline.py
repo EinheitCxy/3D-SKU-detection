@@ -19,6 +19,158 @@ import main
 from src import inference
 
 
+@pytest.mark.parametrize("quiet_override", [None, False])
+def test_pipeline_defaults_to_quiet_and_can_restore_auxiliary_outputs(
+    monkeypatch, tmp_path, quiet_override,
+):
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    app.classifier_enabled = False
+    _write_enriched_detections(dataset)
+    seen = {}
+    monkeypatch.setattr(
+        app, "run_sku_matching",
+        lambda *_a, **kw: seen.update(kw),
+    )
+    monkeypatch.setattr(app, "run_dedup_sequence", lambda *_a, **_kw: None)
+    options = {} if quiet_override is None else {"quiet_outputs": quiet_override}
+
+    summary = app.run_complete_pipeline(str(dataset), "3d", **options)
+
+    assert seen["quiet_outputs"] is (quiet_override is None)
+    assert summary["dedup"] is True
+    for key in ("visualization", "improved_analysis", "dedup_visualization", "accuracy_evaluation"):
+        assert (key in summary) is (quiet_override is False)
+
+
+@pytest.mark.parametrize("quiet_override", [None, False])
+def test_concise_defaults_to_quiet_and_only_evaluates_when_restored(
+    monkeypatch, tmp_path, quiet_override,
+):
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    seen = {}
+    evaluations = []
+    monkeypatch.setattr(app, "run_sku_matching", lambda *_a, **kw: seen.update(kw))
+    monkeypatch.setattr(app, "run_accuracy_evaluation", lambda *_a, **_kw: evaluations.append(True))
+    options = {} if quiet_override is None else {"quiet_outputs": quiet_override}
+
+    summary = app.run_concise_pipeline(str(dataset), "3d", **options)
+
+    assert seen["quiet_outputs"] is (quiet_override is None)
+    assert evaluations == ([True] if quiet_override is False else [])
+    assert ("accuracy_evaluation" in summary) is (quiet_override is False)
+
+
+@pytest.mark.parametrize("mode", ["pipeline", "concise", "interactive"])
+@pytest.mark.parametrize(
+    ("yaml_text", "flags", "expected"),
+    [
+        ("{}\n", [], True),
+        ("main:\n  quiet_outputs: false\n", [], False),
+        ("inference:\n  quiet_outputs: false\n", [], False),
+        ("main:\n  quiet_outputs: false\n", ["--quiet_outputs"], True),
+        ("{}\n", ["--no-quiet_outputs"], False),
+        ("inference: null\n", [], True),
+        ("main:\n  quiet_outputs: false\ninference: null\n", [], False),
+    ],
+)
+def test_main_cli_forwards_quiet_setting_to_pipeline_and_interactive_modes(
+    monkeypatch, tmp_path, mode, yaml_text, flags, expected,
+):
+    config = tmp_path / "config.yaml"
+    config.write_text(yaml_text, encoding="utf-8")
+    seen = {}
+    monkeypatch.setattr(main, "_configure_logging_to_save_root", lambda _p: None)
+    method = {
+        "pipeline": "run_complete_pipeline",
+        "concise": "run_concise_pipeline",
+        "interactive": "interactive_mode",
+    }[mode]
+    monkeypatch.setattr(main.SKUDetectionMain, method, lambda _s, *_a, **kw: seen.update(kw))
+    monkeypatch.setattr(main.sys, "argv", ["main.py", "--config", str(config), "--mode", mode, *flags])
+
+    main.main()
+
+    assert seen["quiet_outputs"] is expected
+
+
+@pytest.mark.parametrize("quiet", [True, False])
+def test_interactive_menu_forwards_quiet_setting_to_both_pipelines(
+    monkeypatch, tmp_path, quiet,
+):
+    app, _dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    answers = iter(["1", "point_tracking", "2", "point_tracking", "0"])
+    calls = []
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+    monkeypatch.setattr(app, "show_banner", lambda: None)
+    monkeypatch.setattr(
+        app, "run_complete_pipeline",
+        lambda *_a, **kw: calls.append(("pipeline", kw["quiet_outputs"])),
+    )
+    monkeypatch.setattr(
+        app, "run_concise_pipeline",
+        lambda *_a, **kw: calls.append(("concise", kw["quiet_outputs"])),
+    )
+
+    app.interactive_mode(quiet_outputs=quiet)
+
+    assert calls == [("pipeline", quiet), ("concise", quiet)]
+
+
+@pytest.mark.parametrize(
+    ("yaml_value", "flags", "expected"),
+    [
+        (None, [], True),
+        (None, ["--no-quiet_outputs"], False),
+        (False, [], False),
+        (False, ["--quiet_outputs"], True),
+        (True, ["--no-quiet_outputs"], False),
+    ],
+)
+def test_inference_resolves_cli_and_yaml_quiet_outputs(
+    monkeypatch, tmp_path, yaml_value, flags, expected,
+):
+    images = tmp_path / "images"
+    detections = tmp_path / "detections"
+    images.mkdir()
+    detections.mkdir()
+    argv = ["--image_folder", str(images), "--detection_dir", str(detections),
+            "--device", "cpu", "--save_json", *flags]
+    if yaml_value is not None:
+        config = tmp_path / "config.yaml"
+        config.write_text(f"inference:\n  quiet_outputs: {str(yaml_value).lower()}\n")
+        argv.extend(["--config", str(config)])
+    seen = []
+    monkeypatch.setattr(
+        inference, "run_3d_mapping",
+        lambda args: seen.append(inference._create_config_from_yaml(args, "3d_mapping")
+                                 if args.config else inference.create_config_from_args(args, "3d_mapping")) or {},
+    )
+
+    inference.main(argv)
+
+    assert seen[0].quiet_outputs is expected
+    assert seen[0].save_json is (not expected)
+
+
+@pytest.mark.parametrize("quiet", [True, False])
+def test_matching_forwards_both_quiet_values_over_yaml(monkeypatch, tmp_path, quiet):
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    config = tmp_path / "config.yaml"
+    config.write_text(f"inference:\n  quiet_outputs: {str(not quiet).lower()}\n")
+    app.config_path = config
+    seen = []
+    monkeypatch.setattr(
+        inference, "run_3d_mapping",
+        lambda args: seen.append(inference._create_config_from_yaml(args, "3d_mapping")) or {},
+    )
+
+    app.run_sku_matching(str(dataset), "3d", batch_all_refs=False,
+                         backend="da3", device="cpu", quiet_outputs=quiet, save_json=True)
+
+    assert seen[0].quiet_outputs is quiet
+    assert seen[0].save_json is (not quiet)
+
+
 def _pipeline_fixture(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> tuple[main.SKUDetectionMain, Path]:
@@ -487,7 +639,7 @@ def test_pipeline_exception_waits_for_classifier_shutdown(
     )
 
     with pytest.raises(RuntimeError, match="viz failed"):
-        app.run_complete_pipeline(str(dataset), algorithm="3d")
+        app.run_complete_pipeline(str(dataset), algorithm="3d", quiet_outputs=False)
 
     assert finished.is_set()
     assert shutdown_waits == [True]

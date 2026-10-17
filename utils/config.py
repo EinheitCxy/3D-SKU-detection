@@ -192,6 +192,7 @@ def extract_main_settings(data_or_path: Dict[str, Any] | str | Path) -> Dict[str
         "max_images",
         "device",
         "save_json",
+        "quiet_outputs",
         "save_root",
     ):
         if k in main:
@@ -292,7 +293,7 @@ class SKUMatchingConfig:
     
     # === 输出配置参数 ===
     output_dir: str = ""                   # 输出目录
-    quiet_outputs: bool = False                 # 禁用辅助图片和JSON，保留必要匹配摘要
+    quiet_outputs: bool = True                  # 默认禁用辅助图片和JSON，保留必要匹配摘要
     save_json: bool = False                      # 是否保存JSON结果
     json_filename: str = "correspondences.json"  # JSON文件名
     

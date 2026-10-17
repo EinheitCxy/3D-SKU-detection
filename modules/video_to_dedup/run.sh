@@ -1,11 +1,11 @@
 #!/bin/bash
-# video -> 去重后的 SKU 数目 + 去重后带检测框的图片
+# video -> 去重后的 SKU 数目和机器可读去重结果（默认不输出辅助带框图）
 #
 # 链路:
 #   [1] 抽帧   cv2 按 fps 采样 -> images/0.JPG,1.JPG,... (直接 0-based, 对齐 core 输入约定)
 #   [2] SKU检测 -> detections_results/0.json,1.json,...（modules/sku_detector）
 #   [3] pipeline main.py --mode pipeline (da3 + 3d) -> 匹配+去重+global_id
-#   [4] 提取   去重SKU数目 = global_mapping.json 的 key 数; 带框图 = dedup_imgs_w_bboxes/
+#   [4] 提取   去重SKU数目 = global_mapping.json 的 key 数
 #
 # 用法:
 #   bash video_to_dedup.sh <video> <fps> <gpu> [detections_dir]
@@ -148,7 +148,7 @@ PYEOF
   echo "  ============================================"
   echo "  去重后 SKU 数目 : $n   (global_id 个数)"
   echo "  分类检测目录     : $CLASSIFIED_DIR"
-  echo "  去重后带框图片  : $VIZ_DIR"
+  echo "  辅助带框图片     : 默认关闭（main.py --no-quiet_outputs 可恢复）"
   echo "  去重结果 JSON    : $DEDUP_DIR/{global_mapping.json, global_skus.json, *.json}"
   echo "  ============================================"
 }

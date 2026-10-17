@@ -10,7 +10,7 @@ def test_noncontiguous_file_ids_survive_summary_roundtrip(tmp_path, monkeypatch)
     import utils.sku_matching_system as module
     monkeypatch.setattr(module, 'visualize_results', lambda *args: None)
     system = object.__new__(SKUMatchingSystem)
-    system.config = SKUMatchingConfig.for_3d_mapping(device='cpu')
+    system.config = SKUMatchingConfig.for_3d_mapping(device='cpu', quiet_outputs=False)
     system.config.save_json = False
     for ref, target in [(0, 1), (1, 2)]:
         system.config.output_dir = str(tmp_path / str(ref))

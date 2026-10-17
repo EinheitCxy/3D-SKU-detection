@@ -216,9 +216,9 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 
 ## 静默辅助输出
 
-`uv run python main.py --mode pipeline --dataset <目录> --algorithm 3d --quiet_outputs` 关闭原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON 与最终 Viewer 数据仍按流程需要生成；日志保留。
+本地 pipeline、concise 与 matching 入口默认启用 `quiet_outputs`，不保存原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON 与最终 Viewer 数据仍按流程需要生成；源帧、Viewer 纹理和商品缩略图是必要数据，也会保留。
 
-Docker `run_mapping_request` 默认启用此选项。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不新增持久 outputs。普通本地 pipeline 默认保留调试输出。
+需要恢复辅助输出时显式传 `--no-quiet_outputs`；正向 `--quiet_outputs` 仍可使用。主入口优先级是 CLI、YAML `main.quiet_outputs`、`inference.quiet_outputs`、默认 True；直接 inference 入口也允许 CLI 覆盖 YAML 的 True/False。可选 correspondences JSON 还需要 `--save_json`。Docker `run_mapping_request` 继续默认启用静默输出。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不删除已有历史图片。
 
 ## 商品点预算更新（2026-09-10）
 
