@@ -1,0 +1,877 @@
+{
+  "phase": "smoke",
+  "status": "smoke_pass",
+  "runs": [
+    {
+      "label": "B1",
+      "encoder_workers": 1,
+      "encoder_queue_pages": 1,
+      "export_complete": true,
+      "compare_passed": true,
+      "sampled_export_rss_peak_bytes": 683311104,
+      "export_rss_samples": 4,
+      "same_process_ru_maxrss_bytes_before": 603742208,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/B1.glb",
+        "glb_bytes": 189676,
+        "elapsed_seconds": 0.406474260998948,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 1,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2048,
+          "point_count": 2048,
+          "selected_point_count": 2048,
+          "lod": {
+            "input_count": 2048,
+            "selected_count": 2048,
+            "removed_count": 0,
+            "eligible_blocks": 0,
+            "reduced_blocks": 0
+          },
+          "lod_removed_point_count": 0,
+          "baked_surfel_count": 1881,
+          "skipped_surfel_count": 167,
+          "triangle_count": 3762,
+          "atlas_pages": 1,
+          "glb_bytes": null,
+          "elapsed_seconds": 0.3223494190006022,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 195624,
+          "geometry_bytes_after": 112860,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 75045,
+          "max_position_error": 7.192548465262405e-06,
+          "max_uv_error": 5.7518186618032985e-06,
+          "triangle_count": 3762,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/B1.glb",
+          "glb_bytes": 189676,
+          "primitive_count": 1,
+          "source_bytes": null,
+          "elapsed_seconds": 0.08362114299961831,
+          "encoder_workers": 1,
+          "encoder_queue_pages": 1,
+          "encoding_join_seconds": 0.07942420100152958,
+          "main_thread_write_seconds": 0.004196941998088732,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 0.4067260190004163,
+      "export_cpu_user_s": 0.41002399999999994,
+      "export_cpu_system_s": 0.34177500000000016,
+      "export_cpu_total_s": 0.7517989999999992,
+      "same_process_ru_maxrss_bytes_after": 689606656,
+      "captured_pages": 1,
+      "captured_array_bytes": 1011624,
+      "output_bytes": 189676,
+      "comparison": {
+        "all_page_prequant_arrays_equal": true,
+        "full_glb_bytes_equal": true,
+        "all_accessors_equal": true,
+        "all_decoded_png_rgba_equal": true,
+        "full_document_associations_equal": true
+      },
+      "thread_affinities": {
+        "10425": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10470": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10478": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10479": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10480": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11856": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11857": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11858": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12338": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12339": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12340": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12341": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12687": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12688": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12689": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "C1",
+      "encoder_workers": 4,
+      "encoder_queue_pages": 4,
+      "export_complete": true,
+      "compare_passed": true,
+      "sampled_export_rss_peak_bytes": 703238144,
+      "export_rss_samples": 4,
+      "same_process_ru_maxrss_bytes_before": 689606656,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/C1.glb",
+        "glb_bytes": 189676,
+        "elapsed_seconds": 0.3925931909998326,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 4,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2048,
+          "point_count": 2048,
+          "selected_point_count": 2048,
+          "lod": {
+            "input_count": 2048,
+            "selected_count": 2048,
+            "removed_count": 0,
+            "eligible_blocks": 0,
+            "reduced_blocks": 0
+          },
+          "lod_removed_point_count": 0,
+          "baked_surfel_count": 1881,
+          "skipped_surfel_count": 167,
+          "triangle_count": 3762,
+          "atlas_pages": 1,
+          "glb_bytes": null,
+          "elapsed_seconds": 0.31208982299904164,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 195624,
+          "geometry_bytes_after": 112860,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 75045,
+          "max_position_error": 7.192548465262405e-06,
+          "max_uv_error": 5.7518186618032985e-06,
+          "triangle_count": 3762,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/C1.glb",
+          "glb_bytes": 189676,
+          "primitive_count": 1,
+          "source_bytes": null,
+          "elapsed_seconds": 0.08040017100029218,
+          "encoder_workers": 4,
+          "encoder_queue_pages": 4,
+          "encoding_join_seconds": 0.07525940599953174,
+          "main_thread_write_seconds": 0.005140765000760439,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 0.39265125899873965,
+      "export_cpu_user_s": 0.4057390000000005,
+      "export_cpu_system_s": 0.3374269999999999,
+      "export_cpu_total_s": 0.7431660000000004,
+      "same_process_ru_maxrss_bytes_after": 703238144,
+      "captured_pages": 1,
+      "captured_array_bytes": 1011624,
+      "output_bytes": 189676,
+      "comparison": {
+        "all_page_prequant_arrays_equal": true,
+        "full_glb_bytes_equal": true,
+        "all_accessors_equal": true,
+        "all_decoded_png_rgba_equal": true,
+        "full_document_associations_equal": true
+      },
+      "thread_affinities": {
+        "10425": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10470": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10478": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10479": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10480": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11856": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11857": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11858": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12338": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12339": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12340": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12341": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12687": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12688": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12689": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "C2",
+      "encoder_workers": 4,
+      "encoder_queue_pages": 4,
+      "export_complete": true,
+      "compare_passed": true,
+      "sampled_export_rss_peak_bytes": 699559936,
+      "export_rss_samples": 4,
+      "same_process_ru_maxrss_bytes_before": 703238144,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/C2.glb",
+        "glb_bytes": 189676,
+        "elapsed_seconds": 0.3750733990000299,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 4,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2048,
+          "point_count": 2048,
+          "selected_point_count": 2048,
+          "lod": {
+            "input_count": 2048,
+            "selected_count": 2048,
+            "removed_count": 0,
+            "eligible_blocks": 0,
+            "reduced_blocks": 0
+          },
+          "lod_removed_point_count": 0,
+          "baked_surfel_count": 1881,
+          "skipped_surfel_count": 167,
+          "triangle_count": 3762,
+          "atlas_pages": 1,
+          "glb_bytes": null,
+          "elapsed_seconds": 0.2958684549994359,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 195624,
+          "geometry_bytes_after": 112860,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 75045,
+          "max_position_error": 7.192548465262405e-06,
+          "max_uv_error": 5.7518186618032985e-06,
+          "triangle_count": 3762,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/C2.glb",
+          "glb_bytes": 189676,
+          "primitive_count": 1,
+          "source_bytes": null,
+          "elapsed_seconds": 0.07908717899954354,
+          "encoder_workers": 4,
+          "encoder_queue_pages": 4,
+          "encoding_join_seconds": 0.0740863539995189,
+          "main_thread_write_seconds": 0.0050008250000246335,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 0.3751310850002483,
+      "export_cpu_user_s": 0.390922999999999,
+      "export_cpu_system_s": 0.3294069999999998,
+      "export_cpu_total_s": 0.7203299999999979,
+      "same_process_ru_maxrss_bytes_after": 707928064,
+      "captured_pages": 1,
+      "captured_array_bytes": 1011624,
+      "output_bytes": 189676,
+      "comparison": {
+        "all_page_prequant_arrays_equal": true,
+        "full_glb_bytes_equal": true,
+        "all_accessors_equal": true,
+        "all_decoded_png_rgba_equal": true,
+        "full_document_associations_equal": true
+      },
+      "thread_affinities": {
+        "10425": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10470": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10478": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10479": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10480": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11856": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11857": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11858": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12338": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12339": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12340": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12341": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12687": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12688": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12689": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "B2",
+      "encoder_workers": 1,
+      "encoder_queue_pages": 1,
+      "export_complete": true,
+      "compare_passed": true,
+      "sampled_export_rss_peak_bytes": 703098880,
+      "export_rss_samples": 3,
+      "same_process_ru_maxrss_bytes_before": 707928064,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/B2.glb",
+        "glb_bytes": 189676,
+        "elapsed_seconds": 0.38491935599995486,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 1,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2048,
+          "point_count": 2048,
+          "selected_point_count": 2048,
+          "lod": {
+            "input_count": 2048,
+            "selected_count": 2048,
+            "removed_count": 0,
+            "eligible_blocks": 0,
+            "reduced_blocks": 0
+          },
+          "lod_removed_point_count": 0,
+          "baked_surfel_count": 1881,
+          "skipped_surfel_count": 167,
+          "triangle_count": 3762,
+          "atlas_pages": 1,
+          "glb_bytes": null,
+          "elapsed_seconds": 0.29664297199815337,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 195624,
+          "geometry_bytes_after": 112860,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 75045,
+          "max_position_error": 7.192548465262405e-06,
+          "max_uv_error": 5.7518186618032985e-06,
+          "triangle_count": 3762,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/B2.glb",
+          "glb_bytes": 189676,
+          "primitive_count": 1,
+          "source_bytes": null,
+          "elapsed_seconds": 0.0881658200014499,
+          "encoder_workers": 1,
+          "encoder_queue_pages": 1,
+          "encoding_join_seconds": 0.08409761499933666,
+          "main_thread_write_seconds": 0.004068205002113245,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 0.38497700299922144,
+      "export_cpu_user_s": 0.3905410000000007,
+      "export_cpu_system_s": 0.33606600000000064,
+      "export_cpu_total_s": 0.7266070000000013,
+      "same_process_ru_maxrss_bytes_after": 707948544,
+      "captured_pages": 1,
+      "captured_array_bytes": 1011624,
+      "output_bytes": 189676,
+      "comparison": {
+        "all_page_prequant_arrays_equal": true,
+        "full_glb_bytes_equal": true,
+        "all_accessors_equal": true,
+        "all_decoded_png_rgba_equal": true,
+        "full_document_associations_equal": true
+      },
+      "thread_affinities": {
+        "10425": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10470": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10478": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10479": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "10480": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11856": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11857": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "11858": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12338": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12339": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12340": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12341": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12687": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12688": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "12689": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    }
+  ],
+  "paired_savings_s": [
+    0.014074760001676623,
+    0.009845917998973164
+  ],
+  "primary_minimum_paired_saving_s": 0.009845917998973164,
+  "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+  "cpu_ids": [
+    3,
+    22,
+    27,
+    29
+  ],
+  "export": {
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128
+  },
+  "seed": 0,
+  "argv": [
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py",
+    "--phase",
+    "smoke",
+    "--candidate-workers",
+    "4",
+    "--run-dir",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01"
+  ],
+  "candidate_workers": 4,
+  "single_change": "encoder_workers and its matching bounded FIFO capacity: baseline 1 versus selected candidate",
+  "encoder_queue_pages": {
+    "baseline": 1,
+    "candidate": 4
+  },
+  "command": [
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py",
+    "--phase",
+    "smoke",
+    "--candidate-workers",
+    "4",
+    "--run-dir",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01"
+  ],
+  "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+  "limits": {
+    "cpu_seconds": 100,
+    "wall_seconds": 120,
+    "address_space_bytes": 12884901888,
+    "rss_bytes": 12884901888,
+    "single_file_bytes": 268435456,
+    "maximum_simultaneous_large_files": 2
+  },
+  "primary_timer": "Unadjusted complete export wall time including identical page copies",
+  "resource_scope": "CPU RUSAGE_SELF plus reaped RUSAGE_CHILDREN; no subprocesses launched. RSS samples self at 0.1s plus self ru_maxrss; sampling can miss subinterval peaks. RLIMIT_AS caps process address space. GPU hidden; no GPU/model/service calls. Two large files structurally bounded: one temporary BIN and one current GLB, each <=256MiB. Baseline bytes/pages and current pages live in RAM.",
+  "resources": {
+    "elapsed_wall_seconds": 6.392783659999623,
+    "cpu_self_seconds": 14.313552999999999,
+    "cpu_reaped_children_seconds": 0.001104,
+    "cpu_total_seconds": 14.314656999999999,
+    "sampled_rss_peak_bytes": 703238144,
+    "self_ru_maxrss_bytes": 707948544,
+    "rss_sampling_interval_seconds": 0.1,
+    "rss_samples": 58,
+    "children_observed": false,
+    "linked_output_bytes": 23008,
+    "gpu_seconds": 0
+  },
+  "environment": {
+    "OMP_NUM_THREADS": "4",
+    "OPENBLAS_NUM_THREADS": "4",
+    "MKL_NUM_THREADS": "4",
+    "NUMEXPR_NUM_THREADS": "4",
+    "VECLIB_MAXIMUM_THREADS": "4",
+    "CUDA_VISIBLE_DEVICES": "",
+    "TMPDIR": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-4w-01/tmp"
+  },
+  "import_thread_affinities": {
+    "10425": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "10470": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "10478": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "10479": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "10480": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "11856": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "11857": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "11858": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "12338": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "12339": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "12340": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "12341": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "12687": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "12688": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "12689": [
+      3,
+      22,
+      27,
+      29
+    ]
+  },
+  "input_counts": {
+    "frames": 29,
+    "points": 2402589
+  },
+  "smoke_scope": "First 2048 input points of fixed generation; full source loads, depth and textures retained. Correctness smoke only; no performance evidence.",
+  "performance_accepted": false
+}

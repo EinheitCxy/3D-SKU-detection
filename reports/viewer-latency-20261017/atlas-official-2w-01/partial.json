@@ -1,0 +1,876 @@
+{
+  "phase": "official",
+  "status": "pass",
+  "runs": [
+    {
+      "label": "B1",
+      "encoder_workers": 1,
+      "encoder_queue_pages": 1,
+      "export_complete": true,
+      "compare_passed": true,
+      "sampled_export_rss_peak_bytes": 1567088640,
+      "export_rss_samples": 1110,
+      "same_process_ru_maxrss_bytes_before": 602304512,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/B1.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 112.81748861199958,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 1,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 67.0562360550066,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/B1.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 45.760148257992114,
+          "encoder_workers": 1,
+          "encoder_queue_pages": 1,
+          "encoding_join_seconds": 43.88469242100291,
+          "main_thread_write_seconds": 1.8754558369892038,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 112.81772949799961,
+      "export_cpu_user_s": 130.830068,
+      "export_cpu_system_s": 120.650891,
+      "export_cpu_total_s": 251.48095900000004,
+      "same_process_ru_maxrss_bytes_after": 1567088640,
+      "captured_pages": 31,
+      "captured_array_bytes": 646398888,
+      "output_bytes": 121513344,
+      "comparison": {
+        "all_page_prequant_arrays_equal": true,
+        "full_glb_bytes_equal": true,
+        "all_accessors_equal": true,
+        "all_decoded_png_rgba_equal": true,
+        "full_document_associations_equal": true
+      },
+      "thread_affinities": {
+        "2876": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2936": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2948": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2949": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2950": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4905": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4906": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4907": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5597": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5598": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5599": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5600": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6096": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6097": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6098": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "C1",
+      "encoder_workers": 2,
+      "encoder_queue_pages": 2,
+      "export_complete": true,
+      "compare_passed": true,
+      "sampled_export_rss_peak_bytes": 2400165888,
+      "export_rss_samples": 688,
+      "same_process_ru_maxrss_bytes_before": 1600692224,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/C1.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 70.66299348299981,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 2,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 67.38570827800504,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/C1.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 3.276824068996575,
+          "encoder_workers": 2,
+          "encoder_queue_pages": 2,
+          "encoding_join_seconds": 0.9356551800065063,
+          "main_thread_write_seconds": 2.341168888990069,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 70.66309877100139,
+      "export_cpu_user_s": 132.708575,
+      "export_cpu_system_s": 121.219404,
+      "export_cpu_total_s": 253.927979,
+      "same_process_ru_maxrss_bytes_after": 2400165888,
+      "captured_pages": 31,
+      "captured_array_bytes": 646398888,
+      "output_bytes": 121513344,
+      "comparison": {
+        "all_page_prequant_arrays_equal": true,
+        "full_glb_bytes_equal": true,
+        "all_accessors_equal": true,
+        "all_decoded_png_rgba_equal": true,
+        "full_document_associations_equal": true
+      },
+      "thread_affinities": {
+        "2876": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2936": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2948": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2949": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2950": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4905": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4906": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4907": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5597": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5598": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5599": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5600": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6096": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6097": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6098": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "C2",
+      "encoder_workers": 2,
+      "encoder_queue_pages": 2,
+      "export_complete": true,
+      "compare_passed": true,
+      "sampled_export_rss_peak_bytes": 2370256896,
+      "export_rss_samples": 688,
+      "same_process_ru_maxrss_bytes_before": 2443247616,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/C2.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 70.55530373500005,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 2,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 67.3663209699971,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/C2.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 3.1884945570018317,
+          "encoder_workers": 2,
+          "encoder_queue_pages": 2,
+          "encoding_join_seconds": 0.8833444230021996,
+          "main_thread_write_seconds": 2.305150133999632,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 70.55538457500006,
+      "export_cpu_user_s": 132.93190099999998,
+      "export_cpu_system_s": 121.15905600000002,
+      "export_cpu_total_s": 254.09095699999995,
+      "same_process_ru_maxrss_bytes_after": 2443247616,
+      "captured_pages": 31,
+      "captured_array_bytes": 646398888,
+      "output_bytes": 121513344,
+      "comparison": {
+        "all_page_prequant_arrays_equal": true,
+        "full_glb_bytes_equal": true,
+        "all_accessors_equal": true,
+        "all_decoded_png_rgba_equal": true,
+        "full_document_associations_equal": true
+      },
+      "thread_affinities": {
+        "2876": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2936": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2948": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2949": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2950": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4905": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4906": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4907": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5597": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5598": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5599": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5600": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6096": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6097": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6098": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    },
+    {
+      "label": "B2",
+      "encoder_workers": 1,
+      "encoder_queue_pages": 1,
+      "export_complete": true,
+      "compare_passed": true,
+      "sampled_export_rss_peak_bytes": 2405748736,
+      "export_rss_samples": 1094,
+      "same_process_ru_maxrss_bytes_before": 2491920384,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/B2.glb",
+        "glb_bytes": 121513344,
+        "elapsed_seconds": 111.45854004899957,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 1,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2402589,
+          "point_count": 2402589,
+          "selected_point_count": 1297863,
+          "lod": {
+            "input_count": 2402589,
+            "selected_count": 1297863,
+            "removed_count": 1104726,
+            "eligible_blocks": 452701,
+            "reduced_blocks": 368242
+          },
+          "lod_removed_point_count": 1104726,
+          "baked_surfel_count": 1282497,
+          "skipped_surfel_count": 15366,
+          "triangle_count": 2564994,
+          "atlas_pages": 31,
+          "glb_bytes": null,
+          "elapsed_seconds": 66.54933919299037,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 133379688,
+          "geometry_bytes_after": 76949820,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 44482041,
+          "max_position_error": 7.593196089850096e-05,
+          "max_uv_error": 7.6175900194375146e-06,
+          "triangle_count": 2564994,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/B2.glb",
+          "glb_bytes": 121513344,
+          "primitive_count": 93,
+          "source_bytes": null,
+          "elapsed_seconds": 44.90879636600948,
+          "encoder_workers": 1,
+          "encoder_queue_pages": 1,
+          "encoding_join_seconds": 43.04740001100254,
+          "main_thread_write_seconds": 1.8613963550069457,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 111.45861629400133,
+      "export_cpu_user_s": 129.30743100000007,
+      "export_cpu_system_s": 120.04468499999996,
+      "export_cpu_total_s": 249.35211600000002,
+      "same_process_ru_maxrss_bytes_after": 2491920384,
+      "captured_pages": 31,
+      "captured_array_bytes": 646398888,
+      "output_bytes": 121513344,
+      "comparison": {
+        "all_page_prequant_arrays_equal": true,
+        "full_glb_bytes_equal": true,
+        "all_accessors_equal": true,
+        "all_decoded_png_rgba_equal": true,
+        "full_document_associations_equal": true
+      },
+      "thread_affinities": {
+        "2876": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2936": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2948": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2949": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "2950": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4905": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4906": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "4907": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5597": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5598": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5599": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "5600": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6096": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6097": [
+          3,
+          22,
+          27,
+          29
+        ],
+        "6098": [
+          3,
+          22,
+          27,
+          29
+        ]
+      }
+    }
+  ],
+  "paired_savings_s": [
+    42.15463072699822,
+    40.90323171900127
+  ],
+  "primary_minimum_paired_saving_s": 40.90323171900127,
+  "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+  "cpu_ids": [
+    3,
+    22,
+    27,
+    29
+  ],
+  "export": {
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128
+  },
+  "seed": 0,
+  "argv": [
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py",
+    "--phase",
+    "official",
+    "--candidate-workers",
+    "2",
+    "--run-dir",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01"
+  ],
+  "candidate_workers": 2,
+  "single_change": "encoder_workers and its matching bounded FIFO capacity: baseline 1 versus selected candidate",
+  "encoder_queue_pages": {
+    "baseline": 1,
+    "candidate": 2
+  },
+  "command": [
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py",
+    "--phase",
+    "official",
+    "--candidate-workers",
+    "2",
+    "--run-dir",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01"
+  ],
+  "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+  "limits": {
+    "cpu_seconds": 2000,
+    "wall_seconds": 900,
+    "address_space_bytes": 12884901888,
+    "rss_bytes": 12884901888,
+    "single_file_bytes": 268435456,
+    "maximum_simultaneous_large_files": 2
+  },
+  "primary_timer": "Unadjusted complete export wall time including identical page copies",
+  "resource_scope": "CPU RUSAGE_SELF plus reaped RUSAGE_CHILDREN; no subprocesses launched. RSS samples self at 0.1s plus self ru_maxrss; sampling can miss subinterval peaks. RLIMIT_AS caps process address space. GPU hidden; no GPU/model/service calls. Two large files structurally bounded: one temporary BIN and one current GLB, each <=256MiB. Baseline bytes/pages and current pages live in RAM.",
+  "resources": {
+    "elapsed_wall_seconds": 383.2186879719993,
+    "cpu_self_seconds": 1032.729566,
+    "cpu_reaped_children_seconds": 0.000674,
+    "cpu_total_seconds": 1032.7302399999999,
+    "sampled_rss_peak_bytes": 2491920384,
+    "self_ru_maxrss_bytes": 2491920384,
+    "rss_sampling_interval_seconds": 0.1,
+    "rss_samples": 3751,
+    "children_observed": false,
+    "linked_output_bytes": 23041,
+    "gpu_seconds": 0
+  },
+  "environment": {
+    "OMP_NUM_THREADS": "4",
+    "OPENBLAS_NUM_THREADS": "4",
+    "MKL_NUM_THREADS": "4",
+    "NUMEXPR_NUM_THREADS": "4",
+    "VECLIB_MAXIMUM_THREADS": "4",
+    "CUDA_VISIBLE_DEVICES": "",
+    "TMPDIR": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01/tmp"
+  },
+  "import_thread_affinities": {
+    "2876": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "2936": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "2948": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "2949": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "2950": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "4905": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "4906": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "4907": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5597": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5598": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5599": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5600": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6096": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6097": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6098": [
+      3,
+      22,
+      27,
+      29
+    ]
+  },
+  "input_counts": {
+    "frames": 29,
+    "points": 2402589
+  },
+  "performance_accepted": true
+}

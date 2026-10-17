@@ -1,0 +1,259 @@
+{
+  "phase": "smoke",
+  "status": "failed",
+  "runs": [
+    {
+      "label": "B1",
+      "encoder_workers": 1,
+      "encoder_queue_pages": 1,
+      "export_complete": true,
+      "compare_passed": false,
+      "sampled_export_rss_peak_bytes": 676950016,
+      "export_rss_samples": 5,
+      "same_process_ru_maxrss_bytes_before": 597458944,
+      "rss_diagnostic_scope": "Self RSS sampled during export including retained B1 pages/bytes; ru_maxrss is same-process cumulative high-water, not arm-local allocation",
+      "production_report": {
+        "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-2w-01/B1.glb",
+        "glb_bytes": 189676,
+        "elapsed_seconds": 0.5007869199998822,
+        "radius": 2.0,
+        "tile_size": 8,
+        "lod": true,
+        "palette_colors": 128,
+        "encoder_workers": 1,
+        "delivery_mode": "streamed",
+        "bake": {
+          "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+          "global_id": null,
+          "input_point_count": 2048,
+          "point_count": 2048,
+          "selected_point_count": 2048,
+          "lod": {
+            "input_count": 2048,
+            "selected_count": 2048,
+            "removed_count": 0,
+            "eligible_blocks": 0,
+            "reduced_blocks": 0
+          },
+          "lod_removed_point_count": 0,
+          "baked_surfel_count": 1881,
+          "skipped_surfel_count": 167,
+          "triangle_count": 3762,
+          "atlas_pages": 1,
+          "glb_bytes": null,
+          "elapsed_seconds": 0.4144832470010442,
+          "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+          "tile_size": 8,
+          "atlas_size": 2048,
+          "radius": 2.0,
+          "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+        },
+        "compact": {
+          "geometry_bytes_before": 195624,
+          "geometry_bytes_after": 112860,
+          "texture_bytes_before": null,
+          "texture_bytes_after": 75045,
+          "max_position_error": 7.192548465262405e-06,
+          "max_uv_error": 5.7518186618032985e-06,
+          "triangle_count": 3762,
+          "output": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-2w-01/B1.glb",
+          "glb_bytes": 189676,
+          "primitive_count": 1,
+          "source_bytes": null,
+          "elapsed_seconds": 0.08565238099981798,
+          "encoder_workers": 1,
+          "encoder_queue_pages": 1,
+          "encoding_join_seconds": 0.08093871700111777,
+          "main_thread_write_seconds": 0.004713663998700213,
+          "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+        }
+      },
+      "raw_export_wall_s": 0.501128620999225,
+      "export_cpu_user_s": 0.4167659999999991,
+      "export_cpu_system_s": 0.3687940000000003,
+      "export_cpu_total_s": 0.7855599999999994,
+      "same_process_ru_maxrss_bytes_after": 683302912,
+      "captured_pages": 1,
+      "captured_array_bytes": 1011624,
+      "output_bytes": 189676,
+      "error": "RuntimeError('execution interrupted by SIGUSR1')"
+    }
+  ],
+  "paired_savings_s": null,
+  "primary_minimum_paired_saving_s": null,
+  "source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/viewer/runs/c9c3be6802144fcf97a942085b118422",
+  "cpu_ids": [
+    3,
+    22,
+    27,
+    29
+  ],
+  "export": {
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128
+  },
+  "seed": 0,
+  "argv": [
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py",
+    "--phase",
+    "smoke",
+    "--candidate-workers",
+    "2",
+    "--run-dir",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-2w-01"
+  ],
+  "candidate_workers": 2,
+  "single_change": "encoder_workers and its matching bounded FIFO capacity: baseline 1 versus selected candidate",
+  "encoder_queue_pages": {
+    "baseline": 1,
+    "candidate": 2
+  },
+  "command": [
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py",
+    "--phase",
+    "smoke",
+    "--candidate-workers",
+    "2",
+    "--run-dir",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-2w-01"
+  ],
+  "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+  "limits": {
+    "cpu_seconds": 100,
+    "wall_seconds": 120,
+    "address_space_bytes": 12884901888,
+    "rss_bytes": 12884901888,
+    "single_file_bytes": 268435456,
+    "maximum_simultaneous_large_files": 2
+  },
+  "primary_timer": "Unadjusted complete export wall time including identical page copies",
+  "resource_scope": "CPU RUSAGE_SELF plus reaped RUSAGE_CHILDREN; no subprocesses launched. RSS samples self at 0.1s plus self ru_maxrss; sampling can miss subinterval peaks. RLIMIT_AS caps process address space. GPU hidden; no GPU/model/service calls. Two large files structurally bounded: one temporary BIN and one current GLB, each <=256MiB. Baseline bytes/pages and current pages live in RAM.",
+  "resources": {
+    "elapsed_wall_seconds": 6.298614658999213,
+    "cpu_self_seconds": 13.102915,
+    "cpu_reaped_children_seconds": 0.01599,
+    "cpu_total_seconds": 13.118904999999998,
+    "sampled_rss_peak_bytes": 676950016,
+    "self_ru_maxrss_bytes": 683302912,
+    "rss_sampling_interval_seconds": 0.1,
+    "rss_samples": 55,
+    "children_observed": true,
+    "linked_output_bytes": 199519,
+    "gpu_seconds": 0
+  },
+  "environment": {
+    "OMP_NUM_THREADS": "4",
+    "OPENBLAS_NUM_THREADS": "4",
+    "MKL_NUM_THREADS": "4",
+    "NUMEXPR_NUM_THREADS": "4",
+    "VECLIB_MAXIMUM_THREADS": "4",
+    "CUDA_VISIBLE_DEVICES": "",
+    "TMPDIR": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-smoke-2w-01/tmp"
+  },
+  "import_thread_affinities": {
+    "2958": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "3020": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "3030": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "3031": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "3032": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5526": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5527": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "5528": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6333": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6334": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6335": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6336": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6884": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6885": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "6886": [
+      3,
+      22,
+      27,
+      29
+    ]
+  },
+  "input_counts": {
+    "frames": 29,
+    "points": 2402589
+  },
+  "smoke_scope": "First 2048 input points of fixed generation; full source loads, depth and textures retained. Correctness smoke only; no performance evidence.",
+  "interruption_signal": "SIGUSR1",
+  "performance_accepted": false,
+  "failure": {
+    "error": "RuntimeError('execution interrupted by SIGUSR1')",
+    "traceback": "Traceback (most recent call last):\n  File \"/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py\", line 271, in main\n    record[\"comparison\"] = compare(pages, baseline_pages, raw, baseline_raw)\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py\", line 204, in compare\n    np.testing.assert_array_equal(left[key], right[key])\n    ^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/numpy/__init__.py\", line 327, in __getattr__\n    import numpy.testing as testing\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/numpy/testing/__init__.py\", line 11, in <module>\n    from ._private.utils import *\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/numpy/testing/_private/utils.py\", line 1253, in <module>\n    _SUPPORTS_SVE = check_support_sve()\n                    ^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/numpy/testing/_private/utils.py\", line 1247, in check_support_sve\n    output = subprocess.run(cmd, capture_output=True, text=True)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib64/python3.11/subprocess.py\", line 550, in run\n    stdout, stderr = process.communicate(input, timeout=timeout)\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib64/python3.11/subprocess.py\", line 1209, in communicate\n    stdout, stderr = self._communicate(input, endtime, timeout)\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib64/python3.11/subprocess.py\", line 2115, in _communicate\n    ready = selector.select(timeout)\n            ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib64/python3.11/selectors.py\", line 415, in select\n    fd_event_list = self._selector.poll(timeout)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py\", line 87, in interrupted\n    raise RuntimeError(f\"execution interrupted by {signal.Signals(signum).name}\")\nRuntimeError: execution interrupted by SIGUSR1\n"
+  }
+}

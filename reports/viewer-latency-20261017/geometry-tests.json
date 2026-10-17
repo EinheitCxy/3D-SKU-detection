@@ -1,0 +1,32 @@
+{
+  "command": [
+    "uv",
+    "run",
+    "--no-project",
+    "--python",
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "test/test_pointcloud_filter.py",
+    "test/test_web_viewer_export.py"
+  ],
+  "returncode": 0,
+  "wall_seconds": 15.696004177998475,
+  "cpu_seconds": 18.249016,
+  "max_rss_kib": 835508,
+  "timed_out": false,
+  "limits": {
+    "wall_seconds": 180,
+    "cpu_seconds": 200,
+    "address_space_bytes": 8589934592
+  },
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "OMP_NUM_THREADS": "2",
+    "OPENBLAS_NUM_THREADS": "2",
+    "MKL_NUM_THREADS": "2",
+    "UV_CACHE_DIR": "/tmp/viewer-geometry-test-uv"
+  }
+}

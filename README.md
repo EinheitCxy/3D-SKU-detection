@@ -355,7 +355,7 @@ Docker Viewer 导出不传入主数据参数，跳过主数据读取和文件生
 
 pipeline、concise 和 matching 默认启用 `quiet_outputs`，不保存原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON、源帧和最终 Viewer 数据仍按流程需要生成；Viewer 纹理、商品缩略图与日志保留。恢复辅助输出时显式使用 `--no-quiet_outputs`；正向 `--quiet_outputs` 仍有效。主入口配置优先级为 CLI > YAML `main.quiet_outputs` > `inference.quiet_outputs` > 默认 True。
 
-Docker `run_mapping_request` 继续默认启用此选项。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不删除已有历史图片。
+Docker `run_mapping_request` 继续默认启用此选项。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不删除已有历史图片。2026-10-17 的 NN/SOR 提前准备、atlas 2/4 线程以及默认关闭的过滤/采样实验开关见[实现状态与测试](reports/viewer-latency-20261017/STATUS.md)；atlas 完整导出对照已通过，几何实验的耗时与画质仍待验证。
 
 ## 商品点预算更新（2026-09-10）
 

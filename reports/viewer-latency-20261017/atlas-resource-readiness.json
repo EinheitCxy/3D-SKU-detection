@@ -1,0 +1,124 @@
+{
+  "timestamp": "2026-10-17T19:08:56.856776",
+  "os": {
+    "system": "Linux",
+    "release": "5.14.0-503.26.1.el9_5.x86_64",
+    "version": "#1 SMP PREEMPT_DYNAMIC Wed Feb 19 16:28:19 UTC 2025",
+    "machine": "x86_64",
+    "python_version": "3.11.11"
+  },
+  "cpu": {
+    "physical_cores": 20,
+    "logical_cores": 40,
+    "max_frequency_mhz": 3200.0,
+    "architecture": "x86_64",
+    "processor": "x86_64",
+    "current_frequency_mhz": 2807.5077499999993
+  },
+  "memory": {
+    "total_gb": 502.97,
+    "available_gb": 433.49,
+    "used_gb": 69.48,
+    "percent_used": 13.8,
+    "swap_total_gb": 0.0,
+    "swap_available_gb": 0.0
+  },
+  "disk": {
+    "path": "/home/xingyu/3D_Recognization",
+    "total_gb": 2003.02,
+    "available_gb": 22.55,
+    "used_gb": 1980.48,
+    "percent_used": 98.9
+  },
+  "gpu": {
+    "nvidia_gpus": [],
+    "amd_gpus": [],
+    "apple_silicon": null,
+    "total_gpus": 0,
+    "available_backends": []
+  },
+  "recommendations": {
+    "parallel_processing": {
+      "strategy": "high_parallelism",
+      "suggested_workers": 38,
+      "libraries": [
+        "joblib",
+        "multiprocessing",
+        "dask"
+      ]
+    },
+    "memory_strategy": {
+      "strategy": "memory_abundant",
+      "note": "Can load most datasets into memory"
+    },
+    "gpu_acceleration": {
+      "available": false,
+      "note": "No GPU detected, use CPU-based libraries"
+    },
+    "large_data_handling": {
+      "strategy": "moderate_disk",
+      "libraries": [
+        "zarr",
+        "h5py",
+        "parquet"
+      ]
+    }
+  },
+  "readiness": {
+    "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+    "executable": "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "numpy": "1.26.4",
+    "Pillow": "12.3.0",
+    "affinity_available": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ],
+    "requested_cpus": [
+      3,
+      22,
+      27,
+      29
+    ],
+    "fixed_cpus_available": true,
+    "runner_ast": "pass",
+    "gpu_usage": "0; detector queried device status only"
+  }
+}

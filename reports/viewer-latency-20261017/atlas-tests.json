@@ -1,0 +1,41 @@
+{
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=1s",
+    "119s",
+    "prlimit",
+    "--cpu=149:150",
+    "--as=8589934592",
+    "uv",
+    "run",
+    "--no-project",
+    "--python",
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "python",
+    "-m",
+    "pytest",
+    "-q",
+    "test/test_surfel_glb.py"
+  ],
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "OMP_NUM_THREADS": "2",
+    "OPENBLAS_NUM_THREADS": "2",
+    "MKL_NUM_THREADS": "2",
+    "UV_CACHE_DIR": "/tmp/viewer-atlas-test-uv"
+  },
+  "returncode": 0,
+  "wall_seconds": 6.997176414000933,
+  "cpu_user_seconds": 6.921271,
+  "cpu_system_seconds": 2.01001,
+  "cpu_total_seconds": 8.931281,
+  "peak_child_rss_bytes": 679657472,
+  "limits": {
+    "wall_seconds": 120,
+    "cpu_seconds": 150,
+    "address_space_bytes": 8589934592
+  },
+  "scope": "Focused functional pytest only; no atlas comparison or benchmark executed",
+  "log": "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-tests.log"
+}

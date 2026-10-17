@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "exit_code": 0,
+  "attempt": 1,
+  "python": "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+  "command": "CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 UV_CACHE_DIR=/tmp/viewer-output-test-uv uv run --no-project --python /home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python python -m pytest -q test/test_main_pipeline.py test/test_matching_viewer_identity.py",
+  "test_files": ["test/test_main_pipeline.py", "test/test_matching_viewer_identity.py"],
+  "passed": 89,
+  "failed": 0,
+  "pytest_duration_s": 4.96,
+  "wall_s": 7.407,
+  "user_cpu_s": 7.016,
+  "system_cpu_s": 1.908,
+  "limits": {
+    "timeout_wall_s": 180,
+    "cpu_limit_s": 200,
+    "address_space_limit_kib": 8388608,
+    "note": "Used a stricter 8 GiB virtual address-space limit; peak RSS was not separately measured."
+  },
+  "log": "reports/viewer-latency-20261017/outputs-tests.log",
+  "source_changes_after_test": false,
+  "retry": false,
+  "scope": "Engineering functional tests only; no benchmark, model inference or GPU workload."
+}

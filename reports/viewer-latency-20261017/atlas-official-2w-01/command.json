@@ -1,0 +1,38 @@
+{
+  "command": [
+    "timeout",
+    "--signal=TERM",
+    "--kill-after=1s",
+    "889s",
+    "uv",
+    "run",
+    "--no-project",
+    "--python",
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "python",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/run-atlas-compare.py",
+    "--phase",
+    "official",
+    "--candidate-workers",
+    "2",
+    "--run-dir",
+    "/home/xingyu/3D_Recognization/reports/viewer-latency-20261017/atlas-official-2w-01"
+  ],
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "OMP_NUM_THREADS": "4",
+    "OPENBLAS_NUM_THREADS": "4",
+    "MKL_NUM_THREADS": "4",
+    "NUMEXPR_NUM_THREADS": "4",
+    "VECLIB_MAXIMUM_THREADS": "4",
+    "UV_CACHE_DIR": "/tmp/viewer-atlas-uv-cache",
+    "PYTHONDONTWRITEBYTECODE": "1"
+  },
+  "returncode": 0,
+  "outer_wall_seconds": 383.88290216800124,
+  "child_cpu_seconds": 1033.3427179999999,
+  "children_ru_maxrss_bytes": 2491920384,
+  "started_at_utc": "2026-10-17T11:10:45.833369+00:00",
+  "ended_at_utc": "2026-10-17T11:17:09.716271+00:00",
+  "timestamp_scope": "Derived retrospectively from command receipt write mtime and measured outer wall duration; not direct clock captures"
+}
