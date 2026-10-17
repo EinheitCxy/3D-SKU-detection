@@ -5,6 +5,8 @@ Only DA3 source projection is supported; other backends are rejected explicitly.
 from __future__ import annotations
 
 import argparse
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import partial
 import json
@@ -170,8 +172,53 @@ def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
     return report
 
 
+@contextmanager
+def _atlas_encoding(pages, image_encoder, workers):
+    """Keep at most workers pages (including running encodes), consumed FIFO."""
+    if workers == 1:
+        yield ((page, None) for page in pages)
+        return
+    pending = deque()
+    executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="surfel-atlas")
+
+    def ordered():
+        exhausted = False
+        while pending or not exhausted:
+            while len(pending) < workers and not exhausted:
+                # Surface a completed failure before asking the baker for more work.
+                for _, future in pending:
+                    if future.done():
+                        future.result()
+                try:
+                    page = next(pages)
+                except StopIteration:
+                    exhausted = True
+                    break
+                for value in page.values():
+                    if isinstance(value, np.ndarray):
+                        value.flags.writeable = False
+                pending.append((page, executor.submit(image_encoder, page["image_rgba"])))
+                del page
+            if pending:
+                page, future = pending.popleft()
+                yield page, future
+                del page, future
+
+    iterator = ordered()
+    try:
+        yield iterator
+    finally:
+        iterator.close()
+        for _, future in pending:
+            future.cancel()
+        # Wait for running tasks even when generation, encoding or writing failed.
+        executor.shutdown(wait=True, cancel_futures=True)
+        pages.close()
+
+
 def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
-                       atlas_size=2048, radius=2.0, lod=False, image_encoder=None):
+                       atlas_size=2048, radius=2.0, lod=False, image_encoder=None,
+                       encoder_workers=1):
     from src.surfel_mesh import bake_surfel_pages
     from src.surfel_glb_compact import _CompactWriter, _write_glb
 
@@ -181,6 +228,9 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
         raise FileExistsError(output)
     _integer(tile_size, "tile_size", 1)
     _integer(atlas_size, "atlas_size", tile_size + 2)
+    _integer(encoder_workers, "encoder_workers", 1)
+    if encoder_workers not in (1, 2, 4) or (encoder_workers != 1 and image_encoder is None):
+        raise ValueError("encoder_workers must be 1, 2 or 4; parallel encoding requires compact export")
     if not np.isfinite(radius) or radius <= 0:
         raise ValueError("radius must be positive and finite")
     if lod and radius != 2.0:
@@ -219,6 +269,7 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
         document["nodes"] = [{"mesh": 0, "matrix": matrix.T.reshape(-1).tolist()}]
         compact = _CompactWriter(document, binary) if image_encoder is not None else None
         compact_seconds = 0.
+        encoding_join_seconds = 0.
 
         def buffer_view(data, target=None):
             padding = (-binary.tell()) % 4
@@ -241,34 +292,42 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             return index
 
         page_options = {"image_format": "rgba"} if compact is not None else {}
-        for page in bake_surfel_pages(**inputs, radius=radius, tile_size=tile_size,
-                                      atlas_size=atlas_size, **page_options):
-            positions = np.asarray(page["positions"], dtype="<f4")
-            uv = np.asarray(page["uv"], dtype="<f4")
-            indices = np.asarray(page["indices"], dtype="<u4").reshape(-1)
-            if compact is not None:
-                compact_started = time.monotonic()
-                compact.geometry(positions, uv, indices, page_count)
-                compact.image(image_encoder(page["image_rgba"]))
-                compact_seconds += time.monotonic() - compact_started
-            else:
-                position_accessor = accessor(positions, "VEC3", 5126, 34962, True)
-                uv_accessor = accessor(uv, "VEC2", 5126, 34962)
-                index_accessor = accessor(indices, "SCALAR", 5125, 34963)
-                image_view = buffer_view(page["image_png"])
-                document["images"].append({"bufferView": image_view, "mimeType": "image/png"})
-                document["meshes"][0]["primitives"].append({
-                    "attributes": {"POSITION": position_accessor, "TEXCOORD_0": uv_accessor},
-                    "indices": index_accessor, "material": page_count, "mode": 4})
-            document["textures"].append({"source": page_count, "sampler": 0})
-            document["materials"].append({
-                "doubleSided": True, "alphaMode": "MASK", "alphaCutoff": .5,
-                "extensions": {"KHR_materials_unlit": {}},
-                "pbrMetallicRoughness": {"baseColorTexture": {"index": page_count},
-                                         "metallicFactor": 0, "roughnessFactor": 1}})
-            triangle_count += len(indices) // 3
-            baked_count += page["surfel_count"]
-            page_count += 1
+        pages = bake_surfel_pages(**inputs, radius=radius, tile_size=tile_size,
+                                  atlas_size=atlas_size, **page_options)
+        with _atlas_encoding(pages, image_encoder, encoder_workers) as encoded_pages:
+            for page, encoded in encoded_pages:
+                positions = np.asarray(page["positions"], dtype="<f4")
+                uv = np.asarray(page["uv"], dtype="<f4")
+                indices = np.asarray(page["indices"], dtype="<u4").reshape(-1)
+                if compact is not None:
+                    compact_started = time.monotonic()
+                    compact.geometry(positions, uv, indices, page_count)
+                    join_started = time.monotonic()
+                    image = (image_encoder(page["image_rgba"]) if encoded is None
+                             else encoded.result())
+                    encoding_join_seconds += time.monotonic() - join_started
+                    compact.image(image)
+                    del image
+                    compact_seconds += time.monotonic() - compact_started
+                else:
+                    position_accessor = accessor(positions, "VEC3", 5126, 34962, True)
+                    uv_accessor = accessor(uv, "VEC2", 5126, 34962)
+                    index_accessor = accessor(indices, "SCALAR", 5125, 34963)
+                    image_view = buffer_view(page["image_png"])
+                    document["images"].append({"bufferView": image_view, "mimeType": "image/png"})
+                    document["meshes"][0]["primitives"].append({
+                        "attributes": {"POSITION": position_accessor, "TEXCOORD_0": uv_accessor},
+                        "indices": index_accessor, "material": page_count, "mode": 4})
+                document["textures"].append({"source": page_count, "sampler": 0})
+                document["materials"].append({
+                    "doubleSided": True, "alphaMode": "MASK", "alphaCutoff": .5,
+                    "extensions": {"KHR_materials_unlit": {}},
+                    "pbrMetallicRoughness": {"baseColorTexture": {"index": page_count},
+                                             "metallicFactor": 0, "roughnessFactor": 1}})
+                triangle_count += len(indices) // 3
+                baked_count += page["surfel_count"]
+                page_count += 1
+                del page, encoded, positions, uv, indices
         if page_count == 0 or baked_count == 0:
             raise ValueError("Selected Surfels have no visible, nondegenerate geometry to export")
         if not 0 <= baked_count <= selected_count:
@@ -278,7 +337,14 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             compact_started = time.monotonic()
             compact_report = compact.finish(output)
             compact_seconds += time.monotonic() - compact_started
-            compact_report.update(source_bytes=None, elapsed_seconds=compact_seconds)
+            compact_report.update(
+                source_bytes=None, elapsed_seconds=compact_seconds,
+                encoder_workers=encoder_workers,
+                encoder_queue_pages=encoder_workers,
+                encoding_join_seconds=encoding_join_seconds,
+                main_thread_write_seconds=compact_seconds - encoding_join_seconds,
+                timing_definition="Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution",
+            )
             length = None  # No full-precision intermediate GLB is generated.
         else:
             length = _write_glb(document, binary, output)
@@ -291,6 +357,7 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             "triangle_count": triangle_count,
             "atlas_pages": page_count, "glb_bytes": length,
             "elapsed_seconds": time.monotonic() - started - compact_seconds,
+            "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
             "tile_size": tile_size, "atlas_size": atlas_size, "radius": radius,
             "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"}
     return report, compact_report
@@ -304,6 +371,7 @@ def export_scene_glb(
     tile_size=8,
     lod=True,
     palette_colors: int | None = 128,
+    encoder_workers: int = 1,
 ):
     """Build the compact LOD delivery file from existing Viewer assets on CPU.
 
@@ -311,7 +379,9 @@ def export_scene_glb(
     stream. No full-precision GLB or intermediate PNG is generated.
     Consequently bake.glb_bytes, compact.source_bytes and
     compact.texture_bytes_before are None. Bake time excludes the separately
-    reported compact time (geometry quantization, PNG encoding and final write).
+    reported main-thread compact/write/join time. With encoder_workers=2 or 4, worker
+    execution overlaps baking; encoding_join_seconds measures only the FIFO wait.
+    The default remains serial until the full comparison is accepted.
     """
     from src.surfel_glb_texture import encode_atlas
 
@@ -323,12 +393,14 @@ def export_scene_glb(
     bake, compact = _export_surfel_glb(
         source, output, radius=radius, tile_size=tile_size, lod=lod,
         image_encoder=partial(encode_atlas, colors=palette_colors),
+        encoder_workers=encoder_workers,
     )
     bake.pop("output")
     return {"output": str(output), "glb_bytes": output.stat().st_size,
             "elapsed_seconds": time.monotonic() - started,
             "radius": radius, "tile_size": tile_size, "lod": lod,
             "palette_colors": palette_colors,
+            "encoder_workers": encoder_workers,
             "delivery_mode": "streamed",
             "bake": bake, "compact": compact}
 

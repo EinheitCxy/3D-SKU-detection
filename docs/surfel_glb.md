@@ -27,6 +27,18 @@ CPU 烘焙沿用基线 Viewer 的 footprint 限制、深度连续性和 source-d
 
 WP-G 将 GLB 导出接口扩展为可调 `radius`、`tile_size`、`lod` 和 `palette_colors`；Docker `export_scene_glb` 的默认值仍为 `2.0`、`8`、`True` 和 `128`。设置 `palette_colors=None` 会输出 RGBA PNG 并保留二值 alpha，不执行颜色索引量化。当前 Viewer clarity 评估在 D1 阶段因 video3 基线 frame 24 无有效比较像素而无法判定，E3 未运行；因此没有本轮候选的文件大小或耗时收益可报告，也没有据此变更生产参数。
 
+2026-10-17 的 CPU 候选为 `export_scene_glb(..., encoder_workers=1/2/4)`，默认仍为 `1`。`2` 和 `4` 分别允许最多两页和四页待编码/写入，线程只编码独立页面；主线程按原顺序写 geometry、PNG 和材质，页面交出后只读。任一生产、编码或写入异常都会取消未开始的任务并等待运行任务退出，再向调用方抛出。默认命令行仍是既有非 compact 导出；并行候选用 Python compact 接口：
+
+```python
+from src.surfel_glb import export_scene_glb
+
+report = export_scene_glb("path/to/generation", "Output/parallel.glb", encoder_workers=2)
+```
+
+两线程/四线程、小型真实 PNG、乱序完成、有界队列、完整 GLB byte equality 和异常清理等功能测试已通过。完整 video3 的两组 B1/C1/C2/B2 对照也已通过：2 线程为 70.663/70.555 秒，相对本组串行 112.818/111.459 秒；4 线程为 69.699/69.908 秒，相对本组串行 112.707/109.559 秒。两组都约节省 37%，各次完整 GLB、全部页数组及解码资产一致。计时包含同样的页面捕获，使用同一组 4 个逻辑 CPU；两组分别运行，不能用约 0.8 秒的候选均值差断言 4 线程更优。当前推荐先使用 2 线程，默认参数仍为 1；本测试不更新完整流水线基线。[结果与独立复核](../reports/viewer-latency-20261017/STATUS.md#complete-atlas-comparison)。
+
+更多线程不保证更快：页面烘焙是单一 producer，编码与烘焙也共享 CPU。满页原始 RGBA/geometry 数组约 20 MiB，四页约 80 MiB，只是队列数组规模，不能代替进程 RSS。两组测试进程峰值分别约 2.321/2.296 GiB，包含保留的比较数据及 allocator 历史，不代表独立导出器的内存差异。当前 Pillow 12.3.0 的 [MEDIANCUT 循环](https://github.com/python-pillow/Pillow/blob/12.3.0/src/libImaging/Quant.c#L1699)和 [PNG 编码循环](https://github.com/python-pillow/Pillow/blob/12.3.0/src/libImaging/ZipEncode.c#L138)有释放 GIL 的区间，具备实际线程并行条件。
+
 默认遍历全部输入点，无静默下采样。完全透明、不可投影或零面积 Surfel 不产生三角面；报告分别记录输入点数、保留和跳过数量、三角数、atlas 页数、GLB 字节数及导出时间。跳过数量是本次有限分辨率烘焙的结果，不能当作原始场景无效点数量。
 
 静态 GLB 用普通深度测试决定可见面，不能复现当前 Viewer 随观看视角变化的 Gaussian 累加与归一化。因此重叠处颜色、边缘和细小空隙可能有差异；本功能不承诺逐像素一致。纹理烘焙还会增加几何、纹理和加载内存。当前只支持 DA3 的像素坐标约定，其他 backend 明确报错。
@@ -41,7 +53,7 @@ GLB 在 Docker 请求临时目录内生成，以原始 `bytes` 放入响应的 `
 
 该入口默认使用上一轮减量方案：半径2.0、8×8纹理tile、2×2保守LOD、16-bit几何和128种RGB索引PNG；导出函数可显式覆盖前述实验参数。现在逐页直接完成几何量化和最终 PNG 编码，不再生成中间完整 GLB，也不重复编解码 PNG；最终 BIN 使用临时文件流，最终 GLB 在请求临时目录清理前读成 bytes 返回。导出、读取或原Viewer ZIP上传失败均抛出错误。BSON编码和客户端下载会完整持有GLB，响应大小与内存占用随文件大小增加。
 
-直通导出报告包含 `delivery_mode="streamed"`。未生成的中间 `bake.glb_bytes`、`compact.source_bytes` 和 `compact.texture_bytes_before` 为 `null`；`bake.elapsed_seconds` 不包含另报的 compact 时间。独立 bake/compact CLI 的报告保持原口径。
+直通导出报告包含 `delivery_mode="streamed"`。未生成的中间 `bake.glb_bytes`、`compact.source_bytes` 和 `compact.texture_bytes_before` 为 `null`。`compact.elapsed_seconds` 是主线程 geometry/image/最终写入和等待编码结果的互不重叠区间；`encoding_join_seconds` 在串行模式包含同步编码，在并行模式仅表示 FIFO 等待，`main_thread_write_seconds` 是其余主线程 compact 区间。`bake.elapsed_seconds` 扣除这些主线程区间，可能与编码 worker 重叠，不能理解为独占 CPU 的纯烘焙时间。顶层 `elapsed_seconds` 始终是完整导出 wall time。独立 bake/compact CLI 的报告保持原口径。
 
 这是额外的CPU步骤，会延长同步 `/api` 请求；当前约236万点样例的LOD烘焙曾耗时约155秒，之后还需压缩和传输响应，不能视为固定时限。实际文件大小随场景变化；117.16 MB仅为现有样例。运行容器须更新后，新任务才会生成该文件；旧任务不会自动补齐。
 

@@ -2,6 +2,7 @@
 from io import BytesIO
 import json
 import struct
+from threading import Event, Thread, current_thread, main_thread
 import zipfile
 
 import numpy as np
@@ -316,3 +317,225 @@ def test_streamed_delivery_matches_two_stage_geometry_and_textures(
     assert report["compact"]["source_bytes"] is None
     assert report["compact"]["texture_bytes_before"] is None
     assert report["delivery_mode"] == "streamed"
+
+
+@pytest.fixture
+def three_page_bundle(bundle, fake_baker, monkeypatch, request):
+    """Reuse the existing bundle/baker for three (or requested five) RGBA pages."""
+    from src import surfel_mesh
+
+    metadata = json.loads((bundle / "surfel.json").read_text())
+    count = getattr(request, "param", 3)
+    metadata["point_count"] = count
+    (bundle / "surfel.json").write_text(json.dumps(metadata))
+    for name, dtype, width in [
+        ("positions.f32.bin", "<f4", 3), ("surfel-u.f16.bin", "<f2", 3),
+        ("surfel-v.f16.bin", "<f2", 3), ("surfel-scale.f16.bin", "<f2", 2),
+        ("surfel-frame.u8.bin", "u1", 1),
+    ]:
+        path = bundle / name
+        values = np.frombuffer(path.read_bytes(), dtype=dtype).reshape(-1, width)
+        path.write_bytes(np.concatenate((values, np.repeat(values[:1], count - 2, axis=0))).tobytes())
+    original = surfel_mesh.bake_surfel_pages
+    state = {"produced": 0, "written": 0, "bounded": False, "pages": [],
+             "queue_limit": 2, "max_unwritten": 0}
+
+    def bake(**kwargs):
+        for index, page in enumerate(original(**kwargs)):
+            if state["bounded"]:
+                assert state["produced"] - state["written"] < state["queue_limit"]
+            image = page["image_rgba"]
+            image[:, :, :3] = [index + 1, 89, 173]
+            image[::2, ::2, 3] = 0  # Retain nonblack transparent RGB.
+            state["produced"] += 1
+            state["max_unwritten"] = max(state["max_unwritten"],
+                                          state["produced"] - state["written"])
+            state["pages"].append(page)
+            yield page
+
+    monkeypatch.setattr(surfel_mesh, "bake_surfel_pages", bake)
+    return bundle, state
+
+
+@pytest.mark.parametrize("palette_colors", [None, 128])
+@pytest.mark.parametrize("encoder_workers,three_page_bundle", [(2, 3), (4, 5)],
+                         indirect=["three_page_bundle"])
+def test_parallel_atlas_fifo_is_bounded_and_byte_identical(
+    three_page_bundle, tmp_path, monkeypatch, palette_colors, encoder_workers
+):
+    from src import surfel_glb_texture
+    from src.surfel_glb import export_scene_glb
+    from src.surfel_glb_compact import _CompactWriter
+
+    bundle, state = three_page_bundle
+    serial, parallel = tmp_path / "serial.glb", tmp_path / "parallel.glb"
+    export_scene_glb(bundle, serial, lod=False, palette_colors=palette_colors)
+    count = 3 if encoder_workers == 2 else 5
+    state.update(produced=0, written=0, bounded=True, pages=[], queue_limit=encoder_workers,
+                 max_unwritten=0)
+    second_done = Event()
+    completion = []
+    original_encode, original_image = surfel_glb_texture.encode_atlas, _CompactWriter.image
+    original_geometry = _CompactWriter.geometry
+    write_order = []
+
+    def encode(rgba, colors):
+        assert current_thread() is not main_thread()
+        assert not rgba.flags.writeable
+        index = int(rgba[0, 0, 0]) - 1
+        if index == 0:
+            assert second_done.wait(5), "second encode did not complete"
+        raw = original_encode(rgba, colors=colors)
+        completion.append(index)
+        if index == 1:
+            second_done.set()
+        return raw
+
+    def geometry(self, *args):
+        assert current_thread() is main_thread()
+        write_order.append(("geometry", args[-1]))
+        return original_geometry(self, *args)
+
+    def image(self, raw):
+        assert current_thread() is main_thread()
+        index = state["written"]
+        write_order.append(("image", index))
+        result = original_image(self, raw)
+        state["written"] += 1
+        return result
+
+    monkeypatch.setattr(surfel_glb_texture, "encode_atlas", encode)
+    monkeypatch.setattr(_CompactWriter, "geometry", geometry)
+    monkeypatch.setattr(_CompactWriter, "image", image)
+    report = export_scene_glb(bundle, parallel, lod=False, palette_colors=palette_colors,
+                              encoder_workers=encoder_workers)
+    assert sorted(completion) == list(range(count))
+    assert completion.index(1) < completion.index(0)
+    if encoder_workers == 2:
+        assert completion == [1, 0, 2]
+    assert state["produced"] == state["written"] == count
+    assert state["max_unwritten"] == encoder_workers
+    assert write_order == [(kind, i) for i in range(count) for kind in ("geometry", "image")]
+    assert all(not value.flags.writeable for page in state["pages"]
+               for value in page.values() if isinstance(value, np.ndarray))
+    assert parallel.read_bytes() == serial.read_bytes()
+    assert_same_compact_assets(serial, parallel)
+    assert report["encoder_workers"] == report["compact"]["encoder_workers"] == encoder_workers
+    assert report["compact"]["encoder_queue_pages"] == encoder_workers
+    compact = report["compact"]
+    assert compact["elapsed_seconds"] == pytest.approx(
+        compact["encoding_join_seconds"] + compact["main_thread_write_seconds"])
+
+
+@pytest.mark.parametrize("stage", ["produce", "encode", "geometry", "image", "write"])
+def test_parallel_atlas_failure_propagates_and_drains(
+    three_page_bundle, tmp_path, monkeypatch, stage
+):
+    from src import surfel_glb_texture, surfel_mesh
+    from src.surfel_glb import export_scene_glb
+    from src.surfel_glb_compact import _CompactWriter
+
+    bundle, state = three_page_bundle
+    original_bake = surfel_mesh.bake_surfel_pages
+    original_encode = surfel_glb_texture.encode_atlas
+    started, finished = [], []
+    failure = RuntimeError("atlas " + stage + " failed")
+
+    def encode(rgba, colors):
+        index = int(rgba[0, 0, 0]) - 1
+        started.append(index)
+        try:
+            if stage == "encode" and index == 0:
+                raise failure
+            return original_encode(rgba, colors=colors)
+        finally:
+            finished.append(index)
+
+    def bake(**kwargs):
+        for index, page in enumerate(original_bake(**kwargs)):
+            if stage == "produce" and index == 1:
+                raise failure
+            yield page
+
+    def fail(*args, **kwargs):
+        if stage == "write":
+            args[1].write(b"partial")
+        raise failure
+
+    monkeypatch.setattr(surfel_glb_texture, "encode_atlas", encode)
+    monkeypatch.setattr(surfel_mesh, "bake_surfel_pages", bake)
+    if stage in ("geometry", "image"):
+        monkeypatch.setattr(_CompactWriter, stage, fail)
+    if stage == "write":
+        monkeypatch.setattr("src.surfel_glb_compact.shutil.copyfileobj", fail)
+    output = tmp_path / "delivery" / "scene.glb"
+    with pytest.raises(RuntimeError) as caught:
+        export_scene_glb(bundle, output, lod=False, encoder_workers=2)
+    assert caught.value is failure
+    assert sorted(started) == sorted(finished)  # No worker survives the failing export.
+    assert list(output.parent.iterdir()) == []
+    if stage != "write":
+        assert state["produced"] <= 2  # Stop before producing a third page.
+
+
+@pytest.mark.parametrize("workers", [0, 3, 8, True, 1.5])
+def test_scene_delivery_rejects_invalid_encoder_workers(bundle, tmp_path, workers):
+    from src.surfel_glb import export_scene_glb
+
+    output = tmp_path / "invalid-workers.glb"
+    with pytest.raises(ValueError, match="encoder_workers"):
+        export_scene_glb(bundle, output, encoder_workers=workers)
+    assert not output.exists()
+
+
+def test_parallel_writer_failure_waits_for_running_encoder(
+    three_page_bundle, tmp_path, monkeypatch
+):
+    from src import surfel_glb_texture
+    from src.surfel_glb import export_scene_glb
+    from src.surfel_glb_compact import _CompactWriter
+
+    bundle, state = three_page_bundle
+    running, release, writer_failed, returned = Event(), Event(), Event(), Event()
+    failure = RuntimeError("geometry write failed")
+    errors, finished = [], []
+    original_encode = surfel_glb_texture.encode_atlas
+
+    def encode(rgba, colors):
+        running.set()
+        assert release.wait(5), "test did not release encoder"
+        try:
+            return original_encode(rgba, colors=colors)
+        finally:
+            finished.append(True)
+
+    def geometry(*args):
+        assert running.wait(5), "encoder did not start"
+        writer_failed.set()
+        raise failure
+
+    output = tmp_path / "drain.glb"
+
+    def export():
+        try:
+            export_scene_glb(bundle, output, lod=False, encoder_workers=2)
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            returned.set()
+
+    monkeypatch.setattr(surfel_glb_texture, "encode_atlas", encode)
+    monkeypatch.setattr(_CompactWriter, "geometry", geometry)
+    thread = Thread(target=export)
+    thread.start()
+    try:
+        assert writer_failed.wait(5), "writer did not fail"
+        assert not returned.is_set()  # shutdown must drain the blocked running encode.
+    finally:
+        release.set()
+        thread.join(5)
+    assert not thread.is_alive()
+    assert errors == [failure]
+    assert finished
+    assert state["produced"] == 2
+    assert not output.exists()
