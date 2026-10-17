@@ -14,7 +14,7 @@ usage() {
         "" \
         "Pipeline:" \
         "  video -> frames -> detection -> DA3 pipeline -> dedup/global ID" \
-        "        -> minimal schema3 viewer bundle -> optional Vite server" \
+        "        + early geometry/texture preparation -> complete Surfel bundle -> optional Vite server" \
         "" \
         "Required:" \
         "  --video PATH                  输入视频；相对路径按仓库根解析" \
@@ -100,23 +100,13 @@ DATASET_DIR="$PROJECT_ROOT/runtime/video_to_dedup/$DATASET_NAME"
 CORE_ENV="${CORE_ENV:-$PROJECT_ROOT/.venv}"
 [ -x "$CORE_ENV/bin/python" ] || { printf '核心环境不存在: %s\n' "$CORE_ENV" >&2; exit 1; }
 
-run_core_python() {
-    VIRTUAL_ENV="$CORE_ENV" uv run --active --no-project python "$@"
-}
-
 printf 'Video pipeline: %s -> %s\n' "$VIDEO" "$DATASET_DIR"
 SAVE_ROOT="$SAVE_ROOT" \
+PIPELINE_SURFEL_OUTPUT="$VIEWER_OUTPUT" \
 DETECTOR_DEVICE="$DETECTOR_DEVICE" \
 CLASSIFIER_DEVICE="$CLASSIFIER_DEVICE" \
 CUDA_VISIBLE_DEVICES="$GPU" \
 bash "$VIDEO_TO_DEDUP" "$VIDEO" "$FPS" "$GPU" "$DETECTIONS_DIR"
-
-cd "$PROJECT_ROOT"
-CUDA_VISIBLE_DEVICES="$GPU" run_core_python main.py \
-    --mode viewer-web \
-    --dataset "$DATASET_DIR" \
-    --save_root "$SAVE_ROOT" \
-    --viewer-web-output "$VIEWER_OUTPUT"
 
 [ -f "$VIEWER_OUTPUT/CURRENT" ] || { printf 'Viewer bundle 未完整发布: %s/CURRENT\n' "$VIEWER_OUTPUT" >&2; exit 1; }
 printf 'Viewer bundle: %s\n' "$VIEWER_OUTPUT"

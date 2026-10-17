@@ -1,11 +1,13 @@
 """Unit tests for utils.pointcloud_filter (synthetic scenes, no GPU/data needed)."""
 
 import numpy as np
+import pytest
 
 from utils.pointcloud_filter import (
     PointCloudFilterConfig,
     apply_mask,
     filter_scene_points,
+    prepare_scene_filter,
 )
 
 
@@ -107,6 +109,19 @@ def test_protect_mask_is_not_mutated_when_invalid_points_are_unprotectable():
     assert protect_mask.tolist() == [True, True]
 
 
+def test_invalid_protect_mask_rejected_before_preparation(monkeypatch):
+    import utils.pointcloud_filter as filtering
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("invalid protect_mask must not prepare NN/SOR")
+
+    monkeypatch.setattr(filtering, "prepare_scene_filter", unexpected)
+    with pytest.raises(ValueError, match="protect_mask"):
+        filtering.filter_scene_points(
+            np.ones((1000, 3)), protect_mask=np.ones((1000, 1), dtype=bool),
+        )
+
+
 def test_small_scene_returned_unfiltered():
     rng = np.random.default_rng(1)
     points = rng.normal(size=(500, 3))
@@ -127,3 +142,140 @@ def test_apply_mask_aligns_aux_arrays():
     assert out_points.shape == (2, 3)
     assert out_colors.tolist() == [0, 2]
     assert out_none is None
+
+
+def _fake_open3d(monkeypatch, *, raw_sor, median=1.0, cluster=None):
+    """Instrument label-independent calls and selections, without random RANSAC."""
+    import sys
+    from types import SimpleNamespace
+
+    calls = {"nn": 0, "sor": 0, "clusters": []}
+
+    class Cloud:
+        def __init__(self):
+            self.points = np.empty((0, 3))
+
+        def compute_nearest_neighbor_distance(self):
+            calls["nn"] += 1
+            return np.full(len(self.points), median)
+
+        def remove_statistical_outlier(self, neighbors, std):
+            calls["sor"] += 1
+            return None, raw_sor
+
+        def select_by_index(self, indices):
+            result = Cloud()
+            result.points = self.points[indices]
+            return result
+
+        def cluster_dbscan(self, eps, min_points):
+            calls["clusters"].append((self.points.copy(), eps, min_points))
+            return np.zeros(len(self.points), dtype=int) if cluster is None else cluster(self.points)
+
+    monkeypatch.setitem(sys.modules, "open3d", SimpleNamespace(
+        geometry=SimpleNamespace(PointCloud=Cloud),
+        utility=SimpleNamespace(Vector3dVector=np.asarray),
+    ))
+    return calls
+
+
+@pytest.mark.parametrize("protect, expected", [
+    ([False] * 5, [True] * 5),  # 0/5 raw mask: guard skips SOR.
+    ([False, False, True, False, False], [False, False, True, False, False]),
+])
+def test_prepared_raw_sor_applies_protection_before_guard(monkeypatch, protect, expected):
+    calls = _fake_open3d(monkeypatch, raw_sor=[])
+    points = np.arange(15, dtype=float).reshape(-1, 3) + 1
+    config = PointCloudFilterConfig(
+        min_points=1, sor_nb_neighbors=1, keep_main_clusters=False, remove_ground=False,
+    )
+    prepared = prepare_scene_filter(points, config)
+    assert not prepared.sor_mask.any()
+    assert calls["nn"] == calls["sor"] == 1
+    assert filter_scene_points(points, config, protect, prepared=prepared).tolist() == expected
+    assert calls["nn"] == calls["sor"] == 1
+    assert filter_scene_points(points, config, protect).tolist() == expected
+
+
+@pytest.mark.parametrize("config, median, expected_calls", [
+    (PointCloudFilterConfig(enabled=False), 1, (0, 0)),
+    (PointCloudFilterConfig(min_points=10), 1, (0, 0)),
+    (PointCloudFilterConfig(min_points=1), 0, (1, 0)),
+    (PointCloudFilterConfig(min_points=1, remove_ground=False), 1, (1, 0)),
+])
+def test_prepared_skip_branches_preserve_base(monkeypatch, config, median, expected_calls):
+    calls = _fake_open3d(monkeypatch, raw_sor=[], median=median)
+    points = np.asarray([[1, 2, 3], [0, 0, 0], [np.nan, 1, 1]], dtype=float)
+    prepared = prepare_scene_filter(points, config)
+    keep = filter_scene_points(points, config, prepared=prepared)
+    assert keep.tolist() == [True, False, False]
+    assert keep.flags.writeable
+    assert (calls["nn"], calls["sor"]) == expected_calls
+
+
+def test_prepared_rejects_reordered_points_and_changed_config():
+    points = np.asarray([[1, 2, 3], [4, 5, 6]], dtype=float)
+    config = PointCloudFilterConfig(enabled=False)
+    prepared = prepare_scene_filter(points, config)
+    with pytest.raises(ValueError, match="domain"):
+        filter_scene_points(points[::-1], config, prepared=prepared)
+    config.sor_std_ratio = 3.0
+    with pytest.raises(ValueError, match="config"):
+        filter_scene_points(points, config, prepared=prepared)
+
+
+def test_prepared_raw_sor_matches_original_float64_base_order(monkeypatch):
+    calls = _fake_open3d(monkeypatch, raw_sor=[0, 2])
+    points = np.asarray([[1, 0, 0], [0, 0, 0], [2, 0, 0], [3, 0, 0]], dtype=np.float32)
+    config = PointCloudFilterConfig(
+        min_points=1, sor_nb_neighbors=1, keep_main_clusters=False, remove_ground=False,
+    )
+    prepared = prepare_scene_filter(points, config)
+    assert prepared.points.dtype == np.float64
+    assert np.asarray(prepared.pcd.points).tolist() == [[1, 0, 0], [2, 0, 0], [3, 0, 0]]
+    assert prepared.sor_mask.tolist() == [True, False, True]
+    assert filter_scene_points(points, config, prepared=prepared).tolist() == [True, False, False, True]
+    assert calls["sor"] == 1
+
+
+def test_prepared_raw_sor_matches_open3d_base_cloud():
+    import open3d as o3d
+
+    points = np.random.default_rng(901).normal(size=(128, 3)).astype(np.float32)
+    points = np.vstack([points, [0, 0, 0], [np.nan, 0, 0]])
+    config = PointCloudFilterConfig(min_points=10, remove_ground=False)
+    prepared = prepare_scene_filter(points, config)
+    cloud = o3d.geometry.PointCloud()
+    base = np.isfinite(points).all(axis=1) & np.any(points != 0, axis=1)
+    cloud.points = o3d.utility.Vector3dVector(points[base].astype(np.float64))
+    _, indices = cloud.remove_statistical_outlier(config.sor_nb_neighbors, config.sor_std_ratio)
+    expected = np.zeros(int(base.sum()), dtype=bool)
+    expected[np.asarray(indices, dtype=np.int64)] = True
+    assert np.array_equal(prepared.base_mask, base)
+    assert np.array_equal(prepared.sor_mask, expected)
+    assert prepared.median_nn == np.median(cloud.compute_nearest_neighbor_distance())
+
+
+def test_proxy_cluster_ratio_counts_original_members(monkeypatch):
+    # Two representatives: first has 9 members, second has 1. At a 20% size
+    # threshold only the 9-member cluster survives, even though proxy sizes tie.
+    points = np.asarray([[1 + i * .001, 1, 1] for i in range(9)] + [[10, 1, 1]])
+    calls = _fake_open3d(
+        monkeypatch, raw_sor=list(range(10)), cluster=lambda p: np.arange(len(p)),
+    )
+    config = PointCloudFilterConfig(
+        min_points=1, sor_nb_neighbors=1, cluster_min_points=2,
+        cluster_proxy_voxel_scale=1, min_cluster_ratio=.2, remove_ground=False,
+    )
+    keep = filter_scene_points(points, config)
+    assert keep.tolist() == [True] * 9 + [False]
+    proxy, eps, min_points = calls["clusters"][0]
+    assert proxy.tolist() == points[[0, 9]].tolist()
+    assert eps == 5.0
+    assert min_points == 2  # counts proxy neighbors; deliberately not member-weighted.
+
+
+@pytest.mark.parametrize("scale", [-1, np.nan, np.inf])
+def test_proxy_scale_rejects_invalid_values(scale):
+    with pytest.raises(ValueError, match="cluster_proxy_voxel_scale"):
+        PointCloudFilterConfig(cluster_proxy_voxel_scale=scale)

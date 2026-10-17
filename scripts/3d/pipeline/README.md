@@ -8,9 +8,10 @@
 video
   -> 0-based frames
   -> SKU detector
-  -> DA3 reconstruction + SAM3 matching + personalcare classifier
+  -> DA3 reconstruction
+  -> SAM3 matching + personalcare classifier | Surfel geometry/textures preparation
   -> dedup/global ID
-  -> minimal schema 3.0.0 viewer bundle
+  -> final protected filtering/sampling -> complete schema 3.0.0 Surfel bundle
   -> optional Vite server
 ```
 
@@ -46,7 +47,9 @@ bash scripts/3d/pipeline/video_to_viewer.sh \
 
 `--gpu 2 --classifier-device cuda:0` 表示把物理 GPU 2 映射成进程内的第一张卡。若指定 `--serve`，`--viewer-output` 必须使用默认目录，因为 Vite 只把 `modules/viewer_web/public/data` 映射到浏览器 `/data/`；自定义目录需要部署层另行挂载。
 
-脚本复用 `modules/video_to_dedup/run.sh` 完成抽帧、检测、DA3 pipeline 和 dedup，然后直接调用 `main.py --mode viewer-web` 发布 minimal schema 3.0.0 bundle。独立的 `main.py --mode ground-stack-area` 仍可按需运行，但不是视频到 Viewer 的前置阶段。
+脚本通过 `PIPELINE_SURFEL_OUTPUT` 把输出目录传给 `modules/video_to_dedup/run.sh`，由其调用 `main.py --mode pipeline --viewer-web-output <目录>`。DA3 新建或复用缓存后，一个 CPU worker 提前准备原始 U/V、来源深度、JPEG 和相机元数据；最终 IDs 就绪后在同一进程中复用准备结果，不另起 CLI 重算。最终商品保护、过滤、采样、point ranges、纹理质量与独立 Surfel 导出保持一致。matching、dedup 或准备失败不发布新 generation，退出前等待准备 worker 结束。
+
+完整 bundle 在 dedup 后、辅助可视化和准确率评估之前发布；脚本的 `--serve` 仍在整个 pipeline 结束后启动服务。已有服务可读取新 `CURRENT`，本改动不包含 COS 上传或部署。CPU/RAM 竞争和实际端到端收益待同输入测量。独立 `main.py --mode ground-stack-area` 仍可按需运行，但不是视频到 Viewer 的前置阶段。
 
 只导出、不启动服务：
 

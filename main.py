@@ -991,8 +991,17 @@ class SKUDetectionMain:
         model_path: str | None = None,
         evaluate_accuracy: bool = True,
         quiet_outputs: bool = True,
+        surfel_output_dir: Path | None = None,
+        surfel_texture_edge: int = 1920,
+        surfel_sku_masterdata_csv: Path | None = None,
     ) -> Dict[str, bool]:
         """运行 SKU 计数流水线；无人工标注的服务请求可显式关闭准确率评估。"""
+        if surfel_output_dir is not None and (
+            algorithm != "3d" or self.match_backend != "da3"
+        ):
+            raise ValueError("提前生成 Surfel 需要 algorithm='3d' 和 match_backend='da3'")
+        if surfel_output_dir is not None and not 256 <= surfel_texture_edge <= 1920:
+            raise ValueError("Surfel texture longest edge must be in [256, 1920]")
         logger.info("开始完整的SKU计数流水线（包含3D重建）")
         summary: Dict[str, bool] = {}
 
@@ -1025,6 +1034,8 @@ class SKUDetectionMain:
             return classification_result
 
         classifier_executor: ThreadPoolExecutor | None = None
+        surfel_executor: ThreadPoolExecutor | None = None
+        surfel_future: Future | None = None
         try:
             if self.classifier_enabled:
                 classifier_executor = ThreadPoolExecutor(max_workers=1)
@@ -1072,6 +1083,21 @@ class SKUDetectionMain:
                 logger.info("步骤1: 跳过3D重建（使用 Point Tracking 算法）")
                 summary["reconstruction"] = True  # 标记为成功（不需要）
 
+            if surfel_output_dir is not None:
+                from src.web_viewer_export import prepare_web_viewer_geometry
+
+                # Both newly reconstructed and reused caches enter here. This
+                # worker does not read matching masks or publish a generation.
+                surfel_executor = ThreadPoolExecutor(
+                    max_workers=1, thread_name_prefix="surfel-prepare"
+                )
+                surfel_future = surfel_executor.submit(
+                    prepare_web_viewer_geometry,
+                    da3_cache_path=expected_result,
+                    source_images_dir=Path(dataset_path) / "images",
+                    surfel_texture_edge=surfel_texture_edge,
+                )
+
             if not quiet_outputs:
                 self.run_detection_visualization(dataset_path)
                 summary["visualization"] = True
@@ -1097,6 +1123,22 @@ class SKUDetectionMain:
                 detection_dir=classification["detection_dir"],
             )
             summary["dedup"] = True
+            if surfel_future is not None:
+                from src.web_viewer_export import export_web_viewer_bundle
+                from utils.config import default_sam3_mask_cache_root
+
+                export_web_viewer_bundle(
+                    dataset_name=Path(dataset_path).name,
+                    da3_cache_path=expected_result,
+                    global_mapping_path=output_dir / "dedup_detections" / "global_mapping.json",
+                    output_dir=Path(surfel_output_dir),
+                    source_images_dir=Path(dataset_path) / "images",
+                    sam3_mask_cache_root=default_sam3_mask_cache_root(output_dir),
+                    sku_masterdata_csv=surfel_sku_masterdata_csv,
+                    surfel_texture_edge=surfel_texture_edge,
+                    prepared=surfel_future.result(),
+                )
+                summary["surfel"] = True
             if not quiet_outputs:
                 output_base = (
                     self.save_root if self.save_root is not None else DEFAULT_SAVE_ROOT
@@ -1116,6 +1158,10 @@ class SKUDetectionMain:
             logger.info("流水线全部阶段完成")
             return summary
         finally:
+            if surfel_executor is not None:
+                # Drain preparation even if matching/dedup failed, before the
+                # caller can remove request-local inputs. No failed run publishes.
+                surfel_executor.shutdown(wait=True, cancel_futures=True)
             if classifier_executor is not None:
                 classifier_executor.shutdown(wait=True)
 
@@ -1490,7 +1536,13 @@ def main() -> None:
         "--viewer-web-output",
         type=str,
         default=None,
-        help="viewer-web: bundle输出目录（默认：modules/viewer_web/public/data）",
+        help="viewer-web: bundle输出目录；pipeline: 启用提前准备的完整 Surfel 导出到此目录",
+    )
+    parser.add_argument(
+        "--surfel-texture-edge",
+        type=int,
+        default=1920,
+        help="pipeline Surfel 纹理最长边 [256, 1920]，短边上限 1080",
     )
     parser.add_argument(
         "--viewer-web-sku-masterdata-csv",
@@ -1533,9 +1585,20 @@ def main() -> None:
     if args.mode == "interactive":
         app.interactive_mode(quiet_outputs=args.quiet_outputs)
     elif args.mode == "pipeline":
+        surfel_options = {}
+        if args.viewer_web_output:
+            masterdata = Path(args.viewer_web_sku_masterdata_csv).expanduser()
+            if not masterdata.is_absolute():
+                masterdata = PROJECT_ROOT / masterdata
+            surfel_options = {
+                "surfel_output_dir": Path(args.viewer_web_output).expanduser().resolve(),
+                "surfel_texture_edge": args.surfel_texture_edge,
+                "surfel_sku_masterdata_csv": masterdata,
+            }
         app.run_complete_pipeline(
             args.dataset, args.algorithm, model_path=args.recon_model_path,
             quiet_outputs=args.quiet_outputs,
+            **surfel_options,
         )
     elif args.mode == "concise":
         # 在精简流水线中，先匹配后评估；匹配透传关键参数

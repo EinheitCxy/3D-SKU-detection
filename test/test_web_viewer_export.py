@@ -261,6 +261,269 @@ def test_all_viewer_tuning_preserves_nonempty_global_ids(exporter_inputs):
     assert tuned["point_count"] <= baseline["point_count"]
 
 
+def _surfel_cache(exporter_inputs):
+    path = exporter_inputs["da3_cache_path"]
+    with np.load(path) as archive:
+        cache = {key: archive[key] for key in archive.files}
+    cache["world_points"][..., :2] *= 0.01
+    cache["intrinsic"] = np.eye(3, dtype=np.float32)[None]
+    # Invalid confidence and behind-camera depth must keep native slot alignment.
+    cache["world_points_conf"][0, 0, 1] = np.nan
+    cache["world_points"][0, 1, 0, 2] = -1
+    np.savez_compressed(path, **cache)
+
+
+def test_prepared_surfel_matches_serial_and_prepares_once(exporter_inputs, monkeypatch):
+    import src.surfel_export as surfels
+
+    _surfel_cache(exporter_inputs)
+    common = dict(exporter_inputs, surfel_texture_edge=256,
+                  filter_config=PointCloudFilterConfig(enabled=False),
+                  tuning=ViewerExportTuning(single_owner=True))
+    serial = export_web_viewer_bundle(**common)
+    calls = {"grid": 0, "jpeg": 0}
+    grid, save = surfels.grid_tangents, Image.Image.save
+
+    def counted_grid(*args, **kwargs):
+        calls["grid"] += 1
+        return grid(*args, **kwargs)
+
+    def counted_save(image, fp, format=None, **kwargs):
+        if format == "JPEG" and kwargs.get("quality") == 95:
+            calls["jpeg"] += 1
+        return save(image, fp, format=format, **kwargs)
+
+    monkeypatch.setattr(surfels, "grid_tangents", counted_grid)
+    monkeypatch.setattr(Image.Image, "save", counted_save)
+    prepared = exporter.prepare_web_viewer_geometry(
+        da3_cache_path=common["da3_cache_path"], source_images_dir=common["source_images_dir"],
+        surfel_texture_edge=256, tuning=common["tuning"], filter_config=common["filter_config"],
+    )
+    common["output_dir"] = common["output_dir"].with_name("prepared")
+    assert not common["output_dir"].exists()
+    result = export_web_viewer_bundle(**common, prepared=prepared)
+    assert calls == {"grid": 1, "jpeg": 1}
+
+    def contents(result):
+        root = Path(result["manifest_path"]).parent
+        return {str(path.relative_to(root)): path.read_bytes()
+                for path in root.rglob("*") if path.is_file()}
+
+    assert contents(result) == contents(serial)
+    assert result["point_count"] == 2
+    sample = exporter._sample_points(
+        prepared.cache, {}, mask_cache_root=common["sam3_mask_cache_root"],
+        voxel_size=0.005, filter_config=common["filter_config"],
+        adaptive_surfels=True, prepared_geometry=prepared, level_rotation=(np.eye(3), False),
+    )
+    sources = sample["source_indices"]
+    assert np.array_equal(sources, [0, 3])
+    assert np.array_equal(sample["positions"], prepared.cache["points"].reshape(-1, 3)[sources])
+    assert np.array_equal(sample["surfel_geometry"][0], prepared.geometry[0].reshape(-1, 3)[sources])
+
+
+@pytest.mark.parametrize("changes", [
+    {"backend": "Pi3X"}, {"surfel_texture_edge": None}, {"surfel_texture_edge": 512},
+    {"tuning": ViewerExportTuning(quality_filter=True)},
+    {"da3_cache_path": Path("other.npz")}, {"source_images_dir": Path("other")},
+    {"filter_config": PointCloudFilterConfig(enabled=False)},
+])
+def test_prepared_surfel_rejects_mismatched_inputs(exporter_inputs, changes):
+    _surfel_cache(exporter_inputs)
+    prepared = exporter.prepare_web_viewer_geometry(
+        da3_cache_path=exporter_inputs["da3_cache_path"],
+        source_images_dir=exporter_inputs["source_images_dir"], surfel_texture_edge=256,
+    )
+    common = dict(exporter_inputs, surfel_texture_edge=256)
+    common.update(changes)
+    with pytest.raises(WebViewerExportError, match="prepared geometry"):
+        export_web_viewer_bundle(**common, prepared=prepared)
+    assert not exporter_inputs["output_dir"].exists()
+
+
+def test_prepared_surfel_rejects_changed_cache(exporter_inputs):
+    import os
+
+    _surfel_cache(exporter_inputs)
+    prepared = exporter.prepare_web_viewer_geometry(
+        da3_cache_path=exporter_inputs["da3_cache_path"],
+        source_images_dir=exporter_inputs["source_images_dir"], surfel_texture_edge=256,
+    )
+    path = exporter_inputs["da3_cache_path"]
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+    with pytest.raises(WebViewerExportError, match="cache changed"):
+        export_web_viewer_bundle(**exporter_inputs, surfel_texture_edge=256, prepared=prepared)
+
+
+def test_prepared_surfel_rejects_changed_valid_domain(exporter_inputs):
+    _surfel_cache(exporter_inputs)
+    config = PointCloudFilterConfig(enabled=False)
+    prepared = exporter.prepare_web_viewer_geometry(
+        da3_cache_path=exporter_inputs["da3_cache_path"],
+        source_images_dir=exporter_inputs["source_images_dir"], surfel_texture_edge=256,
+        filter_config=config,
+    )
+    assert prepared.valid_indices.tolist() == [0, 3]
+    prepared.cache["confidence"].reshape(-1)[0] = np.nan
+    with pytest.raises(WebViewerExportError, match="domain/order"):
+        exporter._sample_points(
+            prepared.cache, {}, mask_cache_root=exporter_inputs["sam3_mask_cache_root"],
+            voxel_size=0.005, filter_config=config, adaptive_surfels=True,
+            prepared_geometry=prepared,
+        )
+
+
+@pytest.mark.parametrize("early_budget", [0, 500_000])
+def test_prepare_filter_can_be_explicitly_deferred(exporter_inputs, monkeypatch, early_budget):
+    _surfel_cache(exporter_inputs)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError("NN/SOR preparation must not run")
+
+    monkeypatch.setattr(exporter, "prepare_scene_filter", unexpected)
+    prepared = exporter.prepare_web_viewer_geometry(
+        da3_cache_path=exporter_inputs["da3_cache_path"],
+        source_images_dir=exporter_inputs["source_images_dir"], surfel_texture_edge=256,
+        prepare_filter=bool(early_budget),
+        tuning=ViewerExportTuning(early_background_candidates=early_budget),
+    )
+    assert prepared.scene_filter is None
+    assert prepared.valid_indices.tolist() == [0, 3]
+
+
+@pytest.mark.parametrize("value", [-1, True, 1.5, "500000"])
+def test_early_background_candidates_requires_nonnegative_integer(value):
+    with pytest.raises(ValueError, match="early_background_candidates"):
+        ViewerExportTuning(early_background_candidates=value)
+
+
+@pytest.mark.parametrize("adaptive", [False, True])
+@pytest.mark.parametrize("candidate_budget", [9, 500_000])
+def test_early_background_preserves_products_alignment_and_reports_underfill(
+    monkeypatch, caplog, adaptive, candidate_budget,
+):
+    from src.surfel_export import grid_tangents
+    from src.surfel_sampling import EdgeAdaptiveSampler
+
+    y, x = np.indices((8, 8))
+    plane = np.stack((x * .005, y * .005, np.ones(x.shape)), axis=-1).astype(np.float32)
+    points = np.stack((plane, plane + [0, 0, .001])).astype(np.float32)
+    confidence = np.ones(points.shape[:-1], dtype=np.float32)
+    confidence.ravel()[3] = np.nan
+    cache = dict(points=points, confidence=confidence,
+                 images=np.arange(points.size, dtype=np.uint8).reshape(points.shape),
+                 extrinsic=np.repeat(np.eye(4)[None], 2, axis=0))
+    labels = np.full(confidence.size, -1, dtype=np.int32)
+    labels[[0, 1, 64, 65]] = 0
+    monkeypatch.setattr(exporter, "_instance_labels_v2", lambda _cache, _objects, indices, *_:
+                        (labels[indices], [("7", 0)]))
+    monkeypatch.setattr(exporter, "MAX_BACKGROUND_POINTS", 5)
+    calls, supports = [], []
+
+    def candidate_filter(candidate_points, config, protect_mask, **kwargs):
+        assert "prepared" not in kwargs  # Never reuse the full-domain raw filter.
+        calls.append((candidate_points.copy(), protect_mask.copy()))
+        keep = protect_mask.copy()
+        keep[np.flatnonzero(~protect_mask)[:3]] = True
+        return keep
+
+    select = EdgeAdaptiveSampler.select
+
+    def record_select(self, indices, budget, *, support_indices=None):
+        supports.append(None if support_indices is None else support_indices.copy())
+        return select(self, indices, budget, support_indices=support_indices)
+
+    monkeypatch.setattr(exporter, "filter_scene_points", candidate_filter)
+    monkeypatch.setattr(EdgeAdaptiveSampler, "select", record_select)
+    with caplog.at_level("INFO", logger=exporter.__name__):
+        sample = exporter._sample_points(
+            cache, {}, mask_cache_root=Path("/unused"), voxel_size=.005,
+            filter_config=PointCloudFilterConfig(), adaptive_surfels=adaptive,
+            level_rotation=(np.eye(3), False),
+            tuning=ViewerExportTuning(early_background_candidates=candidate_budget),
+        )
+    assert len(calls) == 1
+    candidate_points, protected = calls[0]
+    assert protected.sum() == 4
+    assert len(candidate_points) - protected.sum() <= candidate_budget
+    assert np.array_equal(candidate_points[protected], points.reshape(-1, 3)[labels >= 0])
+    expected_support = np.flatnonzero((labels < 0) & np.isfinite(confidence.ravel()))
+    assert np.array_equal(supports[0], expected_support)
+    counts = sample["early_background_counts"]
+    assert counts["background_after_geometry_filter"] == 3
+    assert counts["background_final"] == 3 < counts["background_budget"]
+    assert counts["background_candidates"] <= candidate_budget
+    assert "no refill" in caplog.text
+    sources = sample["source_indices"]
+    assert set(np.flatnonzero(labels >= 0)) <= set(sources)
+    assert 3 not in sources
+    assert np.array_equal(sample["positions"], points.reshape(-1, 3)[sources])
+    assert np.array_equal(sample["colors"], cache["images"].reshape(-1, 3)[sources])
+    assert np.array_equal(sample["instance_labels"], labels[sources])
+    if adaptive:
+        u, v, depth = grid_tangents(points, cache["extrinsic"])
+        assert np.array_equal(supports[1], expected_support)
+        assert np.array_equal(sample["surfel_geometry"][0], u.reshape(-1, 3)[sources])
+        assert np.array_equal(sample["surfel_geometry"][1], v.reshape(-1, 3)[sources])
+        assert np.array_equal(sample["surfel_geometry"][2], depth)
+        assert sample["surfel_scales"].shape == (len(sources), 2)
+
+
+def test_early_background_zero_preserves_default_path(monkeypatch):
+    cache = dict(points=np.asarray([[[[0., 0., 1.], [1., 0., 1.]]]]),
+                 confidence=np.ones((1, 1, 2)), images=np.zeros((1, 1, 2, 3), dtype=np.uint8),
+                 extrinsic=np.eye(4)[None])
+    calls = []
+    monkeypatch.setattr(exporter, "_instance_labels_v2", lambda *_:
+                        (np.full(2, -1, dtype=np.int32), []))
+
+    def full_filter(points, config, protect_mask, **kwargs):
+        calls.append(points.copy())
+        return np.ones(len(points), dtype=bool)
+
+    monkeypatch.setattr(exporter, "filter_scene_points", full_filter)
+    common = dict(mask_cache_root=Path("/unused"), voxel_size=.005,
+                  filter_config=PointCloudFilterConfig(), level_rotation=(np.eye(3), False))
+    default = exporter._sample_points(cache, {}, **common)
+    explicit = exporter._sample_points(cache, {}, **common,
+                                       tuning=ViewerExportTuning(early_background_candidates=0))
+    assert len(calls) == 2 and all(len(points) == 2 for points in calls)
+    assert "early_background_counts" not in explicit
+    for key in ("positions", "colors", "source_indices", "instance_labels"):
+        assert np.array_equal(default[key], explicit[key])
+
+
+@pytest.mark.parametrize("background_count", [0, 1])
+def test_early_background_small_pool_has_no_refill(monkeypatch, background_count):
+    points = np.asarray([[[[0., 0., 1.], [.005, 0., 1.], [.01, 0., 1.]]]])
+    cache = dict(points=points, confidence=np.ones((1, 1, 3)),
+                 images=np.zeros(points.shape, dtype=np.uint8), extrinsic=np.eye(4)[None])
+    labels = np.zeros(3, dtype=np.int32)
+    labels[:background_count] = -1
+    monkeypatch.setattr(exporter, "_instance_labels_v2", lambda *_: (labels, [("7", 0)]))
+    sample = exporter._sample_points(
+        cache, {}, mask_cache_root=Path("/unused"), voxel_size=.005,
+        filter_config=PointCloudFilterConfig(enabled=False), level_rotation=(np.eye(3), False),
+        tuning=ViewerExportTuning(early_background_candidates=500_000),
+    )
+    counts = sample["early_background_counts"]
+    assert counts["background_candidates"] == background_count
+    assert counts["background_final"] == background_count
+    assert len(sample["source_indices"]) == 3
+
+
+def test_nonadaptive_early_background_rejects_invalid_camera_depth(monkeypatch):
+    cache = dict(points=np.asarray([[[[0., 0., -1.]]]]), confidence=np.ones((1, 1, 1)),
+                 images=np.zeros((1, 1, 1, 3), dtype=np.uint8), extrinsic=np.eye(4)[None])
+    with pytest.raises(WebViewerExportError, match="positive camera depth"):
+        exporter._sample_points(
+            cache, {}, mask_cache_root=Path("/unused"), voxel_size=.005,
+            filter_config=PointCloudFilterConfig(), level_rotation=(np.eye(3), False),
+            tuning=ViewerExportTuning(early_background_candidates=5),
+        )
+
+
 def test_single_owner_competes_across_instances_of_one_global_id(monkeypatch):
     y, x = np.indices((4, 4))
     plane = np.stack((x * 0.005, y * 0.005, np.full(x.shape, 1.003)), axis=-1).astype(np.float32)

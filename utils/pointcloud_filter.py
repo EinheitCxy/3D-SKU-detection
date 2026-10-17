@@ -6,7 +6,7 @@ arrays (colors, global_ids, confidences, frame_indices) stay consistent with the
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Tuple
 
 import numpy as np
@@ -35,6 +35,14 @@ class PointCloudFilterConfig:
     ground_min_inlier_ratio: float = 0.08  # plane must explain >= 8% to count as ground
     min_remaining_ratio: float = 0.2  # never let filtering keep less than 20%
     min_points: int = 1000  # skip geometric filtering below this size
+    # Experimental DBSCAN only: voxel edge = original median NN * scale.
+    # Cluster sizes use original member counts; min_points counts proxy neighbors.
+    cluster_proxy_voxel_scale: float = 0.0  # 0 disables approximation
+
+    def __post_init__(self):
+        if (not np.isfinite(self.cluster_proxy_voxel_scale)
+                or self.cluster_proxy_voxel_scale < 0):
+            raise ValueError("cluster_proxy_voxel_scale must be finite and nonnegative")
 
 
 def _median_nn_distance(pcd) -> float:
@@ -44,10 +52,87 @@ def _median_nn_distance(pcd) -> float:
     return float(np.median(distances))
 
 
+@dataclass(frozen=True)
+class PreparedSceneFilter:
+    """Label-independent full-domain NN/SOR result, before protection or guards.
+
+    Arrays are immutable snapshots in original input order. ``pcd`` is the base
+    cloud: selection always creates a new cloud and never changes this one.
+    """
+
+    points: np.ndarray
+    config: PointCloudFilterConfig
+    base_mask: np.ndarray
+    median_nn: float
+    sor_mask: Optional[np.ndarray]
+    pcd: object
+
+
+def prepare_scene_filter(
+    points: np.ndarray, config: Optional[PointCloudFilterConfig] = None,
+) -> PreparedSceneFilter:
+    """Prepare original float64/base-domain NN and raw SOR, without labels.
+
+    No protection, 20% guard, clustering or ground removal runs here. A missing
+    SOR mask means that geometry was disabled, degenerate or too small for SOR.
+    """
+    config = replace(config or PointCloudFilterConfig())
+    points = np.array(points, dtype=np.float64, copy=True).reshape(-1, 3)
+    base_mask = np.isfinite(points).all(axis=1) & (np.abs(points) > 0).any(axis=1)
+    median_nn, sor_mask, pcd = 0.0, None, None
+    if config.enabled and int(base_mask.sum()) >= config.min_points:
+        try:
+            import open3d as o3d
+        except ImportError:
+            raise ImportError("Open3D required: pip install open3d")
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points[base_mask])
+        median_nn = _median_nn_distance(pcd)
+        if median_nn > 0 and int(base_mask.sum()) > config.sor_nb_neighbors:
+            _, ind = pcd.remove_statistical_outlier(
+                config.sor_nb_neighbors, config.sor_std_ratio
+            )
+            sor_mask = np.zeros(int(base_mask.sum()), dtype=bool)
+            sor_mask[np.asarray(ind, dtype=np.int64)] = True
+            sor_mask.flags.writeable = False
+    points.flags.writeable = False
+    base_mask.flags.writeable = False
+    return PreparedSceneFilter(points, config, base_mask, median_nn, sor_mask, pcd)
+
+
+def _cluster_labels(pcd, median_nn: float, config: PointCloudFilterConfig) -> np.ndarray:
+    """Return per-member labels; optional proxy changes DBSCAN neighborhood counts."""
+    eps = median_nn * config.cluster_eps_scale
+    if config.cluster_proxy_voxel_scale == 0:
+        return np.asarray(pcd.cluster_dbscan(eps, config.cluster_min_points))
+    import open3d as o3d
+
+    points = np.asarray(pcd.points)
+    scaled = np.floor(points / (median_nn * config.cluster_proxy_voxel_scale))
+    limits = np.iinfo(np.int64)
+    # Reject an unrepresentable proxy explicitly; do not silently run another mode.
+    if (not np.isfinite(scaled).all() or np.any(scaled < limits.min)
+            or np.any(scaled >= float(limits.max))):
+        raise ValueError("DBSCAN proxy voxel keys exceed int64 representation")
+    _, first, members = np.unique(
+        scaled.astype(np.int64), axis=0, return_index=True, return_inverse=True
+    )
+    # First original member is the representative, ordered by first occurrence.
+    order = np.argsort(first)
+    remap = np.empty(len(order), dtype=np.int64)
+    remap[order] = np.arange(len(order))
+    proxy = o3d.geometry.PointCloud()
+    proxy.points = o3d.utility.Vector3dVector(points[first[order]])
+    labels = np.asarray(proxy.cluster_dbscan(eps, config.cluster_min_points))
+    return labels[remap[members]]
+
+
 def filter_scene_points(
     points: np.ndarray,
     config: Optional[PointCloudFilterConfig] = None,
     protect_mask: Optional[np.ndarray] = None,
+    *,
+    prepared: Optional[PreparedSceneFilter] = None,
 ) -> np.ndarray:
     """Return a boolean mask of points to keep (same length as ``points``).
 
@@ -60,8 +145,6 @@ def filter_scene_points(
     config = config or PointCloudFilterConfig()
     points = np.asarray(points, dtype=np.float64).reshape(-1, 3)
     n = points.shape[0]
-
-    base_mask = np.isfinite(points).all(axis=1) & (np.abs(points) > 0).any(axis=1)
     if protect_mask is None:
         protected = np.zeros(n, dtype=bool)
     else:
@@ -70,23 +153,23 @@ def filter_scene_points(
             raise ValueError(
                 "protect_mask must be a boolean vector aligned with points"
             )
-        protected &= base_mask
+    if prepared is None:
+        prepared = prepare_scene_filter(points, config)
+    elif (not isinstance(prepared, PreparedSceneFilter)
+          or prepared.config != config
+          or not np.array_equal(prepared.points, points, equal_nan=True)):
+        raise ValueError("prepared scene filter inputs/config differ from original domain")
+    base_mask = prepared.base_mask
+    protected &= base_mask
     if not config.enabled or int(base_mask.sum()) < config.min_points:
-        return base_mask
-
-    try:
-        import open3d as o3d
-    except ImportError:
-        raise ImportError("Open3D required: pip install open3d")
+        return base_mask.copy()
 
     keep = base_mask.copy()
     valid_idx = np.flatnonzero(base_mask)
-
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points[valid_idx])
-    median_nn = _median_nn_distance(pcd)
+    pcd = prepared.pcd
+    median_nn = prepared.median_nn
     if median_nn <= 0:
-        return base_mask
+        return base_mask.copy()
 
     def apply(sub_keep: np.ndarray, stage: str) -> None:
         """Fold a keep-mask over the current working set into ``keep``."""
@@ -105,18 +188,12 @@ def filter_scene_points(
         pcd = pcd.select_by_index(np.flatnonzero(stage_keep))
 
     # 1. statistical outlier removal (sparse floaters, sky specks)
-    if len(valid_idx) > config.sor_nb_neighbors:
-        _, ind = pcd.remove_statistical_outlier(
-            config.sor_nb_neighbors, config.sor_std_ratio
-        )
-        sor_mask = np.zeros(len(valid_idx), dtype=bool)
-        sor_mask[np.asarray(ind)] = True
-        apply(sor_mask, "statistical outlier removal")
+    if prepared.sor_mask is not None:
+        apply(prepared.sor_mask, "statistical outlier removal")
 
     # 2. DBSCAN main-cluster retention (peripheral sparse clusters)
     if config.keep_main_clusters and len(valid_idx) >= config.cluster_min_points:
-        eps = median_nn * config.cluster_eps_scale
-        labels = np.asarray(pcd.cluster_dbscan(eps, config.cluster_min_points))
+        labels = _cluster_labels(pcd, median_nn, config)
         cluster_mask = np.zeros(len(valid_idx), dtype=bool)
         if labels.size and labels.max() >= 0:
             counts = np.bincount(labels[labels >= 0])

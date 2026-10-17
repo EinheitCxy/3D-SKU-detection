@@ -274,6 +274,128 @@ def test_pipeline_external_classifier_uses_enriched_input(
     assert calls == [str(dataset / "detections_results")]
 
 
+@pytest.mark.parametrize("reuse_cache", [False, True])
+def test_pipeline_prepares_surfel_during_matching_and_publishes_after_dedup(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, reuse_cache: bool,
+) -> None:
+    from src import web_viewer_export
+
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    app.classifier_enabled = False
+    _write_enriched_detections(dataset)
+    monkeypatch.setattr(main, "_is_reusable_da3_cache", lambda _path: reuse_cache)
+    preparing = threading.Event()
+    matching_done = threading.Event()
+    calls = []
+    prepared = object()
+
+    def prepare(**kwargs):
+        calls.append("prepare")
+        assert kwargs["da3_cache_path"] == app.save_root / dataset.name / "da3_cache" / "predictions.npz"
+        preparing.set()
+        assert matching_done.wait(timeout=5), "preparation blocked matching"
+        return prepared
+
+    def match(*_args, **_kwargs):
+        assert preparing.wait(timeout=5), "preparation was not submitted before matching"
+        calls.append("matching")
+        matching_done.set()
+
+    def publish(**kwargs):
+        assert calls[-1] == "dedup"
+        assert kwargs["prepared"] is prepared
+        assert kwargs["surfel_texture_edge"] == 1920
+        assert kwargs["global_mapping_path"] == app.save_root / dataset.name / "dedup_detections" / "global_mapping.json"
+        calls.append("publish")
+
+    monkeypatch.setattr(web_viewer_export, "prepare_web_viewer_geometry", prepare)
+    monkeypatch.setattr(web_viewer_export, "export_web_viewer_bundle", publish)
+    monkeypatch.setattr(app, "run_reconstruction", lambda *_a, **_k: calls.append("reconstruct"))
+    monkeypatch.setattr(app, "run_sku_matching", match)
+    monkeypatch.setattr(app, "run_dedup_sequence", lambda *_a, **_k: calls.append("dedup"))
+    monkeypatch.setattr(app, "run_accuracy_evaluation", lambda *_a, **_k: calls.append("evaluate"))
+
+    summary = app.run_complete_pipeline(
+        str(dataset), algorithm="3d", quiet_outputs=False,
+        surfel_output_dir=tmp_path / "viewer",
+    )
+
+    assert summary["surfel"] is True
+    assert calls == (["reconstruct"] if not reuse_cache else []) + [
+        "prepare", "matching", "dedup", "publish", "evaluate",
+    ]
+
+
+@pytest.mark.parametrize("failure_stage", ["matching", "dedup", "prepare"])
+def test_pipeline_surfel_failure_drains_worker_without_publishing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure_stage: str,
+) -> None:
+    from src import web_viewer_export
+
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    app.classifier_enabled = False
+    _write_enriched_detections(dataset)
+    preparing = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def prepare(**_kwargs):
+        preparing.set()
+        try:
+            assert release.wait(timeout=5)
+            if failure_stage == "prepare":
+                raise RuntimeError("prepare failed")
+            return object()
+        finally:
+            finished.set()
+
+    def match(*_args, **_kwargs):
+        assert preparing.wait(timeout=5)
+        release.set()
+        if failure_stage == "matching":
+            raise RuntimeError("matching failed")
+
+    def dedup(*_args, **_kwargs):
+        if failure_stage == "dedup":
+            raise RuntimeError("dedup failed")
+
+    monkeypatch.setattr(web_viewer_export, "prepare_web_viewer_geometry", prepare)
+    monkeypatch.setattr(web_viewer_export, "export_web_viewer_bundle", lambda **_k: pytest.fail("failed run published"))
+    monkeypatch.setattr(app, "run_sku_matching", match)
+    monkeypatch.setattr(app, "run_dedup_sequence", dedup)
+
+    with pytest.raises(RuntimeError, match=f"{failure_stage} failed"):
+        app.run_complete_pipeline(
+            str(dataset), algorithm="3d", quiet_outputs=True,
+            surfel_output_dir=tmp_path / "viewer",
+        )
+    assert finished.is_set()
+
+
+def test_pipeline_cli_enables_early_surfel_export(monkeypatch, tmp_path):
+    captured = {}
+    dataset = tmp_path / "dataset"
+    bundle = tmp_path / "surfel"
+    masterdata = tmp_path / "skus.csv"
+
+    def run(_self, dataset_path, algorithm, **kwargs):
+        captured.update(dataset=dataset_path, algorithm=algorithm, **kwargs)
+
+    monkeypatch.setattr(main.SKUDetectionMain, "run_complete_pipeline", run)
+    monkeypatch.setattr(main.sys, "argv", [
+        "main.py", "--mode", "pipeline", "--algorithm", "3d",
+        "--dataset", str(dataset), "--save_root", str(tmp_path / "out"),
+        "--viewer-web-output", str(bundle), "--surfel-texture-edge", "1024",
+        "--viewer-web-sku-masterdata-csv", str(masterdata),
+    ])
+    main.main()
+    assert captured["dataset"] == str(dataset)
+    assert captured["algorithm"] == "3d"
+    assert captured["surfel_output_dir"] == bundle
+    assert captured["surfel_texture_edge"] == 1024
+    assert captured["surfel_sku_masterdata_csv"] == masterdata
+
+
 def test_external_classification_directory_rejects_invalid_object(
     tmp_path: Path,
 ) -> None:

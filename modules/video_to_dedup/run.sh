@@ -104,9 +104,13 @@ run_pipeline() {
   echo "[3/4] 运行 pipeline: main.py --mode pipeline (da3 + 3d)"
   cd "$CORE_DIR"
   nvidia-smi -L >/dev/null 2>&1 || { echo "[ERROR] DA3 匹配需要可用 NVIDIA GPU；检测结果已保留，未生成 global_mapping.json。" >&2; exit 2; }
+  local viewer_args=()
+  if [ -n "${PIPELINE_SURFEL_OUTPUT:-}" ]; then
+    viewer_args+=(--viewer-web-output "$PIPELINE_SURFEL_OUTPUT")
+  fi
   run_python "$CORE_ENV" main.py --mode pipeline --dataset "$DATASET_DIR" \
     --algorithm 3d --match_backend da3 --recon_backend da3 \
-    --save_root "$SAVE_ROOT" --classifier-device "$CLASSIFIER_DEVICE"
+    --save_root "$SAVE_ROOT" --classifier-device "$CLASSIFIER_DEVICE" "${viewer_args[@]}"
 }
 
 # ---------- [4] 提取结果 ----------

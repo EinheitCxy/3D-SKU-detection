@@ -6,6 +6,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.web_viewer_export import export_web_viewer_bundle
+from src.viewer_export_tuning import ViewerExportTuning
+from utils.pointcloud_filter import PointCloudFilterConfig
 
 
 def main():
@@ -19,13 +21,27 @@ def main():
     parser.add_argument("--texture-edge", type=int, default=1920,
                         help="Texture longest edge in [256, 1920]; short edge capped at 1080, no upscaling")
     parser.add_argument("--voxel-size", type=float, default=0.005)
+    parser.add_argument("--no-dbscan", action="store_true",
+                        help="Disable DBSCAN cluster filtering for this export")
+    parser.add_argument("--cluster-proxy-voxel-scale", type=float, default=0.0,
+                        help="Experimental DBSCAN proxy voxel edge / median NN distance; 0 disables")
+    parser.add_argument("--early-background-candidates", type=int, default=0,
+                        help="Experimental background candidate cap before filtering; 0 disables")
     args = parser.parse_args()
+    filter_config = PointCloudFilterConfig(
+        keep_main_clusters=not args.no_dbscan,
+        cluster_proxy_voxel_scale=args.cluster_proxy_voxel_scale,
+    )
+    tuning = ViewerExportTuning(
+        early_background_candidates=args.early_background_candidates,
+    )
     print(json.dumps(export_web_viewer_bundle(
         dataset_name=args.dataset.name, da3_cache_path=args.cache,
         global_mapping_path=args.mapping, output_dir=args.output,
         source_images_dir=args.dataset / "images", sam3_mask_cache_root=args.mask_cache_root,
         sku_masterdata_csv=args.sku_masterdata, surfel_texture_edge=args.texture_edge,
         voxel_size_m=args.voxel_size,
+        filter_config=filter_config, tuning=tuning,
     ), indent=2))
 
 

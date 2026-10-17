@@ -223,7 +223,9 @@ uv run python scripts/publish_viewer_masterdata.py \
 适配器代码遵循 Apache-2.0；权重 `facebook/map-anything` 为 CC-BY-NC 4.0，
 `facebook/map-anything-apache` 为 Apache-2.0。使用前请确认所选权重许可适配你的用途。
 
-完整视频入口的参数、阶段顺序和输出路径见 [scripts/3d/pipeline/README.md](scripts/3d/pipeline/README.md)。其中 `--gpu 2` 设置物理 GPU mask，进程内分类器继续使用 `--classifier-device cuda:0`；`--detections-dir` 可复用已有逐帧检测 JSON。脚本在 dedup 后直接导出 minimal schema 3.0.0 bundle，默认只导出 bundle，增加 `--serve` 才会以前台进程启动 Vite。独立 `ground-stack-area` 仍可按需运行，但不再是该 Viewer 入口的前置阶段。
+完整视频入口的参数、阶段顺序和输出路径见 [scripts/3d/pipeline/README.md](scripts/3d/pipeline/README.md)。其中 `--gpu 2` 设置物理 GPU mask，进程内分类器继续使用 `--classifier-device cuda:0`；`--detections-dir` 可复用已有逐帧检测 JSON。脚本在同一 pipeline 内于 DA3 缓存就绪后提前准备完整 Surfel 的原始 U/V、深度和纹理，与 matching 重叠；dedup 确定最终 ID 后完成商品保护、过滤、采样并发布 schema 3.0.0 bundle。默认只导出 bundle，增加 `--serve` 才会以前台进程启动 Vite。独立 `ground-stack-area` 仍可按需运行，但不再是该 Viewer 入口的前置阶段。
+
+已有 dataset 可用 `uv run --no-sync python main.py --mode pipeline --algorithm 3d --dataset <目录> --viewer-web-output <bundle目录>` 启用相同流程，纹理最长边默认 1920（`--surfel-texture-edge`）。未指定输出目录的 pipeline 保持原计数流程。Python 调用方传 `run_complete_pipeline(..., surfel_output_dir=...)`；该接点只发布本地完整 bundle，COS 上传和 GLB 的服务调度需另行接入。并行准备增加 matching 期间的 CPU/RAM 占用，端到端节时尚未实测。
 
 上例的 `CUDA_VISIBLE_DEVICES=2` 把物理 GPU 2 映射为进程内的 `cuda:0`；`--classifier-device` 必须是一个显式可用的 CUDA device。分类器不接受 CPU 或替代模型 fallback。若不使用 GPU mask，可直接传入实际可见设备号，例如 `--classifier-device cuda:2`。
 

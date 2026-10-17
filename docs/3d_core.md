@@ -149,7 +149,7 @@ DA3 Viewer 和面积阶段共用 `utils/scene_orientation.py`，在实际 `predi
 
 matching producer 与所有 v2 consumer 都只读取 `predictions.npz` 的逐帧完整 `source_to_processed_affine`（2×3）及 processed shape 来映射并裁剪 bbox。该 affine 可包含 resize、pixel-center、patch rounding 和 crop offset；`x'=sx*x+(sx-1)/2`、`y'=sy*y+(sy-1)/2` 仅是无额外 crop 的 simple-resize 例子，不能从 `process_res` 重算并替代 cache。缺 affine/shape 即 fail closed；此前 scale-only 或 raw out-of-grid bbox 的 entries 不能命中，必须重跑完整顺序。
 
-cache 不再是 Web Viewer 的 protection mask。Viewer export 也只读 v2 processed masks，绝不加载或推理 SAM3；它在常规点云过滤之后传播实例标签。任何点都不会因带有 SAM3 标签而跳过点云去噪、地面或天空过滤。
+Viewer export 只读 v2 processed masks，不加载或推理 SAM3。它在几何过滤前给有效点建立实例标签；商品点参与 NN/SOR、聚类和地面估计，但应用各阶段删除结果时受 SAM 标签保护。非有限、全零和非正 Surfel 深度等基础无效点仍会删除。随后才按既有商品与背景预算采样。
 
 ## Minimal Web Viewer
 
@@ -219,6 +219,16 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 本地 pipeline、concise 与 matching 入口默认启用 `quiet_outputs`，不保存原始/去重检测框图片、匹配示意图、独立分析与准确率报告、可选 correspondences.json。匹配摘要、重建缓存、SAM masks、去重 JSON 与最终 Viewer 数据仍按流程需要生成；源帧、Viewer 纹理和商品缩略图是必要数据，也会保留。
 
 需要恢复辅助输出时显式传 `--no-quiet_outputs`；正向 `--quiet_outputs` 仍可使用。主入口优先级是 CLI、YAML `main.quiet_outputs`、`inference.quiet_outputs`、默认 True；直接 inference 入口也允许 CLI 覆盖 YAML 的 True/False。可选 correspondences JSON 还需要 `--save_json`。Docker `run_mapping_request` 继续默认启用静默输出。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不删除已有历史图片。
+
+## 完整 Surfel 提前准备（2026-10-16）
+
+`run_complete_pipeline(..., surfel_output_dir=...)` 在 DA3 缓存就绪后启动单个 CPU worker：加载缓存、计算原始 U/V 和深度、编码 JPEG 与相机元数据。2026-10-17 的源码扩展还会在同一个有效点域提前计算 NN 中位数和 SOR 原始保留 mask；这两项不依赖商品标签。matching/dedup 继续运行；dedup 完成后才合并最终 labels、应用 SOR 商品保护与保留比例 guard、执行聚类和地面过滤、预算采样、生成 point ranges 并发布 `CURRENT`。缓存复用也走同一路径；准备结果绑定同一缓存、源图目录、纹理尺寸、tuning、有效点顺序和过滤配置，错配直接报错。
+
+`prepare_web_viewer_geometry(..., filter_config=...)` 与 `export_web_viewer_bundle(..., filter_config=..., prepared=...)` 提供对应 Python 接口，准备和最终阶段须使用相同过滤配置。独立 exporter 仍可串行执行；`prepare_filter=False` 显式推迟 NN/SOR。方向拟合、商品保护、DBSCAN 和地面删除仍在最终阶段；默认全量估计域及原有保护门槛不变。提前准备会增加原始网格、点云和纹理的驻留时间。新增同域复用、保护与输出对齐等功能测试已通过；真实全场景输出对照、matching 重叠收益与峰值 RSS 尚待验证。
+
+完整循环、各个门槛、Open3D 内部邻域计算，以及提前抽样会改变哪些判断，见 [Viewer 导出算法详解](viewer_export_algorithm.md)。本轮实现、预算和验收状态见 [2026-10-17 计划](../reports/viewer-latency-20261017/PLAN.md)；不以历史组件耗时预测此次实际收益。
+
+CLI 通过 `--mode pipeline --algorithm 3d --viewer-web-output <目录>` 启用；视频到 Viewer 脚本自动接入。
 
 ## 商品点预算更新（2026-09-10）
 

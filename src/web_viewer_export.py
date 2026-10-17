@@ -13,6 +13,7 @@ import tempfile
 import time
 import uuid
 from collections import defaultdict
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,9 @@ from utils.da3_cache_validation import validate_affine_linear_parts
 from utils.global_id_mapper import GlobalIDMapper
 from utils.global_object_index import build_global_object_index
 from utils.scene_orientation import fit_scene_orientation, get_scene_orientation
-from utils.pointcloud_filter import PointCloudFilterConfig, filter_scene_points
+from utils.pointcloud_filter import (
+    PointCloudFilterConfig, PreparedSceneFilter, filter_scene_points, prepare_scene_filter,
+)
 from utils.sam3_mask_cache import (
     FrameMaskCacheError,
     FrameMaskCacheRequest,
@@ -65,6 +68,74 @@ class WebViewerExportError(ValueError):
     """Raised when an input cannot produce a safe minimal viewer bundle."""
 
 
+_CACHE_STAT_FIELDS = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+
+
+def _cache_identity(path: Path) -> tuple[int, ...]:
+    stat = path.stat()
+    return tuple(getattr(stat, field) for field in _CACHE_STAT_FIELDS)
+
+
+@dataclass(frozen=True)
+class PreparedViewerGeometry:
+    """Task-local DA3 data prepared before matching; never publishes a bundle."""
+
+    cache_path: Path
+    cache_identity: tuple[int, ...]
+    source_images_dir: Path
+    texture_edge: int
+    tuning: ViewerExportTuning
+    cache: dict[str, Any]
+    geometry: tuple[np.ndarray, np.ndarray, np.ndarray]
+    textures: Any
+    frame_sharpness: np.ndarray | None
+    filter_config: PointCloudFilterConfig
+    valid_indices: np.ndarray
+    scene_filter: PreparedSceneFilter | None
+
+
+def prepare_web_viewer_geometry(
+    *, da3_cache_path: Path, source_images_dir: Path,
+    surfel_texture_edge: int = 1920, tuning: ViewerExportTuning | None = None,
+    filter_config: PointCloudFilterConfig | None = None,
+    prepare_filter: bool = True,
+) -> PreparedViewerGeometry:
+    """Prepare full native grids and textures without masks, labels or orientation."""
+    from src.surfel_export import grid_tangents, prepare_surfel_textures
+
+    tuning = tuning or ViewerExportTuning()
+    filter_config = replace(filter_config or PointCloudFilterConfig())
+    cache_path = Path(da3_cache_path).resolve()
+    images_dir = Path(source_images_dir).resolve()
+    identity = _cache_identity(cache_path)
+    cache = _load_da3_cache(cache_path)
+    geometry = grid_tangents(cache["points"], cache["extrinsic"])
+    valid = _viewer_valid_mask(cache, geometry[2])
+    valid_indices = np.flatnonzero(valid)
+    valid_indices.flags.writeable = False
+    if tuning.early_background_candidates:
+        # Labels are unavailable here. NN/SOR must wait for the candidate domain.
+        prepare_filter = False
+        logger.info("Viewer early background candidates: deferring scene filter until labels")
+    scene_filter = (
+        prepare_scene_filter(cache["points"].reshape(-1, 3)[valid], filter_config)
+        if prepare_filter else None
+    )
+    textures = prepare_surfel_textures(cache, cache_path, images_dir, surfel_texture_edge)
+    sharpness = None
+    if tuning.single_owner:
+        from src.surfel_ownership import frame_sharpness_weights
+
+        sources = _resolve_source_images(images_dir)
+        sharpness = frame_sharpness_weights([sources[int(i)] for i in cache["image_ids"]])
+    if identity != _cache_identity(cache_path):
+        raise WebViewerExportError("DA3 cache changed while preparing viewer geometry")
+    return PreparedViewerGeometry(
+        cache_path, identity, images_dir, surfel_texture_edge, tuning,
+        cache, geometry, textures, sharpness, filter_config, valid_indices, scene_filter,
+    )
+
+
 def export_web_viewer_bundle(
     *,
     dataset_name: str,
@@ -79,26 +150,42 @@ def export_web_viewer_bundle(
     filter_config: PointCloudFilterConfig | None = None,
     surfel_texture_edge: int | None = None,
     tuning: ViewerExportTuning | None = None,
+    prepared: PreparedViewerGeometry | None = None,
 ) -> dict[str, object]:
     """Publish up to 2M product points, balanced by global ID, plus 500K background."""
     tuning = tuning or ViewerExportTuning()
-    if surfel_texture_edge is None and tuning != ViewerExportTuning():
+    filter_config = filter_config or PointCloudFilterConfig()
+    if prepared is not None:
+        if not isinstance(prepared, PreparedViewerGeometry):
+            raise WebViewerExportError("prepared must be PreparedViewerGeometry")
+        if backend != "DA3" or surfel_texture_edge is None:
+            raise WebViewerExportError("prepared geometry requires DA3 Surfel export")
+        if (prepared.cache_path != Path(da3_cache_path).resolve()
+                or prepared.source_images_dir != Path(source_images_dir).resolve()
+                or prepared.texture_edge != surfel_texture_edge or prepared.tuning != tuning
+                or prepared.filter_config != filter_config):
+            raise WebViewerExportError("prepared geometry inputs differ from export inputs")
+        if prepared.cache_identity != _cache_identity(Path(da3_cache_path)):
+            raise WebViewerExportError("DA3 cache changed since preparing viewer geometry")
+    if surfel_texture_edge is None and replace(tuning, early_background_candidates=0) != ViewerExportTuning():
         raise WebViewerExportError("viewer export tuning requires Surfel export")
     if not isinstance(dataset_name, str) or not dataset_name.strip():
         raise WebViewerExportError("dataset_name must be a non-empty string")
     voxel_size = _validate_export_options(voxel_size_m)
     if backend not in {"DA3", "Pi3X"}:
         raise WebViewerExportError(f"Unsupported viewer backend: {backend}")
-    cache_stat = Path(da3_cache_path).stat() if backend == "DA3" else None
-    cache = (
+    cache_identity = (
+        prepared.cache_identity if prepared is not None else _cache_identity(Path(da3_cache_path))
+    ) if backend == "DA3" else None
+    cache = prepared.cache if prepared is not None else (
         _load_pi3x_cache(Path(da3_cache_path), Path(source_images_dir))
         if backend == "Pi3X" else _load_da3_cache(Path(da3_cache_path))
     )
     objects = build_global_object_index(GlobalIDMapper(str(Path(global_mapping_path))))
     source_images = _resolve_source_images(Path(source_images_dir))
     thumbnails = _generate_thumbnails(objects, source_images)
-    frame_sharpness = None
-    if tuning.single_owner:
+    frame_sharpness = prepared.frame_sharpness if prepared is not None else None
+    if tuning.single_owner and prepared is None:
         from src.surfel_ownership import frame_sharpness_weights
 
         frame_sharpness = frame_sharpness_weights(
@@ -107,11 +194,7 @@ def export_web_viewer_bundle(
     level_rotation = None
     if backend == "DA3":
         orientation, _cache_event = get_scene_orientation(Path(da3_cache_path))
-        current_stat = Path(da3_cache_path).stat()
-        if any(
-            getattr(cache_stat, field) != getattr(current_stat, field)
-            for field in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
-        ):
+        if cache_identity != _cache_identity(Path(da3_cache_path)):
             raise WebViewerExportError("DA3 cache changed while preparing viewer geometry")
         level_rotation = (orientation.rotation, orientation.status == "fitted")
     sampled = _sample_points(
@@ -119,11 +202,12 @@ def export_web_viewer_bundle(
         objects,
         mask_cache_root=Path(sam3_mask_cache_root),
         voxel_size=voxel_size,
-        filter_config=filter_config or PointCloudFilterConfig(),
+        filter_config=filter_config,
         adaptive_surfels=surfel_texture_edge is not None,
         level_rotation=level_rotation,
         tuning=tuning,
         frame_sharpness=frame_sharpness,
+        prepared_geometry=prepared,
     )
     if surfel_texture_edge is not None:
         from src.surfel_export import prepare_surfels
@@ -131,6 +215,7 @@ def export_web_viewer_bundle(
             cache, sampled["source_indices"], Path(da3_cache_path),
             Path(source_images_dir), surfel_texture_edge,
             scales=sampled.pop("surfel_scales"), geometry=sampled.pop("surfel_geometry"),
+            prepared_textures=None if prepared is None else prepared.textures,
         )
     _attach_point_index_ranges(
         objects, sampled["instance_labels"], sampled["label_keys"]
@@ -441,6 +526,19 @@ def _select_background_voxels(
     return background[order[starts[np.argsort(first_seen)]]]
 
 
+def _viewer_valid_mask(cache: dict[str, Any], depth: np.ndarray | None = None) -> np.ndarray:
+    """Original flattened domain, including positive camera depth for Surfels."""
+    points = cache["points"].reshape(-1, 3)
+    valid = (
+        np.isfinite(points).all(axis=1)
+        & np.any(points != 0, axis=1)
+        & np.isfinite(cache["confidence"].reshape(-1))
+    )
+    if depth is not None:
+        valid &= depth.ravel() > 0
+    return valid
+
+
 def _sample_points(
     cache: dict[str, Any],
     objects: dict[str, Any],
@@ -452,30 +550,45 @@ def _sample_points(
     level_rotation: tuple[np.ndarray, bool] | None = None,
     tuning: ViewerExportTuning | None = None,
     frame_sharpness: np.ndarray | None = None,
+    prepared_geometry: PreparedViewerGeometry | None = None,
 ) -> dict[str, Any]:
+    if prepared_geometry is not None and (
+        not adaptive_surfels or cache is not prepared_geometry.cache
+        or filter_config != prepared_geometry.filter_config
+    ):
+        raise WebViewerExportError("prepared geometry requires its original Surfel cache/config")
     tuning = tuning or ViewerExportTuning()
+    early_background = tuning.early_background_candidates
     flat_points = cache["points"].reshape(-1, 3)
     flat_confidence = cache["confidence"].reshape(-1)
     flat_colors = cache["images"].reshape(-1, 3)
-    valid = (
-        np.isfinite(flat_points).all(axis=1)
-        & np.any(flat_points != 0, axis=1)
-        & np.isfinite(flat_confidence)
-    )
-    if adaptive_surfels:
+    valid = _viewer_valid_mask(cache)
+    if adaptive_surfels or early_background:
         from src.surfel_export import grid_tangents
         from src.surfel_sampling import EdgeAdaptiveSampler
 
-        native_u, native_v, depth = grid_tangents(cache["points"], cache["extrinsic"])
-        valid &= depth.ravel() > 0
+        native_u, native_v, depth = (
+            grid_tangents(cache["points"], cache["extrinsic"])
+            if prepared_geometry is None else prepared_geometry.geometry
+        )
+        if adaptive_surfels:
+            valid = _viewer_valid_mask(cache, depth)
+        elif np.any(valid & (~np.isfinite(depth.reshape(-1)) | (depth.reshape(-1) <= 0))):
+            raise WebViewerExportError(
+                "early background sampling requires positive camera depth for every valid point"
+            )
     valid_indices = np.flatnonzero(valid)
+    if prepared_geometry is not None and not np.array_equal(
+        valid_indices, prepared_geometry.valid_indices
+    ):
+        raise WebViewerExportError("prepared geometry valid point domain/order changed")
     valid_points = flat_points[valid].astype(np.float64, copy=False)
     if level_rotation is None:
         level_rotation = _fit_level_rotation(valid_points, cache["extrinsic"])
     labels, label_keys = _instance_labels_v2(
         cache, objects, valid_indices, len(flat_points), mask_cache_root
     )
-    if adaptive_surfels:
+    if adaptive_surfels or early_background:
         # Keep semantic boundaries distinct even when neighboring products are
         # on the same depth plane. Multiple observations of one global ID share
         # a region; background has its own region.
@@ -497,9 +610,38 @@ def _sample_points(
             depth, valid.reshape(depth.shape), spacing, regions.reshape(depth.shape),
             background_weights=tuning.background_edge_weights,
         )
-    keep_filter = filter_scene_points(
-        valid_points, filter_config, protect_mask=labels >= 0
-    )
+    if early_background:
+        # Full-grid support remains available to both candidate selection and
+        # final Surfel scale estimation; filtering sees only original candidates.
+        full_background = np.flatnonzero(labels < 0)
+        full_background_sources = valid_indices[full_background]
+        background_candidates = _select_background_voxels(
+            valid_points, flat_confidence[valid], full_background, voxel_size,
+        )
+        selected, _ = sampler.select(
+            valid_indices[background_candidates], min(len(background_candidates), early_background),
+            support_indices=full_background_sources,
+        )
+        candidates = np.sort(np.concatenate([
+            np.flatnonzero(labels >= 0), background_candidates[selected],
+        ]))
+        candidate_keep = filter_scene_points(
+            valid_points[candidates], filter_config, protect_mask=labels[candidates] >= 0,
+        )
+        keep_filter = np.zeros(len(valid_indices), dtype=bool)
+        keep_filter[candidates[candidate_keep]] = True
+        early_counts = {
+            "full_valid_background": len(full_background),
+            "voxel_background_candidates": len(background_candidates),
+            "background_candidates": len(selected),
+            "background_after_geometry_filter": int(np.count_nonzero(keep_filter & (labels < 0))),
+        }
+        logger.info("Viewer early background geometry domain (no refill): %s", early_counts)
+    else:
+        keep_filter = filter_scene_points(
+            valid_points, filter_config, protect_mask=labels >= 0,
+            prepared=None if prepared_geometry is None else prepared_geometry.scene_filter,
+        )
     if adaptive_surfels and (tuning.quality_filter or tuning.single_owner):
         from src.viewer_point_quality import camera_centers
 
@@ -555,10 +697,11 @@ def _sample_points(
         filtered_indices = valid_indices[keep_filter]
         scales = np.empty((len(filtered_indices), 2), dtype=np.float32)
 
-        def sample_group(group, budget, *, support=None):
+        def sample_group(group, budget, *, support=None, support_sources=None):
             local, factors = sampler.select(
                 filtered_indices[group], budget,
-                support_indices=None if support is None else filtered_indices[support],
+                support_indices=(support_sources if support_sources is not None
+                                 else None if support is None else filtered_indices[support]),
             )
             selected_group = group[local]
             scales[selected_group] = factors
@@ -566,6 +709,7 @@ def _sample_points(
 
         background_keep = sample_group(
             background_keep, min(len(background_keep), background_budget), support=background,
+            support_sources=full_background_sources if early_background else None,
         )
     elif len(background_keep) > background_budget:
         background_keep = np.sort(
@@ -597,6 +741,12 @@ def _sample_points(
         "level_rotation": level_rotation,
         "source_indices": valid_indices[keep_filter][keep][order],
     }
+    if early_background:
+        early_counts.update(background_after_selection_filters=len(background),
+                            background_final=len(background_keep),
+                            background_budget=background_budget)
+        result["early_background_counts"] = early_counts
+        logger.info("Viewer early background candidates (no refill): %s", early_counts)
     if adaptive_surfels:
         sources = result["source_indices"]
         result["surfel_scales"] = scales[keep][order]
