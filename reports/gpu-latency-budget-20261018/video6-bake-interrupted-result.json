@@ -1,0 +1,50 @@
+{
+  "status": "invalid_monitor_evidence",
+  "mode": "glb",
+  "generation": "/home/xingyu/3D_Recognization/runtime/profiling-multivideo-20261018/video6/viewer/runs/afe181e3307343e4ab9b2f9227675631",
+  "budget_bytes": 14000000000,
+  "stop_line_bytes": 13500000000,
+  "sampling_ms": 50,
+  "sampled_task_peak_bytes": 473956352,
+  "invalid_monitor_rows": 0,
+  "timestamp_groups": 276,
+  "other_resident_peak_bytes": {
+    "6221": 1656750080,
+    "8550": 3617587200
+  },
+  "scope": "Owned GPU PIDs summed at the same timestamp; sampled bound, not an instantaneous hard guarantee",
+  "preflight_free_mib": 19038.0,
+  "command": [
+    "uv",
+    "run",
+    "--no-project",
+    "--python",
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "python",
+    "/home/xingyu/3D_Recognization/reports/torch-bake-fusion-20261018/probe.py",
+    "--mode",
+    "glb",
+    "--device",
+    "cuda:0",
+    "--generation",
+    "/home/xingyu/3D_Recognization/runtime/profiling-multivideo-20261018/video6/viewer/runs/afe181e3307343e4ab9b2f9227675631",
+    "--out",
+    "/home/xingyu/3D_Recognization/runtime/gpu-latency-budget-20261018/video6-bake-full-01/probe",
+    "--batch-size",
+    "1024",
+    "--reference-glb",
+    "/home/xingyu/3D_Recognization/runtime/gpu-latency-budget-20261018/video6-native-01/native.glb",
+    "--encoder-workers",
+    "2"
+  ],
+  "worker_pgid": 3584160,
+  "first_valid_sample_elapsed_s": 0.02761235600337386,
+  "last_valid_sample_elapsed_s": 14.04087516599975,
+  "max_observed_timestamp_gap_s": 0.06499981880187988,
+  "error": "Traceback (most recent call last):\n  File \"/home/xingyu/3D_Recognization/reports/gpu-latency-budget-20261018/probe_bake.py\", line 125, in main\n    raise RuntimeError('No fresh GPU samples for more than 1s')\nRuntimeError: No fresh GPU samples for more than 1s\n",
+  "observed_task_pids": [
+    3584160,
+    3584164
+  ],
+  "supervisor_wall_s": 15.339623195002787
+}

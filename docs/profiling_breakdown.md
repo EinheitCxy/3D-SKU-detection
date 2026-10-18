@@ -429,4 +429,28 @@ Rick随后允许其他流程用GPU，但限制任务峰值。本轮先按十进�
 
 此前15132MiB是另一轮200ms采样，只作历史参照，不计算严格配对降幅或速度收益。本次worker生命周期13.760725s、runner main10.011166s，包含提前初始化／snapshot，与§12窗口不同。fraction不约束所有context／外部CUDA分配，采样也不能证明亚采样瞬时绝不超限；当前结论仅是此video3候选采样达标。
 
-没有修改生产默认，也没有验证完整pipeline新耗时。video6历史活跃tensor峰13688829440bytes已高于该12GiB allocatorcap，不能把此配置推广所有输入；14GB／14GiB单位确认及大输入验证仍待完成。GPU bake正式接入方案已形成，当前根视频入口只有Viewer，未更改Docker或部署。[预算报告／结果与命令](../reports/gpu-latency-budget-20261018/README.md)。
+没有修改生产默认，也没有验证完整pipeline新耗时。video6历史活跃tensor峰13688829440bytes已高于该12GiB allocatorcap，不能把此配置推广所有输入；后续video6补测在该cap下OOM，见§15。14GB／14GiB单位确认仍待回复。GPU bake正式接入方案已形成，当前根视频入口只有Viewer，未更改Docker或部署。[预算报告／结果与命令](../reports/gpu-latency-budget-20261018/README.md)。
+
+## 15. 2026-10-19补测：video6完整GPU GLB有效，DA3固定cap失败
+
+Rick要求测试效果。固定既有video6／48帧／250万Viewer点generation，GPU2／RTX4090D，CPU线程4，source_world／encoder2／tile8／batch≤1024，LOD、palette与Surfel长边限制不变。CPU与GPU完整导出各一次成功新进程，另有一次监控中止的GPU尝试保留而不计入速度。OS缓存与共享负载未隔离；这是已有Viewer之后的GLB组件，不是完整流水线新耗时。
+
+| 同次video6 GLB指标 | Native CPU | Torch GPU |
+|---|---:|---:|
+| 完整export wall | 100.497878s | **71.574736s（减少28.780%）** |
+| 脚本至GLB就绪，含import | 103.826038s | 75.098048s |
+| producer窗口，扣主线程compact/write/join | 95.979967s | 55.011276s |
+| 主线程compact/write/join | 4.516137s | 16.561592s |
+| ↳ encoding join | 0.984595s | 12.629608s |
+| LOD候选／baked | 2027824／2007183 | 相同 |
+| 三角／atlas页／GLB bytes | 4014366／49／198805712 | 相同 |
+
+完整导出节省28.923142s。GPU计时包含第一次CUDA context、H2D、CPU投影、GPU采样/mask/延展、D2H、PNG和写盘；GPU就绪后的17.903855s正确性比较单列，whole_process93.001903s含此比较。producer与compact为互斥窗口，worker编码会重叠，不能重复相加。GPU producer加速后编码join变大，下一项值得测GPU bake配合encoder4，本轮未执行。
+
+48帧raw样本49152输入／48560配对quad／4856000raw RGBA texels，corners与完整RGBA均exact。完整2006batches，RGB／depth各上传48次；全部document关联、accessor字节及49页**200736000decoded RGBA texels**精确相同，未配对页／shape／alpha／RGB差异均0。没有比较整个GLB字节、完整导出的所有raw tiles，也未做浏览器人工画质或匹配准确率评估。
+
+GPU任务driver采样峰**476053504bytes＝0.476054GB（454MiB）**，Torch allocated38639616／reserved54525952bytes。1852组、nominal50ms／最大timestamp gap56ms、解析失败0；原resident单列并保留。但supervisor消费采样最大延迟11.099499s，停止判断受此延迟影响，不能称实时停止保障或瞬时硬上限。首个完整尝试在约15s因dequeue前新鲜度检查中断；修复队列处理后新目录重测，失败与监控诊断完整保留。
+
+同轮DA3独立测试保留完整48帧／504／seed42／原精度，native expandable实际启用，在depth head conv2d申请360MiB时触及12GiB allocatorcap而OOM，worker退出1，未产生完整结果／未比较15数组。allocated峰12498550272／reserved12641632256bytes、driver采样峰13021216768bytes＝13.021GB；298组／最大gap55ms，无监测停止线触发。整卡当时仍约6.46GiB空闲，故失败来自本候选cap，不能说video6完整推理符合14GB，也不能据此排除所有其他保质量方案。
+
+两个medium agents独立只读复核输入、监控、DA3失败及最终GLB结果。测试进程全部退出，GPU2只剩原6221／8550resident。生产默认／Docker未改，无全流水线新均值或P95；实验阶段未commit/push，后续本地提交见报告JOURNAL。[实测报告](../reports/gpu-latency-budget-20261018/README.md) · [video6汇总](../reports/gpu-latency-budget-20261018/video6-summary.json) · [GPU完整结果](../reports/gpu-latency-budget-20261018/video6-bake-result.json) · [DA3失败](../reports/gpu-latency-budget-20261018/video6-allocator-result.json)。

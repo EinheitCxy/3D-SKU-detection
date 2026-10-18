@@ -1,0 +1,15 @@
+{
+  "interrupted_csv_groups": 300,
+  "interrupted_csv_span_s": 15.183000087738037,
+  "interrupted_csv_max_gap_s": 0.06499981880187988,
+  "idle_pipe_test": {
+    "pipe": {
+      "chunks": 100,
+      "max_interarrival_s": 0.05126704899885226
+    },
+    "line_buffered": {
+      "chunks": 100,
+      "max_interarrival_s": 0.05113482099841349
+    }
+  }
+}

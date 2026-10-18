@@ -1,0 +1,110 @@
+{
+  "status": "failed",
+  "budget_bytes": 14000000000,
+  "stop_line_bytes": 13500000000,
+  "allocator_cap_bytes": 12884901888,
+  "video_id": 6,
+  "input_dir": "/home/xingyu/3D_Recognization/runtime/profiling-multivideo-20261018/video6/dataset/images",
+  "model": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3-model/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+  "reference_npz": "/home/xingyu/3D_Recognization/runtime/profiling-multivideo-20261018/video6/outputs/dataset/da3_cache/predictions.npz",
+  "frame_count": 48,
+  "sampling_ms": 50,
+  "invalid_monitor_rows": 0,
+  "sampled_task_peak_bytes": 13021216768,
+  "other_resident_peak_bytes": {
+    "6221": 1656750080,
+    "8550": 3617587200
+  },
+  "scope": "n=1 fixed video6/48 frames/504/seed42; sampled driver bound, not a hard guarantee",
+  "declared_frame_counts": {
+    "receipt.json": 48,
+    "input.json": 48
+  },
+  "preflight_gpu_memory_mib": "19038, 24564",
+  "command": [
+    "uv",
+    "run",
+    "--no-project",
+    "--python",
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "python",
+    "/home/xingyu/3D_Recognization/reports/gpu-latency-budget-20261018/probe_da3.py",
+    "--mode",
+    "worker",
+    "--video",
+    "6",
+    "--out",
+    "/home/xingyu/3D_Recognization/runtime/gpu-latency-budget-20261018/video6-allocator-01"
+  ],
+  "supervisor_child_pid": 3571593,
+  "worker_pgid": 3571593,
+  "max_observed_timestamp_gap_s": 0.05499982833862305,
+  "worker_exitcode": 1,
+  "observed_task_pids": [
+    3571593,
+    3571597
+  ],
+  "timestamp_groups": 298,
+  "worker": {
+    "status": "failed",
+    "allocator_conf": "backend:native,expandable_segments:True",
+    "snapshots": [
+      {
+        "label": "allocator_configured_before_model",
+        "wall_s": 1.6766150820039911,
+        "allocated": 0,
+        "reserved": 0,
+        "max_allocated": 0,
+        "max_reserved": 0,
+        "expandable_segments": 0
+      },
+      {
+        "label": "model_cpu_loaded_before_to",
+        "wall_s": 9.613883821002673,
+        "allocated": 0,
+        "reserved": 0,
+        "max_allocated": 0,
+        "max_reserved": 0,
+        "expandable_segments": 0
+      },
+      {
+        "label": "after_model_to",
+        "wall_s": 10.824737492002896,
+        "allocated": 6759421952,
+        "reserved": 6767509504,
+        "max_allocated": 6759421952,
+        "max_reserved": 6767509504,
+        "expandable_segments": 2
+      },
+      {
+        "label": "process_end",
+        "wall_s": 13.513093513000058,
+        "allocated": 6767964672,
+        "reserved": 12578717696,
+        "max_allocated": 12498550272,
+        "max_reserved": 12641632256,
+        "expandable_segments": 5
+      }
+    ],
+    "video_id": 6,
+    "frame_count": 48,
+    "input_dir": "/home/xingyu/3D_Recognization/runtime/profiling-multivideo-20261018/video6/dataset/images",
+    "model": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3-model/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+    "reference_npz": "/home/xingyu/3D_Recognization/runtime/profiling-multivideo-20261018/video6/outputs/dataset/da3_cache/predictions.npz",
+    "scope": "n=1 fixed video6/48 frames/504/seed42",
+    "backend": "native",
+    "cap_bytes": 12884901888,
+    "fraction": 0.5102804611543393,
+    "device_name": "NVIDIA GeForce RTX 4090 D",
+    "device_total_bytes": 25250627584,
+    "physical_uuid": "GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7",
+    "torch_version": "2.7.1+cu126",
+    "cuda_version": "12.6",
+    "model_to_submission_wall_s": 1.2092077069974039,
+    "error": "Traceback (most recent call last):\n  File \"/home/xingyu/3D_Recognization/reports/gpu-latency-budget-20261018/probe_da3.py\", line 89, in worker\n    runner.main(['--input_dir', str(images), '--output_npz', str(out/'predictions.npz'),\n  File \"/home/xingyu/3D_Recognization/src/da3_runner.py\", line 237, in main\n    prediction = model.inference(\n                 ^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/api.py\", line 209, in inference\n    raw_output = self._run_model_forward(\n                 ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/api.py\", line 384, in _run_model_forward\n    output = self.forward(imgs, ex_t, in_t, feat_layers, infer_gs, use_ray_pose, ref_view_strategy)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/utils/_contextlib.py\", line 116, in decorate_context\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/api.py\", line 129, in forward\n    return self.model(\n           ^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1751, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1762, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/model/da3.py\", line 362, in forward\n    output = self.da3(\n             ^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1751, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1762, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/model/da3.py\", line 140, in forward\n    output = self._process_depth_head(feats, H, W)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/model/da3.py\", line 209, in _process_depth_head\n    return self.head(feats, H, W, patch_start_idx=0)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1751, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1762, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/model/dualdpt.py\", line 190, in forward\n    out_dict = self._forward_impl(\n               ^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/model/dualdpt.py\", line 230, in _forward_impl\n    fused_main, fused_aux_pyr = self._fuse(resized_feats)\n                                ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/model/dualdpt.py\", line 304, in _fuse\n    out = self.scratch.refinenet1(out, l1_rn)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1751, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1762, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/Depth-Anything-3/src/depth_anything_3/model/dpt.py\", line 457, in forward\n    y = self.out_conv(y)\n        ^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1751, in _wrapped_call_impl\n    return self._call_impl(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/module.py\", line 1762, in _call_impl\n    return forward_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/conv.py\", line 554, in forward\n    return self._conv_forward(input, self.weight, self.bias)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/torch/nn/modules/conv.py\", line 549, in _conv_forward\n    return F.conv2d(\n           ^^^^^^^^^\ntorch.OutOfMemoryError: CUDA out of memory. Tried to allocate 360.00 MiB. GPU 0 has a total capacity of 23.52 GiB of which 6.46 GiB is free. Process 6221 has 1.54 GiB memory in use. Process 8550 has 3.37 GiB memory in use. Including non-PyTorch memory, this process has 12.13 GiB memory in use. 12.00 GiB allowed; Of the allocated memory 11.55 GiB is allocated by PyTorch, and 166.45 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)\n",
+    "lifecycle_wall_s": 13.51386290100345
+  },
+  "expandable_unsupported_warning": false,
+  "error": "Traceback (most recent call last):\n  File \"/home/xingyu/3D_Recognization/reports/gpu-latency-budget-20261018/probe_da3.py\", line 202, in parent\n    raise RuntimeError('Worker/configuration failed; see worker.log/worker.json')\nRuntimeError: Worker/configuration failed; see worker.log/worker.json\n",
+  "parent_wall_s": 15.27189570000337
+}

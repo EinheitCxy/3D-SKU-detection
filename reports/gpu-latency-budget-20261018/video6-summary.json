@@ -1,0 +1,90 @@
+{
+  "scope": "GPU2/RTX4090D; fixed existing video6 generation; full CPU encoder2 followed by GPU encoder2; one completed run per arm plus one interrupted GPU attempt; OS cache/shared CPU load not isolated; not full pipeline",
+  "generation": "/home/xingyu/3D_Recognization/runtime/profiling-multivideo-20261018/video6/viewer/runs/afe181e3307343e4ab9b2f9227675631",
+  "timings": {
+    "native_export_s": 100.49787787400419,
+    "gpu_export_s": 71.57473602000391,
+    "saved_s": 28.923141854000278,
+    "reduction_percent": 28.779853332088944,
+    "native_script_to_ready_s": 103.82603845700214,
+    "gpu_script_to_ready_s": 75.0980477819976,
+    "gpu_post_ready_validation_s": 17.90385506900202,
+    "native_producer_window_s": 95.97996654895542,
+    "gpu_producer_window_s": 55.01127584297501,
+    "native_compact_write_join_s": 4.516136952035595,
+    "gpu_compact_write_join_s": 16.561592447033036,
+    "native_encoding_join_s": 0.9845952740724897,
+    "gpu_encoding_join_s": 12.629608490969986
+  },
+  "sample": {
+    "frames": 48,
+    "input_points": 49152,
+    "baked_points": 48560,
+    "raw_texels": 4856000,
+    "all_geometry_and_rgba_exact": true
+  },
+  "full": {
+    "frames": 48,
+    "input_points": 2500000,
+    "lod_selected": 2027824,
+    "batches": 2006,
+    "rgb_uploads": 48,
+    "depth_uploads": 48,
+    "baked": 2007183,
+    "triangles": 4014366,
+    "pages": 49,
+    "glb_bytes": 198805712,
+    "correctness": {
+      "left": "/home/xingyu/3D_Recognization/runtime/gpu-latency-budget-20261018/video6-native-01/native.glb",
+      "right": "/home/xingyu/3D_Recognization/runtime/gpu-latency-budget-20261018/video6-bake-full-02/probe/candidate.glb",
+      "document_associations_equal": true,
+      "image_count_equal": true,
+      "accessor_count_equal": true,
+      "accessor_bytes_equal": true,
+      "decoded_rgba_equal": true,
+      "compared_texels": 200736000,
+      "compared_rgb_channels": 602208000,
+      "alpha_texels_changed": 0,
+      "rgb_texels_changed": 0,
+      "opaque_rgb_texels_changed": 0,
+      "rgb_max_abs_change": 0,
+      "rgb_abs_change_sum": 0,
+      "both_opaque_texels": 96619581,
+      "both_opaque_rgb_channels": 289858743,
+      "opaque_rgb_max_abs_change": 0,
+      "opaque_rgb_abs_change_sum": 0,
+      "unpaired_images": 0,
+      "image_shape_mismatches": 0
+    }
+  },
+  "gpu_memory": {
+    "task_driver_sampled_peak_bytes": 476053504,
+    "allocator_allocated_peak_bytes": 38639616,
+    "allocator_reserved_peak_bytes": 54525952,
+    "timestamp_groups": 1852,
+    "max_timestamp_gap_s": 0.0559999942779541,
+    "invalid_rows": 0,
+    "max_supervisor_consume_delay_s": 11.099499331990955,
+    "interpretation": "Retrospective sampled task peak only; consumption lag invalidates any real-time stop or hard-cap guarantee; external residents excluded"
+  },
+  "da3": {
+    "status": "failed_cuda_oom",
+    "frames": 48,
+    "allocator_cap_bytes": 12884901888,
+    "sampled_task_peak_bytes": 13021216768,
+    "complete_output_or_numeric_comparison": false,
+    "reason": "12GiB allocator cap reached at depth-head conv2d 360MiB allocation; physical GPU still had free memory"
+  },
+  "excluded_attempt": {
+    "path": "video6-bake-interrupted-result.json",
+    "status": "invalid_monitor_evidence",
+    "reason": "Freshness check before queue consumption could reject queued samples; preserved and excluded from speed evidence"
+  },
+  "production_defaults_changed": false,
+  "full_pipeline_remeasured": false,
+  "accuracy_or_browser_reviewed": false,
+  "post_run_gpu2_residents_mib": {
+    "6221": 1580,
+    "8550": 3450
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "status": "complete",
+  "generation": "runtime/profiling-multivideo-20261018/video6/viewer/runs/afe181e3307343e4ab9b2f9227675631",
+  "command": [
+    "reports/torch-bake-fusion-20261018/native_export.py",
+    "--generation",
+    "runtime/profiling-multivideo-20261018/video6/viewer/runs/afe181e3307343e4ab9b2f9227675631",
+    "--out",
+    "runtime/gpu-latency-budget-20261018/video6-native-01"
+  ],
+  "encoder_workers": 2,
+  "projection_mode": "source_world",
+  "imports_wall_s": 3.3241562230105046,
+  "production_report": {
+    "output": "runtime/gpu-latency-budget-20261018/video6-native-01/native.glb",
+    "glb_bytes": 198805712,
+    "elapsed_seconds": 100.49764233099995,
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128,
+    "encoder_workers": 2,
+    "projection_mode": "source_world",
+    "delivery_mode": "streamed",
+    "bake": {
+      "source": "runtime/profiling-multivideo-20261018/video6/viewer/runs/afe181e3307343e4ab9b2f9227675631",
+      "global_id": null,
+      "input_point_count": 2500000,
+      "point_count": 2500000,
+      "selected_point_count": 2027824,
+      "lod": {
+        "input_count": 2500000,
+        "selected_count": 2027824,
+        "removed_count": 472176,
+        "eligible_blocks": 270491,
+        "reduced_blocks": 157392
+      },
+      "lod_removed_point_count": 472176,
+      "baked_surfel_count": 2007183,
+      "skipped_surfel_count": 20641,
+      "triangle_count": 4014366,
+      "atlas_pages": 49,
+      "glb_bytes": null,
+      "elapsed_seconds": 95.97996654895542,
+      "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+      "tile_size": 8,
+      "atlas_size": 2048,
+      "radius": 2.0,
+      "projection_mode": "source_world",
+      "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+    },
+    "compact": {
+      "geometry_bytes_before": 208747032,
+      "geometry_bytes_after": 120430980,
+      "texture_bytes_before": null,
+      "texture_bytes_after": 78247611,
+      "max_position_error": 0.0001221526957870811,
+      "max_uv_error": 7.180482014979006e-06,
+      "triangle_count": 4014366,
+      "output": "runtime/gpu-latency-budget-20261018/video6-native-01/native.glb",
+      "glb_bytes": 198805712,
+      "primitive_count": 145,
+      "source_bytes": null,
+      "elapsed_seconds": 4.516136952035595,
+      "encoder_workers": 2,
+      "encoder_queue_pages": 2,
+      "projection_mode": "source_world",
+      "encoding_join_seconds": 0.9845952740724897,
+      "main_thread_write_seconds": 3.531541677963105,
+      "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+    }
+  },
+  "export_wall_s": 100.49787787400419,
+  "process_to_export_ready_s": 103.82603845700214,
+  "resources": {
+    "cpu_user_s": 180.553282,
+    "cpu_system_s": 24.090294,
+    "lifetime_maxrss_kib": 1145032
+  }
+}

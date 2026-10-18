@@ -1,17 +1,13 @@
 # GPU latency under a 14 GB task budget
 
-更新：2026-10-18 23:57 CST。Rick允许其他流程使用GPU，条件是峰值不增加且不超过14GB。按此前任务进程口径，保守采用**本任务所有GPU PID同时合计≤14,000,000,000bytes**；其他人的resident单独记录，不修改。14GB／14GiB单位澄清待回复，本次成功结果低于两种上限。
+更新：2026-10-19 00:18 CST。按本任务GPU PID同时合计≤14,000,000,000bytes执行；外部resident单列，14GB／14GiB单位确认仍待回复。此处均为采样证据，不是瞬时硬cap。
 
-当前已确认：旧video3峰15132MiB＝14.777GiB来自DA3子进程。其Torch allocated峰12,251,022,848bytes，reserved峰15,422,455,808bytes；driver峰超预算，不能继续把它当符合14GB的基线。PVS不是此峰的来源。
+**本轮效果测试结束，无运行作业。** video6完整GPU GLB导出100.497878→71.574736s，减少28.923142s／28.779853%；document、全部accessor、49页／200736000个decoded RGBA texels精确一致。原48帧／250万点／LOD／长边／encoder2不变。任务driver采样峰476053504bytes，无缺页或解析失败。[汇总](video6-summary.json) · [实测说明](README.md)。
 
-工作范围：先只读定位DA3保留显存与GPU bake正式接入点；候选只写本目录，不改生产默认，不部署其他checkout。优先试不改变算术的allocator碎片治理，显式限制Torch allocator为12GiB，为CUDA context／非allocator分配留余量；不降低帧数、分辨率、精度或画质。allocator限制不等于总driver硬上限，必须另采样任务PID合计，检测超预算即停止，不能以allocated小于14GB冒充合规。
+完整GPU过程1852组／最大gap56ms，但supervisor消费延迟峰11.099499s；不能把记录峰值称为实时预算保障。首次尝试因dequeue前新鲜度检查中断，修复后新目录重测成功；中断证据保留，不用于速度结论。CPU控制仅跑一次。
 
-- Coordinator：预算、实验调度和判断，必要的有界DA3探针。
-- Medium GPU reviewer：DA3/autocast/allocator只读审计，da3_memory_audit.md。
-- Medium delivery reviewer：真实导出调用链和最小API/生命周期方案，delivery_integration_design.md。
+**DA3显存方案尚未全通过。** 之前video3／29帧在12GiB allocator下通过，driver峰12.918GB、15数组exact。本次video6／48帧触及allocatorcap OOM，driver记录峰13.021GB；没有完整输出或数组比较。未放宽cap、减少帧数／分辨率或降精度。[失败结果](video6-allocator-result.json)。
 
-本轮video3受限候选已完成：native expandable_segments、allocator限12GiB，任务driver采样峰**12.918GB／12.03125GiB**，reserved峰11.619GiB，15项完整输出数组精确相同。nominal50ms／实际最大间隔68ms，302组，无解析失败、不支持警告或预警触发；worker exit0，GPU reviewer独立复核PASS。它是单输入n1采样结果，不证明瞬时硬上限或所有输入可运行。[报告](README.md) · [结果](allocator-result.json)。
+生产默认、完整流水线和Docker部署均未改；本轮只修改实验脚本、结果和文档。原GPU2 PID6221／8550仍1580／3450MiB，测试进程已退出。两个medium agents完成输入／脚本／失败及最终结果的独立只读复核。
 
-上一轮GPU bake已验证GLB66.589→44.671s、最终交付一致，仍为实验。正式接入设计已完成：当前根视频入口只生成Viewer，新增显式GPU GLB交付须独立delivery及模型退出屏障；未改Docker／生产默认。video6历史活跃tensor13.689GB高于本候选12GiB allocator，尚未按此cap运行，不推广统一固定cap。
-
-Git main起点c0edc06；此前源码已commit/push，剩余原有cleanup／accuracy／camera工作保留。本轮事件见[JOURNAL.md](JOURNAL.md)。
+下一步候选：DA3降低活跃／同时驻留内存；GPU bake配合encoder4实测；监督端避免消费积压。尚未执行，不承诺收益。Rick追加要求将本轮实验与报告提交本地Git，本次不push；提交范围见[JOURNAL](JOURNAL.md)，当前性能入口为[profiling breakdown](../../docs/profiling_breakdown.md)。
