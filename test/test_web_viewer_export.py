@@ -41,6 +41,31 @@ def _classification() -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize("dtype", [np.int32, np.int64])
+@pytest.mark.parametrize(
+    "values", [[], [-1, -1], [-1, 0, 0, 2, 4, 4], [0, 0, 1, 2, 3, 4]]
+)
+def test_point_ranges_preserve_empty_and_missing_observations(dtype, values):
+    labels = np.asarray(values, dtype=dtype)
+    keys = [("11", index) for index in range(5)]
+    objects = {"11": {"instances": [{"removed": index == 2} for index in range(5)]}}
+    exporter._attach_point_index_ranges(objects, labels, keys)
+
+    for label, instance in enumerate(objects["11"]["instances"]):
+        assert instance["point_index_range"] == [
+            int(np.count_nonzero(labels < label)),
+            int(np.count_nonzero(labels <= label)),
+        ]
+        assert all(type(value) is int for value in instance["point_index_range"])
+        assert instance["removed"] == (label == 2)
+
+
+def test_point_ranges_without_observations_leave_objects_unchanged():
+    objects = {"11": {"instances": []}}
+    exporter._attach_point_index_ranges(objects, np.asarray([-1], dtype=np.int32), [])
+    assert objects == {"11": {"instances": []}}
+
+
 def _write_cache(path: Path) -> None:
     points = np.asarray(
         [[[[0.0, 0.0, 1.0], [1.0, 0.0, 1.0]], [[0.0, 1.0, 1.0], [1.0, 1.0, 1.0]]]],

@@ -857,12 +857,15 @@ def _valid_bbox(value: Any) -> bool:
 def _attach_point_index_ranges(
     objects: dict[str, Any], labels: np.ndarray, label_keys: list[tuple[str, int]]
 ) -> None:
-    for label, (global_id, instance_index) in enumerate(label_keys):
-        start = int(np.searchsorted(labels, label, side="left"))
-        end = int(np.searchsorted(labels, label, side="right"))
+    # Match the sorted label array's dtype to avoid repeated haystack coercion
+    # from Python integer queries, and search all observation boundaries at once.
+    queries = np.arange(len(label_keys), dtype=labels.dtype)
+    starts = np.searchsorted(labels, queries, side="left")
+    ends = np.searchsorted(labels, queries, side="right")
+    for (global_id, instance_index), start, end in zip(label_keys, starts, ends):
         objects[global_id]["instances"][instance_index]["point_index_range"] = [
-            start,
-            end,
+            int(start),
+            int(end),
         ]
 
 
