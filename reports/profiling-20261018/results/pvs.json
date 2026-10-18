@@ -1,0 +1,954 @@
+{
+  "mode": "pvs",
+  "status": "success",
+  "pid": 2327974,
+  "argv": [
+    "/home/xingyu/3D_Recognization/reports/profiling-20261018/diagnose_gpu.py",
+    "--mode",
+    "pvs",
+    "--base",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018",
+    "--out",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/pvs",
+    "--model-path",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3-model/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7"
+  ],
+  "interpretation": "Independent instrumented component diagnosis; never add to or replace main-run timings.",
+  "wall_semantics": "Thread-local nested wall spans. Self subtracts directly instrumented children only; instrumentation overhead remains. Recursive labels aggregate calls; CUDA event spans are separate and nonadditive with wall.",
+  "device": "NVIDIA GeForce RTX 4090 D",
+  "visible_devices": "GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7",
+  "threads": 4,
+  "allocator_scope": "process lifetime; no peak resets",
+  "checkpoint_tensors": 931,
+  "frames_detail": [
+    {
+      "frame": 0,
+      "boxes": 28,
+      "mask_shape": [
+        28,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.32396294600039255,
+        "inference_and_postprocess_s": 0.5320645049941959
+      }
+    },
+    {
+      "frame": 1,
+      "boxes": 30,
+      "mask_shape": [
+        30,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06273010800941847,
+        "inference_and_postprocess_s": 0.13292022500536405
+      }
+    },
+    {
+      "frame": 2,
+      "boxes": 48,
+      "mask_shape": [
+        48,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06253810600901488,
+        "inference_and_postprocess_s": 0.1582377830054611
+      }
+    },
+    {
+      "frame": 3,
+      "boxes": 25,
+      "mask_shape": [
+        25,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.062194705998990685,
+        "inference_and_postprocess_s": 0.17162747100519482
+      }
+    },
+    {
+      "frame": 4,
+      "boxes": 25,
+      "mask_shape": [
+        25,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06221273299888708,
+        "inference_and_postprocess_s": 0.1166651509993244
+      }
+    },
+    {
+      "frame": 5,
+      "boxes": 30,
+      "mask_shape": [
+        30,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06217210199974943,
+        "inference_and_postprocess_s": 0.12426150699320715
+      }
+    },
+    {
+      "frame": 6,
+      "boxes": 30,
+      "mask_shape": [
+        30,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06221554499643389,
+        "inference_and_postprocess_s": 0.12426844699075446
+      }
+    },
+    {
+      "frame": 7,
+      "boxes": 27,
+      "mask_shape": [
+        27,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06218869800795801,
+        "inference_and_postprocess_s": 0.11958773899823427
+      }
+    },
+    {
+      "frame": 8,
+      "boxes": 31,
+      "mask_shape": [
+        31,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06215190100192558,
+        "inference_and_postprocess_s": 0.12427574100729544
+      }
+    },
+    {
+      "frame": 9,
+      "boxes": 38,
+      "mask_shape": [
+        38,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06216240600042511,
+        "inference_and_postprocess_s": 0.14494068700878415
+      }
+    },
+    {
+      "frame": 10,
+      "boxes": 36,
+      "mask_shape": [
+        36,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06220299498818349,
+        "inference_and_postprocess_s": 0.13588734398945235
+      }
+    },
+    {
+      "frame": 11,
+      "boxes": 10,
+      "mask_shape": [
+        10,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.0622114920115564,
+        "inference_and_postprocess_s": 0.08672821101208683
+      }
+    },
+    {
+      "frame": 12,
+      "boxes": 2,
+      "mask_shape": [
+        2,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06221626899787225,
+        "inference_and_postprocess_s": 0.07221463200403377
+      }
+    },
+    {
+      "frame": 13,
+      "boxes": 5,
+      "mask_shape": [
+        5,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06216701099765487,
+        "inference_and_postprocess_s": 0.08659341900784057
+      }
+    },
+    {
+      "frame": 14,
+      "boxes": 24,
+      "mask_shape": [
+        24,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.062197210994781926,
+        "inference_and_postprocess_s": 0.10999556499882601
+      }
+    },
+    {
+      "frame": 15,
+      "boxes": 28,
+      "mask_shape": [
+        28,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.0630289079999784,
+        "inference_and_postprocess_s": 0.11721067300823051
+      }
+    },
+    {
+      "frame": 16,
+      "boxes": 34,
+      "mask_shape": [
+        34,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06307309900876135,
+        "inference_and_postprocess_s": 0.13722453301306814
+      }
+    },
+    {
+      "frame": 17,
+      "boxes": 23,
+      "mask_shape": [
+        23,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06216284100082703,
+        "inference_and_postprocess_s": 0.11331662000156939
+      }
+    },
+    {
+      "frame": 18,
+      "boxes": 28,
+      "mask_shape": [
+        28,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06239600499975495,
+        "inference_and_postprocess_s": 0.1162962329981383
+      }
+    },
+    {
+      "frame": 19,
+      "boxes": 19,
+      "mask_shape": [
+        19,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06214982899837196,
+        "inference_and_postprocess_s": 0.10120984399691224
+      }
+    },
+    {
+      "frame": 20,
+      "boxes": 15,
+      "mask_shape": [
+        15,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06219064300239552,
+        "inference_and_postprocess_s": 0.09451545499905478
+      }
+    },
+    {
+      "frame": 21,
+      "boxes": 16,
+      "mask_shape": [
+        16,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.062266225009807386,
+        "inference_and_postprocess_s": 0.09787095400679391
+      }
+    },
+    {
+      "frame": 22,
+      "boxes": 22,
+      "mask_shape": [
+        22,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06221213299431838,
+        "inference_and_postprocess_s": 0.11183246699511074
+      }
+    },
+    {
+      "frame": 23,
+      "boxes": 22,
+      "mask_shape": [
+        22,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.062170421006157994,
+        "inference_and_postprocess_s": 0.11189582900260575
+      }
+    },
+    {
+      "frame": 24,
+      "boxes": 23,
+      "mask_shape": [
+        23,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.062402652998571284,
+        "inference_and_postprocess_s": 0.1119537299964577
+      }
+    },
+    {
+      "frame": 25,
+      "boxes": 20,
+      "mask_shape": [
+        20,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.062218972001574,
+        "inference_and_postprocess_s": 0.10516677699342836
+      }
+    },
+    {
+      "frame": 26,
+      "boxes": 22,
+      "mask_shape": [
+        22,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06217908501275815,
+        "inference_and_postprocess_s": 0.11019540901179425
+      }
+    },
+    {
+      "frame": 27,
+      "boxes": 24,
+      "mask_shape": [
+        24,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.062188792988308705,
+        "inference_and_postprocess_s": 0.11468166699341964
+      }
+    },
+    {
+      "frame": 28,
+      "boxes": 26,
+      "mask_shape": [
+        26,
+        504,
+        280
+      ],
+      "native_metrics": {
+        "encoder_s": 0.06220041400229093,
+        "inference_and_postprocess_s": 0.13673489799839444
+      }
+    }
+  ],
+  "cuda_events": {
+    "pvs.encoder": {
+      "event_s": 2.063347709655762,
+      "calls": 29,
+      "max_s": 0.3235389404296875
+    },
+    "pvs.decoder": {
+      "event_s": 1.4399191293716438,
+      "calls": 187,
+      "max_s": 0.14270463562011718
+    }
+  },
+  "frames": 29,
+  "batch_size": 4,
+  "seed": 42,
+  "synchronization": "Encoder/decoder CUDA events are read only after native predict final sync. No new synchronization; no tensors retained by instrumentation.",
+  "input_contract": "Main-run manifests and same decoded source images, BICUBIC resize to DA3 processed shape, canonical manifest prompt order; no matching reordering/RNG restoration/cache publication/prefetch replay.",
+  "native_metrics": "inference_and_postprocess_s includes encoder_s and final np.stack; do not sum these metrics.",
+  "elapsed_s": 18.156797839008505,
+  "wall": {
+    "imports": {
+      "inclusive_s": 1.4684447219915455,
+      "self_s": 1.4684447219915455,
+      "calls": 1,
+      "max_s": 1.4684447219915455
+    },
+    "pvs.imports": {
+      "inclusive_s": 3.1062621330056572,
+      "self_s": 3.1062621330056572,
+      "calls": 1,
+      "max_s": 3.1062621330056572
+    },
+    "utils/sam31_pvs.py:load_model:L17": {
+      "inclusive_s": 0.00013942499936092645,
+      "self_s": 0.00013942499936092645,
+      "calls": 1,
+      "max_s": 0.00013942499936092645
+    },
+    "utils/sam31_pvs.py:load_model:L19": {
+      "inclusive_s": 0.7800652000005357,
+      "self_s": 0.7800652000005357,
+      "calls": 1,
+      "max_s": 0.7800652000005357
+    },
+    "utils/sam31_pvs.py:load_model:L22": {
+      "inclusive_s": 6.427655264997156,
+      "self_s": 6.427655264997156,
+      "calls": 1,
+      "max_s": 6.427655264997156
+    },
+    "utils/sam31_pvs.py:load_model:L31": {
+      "inclusive_s": 0.1492881090089213,
+      "self_s": 0.1492881090089213,
+      "calls": 1,
+      "max_s": 0.1492881090089213
+    },
+    "utils/sam31_pvs.py:load_model:L32": {
+      "inclusive_s": 1.1509982869029045e-06,
+      "self_s": 1.1509982869029045e-06,
+      "calls": 1,
+      "max_s": 1.1509982869029045e-06
+    },
+    "utils/sam31_pvs.py:load_model:L36": {
+      "inclusive_s": 0.0003297520015621558,
+      "self_s": 0.0003297520015621558,
+      "calls": 1,
+      "max_s": 0.0003297520015621558
+    },
+    "utils/sam31_pvs.py:load_model:L41": {
+      "inclusive_s": 0.00028205600392539054,
+      "self_s": 0.00028205600392539054,
+      "calls": 1,
+      "max_s": 0.00028205600392539054
+    },
+    "utils/sam31_pvs.py:load_model:L48": {
+      "inclusive_s": 0.21000648899644148,
+      "self_s": 0.21000648899644148,
+      "calls": 1,
+      "max_s": 0.21000648899644148
+    },
+    "utils/sam31_pvs.py:load_model:L49": {
+      "inclusive_s": 0.42889824000303634,
+      "self_s": 0.42889824000303634,
+      "calls": 1,
+      "max_s": 0.42889824000303634
+    },
+    "utils/sam31_pvs.py:load_model:L50": {
+      "inclusive_s": 3.220004145987332e-06,
+      "self_s": 3.220004145987332e-06,
+      "calls": 1,
+      "max_s": 3.220004145987332e-06
+    },
+    "pvs.model_load": {
+      "inclusive_s": 8.05290101400169,
+      "self_s": 0.056232106988318264,
+      "calls": 1,
+      "max_s": 8.05290101400169
+    },
+    "pvs.source_decode_processed_resize": {
+      "inclusive_s": 1.1697229909768794,
+      "self_s": 1.1697229909768794,
+      "calls": 29,
+      "max_s": 0.06431594499736093
+    },
+    "utils/sam31_pvs.py:predict:L58": {
+      "inclusive_s": 2.2839943994767964e-05,
+      "self_s": 2.2839943994767964e-05,
+      "calls": 29,
+      "max_s": 1.2200034689158201e-06
+    },
+    "utils/sam31_pvs.py:predict:L60": {
+      "inclusive_s": 0.0002471069892635569,
+      "self_s": 0.0002471069892635569,
+      "calls": 29,
+      "max_s": 2.5914996513165534e-05
+    },
+    "utils/sam31_pvs.py:predict:L61": {
+      "inclusive_s": 0.00011177500709891319,
+      "self_s": 0.00011177500709891319,
+      "calls": 29,
+      "max_s": 7.77900277171284e-06
+    },
+    "utils/sam31_pvs.py:predict:L63": {
+      "inclusive_s": 0.003581313998438418,
+      "self_s": 0.003581313998438418,
+      "calls": 29,
+      "max_s": 0.00028701400151476264
+    },
+    "utils/sam31_pvs.py:predict:L65": {
+      "inclusive_s": 2.1719984943047166e-05,
+      "self_s": 2.1719984943047166e-05,
+      "calls": 29,
+      "max_s": 1.0549993021413684e-06
+    },
+    "utils/sam31_pvs.py:predict:L69": {
+      "inclusive_s": 0.007111893006367609,
+      "self_s": 0.007111893006367609,
+      "calls": 29,
+      "max_s": 0.0006896490085637197
+    },
+    "utils/sam31_pvs.py:predict:L77": {
+      "inclusive_s": 0.43116034400009084,
+      "self_s": 0.43116034400009084,
+      "calls": 29,
+      "max_s": 0.01913520299422089
+    },
+    "utils/sam31_pvs.py:predict:L78": {
+      "inclusive_s": 0.0020731640106532723,
+      "self_s": 0.0020731640106532723,
+      "calls": 29,
+      "max_s": 8.542599971406162e-05
+    },
+    "utils/sam31_pvs.py:predict:L79": {
+      "inclusive_s": 0.003201869927579537,
+      "self_s": 0.003201869927579537,
+      "calls": 29,
+      "max_s": 0.00024293399474117905
+    },
+    "utils/sam31_pvs.py:predict:L82": {
+      "inclusive_s": 0.001922250070492737,
+      "self_s": 0.001922250070492737,
+      "calls": 29,
+      "max_s": 0.00031785400642547756
+    },
+    "utils/sam31_pvs.py:predict:L83": {
+      "inclusive_s": 2.1980973542667925e-05,
+      "self_s": 2.1980973542667925e-05,
+      "calls": 29,
+      "max_s": 2.643006155267358e-06
+    },
+    "pvs.encoder.host": {
+      "inclusive_s": 1.1106930630194256,
+      "self_s": 1.1106930630194256,
+      "calls": 29,
+      "max_s": 0.323417289997451
+    },
+    "pvs.decoder.host": {
+      "inclusive_s": 1.4280314218922285,
+      "self_s": 1.4280314218922285,
+      "calls": 187,
+      "max_s": 0.142576899001142
+    },
+    "utils/sam31_pvs.py:predict:L84": {
+      "inclusive_s": 3.790024238987826,
+      "self_s": 1.2512997540761717,
+      "calls": 29,
+      "max_s": 0.5300718049984425
+    },
+    "utils/sam31_pvs.py:predict:L126": {
+      "inclusive_s": 0.029595457992400043,
+      "self_s": 0.029595457992400043,
+      "calls": 29,
+      "max_s": 0.0021087999921292067
+    },
+    "pvs.predict": {
+      "inclusive_s": 4.278821645973949,
+      "self_s": 0.009725691081257537,
+      "calls": 29,
+      "max_s": 0.5532206229981966
+    }
+  },
+  "wall_contexts": {
+    "imports": {
+      "inclusive_s": 1.4684447219915455,
+      "self_s": 1.4684447219915455,
+      "calls": 1,
+      "max_s": 1.4684447219915455
+    },
+    "pvs.imports": {
+      "inclusive_s": 3.1062621330056572,
+      "self_s": 3.1062621330056572,
+      "calls": 1,
+      "max_s": 3.1062621330056572
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L17": {
+      "inclusive_s": 0.00013942499936092645,
+      "self_s": 0.00013942499936092645,
+      "calls": 1,
+      "max_s": 0.00013942499936092645
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L19": {
+      "inclusive_s": 0.7800652000005357,
+      "self_s": 0.7800652000005357,
+      "calls": 1,
+      "max_s": 0.7800652000005357
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L22": {
+      "inclusive_s": 6.427655264997156,
+      "self_s": 6.427655264997156,
+      "calls": 1,
+      "max_s": 6.427655264997156
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L31": {
+      "inclusive_s": 0.1492881090089213,
+      "self_s": 0.1492881090089213,
+      "calls": 1,
+      "max_s": 0.1492881090089213
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L32": {
+      "inclusive_s": 1.1509982869029045e-06,
+      "self_s": 1.1509982869029045e-06,
+      "calls": 1,
+      "max_s": 1.1509982869029045e-06
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L36": {
+      "inclusive_s": 0.0003297520015621558,
+      "self_s": 0.0003297520015621558,
+      "calls": 1,
+      "max_s": 0.0003297520015621558
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L41": {
+      "inclusive_s": 0.00028205600392539054,
+      "self_s": 0.00028205600392539054,
+      "calls": 1,
+      "max_s": 0.00028205600392539054
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L48": {
+      "inclusive_s": 0.21000648899644148,
+      "self_s": 0.21000648899644148,
+      "calls": 1,
+      "max_s": 0.21000648899644148
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L49": {
+      "inclusive_s": 0.42889824000303634,
+      "self_s": 0.42889824000303634,
+      "calls": 1,
+      "max_s": 0.42889824000303634
+    },
+    "pvs.model_load > utils/sam31_pvs.py:load_model:L50": {
+      "inclusive_s": 3.220004145987332e-06,
+      "self_s": 3.220004145987332e-06,
+      "calls": 1,
+      "max_s": 3.220004145987332e-06
+    },
+    "pvs.model_load": {
+      "inclusive_s": 8.05290101400169,
+      "self_s": 0.056232106988318264,
+      "calls": 1,
+      "max_s": 8.05290101400169
+    },
+    "pvs.source_decode_processed_resize": {
+      "inclusive_s": 1.1697229909768794,
+      "self_s": 1.1697229909768794,
+      "calls": 29,
+      "max_s": 0.06431594499736093
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L58": {
+      "inclusive_s": 2.2839943994767964e-05,
+      "self_s": 2.2839943994767964e-05,
+      "calls": 29,
+      "max_s": 1.2200034689158201e-06
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L60": {
+      "inclusive_s": 0.0002471069892635569,
+      "self_s": 0.0002471069892635569,
+      "calls": 29,
+      "max_s": 2.5914996513165534e-05
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L61": {
+      "inclusive_s": 0.00011177500709891319,
+      "self_s": 0.00011177500709891319,
+      "calls": 29,
+      "max_s": 7.77900277171284e-06
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L63": {
+      "inclusive_s": 0.003581313998438418,
+      "self_s": 0.003581313998438418,
+      "calls": 29,
+      "max_s": 0.00028701400151476264
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L65": {
+      "inclusive_s": 2.1719984943047166e-05,
+      "self_s": 2.1719984943047166e-05,
+      "calls": 29,
+      "max_s": 1.0549993021413684e-06
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L69": {
+      "inclusive_s": 0.007111893006367609,
+      "self_s": 0.007111893006367609,
+      "calls": 29,
+      "max_s": 0.0006896490085637197
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L77": {
+      "inclusive_s": 0.43116034400009084,
+      "self_s": 0.43116034400009084,
+      "calls": 29,
+      "max_s": 0.01913520299422089
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L78": {
+      "inclusive_s": 0.0020731640106532723,
+      "self_s": 0.0020731640106532723,
+      "calls": 29,
+      "max_s": 8.542599971406162e-05
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L79": {
+      "inclusive_s": 0.003201869927579537,
+      "self_s": 0.003201869927579537,
+      "calls": 29,
+      "max_s": 0.00024293399474117905
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L82": {
+      "inclusive_s": 0.001922250070492737,
+      "self_s": 0.001922250070492737,
+      "calls": 29,
+      "max_s": 0.00031785400642547756
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L83": {
+      "inclusive_s": 2.1980973542667925e-05,
+      "self_s": 2.1980973542667925e-05,
+      "calls": 29,
+      "max_s": 2.643006155267358e-06
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L84 > pvs.encoder.host": {
+      "inclusive_s": 1.1106930630194256,
+      "self_s": 1.1106930630194256,
+      "calls": 29,
+      "max_s": 0.323417289997451
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L84 > pvs.decoder.host": {
+      "inclusive_s": 1.4280314218922285,
+      "self_s": 1.4280314218922285,
+      "calls": 187,
+      "max_s": 0.142576899001142
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L84": {
+      "inclusive_s": 3.790024238987826,
+      "self_s": 1.2512997540761717,
+      "calls": 29,
+      "max_s": 0.5300718049984425
+    },
+    "pvs.predict > utils/sam31_pvs.py:predict:L126": {
+      "inclusive_s": 0.029595457992400043,
+      "self_s": 0.029595457992400043,
+      "calls": 29,
+      "max_s": 0.0021087999921292067
+    },
+    "pvs.predict": {
+      "inclusive_s": 4.278821645973949,
+      "self_s": 0.009725691081257537,
+      "calls": 29,
+      "max_s": 0.5532206229981966
+    }
+  },
+  "source_mapping": {
+    "utils/sam31_pvs.py:load_model:L17": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 17,
+      "end_line": 18,
+      "statement": "if torch.device(device).type != \"cuda\":"
+    },
+    "utils/sam31_pvs.py:load_model:L19": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 19,
+      "end_line": 19,
+      "statement": "from sam3.model_builder import build_sam3_multiplex_video_model"
+    },
+    "utils/sam31_pvs.py:load_model:L22": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 22,
+      "end_line": 30,
+      "statement": "with torch.cuda.device(device):"
+    },
+    "utils/sam31_pvs.py:load_model:L31": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 31,
+      "end_line": 31,
+      "statement": "state = torch.load(checkpoint, map_location=\"cpu\", weights_only=True, mmap=True)"
+    },
+    "utils/sam31_pvs.py:load_model:L32": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 32,
+      "end_line": 33,
+      "statement": "if \"model\" in state:"
+    },
+    "utils/sam31_pvs.py:load_model:L36": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 36,
+      "end_line": 40,
+      "statement": "weights = {"
+    },
+    "utils/sam31_pvs.py:load_model:L41": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 41,
+      "end_line": 47,
+      "statement": "weights.update("
+    },
+    "utils/sam31_pvs.py:load_model:L48": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 48,
+      "end_line": 48,
+      "statement": "model.load_state_dict(weights, strict=True)"
+    },
+    "utils/sam31_pvs.py:load_model:L49": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 49,
+      "end_line": 49,
+      "statement": "model = model.eval().to(device)"
+    },
+    "utils/sam31_pvs.py:load_model:L50": {
+      "path": "utils/sam31_pvs.py",
+      "function": "load_model",
+      "line": 50,
+      "end_line": 50,
+      "statement": "return model, len(weights)"
+    },
+    "utils/sam31_pvs.py:predict:L58": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 58,
+      "end_line": 59,
+      "statement": "if batch_size < 1:"
+    },
+    "utils/sam31_pvs.py:predict:L60": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 60,
+      "end_line": 60,
+      "statement": "boxes = np.asarray(boxes, dtype=np.float32)"
+    },
+    "utils/sam31_pvs.py:predict:L61": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 61,
+      "end_line": 62,
+      "statement": "if boxes.shape != (len(boxes), 4):"
+    },
+    "utils/sam31_pvs.py:predict:L63": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 63,
+      "end_line": 64,
+      "statement": "if not np.isfinite(boxes).all() or np.any(boxes[:, 2:] <= boxes[:, :2]):"
+    },
+    "utils/sam31_pvs.py:predict:L65": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 65,
+      "end_line": 68,
+      "statement": "if not len(boxes):"
+    },
+    "utils/sam31_pvs.py:predict:L69": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 69,
+      "end_line": 76,
+      "statement": "transform = v2.Compose("
+    },
+    "utils/sam31_pvs.py:predict:L77": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 77,
+      "end_line": 77,
+      "statement": "image_tensor = transform(image).unsqueeze(0).to(device)"
+    },
+    "utils/sam31_pvs.py:predict:L78": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 78,
+      "end_line": 78,
+      "statement": "box_tensor = torch.as_tensor(boxes, device=device)"
+    },
+    "utils/sam31_pvs.py:predict:L79": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 79,
+      "end_line": 81,
+      "statement": "box_tensor = box_tensor * box_tensor.new_tensor("
+    },
+    "utils/sam31_pvs.py:predict:L82": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 82,
+      "end_line": 82,
+      "statement": "torch.cuda.synchronize(device)"
+    },
+    "utils/sam31_pvs.py:predict:L83": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 83,
+      "end_line": 83,
+      "statement": "start = time.perf_counter()"
+    },
+    "utils/sam31_pvs.py:predict:L84": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 84,
+      "end_line": 125,
+      "statement": "with torch.autocast(\"cuda\", dtype=torch.bfloat16):"
+    },
+    "utils/sam31_pvs.py:predict:L126": {
+      "path": "utils/sam31_pvs.py",
+      "function": "predict",
+      "line": 126,
+      "end_line": 129,
+      "statement": "return np.stack(masks), scores, presence, raw_areas, {"
+    }
+  },
+  "rss_hwm_kib": 4913428,
+  "cpu_user_s": 23.420399,
+  "cpu_system_s": 4.447996,
+  "peak_allocated_bytes": 3242828800,
+  "peak_reserved_bytes": 3426746368,
+  "final_allocated_bytes": 2377416704
+}

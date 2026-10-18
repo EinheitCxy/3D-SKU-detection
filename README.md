@@ -2,11 +2,9 @@
 
 面向货架与地堆 SKU 的 DA3 三维重建、跨图匹配、去重、ground-footprint 计量和静态 Web Viewer。Python 负责生成可审计产物；Three.js 只加载、校验和交互展示已经发布的 bundle。
 
-详细的核心契约见 [docs/3d_core.md](docs/3d_core.md)，端到端测量结果摘要见 [docs/perf_baseline_20260826.md](docs/perf_baseline_20260826.md)。
+详细的核心契约见 [docs/3d_core.md](docs/3d_core.md)，统一 profiling 口径与阶段细分见 [docs/profiling_breakdown.md](docs/profiling_breakdown.md)。
 
-`perf/benchmark.py` 只采集 one-shot cold 数据：fd2–4 各自使用全新的隔离输出运行一次，
-浏览器也只导航一次；不调度、不保存、不汇总 warm-start case。classification 与
-reconstruction/matching 并行，并在 dedup 前 join；端到端统计使用真实 case wall time。
+当前 profiling 使用 GPU2 上六个视频，从帧就绪计到 Viewer ZIP 与 GLB 落盘；具体输入、边界、重叠和显存口径只在统一文档维护。本轮video3优化的实现、对照与推广决定见[优化记录](reports/latency-optimization-20261018/README.md)。`perf/benchmark.py` 可用于其他数据集诊断，其结果不并入该基线。
 
 ## 性能与显存
 
@@ -28,6 +26,11 @@ reconstruction/matching 并行，并在 dedup 前 join；端到端统计使用�
   CPU，共享置信度和深度视图，供两种导出复用。直接复用同一 reconstructor 时模型保留，
   `close()` 或退出 `with` 时释放模型；pipeline 使用 `with` 管理单次重建实例。
   DA3 保留子进程推理和 partial 缓存原子发布。
+
+- DA3 CPU加载通过`src/da3_model_loading.py`跳过将被checkpoint覆盖的大Linear/Conv权重随机填充。
+  加载前检查实际参数的key/shape/dtype覆盖并解析同一Parameter的共享别名，再执行原生严格加载；
+  bias、token、normalization和nonpersistent buffer保留原生初始化。普通runner与CPU standby共用此入口。
+  Viewer point ranges使用同dtype批量边界查询，点顺序和JSON半开区间不变。
 
 - ground-stack support-plane 的 deterministic RANSAC 以 16 个候选为一批计算距离，仍按原始
   seed、triplet 顺序、严格 tie、trial count 与 gate 串行决定结果；批化只增加有限 CPU 临时空间，

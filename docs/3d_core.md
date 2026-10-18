@@ -43,6 +43,8 @@ Apache-2.0；权重 `facebook/map-anything` 为 CC-BY-NC 4.0，
   不回退一次性路径。
 - `predictions.npz` 用未压缩 `np.savez` 写出（fd12 写入 0.18s/78.5 MiB，压缩版 5.3s/67.6 MiB）。
 
+DA3普通runner和CPU standby共用`src/da3_model_loading.py`：构造期间仅跳过元素数不少于65536的Linear/Conv weight随机Kaiming填充，保留bias、token、norm与buffer初始化。加载前以safetensors元数据检查key/shape/dtype以及真实Parameter身份别名，未覆盖或不匹配即拒绝；不使用meta、不改变模型精度、不静默改走另一种loader。实际Nested checkpoint有1383个state键/1377个独立参数，6个缺省键是共享LayerNorm别名而非漏载；1个nonpersistent buffer由构造器初始化。逐项覆盖及video3验证见[优化报告](../reports/latency-optimization-20261018/README.md)。
+
 候选宿主环境必须由以下命令创建，且 `OUTPUT_DIR` 必须不存在。脚本使用冻结的根锁文件，
 不会修改根 `.venv` 或 `Depth-Anything-3/.venv`，然后执行 `uv pip check` 和 DA3/SAM3
 源码 import smoke。候选 venv 使用 uv 的 relocatable 模式，验收后才可安全重命名为
@@ -171,10 +173,7 @@ Minimal Viewer 不包含 footprint、evidence、hash/provenance、source digest 
 
 ## 性能基线
 
-性能采集器只接受 one-shot cold 口径：fd2–4 各自从空的隔离 `save_root` 完整运行一次，
-classification 与 reconstruction/matching 并行并在 dedup 前 join，浏览器只执行一次
-cache-disabled 导航。历史基线摘要见 [20260826T084815Z](perf_baseline_20260826.md)：
-三个 case 全部完成，平均真实 wall time 为 396.943s；footprint 平均 239.435s，是当前主瓶颈。
+唯一总耗时及阶段组成见[统一 profiling](profiling_breakdown.md)：包含2026-10-18 GPU2六视频同次细分，以及后续固定video3优化前后对照。计时从帧就绪至本地ZIP/GLB写入返回；不同仪器模式和输入不混算提速率。独立组件诊断不与主跑相加，准备线程的时间重叠不等于净收益。
 
 ## 回归验证
 
@@ -225,6 +224,8 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 `run_complete_pipeline(..., surfel_output_dir=...)` 在 DA3 缓存就绪后启动单个 CPU worker：加载缓存、计算原始 U/V 和深度、编码 JPEG 与相机元数据。2026-10-17 的源码扩展还会在同一个有效点域提前计算 NN 中位数和 SOR 原始保留 mask；这两项不依赖商品标签。matching/dedup 继续运行；dedup 完成后才合并最终 labels、应用 SOR 商品保护与保留比例 guard、执行聚类和地面过滤、预算采样、生成 point ranges 并发布 `CURRENT`。缓存复用也走同一路径；准备结果绑定同一缓存、源图目录、纹理尺寸、tuning、有效点顺序和过滤配置，错配直接报错。
 
 `prepare_web_viewer_geometry(..., filter_config=...)` 与 `export_web_viewer_bundle(..., filter_config=..., prepared=...)` 提供对应 Python 接口，准备和最终阶段须使用相同过滤配置。独立 exporter 仍可串行执行；`prepare_filter=False` 显式推迟 NN/SOR。方向拟合、商品保护、DBSCAN 和地面删除仍在最终阶段；默认全量估计域及原有保护门槛不变。提前准备会增加原始网格、点云和纹理的驻留时间。新增同域复用、保护与输出对齐等功能测试已通过；真实全场景输出对照、matching 重叠收益与峰值 RSS 尚待验证。
+
+2026-10-18新增显式`PointCloudFilterConfig(ground_proposal_max_points=50_000)`候选抽样实验，最终仍在完整当前域验证，默认`0`不变。该实验改变平面选择，不能作为等价加速；video3发现候选与摆正地面近乎垂直，尚未满足推广依据。point ranges已经改为同dtype批量查询，保留原稳定排序、空区间及JSON结构。[本轮记录](../reports/latency-optimization-20261018/README.md)区分已采用与实验选项。
 
 完整循环、各个门槛、Open3D 内部邻域计算，以及提前抽样会改变哪些判断，见 [Viewer 导出算法详解](viewer_export_algorithm.md)。本轮实现、预算和验收状态见 [2026-10-17 计划](../reports/viewer-latency-20261017/PLAN.md)；不以历史组件耗时预测此次实际收益。
 

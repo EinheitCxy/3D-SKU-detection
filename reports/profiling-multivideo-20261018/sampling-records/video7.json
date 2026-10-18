@@ -1,0 +1,28 @@
+{
+  "video_id": 7,
+  "video_frame_indices": [
+    0,
+    45,
+    90,
+    135,
+    180,
+    225,
+    270,
+    315,
+    360,
+    405,
+    450,
+    495,
+    540,
+    585,
+    630,
+    675
+  ],
+  "sampling_basis": {
+    "source": "Coordinator-selected explicit experimental recipe for the user's 2026-10-18 multivideo latency request; JSON count matches 0-start/1.5s full-video sampling at 30fps",
+    "type": "experimental_recipe_not_original_timestamp_evidence",
+    "interval_s": 1.5,
+    "detection_alignment_verified": false,
+    "limitation": "No original timestamps available; performance applies to this declared reconstruction recipe, not validated matching accuracy"
+  }
+}

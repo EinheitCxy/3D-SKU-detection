@@ -1,222 +1,401 @@
-# 统一 profiling：GPU0 / video3 / 29 帧
+# 最新 profiling：GPU2 / 多视频 / 2026-10-18
 
-本文件是项目唯一 profiling 入口。正式基线为 **267.565 秒**，Viewer 在 **121.214 秒**可用，ZIP 在 **129.371 秒**就绪。原始运行和本轮独立组件诊断都位于 [同一记录目录](../runtime/video3-full-profile-20261016/)，不再引用旧 fd2–4、旧 Docker 或旧组件计时作为性能基线。
+本文件是项目唯一当前 profiling 入口。**最新优化前后对照见第12节：GPU2/video3完整253.139→186.894秒，最终GLB内容完全一致。** 第1–11节保留修改前`bf9bde8`的六视频测量：video1/3/4/5/6/7，共161帧/6508检测，完整平均229.251秒、Viewer119.266秒、ZIP127.242秒；该批内部数字均来自各视频同一次完整运行。后续优化已修改本地源码与默认atlas worker数，但没有修改服务或发布。新单视频对照不替换旧六视频均值。
 
-最新优化：RGB 切片延展已通过新的完整 video3 对照、独立评估和集成测试；两对完整 GLB 导出分别节省 **36.895 s、31.113 s**。见[已接受结果](../reports/cpu-latency-20261016/rgb-full-validation/README.md)。尚未重跑修改后的完整流水线，上述全链路基线保持原值。
+## 1. 六项指标的平均值与逐视频结果
 
-点数变化、完整算法循环、Open3D 原生实现与提前下采样的依赖见[Viewer / GLB 导出算法与采样诊断](viewer_export_algorithm.md)。该文是源码分析，没有新增耗时实验。
+| 指标 | 平均（n=6） | 中位数 | 最小–最大 | 单位 |
+| --- | ---: | ---: | ---: | ---: |
+| 完整流水线 | 229.251 | 211.890 | 147.990–380.629 | 秒 |
+| Viewer 可用（export 返回） | 119.266 | 108.599 | 83.169–197.781 | 秒 |
+| ZIP 就绪（累计） | 127.242 | 116.629 | 89.735–207.433 | 秒 |
+| GLB 导出自身 | 101.179 | 94.080 | 57.584–172.135 | 秒 |
+| 任务 driver 显存采样峰 | 14.730 | 14.370 | 13.664–17.227 | GiB |
+| 最终 Viewer 点数 | 1,764,058.5 | 1,730,111.5 | 837,531–2,500,000 | 点 |
 
-2026-10-17 的完整 atlas CPU 对照已通过：2 线程为 70.663/70.555 秒，4 线程为 69.699/69.908 秒，相对各自串行控制均约节省 37%，完整输出一致。该结果使用固定 video3 generation、4 个逻辑 CPU 和共同页面捕获，属于导出器单场景证据；默认仍为 1，以上全链路正式基线不变。见[结果与独立复核](../reports/viewer-latency-20261017/STATUS.md#complete-atlas-comparison)。NN/SOR 提前准备、DBSCAN-off/proxy、背景提前候选开关与默认关闭辅助图片的实现状态也在该记录中；几何候选尚未完成真实场景耗时/视觉验收。
+| video | 帧 / 检测 | 完整秒 | Viewer累计秒 | ZIP累计秒 | GLB自身秒 | 任务峰GiB | Viewer点 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 21 / 342 | 186.913 | 96.550 | 104.418 | 81.582 | 14.125 | 1,497,310 |
+| 3 | 29 / 711 | 236.866 | 120.553 | 129.385 | 106.577 | 14.777 | 2,402,589 |
+| 4 | 28 / 1381 | 242.746 | 120.896 | 128.840 | 113.138 | 14.615 | 1,962,913 |
+| 5 | 19 / 899 | 180.361 | 96.645 | 103.640 | 76.055 | 13.971 | 1,384,008 |
+| 6 | 48 / 2780 | 380.629 | 197.781 | 207.433 | 172.135 | 17.227 | 2,500,000 |
+| 7 | 16 / 395 | 147.990 | 83.169 | 89.735 | 57.584 | 13.664 | 837,531 |
 
-## 固定口径
+均值为每个成功视频等权算术平均，非按帧或检测数加权。每视频只跑一次，是不同场景的横截面，不是同视频重复或热服务延迟分布；不提供P95。任务峰均值与最大video任务峰不同，显存峰不能按时间相加。平均点数只是规模统计，不能实际生成一份“平均点云”。
 
-- 输入：`fd-videos/3.json` 的 29 帧、711 个检测/分类；对应视频时刻 0、1.5…42.0 秒。旧独立 JPEG 已清理，本轮从视频 frame 0、45…1260 还原 JPEG quality=95，1080×1920。输入准备 2.345 秒单列，不计入主链路。
-- 计算：DA3NESTED-GIANT-LARGE-1.1，本地 snapshot；自动内参，processed grid H=504/W=280；SAM3.1 PVS、batch=4、29 个 reference、pairing=next。不重跑 detector/classifier，分类由输入提供。
-- 输出截止点：本地完整 Surfel generation、Viewer ZIP 和 scene GLB 写入返回。无 fsync，表示进程可见文件完成，不承诺物理介质同步完成；不含 COS、HTTP/BSON、浏览器下载/渲染、人工准确率评估和辅助 bbox 图。
-- 设备/环境：GPU0 RTX 4090 D 49,140 MiB；OMP/OpenBLAS/MKL=4；Torch 2.7.1、NumPy 1.26.4、Open3D 0.19.0。新进程、新 DA3/PVS 输出缓存；本机模型文件和 OS 页缓存保留。GPU 与 CPU 为共享主机，未控制其他任务。
-- 实现：`c1af83a` 加本次运行时的 Surfel 提前准备改动，实际差异见 [source-at-run.patch](../runtime/video3-full-profile-20261016/source-at-run.patch)，运行前后这三份核心源文件差异未变。没有把未部署代码称作在线服务实测。
-- 样本数：正式全链路一次；细分诊断各一次。独立诊断用于归因，保留自身总量，**不按比例塞回正式基线，也不由它们拼出另一套总耗时**。
+本轮 requested=7（有JSON的1–7），attempted=6，success=6；失败：`[]`；未运行：`[{"video_id": 2, "status": "awaiting_sampling"}]`。video8缺同名检测JSON，排除同协议集合。video2有12帧，可能1.5s前段或2s全程，原始时间戳缺失、尚未确认，不混入均值。
 
-## 正式基线：可相加主表
+采样协议：video3沿用既有0起1.5s recipe；1/4/5/6/7按JSON帧数吻合的0起1.5s建立显式实验recipe，**没有验证原检测与画面完全对齐**。因此这些是该recipe下的性能结果，不作匹配准确率或画质结论。全部JSON帧保留，没有为通过测试截断长视频；输入依据、源frame index和预处理时间见每case input.json及[输入说明](../reports/profiling-multivideo-20261018/inputs.md)。
 
-| 组成 | 秒 | 说明 |
-|---|---:|---|
-| DA3 重建 | 24.561 | 含子进程启动、导入、加载、推理、NPZ、退出与父进程验证 |
-| PVS + matching | 17.187 | 完整 29 refs；含首次 PVS 模型准备 |
-| Dedup | 0.134 | 分类输入来自 3.json |
-| 最终 Surfel 导出 | 74.376 | 方向、缩略图、标签、过滤、采样、point ranges、发布 |
-| ZIP | 2.752 | 8 个二进制 DEFLATE level 1；JSON/JPEG STORED |
-| GLB | 137.389 | LOD、烘焙、量化和最终写入 |
-| 导入、启动退出与未单列间隙 | 11.164 | 含 core/delivery 包导入和外层采样等待 |
-| 合计 | 267.565 | 唯一全链路基线 |
+| 环境与范围 | 本次条件 |
+|---|---|
+| 代码 | 本地main `bf9bde8`，生产源码/默认参数未改；原有dirty工作保留 |
+| GPU | 物理GPU2，RTX4090D，24564MiB，UUID `GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7`；进程内逻辑cuda:0 |
+| 共享负载 | 既有两compute进程约5030MiB保留；主机CPU共享，未设置affinity |
+| 模型 | DA3NESTED-GIANT-LARGE-1.1，同snapshot `b2359bdf726fb44ef62acca04d629dcf158053e7`；SAM3.1 PVS |
+| 软件 | Python3.11.11，Torch2.7.1+cu126，NumPy1.26.4，Open3D0.19.0，Pillow12.3.0；复用同test-env，未安装/升级 |
+| CPU | 40逻辑/20物理核；OMP/OpenBLAS/MKL环境=4，Torch interop默认未强制修改 |
+| 输入 | 1080×1920 JPEG quality95、原JSON canonical分类；504×280 DA3 grid；全部F帧一次推理 |
+| 主计时起止 | 启动core进程之前的单调时钟 → delivery退出被观察到；含导入/进程生命周期/必要文件写入/轮询间隙 |
+| 输出截止 | 本地Viewer generation/CURRENT、ZIP和GLB；写入返回，无fsync承诺，无浏览器首屏承诺 |
 
-提前准备 2.999 秒，与 matching 重叠 2.999 秒，不另加。以下时间线保留原始起止时点；当前实现并未在 matching 前发布完整 Viewer。
+根失效`.venv`和旧HF DA3链接未改。使用现成独立uv环境、复用上一轮从本地项目镜像恢复的同模型snapshot；本轮没有下载/另复制权重或启动模型服务。
 
-![正式运行时间线](../runtime/video3-full-profile-20261016/timeline.svg)
+[均值JSON](../reports/profiling-multivideo-20261018/aggregate.json) · [所有内部计时表](../reports/profiling-multivideo-20261018/INTERNALS.md) · [全部内部均值CSV](../reports/profiling-multivideo-20261018/detail-averages.csv) · [逐视频全部指标CSV](../reports/profiling-multivideo-20261018/per-video-metrics.csv) · [逐reference表](../reports/profiling-multivideo-20261018/references.csv) · [复现与逐视频JSON](../reports/profiling-multivideo-20261018/README.md)
 
-## 1. DA3：冷进程主要花在建网络
+## 2. 完整流水线、Viewer和ZIP：同一时间线的三种前缀
 
-正式 reconstruction 为 24.561 秒；其中原运行测得 CPU 构造/加载 12.905 秒、inference API 2.453 秒、反投影 0.103 秒、NPZ 写入 0.218 秒。
+| 互斥阶段 | 完整平均秒 | Viewer前缀贡献秒 | ZIP前缀贡献秒 |
+| --- | ---: | ---: | ---: |
+| core imports + 仪器安装 | 5.016 | 5.016 | 5.016 |
+| DA3重建 | 24.199 | 24.199 | 24.199 |
+| PVS + matching | 31.871 | 31.871 | 31.871 |
+| Dedup | 0.248 | 0.248 | 0.248 |
+| 最终Viewer导出 | 57.844 | 57.844 | 57.844 |
+| delivery imports | 3.552 | 0.000 | 3.552 |
+| delivery仪器安装 | 0.042 | 0.000 | 0.042 |
+| ZIP打包 | 2.214 | 0.000 | 2.214 |
+| GLB导出 | 101.179 | 0.000 | 0.000 |
+| 进程启动/退出及其余间隙 | 3.087 | 0.088 | 2.256 |
 
-下表是补做的独立 DA3 组件诊断（进程内 24.565 秒），边界包含嵌套，未把子项再加到父项：
+每列可相加，各列是同一工作量的不同截止点，**不能将三列再相加**。Viewer/ZIP是从主起点起的累计时间；GLB是自身耗时。Viewer就绪以后仍有core退出、delivery导入/启动和ZIP打包，因此ZIP累计值不是Viewer加GLB。精确单调时钟与各milestone前缀闭合误差保留在逐视频JSON。
 
-| 组成 | 秒 | 说明 |
-|---|---:|---|
-| Python/Torch + DA3 依赖导入 | 4.802 | 诊断脚本窗口 |
-| JPEG decode/RGB | 0.559 | 29 帧 |
-| 网络构造 | 13.102 | 含默认参数初始化 |
-| safetensors 打开/映射 | 0.131 | 不等于完整物理磁盘读取 |
-| checkpoint 赋值 | 0.574 | 可包含 mmap 触页 |
-| 模型搬 GPU | 1.983 | 原生 model.to，未新增同步 |
-| 输入预处理 | 0.223 | resize/normalize/stack |
-| 输入 H2D enqueue | 0.013 | 异步提交和 CPU 工作，不是 CUDA copy events |
-| 网络 forward 原生同步边界 | 2.240 | 含现有同步/队列排空边界 |
-| 输出 D2H/Prediction | 0.012 | CPU 数组转换 |
-| processed RGB 整理 | 0.173 | denormalize/clip/uint8 |
-| 深度反投影 | 0.092 | world_points |
-| NPZ 数组准备/open/close | 0.045 | 参数求值与外层保存差额 |
-| NPZ 序列化/写入 | 0.230 | np.savez；无 fsync |
+准备线程平均 14.131 秒，其中与matching交集 14.130 秒，matching之外 0.001 秒。它是并发支线，未额外加到上表。重叠区间不能等价为净节省；NN/SOR绑定的GIL机制与PVS构造膨胀见第11节。
 
-网络构造 13.102 秒与权重打开/赋值约 0.705 秒应分开解释。不能把整个模型准备叫作磁盘读权重，也不能把完整 reconstruction 叫 GPU forward。常驻/延迟初始化的收益仍需单独实现和验证。
+## 3. DA3内部：构造、权重、推理、反投影、保存
 
-## 2. Matching / PVS：正式运行内部组成
+DA3父阶段平均 24.199 秒，含子进程导入、runner、父进程必要检查和退出。下表子项有明确包含关系，不能把父项和子项相加。
 
-| 组成 | 秒 | 说明 |
-|---|---:|---|
-| sam3_mask 总区间 | 12.327 | 含下面模型加载、predict、cache 边界；本行不与它们相加 |
-| ↳ PVS 模型准备 | 7.949 | 首次进程加载 |
-| ↳ 29 帧 predict | 4.057 | 711 框；encoder 与 decoder/postprocess |
-| ↳ 其余 mask/cache 包装 | 0.321 | 差额：cache 校验/发布与调用包装；未逐项拆开 |
-| 参考物体点采样 | 1.019 | 711 次 |
-| 目标框命中与选择 | 1.603 | 697 次 |
-| world→camera | 0.118 | 697 次 |
-| 3D→2D 投影 | 0.227 | 697 次 |
-| 投影后处理 | 0.191 | 697 次 |
-| 数据加载 | 0.197 | 29 次 |
-| 场景数据构造 | 0.185 | 首次 cache 数据转 Tensor |
-| transforms 构造 | 0.004 | 29 次 |
-| 结果后处理 | 0.014 | 29 次 |
+| 同次运行的内部区间 | 平均 wall 秒 | 平均调用次数 | n | 做什么 / 包含关系 |
+| --- | ---: | ---: | ---: | ---: |
+| 导入与AST仪器安装 | 5.082 | 1.0 | 6 | 在重建子进程内；含依赖导入和插桩准备 |
+| JPEG读取 / RGB | 0.436 | 1.0 | 6 | 逐全部F帧；PIL decode/convert |
+| from_pretrained CPU总段 | 12.203 | 1.0 | 6 | 父区间，含构造与权重加载 |
+| ↳ 网络构造 | 11.320 | 1.0 | 6 | 创建Nested两分支和head，含默认参数初始化 |
+| ↳ safetensors load_model | 0.881 | 1.0 | 6 | 含下面load_file和assignment |
+| 　↳ load_file | 0.110 | 1.0 | 6 | 打开/mmap；不等于全部物理磁盘读取 |
+| 　↳ state assignment | 0.638 | 1.0 | 6 | 参数赋值及可能的页触发 |
+| 模型to(cuda) | 1.878 | 1.0 | 6 | 原生调用wall；没有额外同步 |
+| inference API | 2.452 | 1.0 | 6 | 父区间，含预处理、forward、输出整理 |
+| ↳ preprocess | 0.182 | 1.0 | 6 | resize/normalize/stack |
+| ↳ 输入整理/H2D提交 | 0.010 | 1.0 | 6 | 主机调用，不称completed-copy CUDA时间 |
+| ↳ forward原生同步区间 | 2.078 | 1.0 | 6 | 保留算法原有前后synchronize |
+| ↳ Prediction / D2H | 0.013 | 1.0 | 6 | 转CPU Prediction数组 |
+| ↳ processed RGB | 0.150 | 1.0 | 6 | NHWC、反归一化、clip、uint8 |
+| CPU反投影 | 0.085 | 1.0 | 6 | 逐F帧K^-1 p d，再C2W |
+| NPZ整条保存with语句 | 0.218 | 1.0 | 6 | 包含参数astype等求值及函数内保存 |
+| ↳ np.savez函数内 | 0.183 | 1.0 | 6 | 未压缩序列化/写入；无fsync承诺 |
 
-`batch_all_refs_total`、`per_ref_total`、`process_images` 属于嵌套父区间，不能与上表再次求和。未列出的 parser、几何判断、文件写入和调度保留在 matching 总量中，不能全部归为 GPU forward。
+一次输入全部F帧；processed grid为 `[F,504,280]`，不是逐帧独立重建。Nested顺序跑anyview和metric分支，再做metric scaling/depth alignment/sky处理。构造时间含参数默认初始化，不能叫作全部“读权重耗时”。source图像读取、NPZ参数astype、父子进程间隙均有各自范围，不用np.load打开archive的时间代表完整解包。
 
-补充 PVS 组件诊断：模型准备 8.772 秒；native 模型构造约 7.026 秒，checkpoint mmap 0.184 秒、严格赋值 0.247 秒、eval/to GPU 0.471 秒。
+## 4. Matching与PVS：逐ref、逐框batch
 
-29 帧/711 框 predict 共 4.826 秒：图像 transform/image H2D 0.664 秒、encoder 2.169 秒、decoder/掩码后处理/最终 stack 1.968 秒。原生 `inference_and_postprocess_s` 包含 encoder 和 stack；187 个 decoder batch 的 CUDA events 合计 1.620 秒，也是其中子区间，不能相加或用 CPU wall 相减推导“纯 CPU 后处理”。
+`pairing_3d=next` 环形，共F个reference；每ref只配下一帧，最后回第0帧。全局RNG关键区串行，首次PVS模型构造发生在本次请求内。box batch=4，不同视频帧数/框数不同。
 
-诊断复用了 baseline processed bbox 和图像预处理，未重放整条 matching 的 prefetch、cache、重排与 RNG 边界；711 masks 的数量完整，但这不是新增的 matching 准确率或 mask 逐像素等价结论。完整模型准备表和同步说明见 [GPU 细分记录](../runtime/video3-full-profile-20261016/diagnostics/gpu/REPORT.md)。
+| Matching计时区间 | 平均秒 | 平均次数 | 含义 |
+| --- | ---: | ---: | ---: |
+| SAM masks | 24.103 | 26.8 | 父区间，含首次加载、predict及cache包装 |
+| 数据读取 | 0.518 | 26.8 | 每ref输入 |
+| 场景Tensor构造 | 0.152 | 1.0 | 首ref场景准备 |
+| transform构造 | 0.004 | 26.8 | 每ref camera transforms |
+| 参考mask点采样 | 1.492 | 1,084.7 | 每检测最多70点 |
+| world→camera | 0.184 | 1,070.8 | 含设备等待 |
+| 3D→2D投影 | 0.361 | 1,070.8 | 投影到next帧 |
+| 投影后处理 | 0.332 | 1,070.8 | 有效域等 |
+| 目标bbox匹配 | 3.110 | 1,070.8 | 候选采样、SVD/进深和评分 |
+| 唯一性 | 0.001 | 25.2 | 每对约束 |
+| 结果后处理 | 0.014 | 26.8 | 匹配结果结构 |
+| process_images父段 | 30.572 | 26.8 | 嵌套父区间，不能再加到以上子项 |
 
-## 3. Dedup：当前占比很小
+| 同次运行的内部区间 | 平均 wall 秒 | 平均调用次数 | n | 做什么 / 包含关系 |
+| --- | ---: | ---: | ---: | ---: |
+| 首次模型加载 | 18.680 | 1.0 | 6 | 一次/视频；与NN/SOR准备线程重叠 |
+| ↳ model_builder导入 | 0.663 | 1.0 | 6 | 动态导入 |
+| ↳ CPU模型构造 | 16.979 | 1.0 | 6 | 位于cuda.device作用域内；不等于读取权重 |
+| checkpoint mmap | 0.155 | 1.0 | 6 | weights_only / mmap |
+| 严格state assignment | 0.252 | 1.0 | 6 | 只保留tracker和共享backbone权重 |
+| eval/to(cuda) | 0.581 | 1.0 | 6 | 实际设备搬运 |
+| 全部predict API | 4.850 | 26.8 | 6 | 每图一次encoder，box batch=4 |
+| 图像transform/H2D语句 | 0.444 | 26.8 | 6 | 1008×1008，归一化后提交GPU |
+| box Tensor构造 | 0.003 | 26.8 | 6 | 缩放语句L79另有AST记录 |
+| encoder主机调用 | 1.258 | 26.8 | 6 | enqueue wall，不能视作GPU完成时间 |
+| decoder主机调用 | 1.946 | 281.2 | 6 | ceil(boxes/4)批，不同视频批数不同 |
+| logits上采样 | 0.010 | 281.2 | 6 | bilinear到源输入图大小 |
+| finite检测 | 0.063 | 281.2 | 6 | 可能引发GPU→CPU依赖 |
+| mask阈值/D2H | 0.064 | 281.2 | 6 | CPU numpy |
+| 按框裁剪mask | 0.069 | 1,084.7 | 6 | 逐box |
+| scores D2H | 0.024 | 281.2 | 6 | CPU list |
+| presence D2H | 0.011 | 281.2 | 6 | CPU list |
+| 最终同步 | 0.001 | 26.8 | 6 | 保留原算法边界 |
+| stack/返回 | 0.040 | 26.8 | 6 | 含np.stack；native总量包含encoder |
 
-正式运行 0.134 秒。独立 CPU 诊断 0.155 秒中：解析 matches 0.004 秒，构造 global mapping 0.025 秒，生成带 global ID 的检测数据 0.036 秒，原子发布 global mapping/SKU pair 0.031 秒，其余为输入解析与逐帧输出。输出仍为 385 个 global IDs、711 observations；数量完整不等于准确率。
+PVS native encoder平均 1.941 秒；native inference_and_postprocess平均 4.384 秒，后者包含encoder。`mask_postprocess`原有空span不作为有效工作；`cache_npz_load`只覆盖archive打开，不代表完整NPZ读取。所有ref的具体wall、boxes、首次模型加载与native区间在CSV中，不能把某一个后续ref的耗时当作整次热请求。
 
-## 4. Surfel 提前准备与最终导出
+## 5. 几何准备、最终Viewer、Dedup
 
-提前准备的正式组成：
+| 同次运行的内部区间 | 平均 wall 秒 | 平均调用次数 | n | 做什么 / 包含关系 |
+| --- | ---: | ---: | ---: | ---: |
+| 几何准备总段 | 14.131 | 1.0 | 6 | 后台线程；不能加到matching主表 |
+| cache读取/校验 | 0.185 | 1.0 | 6 | 全native grid |
+| U/V与depth | 1.790 | 1.0 | 6 | 相邻grid差分与连续性 |
+| raw filter准备 | 11.034 | 1.0 | 6 | snapshot/cloud/NN/median/SOR raw mask |
+| ↳ NN原生 | 3.326 | 1.0 | 6 | 建索引、每点最近邻；包含在prepare中 |
+| ↳ SOR原生 | 5.736 | 1.0 | 6 | k=20/std=2；尚未套用商品保护 |
+| 源照片/相机纹理 | 0.903 | 1.0 | 6 | JPEG与affine/camera metadata |
 
-| 组成 | 秒 | 说明 |
-|---|---:|---|
-| 读取并校验 DA3 cache | 0.189 | 准备线程 |
-| 生成原始 U/V/depth | 1.845 | 完整 native grid |
-| JPEG/相机纹理准备 | 0.964 | 不依赖最终 IDs |
-| 其余准备 | 0.001 | 输入关联和返回值整理 |
+| 同次运行的内部区间 | 平均 wall 秒 | 平均调用次数 | n | 做什么 / 包含关系 |
+| --- | ---: | ---: | ---: | ---: |
+| 最终Viewer总段 | 57.844 | 1.0 | 6 | 当前可用里程碑的最后主阶段 |
+| thumbnails | 1.650 | 1.0 | 6 | 逐observation，Viewer必要缩略图 |
+| 显示方向 | 1.980 | 1.0 | 6 | 与ground删除不同的RANSAC拟合 |
+| ↳ 方向NN | 0.138 | 1.0 | 6 | 最多200K候选域 |
+| ↳ 方向RANSAC | 1.431 | 2.8 | 6 | 候选方向平面 |
+| 选点总段 | 49.264 | 1.0 | 6 | 包含以下标签/过滤/预算等 |
+| ↳ mask→商品label | 0.328 | 1.0 | 6 | canonical processed PVS mask |
+| ↳ 最终几何过滤 | 44.101 | 1.0 | 6 | raw NN/SOR复用，再保护/DBSCAN/ground |
+| 　↳ SOR应用整段 | 0.698 | 1.0 | 6 | 商品保护、20% guard、select；不含提前SOR原生 |
+| 　↳ DBSCAN整段 | 32.943 | 1.0 | 6 | native+簇阈值+保护+select |
+| 　　↳ DBSCAN原生 | 32.259 | 1.0 | 6 | eps=5×medianNN，min_points=10 |
+| 　↳ ground整段 | 10.316 | 1.0 | 6 | RANSAC+双侧判断+保护+select |
+| 　　↳ ground RANSAC | 9.868 | 1.0 | 6 | 当前点域，最多1000假设，可能提前停止 |
+| ↳ full-grid特征 | 0.436 | 1.0 | 6 | depth/valid/语义region生成edge、halo、weights、caps |
+| ↳ 背景voxel | 1.027 | 1.0 | 6 | 5mm，置信度优先 |
+| ↳ 商品/背景预算 | 2.520 | 1.0 | 6 | 分ID预算与adaptive scale/selection |
+| 　↳ adaptive.select | 2.332 | 223.5 | 6 | 包含于预算分组；勿重复相加 |
+| ↳ 选点数组序列化 | 0.404 | 1.0 | 6 | 稳定索引及紧凑数组 |
+| Surfel打包 | 0.153 | 1.0 | 6 | U/V/scale/depth与纹理metadata |
+| point ranges | 4.333 | 1.0 | 6 | 每observation关联选点半开区间 |
+| generation发布 | 0.140 | 1.0 | 6 | 写binary/JSON/JPEG及CURRENT |
 
-以上三项在一个 CPU worker 内进行，与 matching 并行；本次全部落在 matching 区间内。它们已实现并有重叠证据，不能再当成“待实现提速”。NN/SOR 及最终标签保护不属于当前提前准备。
+| 同次运行的内部区间 | 平均 wall 秒 | 平均调用次数 | n | 做什么 / 包含关系 |
+| --- | ---: | ---: | ---: | ---: |
+| Dedup总段 | 0.248 | 1.0 | 6 | 全部F帧 |
+| parse summaries | 0.004 | 1.0 | 6 | 匹配边 |
+| union-find/GID | 0.033 | 1.0 | 6 | 同图冲突不合并 |
+| 逐帧global ID | 0.092 | 1.0 | 6 | 分类聚合 |
+| global pair发布 | 0.043 | 1.0 | 6 | 原子发布相关JSON |
 
-最终导出的正式组成：
+NN用全有效点的最近邻距离中位数设置随尺度变化的阈值；SOR检查每点20个近邻的平均距离，std_ratio=2，raw布尔结果提前计算。最终label到达后用商品点保护修复raw拒绝，并执行20%最小保留guard。DBSCAN在SOR应用后的点域做半径邻域和连通扩展；ground在当前点域做RANSAC、双侧判断、保护与guard。显示方向另用最多200K候选拟合，不能与ground计时混用。
 
-| 组成 | 秒 | 说明 |
-|---|---:|---|
-| 缩略图 | 1.570 | 711 个 observations |
-| 场景方向 | 3.749 | 首次拟合和 sidecar 发布 |
-| 采样总区间 | 65.013 | 含标签、几何过滤、voxel、自适应选择和排序 |
-| ↳ mask→实例标签 | 0.424 | 读取 matching 的 processed masks |
-| ↳ 几何过滤 | 60.096 | 内部诊断见下表 |
-| ↳ 背景 voxel | 0.662 | NumPy 分组，最高 confidence/首个并列输入 |
-| ↳ 采样其余工作 | 3.831 | 自适应 grid、预算、选择、数组整理与稳定排序 |
-| 最终 Surfel 数组准备 | 0.186 | 复用提前准备的 U/V/depth/JPEG |
-| generation 发布 | 0.114 | 二进制/JSON/JPEG 和 CURRENT |
-| 其他导出工作 | 3.744 | 含 point ranges、world_to_view、对象/manifest 整理 |
+Python计时只能分开native NN/SOR/DBSCAN/RANSAC整体。其内部KD-tree建树、邻域查询、DBSCAN扩展、RANSAC实际迭代数**本轮没有逐段测量**；没有用复杂度推导冒充实测秒数。[原生循环说明](viewer_export_algorithm.md#61-open3d-0190-原生循环)保留算法细节。
 
-独立 Viewer 诊断再次生成 2,402,589 点、711 张缩略图。它的最终导出总量为 83.213 秒，包含独立方向拟合和共享主机波动；不能直接替换正式 74.376 秒。
+## 6. 最终点数的完整流向
 
-### 几何过滤：DBSCAN 最大，SOR 不是整段耗时
+| 点数域 | 跨视频平均点数 | video1 | video3 | video4 | video5 | video6 | video7 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| dense native grid | 3,786,720 (n=6) | 2,963,520 | 4,092,480 | 3,951,360 | 2,681,280 | 6,773,760 | 2,257,920 |
+| export-valid | 3,786,720 (n=6) | 2,963,520 | 4,092,480 | 3,951,360 | 2,681,280 | 6,773,760 | 2,257,920 |
+| 原SAM商品 | 1,560,418 (n=6) | 997,310 | 1,902,589 | 1,462,913 | 884,008 | 3,778,160 | 337,531 |
+| 原背景 | 2,226,302 (n=6) | 1,966,210 | 2,189,891 | 2,488,447 | 1,797,272 | 2,995,600 | 1,920,389 |
+| SOR raw保留 | 3,624,269 (n=6) | 2,835,143 | 3,888,295 | 3,803,234 | 2,588,164 | 6,453,776 | 2,177,002 |
+| SOR商品救回 | 1,032 (n=6) | 196 | 825 | 579 | 506 | 3,298 | 788 |
+| SOR应用后 | 3,625,301 (n=6) | 2,835,339 | 3,889,120 | 3,803,813 | 2,588,670 | 6,457,074 | 2,177,790 |
+| DBSCAN raw保留 | 3,136,689 (n=6) | 2,357,677 | 3,402,853 | 3,244,481 | 2,070,858 | 5,894,636 | 1,849,627 |
+| DBSCAN商品救回 | 34,408 (n=6) | 2,108 | 22,822 | 87,114 | 23,102 | 38,559 | 32,740 |
+| DBSCAN应用后 | 3,171,096 (n=6) | 2,359,785 | 3,425,675 | 3,331,595 | 2,093,960 | 5,933,195 | 1,882,367 |
+| ground RANSAC输入 | 3,171,096 (n=6) | 2,359,785 | 3,425,675 | 3,331,595 | 2,093,960 | 5,933,195 | 1,882,367 |
+| ground RANSAC内点 | 324,564 (n=6) | 364,414 | 313,004 | 333,295 | 398,691 | 352,892 | 185,086 |
+| ground raw保留 | 2,299,778 (n=5) | 1,995,371 | 3,112,671 | 2,998,300 | 1,695,269 | — | 1,697,281 |
+| ground商品救回 | 91,223 (n=5) | 6 | 230,825 | 172,123 | 0 | — | 53,161 |
+| ground应用后（仅调用apply时） | 2,391,001 (n=5) | 1,995,377 | 3,343,496 | 3,170,423 | 1,695,269 | — | 1,750,442 |
+| 最终filter后 | 2,981,367 (n=6) | 1,995,377 | 3,343,496 | 3,170,423 | 1,695,269 | 5,933,195 | 1,750,442 |
+| filter后商品 | 1,560,418 (n=6) | 997,310 | 1,902,589 | 1,462,913 | 884,008 | 3,778,160 | 337,531 |
+| filter后背景 | 1,420,948 (n=6) | 998,067 | 1,440,907 | 1,707,510 | 811,261 | 2,155,035 | 1,412,911 |
+| 背景voxel候选 | 1,081,097 (n=6) | 803,686 | 1,084,992 | 1,273,600 | 705,892 | 1,715,050 | 903,363 |
+| 商品选入 | 1,264,058 (n=6) | 997,310 | 1,902,589 | 1,462,913 | 884,008 | 2,000,000 | 337,531 |
+| 背景选入 | 500,000 (n=6) | 500,000 | 500,000 | 500,000 | 500,000 | 500,000 | 500,000 |
+| Viewer选入总量 | 1,764,058 (n=6) | 1,497,310 | 2,402,589 | 1,962,913 | 1,384,008 | 2,500,000 | 837,531 |
 
-| 组成 | 秒 | 说明 |
-|---|---:|---|
-| 初始 NN 原生调用 | 3.811 | 4,092,480 点的最近邻距离；不是 k=20 SOR |
-| SOR 整段 | 7.418 | 含 native 调用、商品保护 OR、门槛和 select |
-| ↳ SOR 原生调用 | 6.420 | k=20、std_ratio=2 |
-| DBSCAN 整段 | 43.396 | 聚类、主簇判断、商品保护、select |
-| ↳ DBSCAN 原生调用 | 42.713 | eps=median_NN×5，min_points=10 |
-| RANSAC 整段 | 11.708 | 拟合、双侧质量检查、商品保护、select |
-| ↳ RANSAC 原生调用 | 11.045 | num_iterations=1000，保留现有随机行为 |
-| 有效域、pcd 构造与其他 | 0.512 | 互斥差额 |
-| 诊断过滤合计 | 66.845 | 独立组件测量；不替换基线 60.096 秒 |
+商品保护在几何过滤时生效；最终商品预算仍为2M、背景预算500K，商品超过预算时也会采样。raw保留+商品救回不一定等于应用后：20% guard若触发会跳过该过滤，guard记录在完整CSV里。没有以cluster的非负标签冒充SAM商品标签。
 
-DBSCAN 原生调用约占这次诊断过滤总量的 63.9%。SOR 和初始 NN 两个原生调用合计 10.231 秒，明显小于 DBSCAN。`k=20` 仅用于 SOR，不能用改 k 推断初始 NN 或 DBSCAN 会等比例变快。
+ground没有进入apply时，该行记为缺失，均值按实际n；这不等于RANSAC未计算，也不等于输出0点。具体例子：video6的RANSAC为352892/5933195≈5.947%内点，未达到8%条件，所以没有应用删除；最终filter仍保留5,933,195点。
 
-所有保护 OR、保留比例门槛、簇判断及 ground 判定仍照原实现执行。三个 `pcd.select_by_index` 合计 1.928 秒已计在各整段内。方向拟合中的 RANSAC 另为 2.329 秒，与过滤里的 ground RANSAC 不同。
+| 输出元素 | 平均 | 最小–最大 |
+| --- | ---: | ---: |
+| GLB LOD选入点 | 1,195,338 | 689,394–2,027,824 |
+| LOD移除点 | 568,721 | 148,137–1,104,762 |
+| 实际baked Surfel | 1,180,904 | 684,791–2,007,183 |
+| 无有效tile跳过 | 14,433 | 4,603–20,641 |
+| 三角形 | 2,361,809 | 1,369,582–4,014,366 |
+| atlas页 | 29 | 17–49 |
 
-独立诊断还定位到：自适应 grid 特征 0.448 秒、两次自适应选择合计 2.726 秒，point ranges 构造 3.708 秒。它们已分别包含于采样或最终导出，不另计入基线。
+Viewer选点与GLB LOD/bake是不同表示，GLB不回写Viewer点集。完整depth grid仍用于连续性、遮挡和来源判定。选点相同或总数相同都不能证明来源/背景/方向或画面相同。Open3D RANSAC流程没有显式固定随机seed，本轮逐阶段计数显示实际发生了什么，不以旧独立诊断补写。
 
-## 5. ZIP：时间集中在 8 个二进制的压缩
+## 7. ZIP内部：成员读入、压缩、写入
 
-正式 2.752 秒。独立 ZIP 诊断 3.128 秒：8 个二进制成员 2.992 秒，740 张 JPEG 0.113 秒，3 个 JSON 0.001 秒，余量为成员表、目录与 ZIP 收尾。二进制为 DEFLATE level 1；JPEG/JSON 为 STORED。此测量含读文件/压缩/ZIP 写入，没有把纯 zlib 与 I/O 分离。
+ZIP自身平均 2.214 秒；累计就绪平均 127.242 秒，前缀组成见第2节。
 
-## 6. GLB：RGB 延展、调色板量化和 PNG 编码主导
+| 成员类别 | 平均成员数 | 平均原始MiB | 平均归档payload MiB | 平均成员write秒 |
+| --- | ---: | ---: | ---: | ---: |
+| binary / DEFLATE level1 | 8.0 | 66.104 | 39.805 | 2.060 |
+| JPEG / STORED | 1,111.5 | 23.257 | 23.257 | 0.131 |
+| JSON / STORED | 3.0 | 0.329 | 0.329 | 0.001 |
 
-正式 GLB 137.389 秒，生产报告分为 bake/LOD 94.215 秒、compact/encode/write 43.164 秒，两项互斥。
+成员write wall包含文件读入、压缩与归档写入，不是纯zlib。binary为8个文件、DEFLATE level1；JPEG/JSON为STORED。上表采用成员wrapper范围，含每成员metadata/统计小开销；INTERNALS的zip.member.*是更内层的write span，两者不可当同一口径。类别加总不覆盖成员外的枚举、归档metadata和关闭。最终ZIP包含必要Viewer数据、源纹理与缩略图，不含GLB/模型或本轮没有提供的masterdata。
 
-下表使用原始 baseline Viewer generation 做一次独立 CPU 诊断，GLB 151.089 秒。保留 31 页 atlas、2,564,994 个三角面和 121,513,344 bytes；没有做额外 hash 或全量语义复查。
+## 8. GLB内部：LOD、七块bake、RGB、atlas、最终文件
 
-| 组成 | 秒 | 说明 |
-|---|---:|---|
-| 输入读取与校验 | 0.198 | 原始 baseline generation |
-| 保守 2×2 LOD | 5.473 | 2,402,589 → 1,297,863 个候选 |
-| ↳ LOD 覆盖检查 | 1.713 | 72 批；其余为归组、排序、数组整理 |
-| Surfel tile 烘焙 | 95.137 | 1,280 批；下列四项互斥地构成此区间 |
-| ↳ footprint + 最终直径约束 | 0.836 | 保留原几何裁切规则 |
-| ↳ 双线性照片采样 | 16.374 | 每 Surfel 的 8×8 tile |
-| ↳ 透明边界 RGB 延展 | 56.040 | 只填 RGB，保持 alpha；避免线性采样黑边 |
-| ↳ 其他烘焙工作 | 21.887 | 投影、深度连续性、可见域、tile/corners 数组 |
-| atlas 页面组装 | 0.645 | 31 页 |
-| 几何量化与写 BIN | 1.853 | 16-bit geometry/UV/index |
-| atlas 编码 | 46.248 | 下列 quantize/save/alpha 是其子集 |
-| ↳ 二值 alpha 检查 | 1.083 | 保留透明/不透明两组颜色 |
-| ↳ MEDIANCUT 调色板量化 | 21.652 | 128 色 RGB |
-| ↳ PNG 编码 | 22.399 | optimize=True |
-| 图片字节写 BIN | 0.041 | 31 张 PNG |
-| 最终 GLB 拼装/写文件 | 0.096 | 约 115.88 MiB |
-| 其他读取/转换与调度包装 | 1.397 | 含来源 JPEG 转换和未单列间隙 |
-| 诊断 GLB 合计 | 151.089 | 独立诊断，不替换基线 137.389 秒 |
+| video | LOD选入 | 实际baked | atlas页 | bake批次 | GLB MiB | GLB秒 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 963,232 | 946,155 | 23 | 953 | 83.828 | 81.582 |
+| 3 | 1,297,827 | 1,282,942 | 31 | 1282 | 115.399 | 106.577 |
+| 4 | 1,280,314 | 1,265,250 | 31 | 1265 | 113.383 | 113.138 |
+| 5 | 913,434 | 899,106 | 22 | 901 | 79.292 | 76.055 |
+| 6 | 2,027,824 | 2,007,183 | 49 | 2006 | 189.596 | 172.135 |
+| 7 | 689,394 | 684,791 | 17 | 682 | 64.176 | 57.584 |
 
-RGB 延展 56.040 秒、调色板量化 21.652 秒、PNG 编码 22.399 秒合计占独立 GLB 诊断的 66.2%。单纯优化最终文件写入或几何量化，无法解释大部分 GLB 时间。
+| 同次运行的内部区间 | 平均 wall 秒 | 平均调用次数 | n | 做什么 / 包含关系 |
+| --- | ---: | ---: | ---: | ---: |
+| GLB总段 | 101.179 | 1.0 | 6 | 同一次实际导出，默认encoder_workers=1 |
+| 输入_load | 0.144 | 1.0 | 6 | generation文件读取与校验 |
+| 保守2×2 LOD | 3.303 | 1.0 | 6 | 商品block满足法向/depth/coverage才合并 |
+| ↳ coverage | 0.921 | 45.8 | 6 | 每批最多8192组，已含于LOD |
+| 全部bake batch | 54.401 | 1,181.5 | 6 | 按frame，每批最多1024候选 |
+| ↳ 中心/相机可见性 | 0.440 | 1,181.5 | 6 | 七个连续AST块之一 |
+| ↳ 初始footprint/连续性 | 1.010 | 1,181.5 | 6 | 含_bound_footprint |
+| ↳ radius/最终直径 | 0.505 | 1,181.5 | 6 | 保持长边≤6×native最大间距 |
+| 　↳ 最终长边限制 | 0.432 | 1,181.5 | 6 | 内层函数，不再加到七块 |
+| ↳ 8×8 texel投影 | 10.704 | 1,181.5 | 6 | world→camera、圆盘/边界mask |
+| ↳ depth/source mask | 4.816 | 1,181.5 | 6 | 遮挡、来源/面积与有效tile |
+| ↳ source/RGB采样 | 14.674 | 1,181.5 | 6 | source→texture坐标及双线性采样 |
+| 　↳ bilinear函数 | 14.333 | 1,181.5 | 6 | 包含于上行 |
+| ↳ tile/corners/延展 | 22.070 | 1,181.5 | 6 | 包含RGB延展 |
+| 　↳ RGB延展 | 20.619 | 1,181.5 | 6 | 固定四方向、旧轮known，alpha不变 |
+| atlas组页 | 0.587 | 28.8 | 6 | 8×8内部+一圈gutter；最多41616 tiles/页 |
+| 几何量化/写BIN | 1.570 | 28.8 | 6 | u16 position/UV/index，含bufferView |
+| atlas编码总段 | 39.802 | 28.8 | 6 | 包含alpha、palette、PNG |
+| ↳ alpha检查 | 0.933 | 28.8 | 6 | 二值alpha |
+| ↳ compact RGBA | 38.864 | 28.8 | 6 | 含MEDIANCUT和PNG子项 |
+| 　↳ palette量化 | 17.018 | 28.8 | 6 | 128色，无dither |
+| 　↳ PNG save | 20.842 | 28.8 | 6 | optimize=True；PIL累计按contexts可再分 |
+| 图片写BIN | 0.032 | 28.8 | 6 | 编码字节，不重解码 |
+| 最终GLB写入 | 0.077 | 1.0 | 6 | JSON/BIN chunk与header，文件写入返回 |
 
-`_dilate_rgb` 在每个 tile 内向透明边界传播 RGB，alpha 不变；直接删掉可能造成边缘黑线。调色板/PNG 参数也涉及体积和画质，以上是定位证据，不是已经验证的新优化。
+生产report另外提供两个调度区间：bake/load/LOD侧平均 59.693 秒，compact/encode/write侧平均 41.484 秒；后者包含串行encode调用（encoding_join）平均 39.802 秒和main_thread_write平均 1.682 秒。生产迭代器的计时归属与函数span不同，不能与上表再合并求和。
 
-## 显存、RAM、产物与验证
+实际循环：frame → 每1024候选bake → 有效10×10 RGBA tile → 每41616个tile组atlas → 编码 → geometry/image/material顺序写BIN → 最终GLB。7个bake块连续覆盖函数主体，内层bilinear/RGB/长边函数已在所属块内。MEDIANCUT与PNG同样是encode子项。`self_s`仅减已测直接子区间，仍含其余操作和仪器成本，不能叫“纯Python时间”。
 
-- 正式任务 driver 显存采样峰值 **14.777 GiB**；GPU0 原有进程约 7.145 GiB，已排除。采样间隔 200 ms，可能漏掉短峰值。
-- DA3 allocator 生命周期 allocated/reserved：11.410/14.363 GiB；PVS 所在 Core 进程：3.112/3.285 GiB。两种指标及不同进程/时段的峰值不能相加。
-- 正式 Core/Delivery 阶段 uv 进程树 RSS 采样峰值 **14.166 GiB**，共享页可能重复计入；不包含 launcher 和 nvidia-smi。
-- 29 refs、29 份 mask manifests、385 global IDs、711 observations、2,402,589 Viewer 点；ZIP 75.94 MiB，GLB 115.88 MiB。基线 core/delivery、GPU 两个诊断和 CPU 两个诊断均成功；没有运行服务部署或 COS 上传。
-- 临时细分脚本不改生产源码，不保存 tensor 主体；CPU 诊断仅生成独立 Viewer/cache sidecar 和报告，额外 ZIP/GLB 已删除。原始基线产物与记录保留。
+六视频测量时`encoder_workers=1`，已有2/4worker功能没有自动开启。后续源码默认改为2，依据见第12节。原始128色、PNG optimize、LOD和清理仍保留，尤其是最终长直径≤6×native最大间距；没有靠放宽长边、删DBSCAN或降纹理获得该批数字。
 
-## 旧记录退役与证据入口
+## 9. 显存与RAM：阶段峰、模型参数、当前占用、allocator峰分开
 
-按 Rick 授权删除 223 个过时 profiling/对照文件，其中包含旧 fd2–4、旧 Docker、旧 DA3 三份专用报告，以及旧 per-dataset timing 和组件计时输入。混合研究保留 F1、mask/数组等价、几何、视觉及发布证据，仅去掉性能部分；模型、输入数据、当前 baseline 和其他 checkout 源码未删除。
+| 阶段 | 任务driver阶段峰均值GiB | 最大一条video阶段峰GiB |
+| --- | ---: | ---: |
+| DA3重建 | 14.730 | 17.227 |
+| PVS模型加载 | 2.627 | 2.830 |
+| 全部PVS predict中的最高采样 | 3.695 | 3.758 |
+| matching | 3.696 | 3.758 |
+| 几何准备（与matching重叠） | 1.023 | 1.086 |
+| 最终Viewer | 2.838 | 2.904 |
+| GLB | 0.000 | 0.000 |
 
-- [精确删除清单](../runtime/video3-full-profile-20261016/retirement-result.json)
-- [正式墙钟和进程命令](../runtime/video3-full-profile-20261016/receipt.json)
-- [正式机器可读汇总](../runtime/video3-full-profile-20261016/summary.json)
-- [全部表格 JSON](../runtime/video3-full-profile-20261016/detailed-tables.json)
-- [CPU Viewer 细分](../runtime/video3-full-profile-20261016/diagnostics/cpu/viewer/result.json)
-- [CPU ZIP/GLB 细分](../runtime/video3-full-profile-20261016/diagnostics/cpu/delivery/result.json)
-- [GPU 细分报告](../runtime/video3-full-profile-20261016/diagnostics/gpu/REPORT.md)
+| 进程 / 边界 | 参数GiB | buffer GiB | 当时allocated GiB | 当时reserved GiB | 当时未用reservation GiB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| DA3 model ready | 6.295 | 0.000 | 6.358 | 6.377 | 0.019 |
+| DA3 forward之前 | 6.295 | 0.000 | 6.401 | 6.420 | 0.019 |
+| DA3 forward之后 | 6.295 | 0.000 | 6.437 | 14.316 | 7.878 |
+| PVS model ready | 1.813 | 0.009 | 2.292 | 2.399 | 0.107 |
+| PVS predict结束边界的均值 | 1.813 | 0.009 | 2.885 | 3.281 | 0.396 |
 
-后续优化优先围绕 DBSCAN、tile RGB 延展、PNG 量化/编码及冷进程网络构造设计单变量验证；不从本轮诊断直接承诺提速比例或省略质量验收。
+| 进程 | allocated峰均值GiB | reserved峰均值GiB | RSS HWM均值GiB | user CPU秒均值 | system CPU秒均值 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| da3 | 11.259 | 14.316 | 13.903 | 22.564 | 4.323 |
+| core | 3.106 | 3.282 | 5.567 | 169.458 | 11.707 |
+| delivery | — | — | 0.874 | 128.702 | 106.392 |
 
-## 2026-10-16 首轮 CPU 实验：未通过验收，保留历史结论
+表中每video先取同一时点任务PID的driver和，再取该阶段最大；跨video平均的是这些峰。predict行先取每video全部predict里的最大，不按ref数加权。GPU已有resident约5030MiB排除在任务峰外；整卡峰平均 19.660 GiB。200ms采样会漏短峰，极短阶段可能无采样，按缺失处理。
 
-本轮仅在 runtime 实现 RGB 切片延展与 bounded 两 worker atlas 编码候选，未集成生产；独立评估对 dilation/encoding 为 inconclusive，DBSCAN-off 为 debuggable（smoke 失败，未进入正式比较）。既有 Surfel 提前准备不是本轮新增。唯一全链路基线仍为 **267.565 s**，Viewer **121.214 s**，GLB **137.389 s**。
+阶段内有完整compute-app查询、且无本任务GPU进程的时点记为观测0（例如CPU的GLB阶段）；没有查询覆盖的短段才记缺失。进程生命周期allocator未初始化则保留缺失，不用driver的0替代。
 
-Dilation 原始 B1/C1/C2 为 169.464647/133.610064/126.081133 s，原 B2 被 CPU 限额中断；独立 B2 continuation 为 156.874763 s。直接算术差为 35.854583 与 30.793630 s，仅供诊断：同核干扰、timer 内不同验证开销、中断后的新进程、累计 1,200 CPU s bound 冲突和缺失 B2 baked reference 阻断正式接受。C1/C2 完整 baked RGBA/geometry 与 final typed arrays、associations、31 张 decoded RGBA atlas 比较未发现差异，已完成文件均为 121,513,344 bytes；continuation 对历史 GLB 的 final 比较通过，不能补证缺失的量化前比较。
+allocated是PyTorch活跃分配，reserved是allocator保留；同一snapshot的reserved−allocated是未用reservation，不含driver/context。参数/buffer按实际device/numel/element_size计算。snapshot剩余allocated还含场景Tensor、激活和其他数据，不称KV cache；forward后也不是最大激活的时点。生命周期峰、阶段driver峰、当时快照和各进程峰互不相加。
 
-Encoding 只有首张真实页两副本的 smoke/pilot，正式运行因同核重叠取消；DBSCAN runner 调用可写 orientation API 导致 sidecar 重算，内容已恢复但原 filesystem metadata 未保留。这些协议失败不证明算法回归，也不证明 GLB 或 Viewer 已正式提速。controller failed-stage transition 仍 blocked，未 promotion 或修复状态。完整证据、资源实测/保守预留的区分、限制与未来最小验证建议见 [Git 内精简报告与原始数值](../reports/cpu-latency-20261016/README.md)（详细本机记录为 `runtime/latency-optimization-20261016/FINAL_REPORT.md`）。
+同时进程树RSS采样和峰的跨video均值为 13.580 GiB；共享页可能重复计。单进程HWM和CPU user/system分别列出，CPU秒可超过wall。时钟用紧邻采集的epoch/monotonic锚点映射GPU时间戳，并裁剪到每case主窗口；video3锚点在本次运行中补采、未改变其定时或进程。
 
-## 2026-10-16 RGB 新对照：已接受并集成
+## 10. CUDA events与视频输入准备（均不再加到主表）
 
-新的 `rgb-02-full-export` 合同只比较原实现与同一份切片候选；固定 video3 generation、seed=0、四个 CPU 的线程亲和性，单进程完成 B1/C1/C2/B2，未与其他本研究 benchmark 并发。主机仍共享。每臂在 timer 内执行相同的完整 page-copy，所有语义比较都在 timer 外，不扣除采集开销。
+| 进程 | CUDA event范围（保留父上下文） | 平均秒 | n |
+| --- | ---: | ---: | ---: |
+| core | `pvs.decoder` | 1.962 | 6 |
+| core | `pvs.encoder` | 1.936 | 6 |
+| da3 | `da3.runner_main > src/da3_runner.py:main:L237 > da3.inference_api > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132 > da3.backbone_forward` | 1.248 | 6 |
+| da3 | `da3.runner_main > src/da3_runner.py:main:L237 > da3.inference_api > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward` | 1.669 | 6 |
+| da3 | `da3.runner_main > src/da3_runner.py:main:L237 > da3.inference_api > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132 > da3.backbone_forward` | 0.145 | 6 |
+| da3 | `da3.runner_main > src/da3_runner.py:main:L237 > da3.inference_api > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward` | 0.403 | 6 |
+| da3 | `da3.runner_main > src/da3_runner.py:main:L237 > da3.inference_api > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L368 > da3.metric_scaling` | 0.000 | 6 |
+| da3 | `da3.runner_main > src/da3_runner.py:main:L237 > da3.inference_api > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment` | 0.004 | 6 |
+| da3 | `da3.runner_main > src/da3_runner.py:main:L237 > da3.inference_api > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling` | 0.001 | 6 |
+| da3 | `da3.runner_main > src/da3_runner.py:main:L237 > da3.inference_api > da3.forward_native_sync > da3.nested_forward` | 2.077 | 6 |
 
-| Arm | 完整导出 raw wall (s) | RGB 延展子区间 (s) |
-|---|---:|---:|
-| B1 原实现 | 157.394 | 57.703 |
-| C1 切片 | 120.499 | 24.368 |
-| C2 切片 | 118.513 | 24.043 |
-| B2 原实现 | 149.626 | 55.582 |
+这些是同一运行内CUDA stream elapsed，保留嵌套父上下文；包含CPU enqueue间隙的可能性，不等于exclusive kernel和。不增加逐层synchronize，只在算法原有同步后读取events。host wall与CUDA event不能相减得到“纯CPU”。
 
-两对完整导出节省为 **36.895 s、31.113 s**，按预先固定规则取最小值 **31.113 s**。四次均完成，31 页量化前 RGBA（包括透明 RGB）、几何及来源/对象关联、最终 GLB accessor payload、解码 RGBA 和文件大小比较全部通过；每份 121,513,344 bytes、2,564,994 个三角面。
+| 视频输入准备区间 | 平均秒 |
+| --- | ---: |
+| canonical_adapter_load | 3.907 |
+| canonical_frame_adaptation | 0.058 |
+| canonical_json_encode_and_write | 0.021 |
+| jpeg_encode_and_write | 0.326 |
+| json_video_metadata_and_sampling_plan | 0.051 |
+| video_grab_retrieve | 1.684 |
+| 完整输入准备wall（父区间） | 6.056 |
 
-源码修改仅为 `src/surfel_mesh.py::_dilate_rgb`，用局部切片替代 `np.roll`，保留扩散轮次、方向优先级、alpha 和既有 Surfel 长边/直径约束。现有 mesh/GLB 测试 **59 passed**，其中新增 25 个回归用例。独立评估全部 hard gates 通过，已在新循环接受；旧循环的 inconclusive 结论不变。
+输入准备使用视频顺序grab、选帧retrieve、JPEG quality95及现有canonical分类适配。视频抽帧/检测JSON适配在主计时外，单独如上；detector和classifier均没有推理，沿用JSON。若要原视频至全部产物的本地耗时，可按每video加其preprocessing wall，但这仍不包含原检测/分类/HTTP/COS/下载/浏览器。
 
-正式对照消耗 1,323.846 CPU s，runner wall 604.537 s（外层命令 605.378 s），RSS 峰值 2.252 GiB，0 GPU。磁盘 0.5625 GiB 是包含临时 BIN 的受限结构上界，非实测峰值。这里只证明单场景、该采集协议下的两对收益；没有新的全链路、Viewer 首屏或稳定百分比结论。完整原始记录、独立评估及集成结果见[精简归档](../reports/cpu-latency-20261016/rgb-full-validation/README.md)，后续编码并行与 NN/SOR 方案见[下一步](../reports/cpu-latency-20261016/NEXT.md)。
+## 11. 解释边界、为什么耗时、下一步
+
+大点域上的DBSCAN/ground、PVS CPU构造及Surfel逐texel颜色/透明延展、palette/PNG是不同工作。F决定全grid规模，检测数还决定decoder批次、缩略图和point ranges；Viewer预算封顶不会让此前全grid过滤消失。GLB LOD减少候选，但每个候选仍可能处理64texels，编码还要遍历整atlas透明区，所以不能按最终GLB字节数推断导出应很快。
+
+具体例子：video6的ground RANSAC计算了18.154秒，因内点比例不足最终未应用删除；这不是0成本的跳过。point ranges关联在video6为13.950秒、video3为3.429秒，属于观察数和选点规模共同影响的CPU工作。这里给出成本与分支事实，不据单次跨场景差异推导严格复杂度或可回收时间。
+
+完整视频结束后另做一次有界CPU合成probe：250万int32有序labels、200个query值，Python int逐个left/right共1.152541秒，同dtype逐标量0.001243秒，typed vector两次整批查询0.000141秒，全部range端点精确一致。它没有使用实际生产labels，也没有修改生产代码；不计入六video均值，不支持直接从13.950秒扣除差额。[probe原始结果](../reports/profiling-multivideo-20261018/point-range-probe.json)。
+
+生产labels为int32，而enumerate产生Python int。[NumPy1.26.4搜索源码](https://github.com/numpy/numpy/blob/v1.26.4/numpy/core/src/multiarray/item_selection.c#L1964)先求共同dtype再准备整个haystack；[Python整数dtype发现](https://github.com/numpy/numpy/blob/v1.26.4/numpy/core/src/multiarray/abstractdtypes.c)与[dtype提升](https://github.com/numpy/numpy/blob/v1.26.4/numpy/core/src/multiarray/array_coercion.c#L643)支持本机64位long导致重复int32→int64临时转换的解释。这是源码机制与合成现象一致的推断，未直接测生产转换次数。下一步值得先在真实labels上验证typed vector精确替换、空range/缺label边界，再跑完整交付对照。
+
+上一轮独立初始化复现与固定版Open3D绑定/pybind规则支持调查NN/SOR持GIL造成的PVS构造膨胀；该证据保留于[历史单视频记录](../reports/profiling-20261018/README.md)及其overlap结果。它不是本轮的受控加速实验，不能把线程重叠秒数直接承诺为可回收秒数。下一步仍宜验证GIL隔离、现有atlas worker的完整交付收益，再做DBSCAN-off/proxy/early-background的视觉对照，本轮没有实施或promotion。
+
+这是统一**细分profiling模式**：AST span、scalar点数观察、CPU时间读取与CUDA events增加了未量化开销。跨video同模式适合描述这些输入的规模差异；不宣称无仪器生产延迟。GPU2共享resident、主机CPU共享、OS页缓存/文件缓存未清空；新进程/新DA3-PVS结果cache不等于物理冷盘。
+
+前一轮video3的248.900/128.750/137.148秒仍是那次实测，保留[历史summary](../reports/profiling-20261018/summary.json)，**未混进本轮均值**。不同抽帧还原、共享负载、随机拟合和仪器条件不支持把前后差额叫作受控提速率。当前文档取代旧单样本作为性能入口。
+
+验证只覆盖诊断脚本接线、完整阶段/帧数/输出、计时闭合和必要格式边界；没有修改生产算法，因此未重复跑全量pytest或额外hash/CRC。未测热服务、HTTP/BSON/COS、网络、浏览器首屏、人工画质、匹配/面积准确率、native内部细分、精确GIL等待归因和仪器开销。逐视频JSON与所有内部均值/范围/n完整保留，失败和未测不静默删除。
+
+## 12. 后续已实现的优化：固定video3前后完整对照
+
+2026-10-18晚，按Rick批准实现并测试。相同既有29帧/711检测、显式seed42、GPU2/RTX4090D、OMP/OpenBLAS/MKL=4；各臂独立模型/结果进程，源码在修改前后分别隔离保存。**每臂一次**，OS/模型页缓存不清空，主机共享负载未隔离。本轮改用function-level spans和两臂相同的诊断点域捕获，不与旧AST仪器的236.866/248.900秒或六视频均值混算提速率。仍不包含抽帧/检测分类/HTTP/COS/浏览器。
+
+| 同次完整运行指标 | 修改前 | 安全默认候选 | 单位 |
+|---|---:|---:|---|
+| 完整流水线 | 253.139 | 186.894 | 秒，缩短26.2% |
+| Viewer可用累计 | 129.854 | 109.163 | 秒，缩短15.9% |
+| ZIP就绪累计 | 138.097 | 117.362 | 秒，缩短15.0% |
+| DA3重建自身 | 25.133 | 13.706 | 秒 |
+| ↳ 网络构造 | 12.624 | 0.914 | 秒，包含于重建 |
+| ↳ CPU构造+加载 | 13.562 | 2.425 | 秒，包含网络构造 |
+| Matching | 30.663 | 29.708 | 秒，算法未改，不归因这点波动 |
+| Dedup | 0.143 | 0.148 | 秒 |
+| 最终Viewer导出 | 68.859 | 60.615 | 秒 |
+| ↳ point ranges | 3.939481 | 0.001608 | 秒，包含于Viewer |
+| ↳ 几何filter | 53.673 | 49.839 | 秒，仍为原完整点域算法 |
+| ZIP打包自身 | 2.745 | 2.774 | 秒 |
+| GLB导出自身 | 114.041 | 68.770 | 秒，缩短39.7% |
+| ↳ LOD | 4.964 | 4.896 | 秒 |
+| ↳ 所有bake batch | 61.205 | 58.505 | 秒 |
+| ↳ atlas encode累计调用wall | 43.640 | 45.379 | 秒，候选跨worker且与bake重叠 |
+| ↳ 主线程encoding join | 43.649 | 0.900 | 秒，候选主要等待已被重叠隐藏 |
+| 任务driver显存采样峰 | 14.777 | 14.777 | GiB，200ms采样 |
+| Viewer点数 | 2,402,589 | 2,402,589 | 点 |
+| GLB大小 | 121,197,580 | 121,197,580 | bytes |
+
+累计前缀、阶段和嵌套子项不能再相加。候选atlas累计encode并没有变成0.9秒：0.9是主线程等待，45.379是worker调用wall之和，它与58.505秒bake重叠。未修改filter的时间波动也不归因为某项优化；控制组ground在完整计时里没有单独native子span，不能拿独立组件秒数填入。
+
+**实际采用：** DA3只跳过已覆盖的大Linear/Conv weight随机填充；point ranges用同dtype批量查询；GLB按frame共享常量并默认两页有界FIFO编码流水，保持`source_world`投影顺序。源f16几何、规范JPEG、alpha/depth边界、LOD、128色、最终6倍native直径上限不变。
+
+真实checkpoint审计：1383个state名字对应1377个独立参数，checkpoint1377键完整覆盖；6个省略名字是同一个LayerNorm的别名，并非漏载。保留1个nonpersistent buffer原生初始化。跳过406个大weight的随机填充，共6737780736bytes；不使用meta/降精度。独立新CPU进程对照构造11.826516→0.651774秒、构造+审核+加载12.993895→2.045339秒，单独标记组件证据，不替换上表GPU完整运行内部数值。
+
+**输出验证：** 15项DA3数值数组（含全部depth/worldpoints/confidence/相机/RGB及帧绑定）、global mapping、8项Viewer二进制、objects、manifest以及最终GLB完整payload均精确相等。两臂各386globalIDs/711observations、2402589Viewer点、1282759baked surfels/2565518三角/31atlas页。最终GPU进程全部退出，GPU2只保留原6221/8550resident。
+
+线程数选择另用同一个完成generation做完整source_world导出，各一次且固定顺序：1/2/4workers为108.396069/67.627083/66.638055秒，采样selfRSS峰957362176/1041502208/1084465152bytes。原GLB→新1、新1→2/4的全部accessor/document和128295600decodedRGBA texel精确相等。默认选2；4仅再快0.989秒(1.46%)，未证明稳定额外收益，保留显式4。不把该CPU组件表替代完整流水线表。
+
+**已实现但不推广：** ground50K代理候选在同一3425675点域上10.879015→0.980081秒，但额外删除51286背景点；虽然商品0变化，平面法向与用于摆正的floor夹角87.77度，且81.7%内点靠商品保护救回，因此保留`ground_proposal_max_points=0`默认。`camera_basis`增量投影在29帧/29696样本中几何相同，但6个alpha texel变化，共同不透明RGB最大差1；保持显式实验选项。**这两项的速度未计入安全默认候选收益。**
+
+[实现、复现与定向测试](../reports/latency-optimization-20261018/README.md) · [完整pair JSON](../reports/latency-optimization-20261018/pair-summary.json) · [输出与资源验证](../reports/latency-optimization-20261018/pair-validation.json) · [状态/失败与更正](../reports/latency-optimization-20261018/progress.md) · [PyTorch后续方向](../reports/latency-optimization-20261018/pytorch_candidates.md)。未重新测优化后六视频平均、P95、热服务或外部准确率；本轮没有部署/上传/commit/push。

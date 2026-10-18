@@ -1,0 +1,15 @@
+{
+  "status": "complete",
+  "numpy": "1.26.4",
+  "labels_count": 2500000,
+  "queries_count": 200,
+  "labels_dtype": "int32",
+  "native_long_bytes": 8,
+  "timings_s": {
+    "python_int": 1.152541175004444,
+    "typed_scalar": 0.0012425000022631139,
+    "typed_vector": 0.00014108601317275316
+  },
+  "range_endpoints_equal": true,
+  "scope": "One independent synthetic CPU diagnostic after all video runs; not production data or end-to-end evidence; not included in cohort times; no production change"
+}

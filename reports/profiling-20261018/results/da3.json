@@ -1,0 +1,2213 @@
+{
+  "mode": "da3",
+  "status": "success",
+  "pid": 2326549,
+  "argv": [
+    "/home/xingyu/3D_Recognization/reports/profiling-20261018/diagnose_gpu.py",
+    "--mode",
+    "da3",
+    "--base",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018",
+    "--out",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/da3",
+    "--model-path",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3-model/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7"
+  ],
+  "interpretation": "Independent instrumented component diagnosis; never add to or replace main-run timings.",
+  "wall_semantics": "Thread-local nested wall spans. Self subtracts directly instrumented children only; instrumentation overhead remains. Recursive labels aggregate calls; CUDA event spans are separate and nonadditive with wall.",
+  "device": "NVIDIA GeForce RTX 4090 D",
+  "visible_devices": "GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7",
+  "threads": 4,
+  "allocator_scope": "process lifetime; no peak resets",
+  "cuda_events": {
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132 > da3.backbone_forward": {
+      "event_s": 1.328132568359375,
+      "calls": 1,
+      "max_s": 1.328132568359375
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward": {
+      "event_s": 1.7778489990234374,
+      "calls": 1,
+      "max_s": 1.7778489990234374
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132 > da3.backbone_forward": {
+      "event_s": 0.15632896423339843,
+      "calls": 1,
+      "max_s": 0.15632896423339843
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward": {
+      "event_s": 0.43595571899414065,
+      "calls": 1,
+      "max_s": 0.43595571899414065
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L368 > da3.metric_scaling": {
+      "event_s": 0.0002744320034980774,
+      "calls": 1,
+      "max_s": 0.0002744320034980774
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment": {
+      "event_s": 0.003913120031356811,
+      "calls": 1,
+      "max_s": 0.003913120031356811
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling": {
+      "event_s": 0.0009782400131225586,
+      "calls": 1,
+      "max_s": 0.0009782400131225586
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward": {
+      "event_s": 2.219304931640625,
+      "calls": 1,
+      "max_s": 2.219304931640625
+    }
+  },
+  "frames": 29,
+  "process_res": 504,
+  "seed": 42,
+  "temporary_npz": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/da3/diagnostic-predictions.npz",
+  "temporary_npz_bytes": 110514751,
+  "synchronization": "Only original DA3 forward pre/post synchronization; CUDA events consumed after runner.main returns, following native forward sync and Prediction D2H. Input enqueue includes CPU work and enqueue, not completed transfer. Nested event intervals overlap; do not sum parents and children. CUDA event creation/record and AST/wrapper overhead perturb this independent diagnostic.",
+  "elapsed_s": 22.398237179993885,
+  "wall": {
+    "imports": {
+      "inclusive_s": 1.4682033890130697,
+      "self_s": 1.4682033890130697,
+      "calls": 1,
+      "max_s": 1.4682033890130697
+    },
+    "da3.imports": {
+      "inclusive_s": 2.864697053999407,
+      "self_s": 2.864697053999407,
+      "calls": 1,
+      "max_s": 2.864697053999407
+    },
+    "src/da3_runner.py:main:L197": {
+      "inclusive_s": 0.0008414890035055578,
+      "self_s": 0.0008414890035055578,
+      "calls": 1,
+      "max_s": 0.0008414890035055578
+    },
+    "src/da3_runner.py:main:L198": {
+      "inclusive_s": 4.9340014811605215e-06,
+      "self_s": 4.9340014811605215e-06,
+      "calls": 1,
+      "max_s": 4.9340014811605215e-06
+    },
+    "src/da3_runner.py:main:L199": {
+      "inclusive_s": 0.0008410160080529749,
+      "self_s": 0.0008410160080529749,
+      "calls": 1,
+      "max_s": 0.0008410160080529749
+    },
+    "src/da3_runner.py:main:L204": {
+      "inclusive_s": 4.137007636018097e-06,
+      "self_s": 4.137007636018097e-06,
+      "calls": 1,
+      "max_s": 4.137007636018097e-06
+    },
+    "src/da3_runner.py:main:L205": {
+      "inclusive_s": 3.416993422433734e-06,
+      "self_s": 3.416993422433734e-06,
+      "calls": 1,
+      "max_s": 3.416993422433734e-06
+    },
+    "src/da3_runner.py:main:L207": {
+      "inclusive_s": 1.782800245564431e-05,
+      "self_s": 1.782800245564431e-05,
+      "calls": 1,
+      "max_s": 1.782800245564431e-05
+    },
+    "src/da3_runner.py:main:L208": {
+      "inclusive_s": 0.0005209810042288154,
+      "self_s": 0.0005209810042288154,
+      "calls": 1,
+      "max_s": 0.0005209810042288154
+    },
+    "src/da3_runner.py:main:L216": {
+      "inclusive_s": 7.839989848434925e-07,
+      "self_s": 7.839989848434925e-07,
+      "calls": 1,
+      "max_s": 7.839989848434925e-07
+    },
+    "src/da3_runner.py:main:L218": {
+      "inclusive_s": 0.00016177500947378576,
+      "self_s": 0.00016177500947378576,
+      "calls": 1,
+      "max_s": 0.00016177500947378576
+    },
+    "src/da3_runner.py:main:L220": {
+      "inclusive_s": 0.5013055549934506,
+      "self_s": 0.5013055549934506,
+      "calls": 1,
+      "max_s": 0.5013055549934506
+    },
+    "src/da3_runner.py:main:L221": {
+      "inclusive_s": 3.0354989576153457e-05,
+      "self_s": 3.0354989576153457e-05,
+      "calls": 1,
+      "max_s": 3.0354989576153457e-05
+    },
+    "src/da3_runner.py:main:L222": {
+      "inclusive_s": 0.00010278499394189566,
+      "self_s": 0.00010278499394189566,
+      "calls": 1,
+      "max_s": 0.00010278499394189566
+    },
+    "src/da3_runner.py:main:L224": {
+      "inclusive_s": 2.4724009563215077e-05,
+      "self_s": 2.4724009563215077e-05,
+      "calls": 1,
+      "max_s": 2.4724009563215077e-05
+    },
+    "src/da3_runner.py:main:L226": {
+      "inclusive_s": 1.5586992958560586e-05,
+      "self_s": 1.5586992958560586e-05,
+      "calls": 1,
+      "max_s": 1.5586992958560586e-05
+    },
+    "src/da3_runner.py:main:L227": {
+      "inclusive_s": 1.253996742889285e-06,
+      "self_s": 1.253996742889285e-06,
+      "calls": 1,
+      "max_s": 1.253996742889285e-06
+    },
+    "da3.network_constructor": {
+      "inclusive_s": 11.40879768099694,
+      "self_s": 11.40879768099694,
+      "calls": 1,
+      "max_s": 11.40879768099694
+    },
+    "da3.safetensors_load_file": {
+      "inclusive_s": 0.08546564599964768,
+      "self_s": 0.08546564599964768,
+      "calls": 1,
+      "max_s": 0.08546564599964768
+    },
+    "da3.state_assignment": {
+      "inclusive_s": 0.5633231160027208,
+      "self_s": 0.5633231160027208,
+      "calls": 1,
+      "max_s": 0.5633231160027208
+    },
+    "da3.safetensors_load_model": {
+      "inclusive_s": 0.7978927450021729,
+      "self_s": 0.14910398299980443,
+      "calls": 1,
+      "max_s": 0.7978927450021729
+    },
+    "da3.model_to_device": {
+      "inclusive_s": 1.8794045700051356,
+      "self_s": 1.8794045700051356,
+      "calls": 1,
+      "max_s": 1.8794045700051356
+    },
+    "src/da3_runner.py:main:L228": {
+      "inclusive_s": 14.086980154010234,
+      "self_s": 0.0008851580059854314,
+      "calls": 1,
+      "max_s": 14.086980154010234
+    },
+    "src/da3_runner.py:main:L230": {
+      "inclusive_s": 0.0050616569933481514,
+      "self_s": 0.0050616569933481514,
+      "calls": 1,
+      "max_s": 0.0050616569933481514
+    },
+    "src/da3_runner.py:main:L231": {
+      "inclusive_s": 0.00018486499902792275,
+      "self_s": 0.00018486499902792275,
+      "calls": 1,
+      "max_s": 0.00018486499902792275
+    },
+    "src/da3_runner.py:main:L233": {
+      "inclusive_s": 0.051232676007202826,
+      "self_s": 0.051232676007202826,
+      "calls": 1,
+      "max_s": 0.051232676007202826
+    },
+    "src/da3_runner.py:main:L236": {
+      "inclusive_s": 2.27498821914196e-06,
+      "self_s": 2.27498821914196e-06,
+      "calls": 1,
+      "max_s": 2.27498821914196e-06
+    },
+    "da3.preprocess": {
+      "inclusive_s": 0.18206943399854936,
+      "self_s": 0.18206943399854936,
+      "calls": 1,
+      "max_s": 0.18206943399854936
+    },
+    "da3.input_enqueue": {
+      "inclusive_s": 0.01229069399414584,
+      "self_s": 0.01229069399414584,
+      "calls": 1,
+      "max_s": 0.01229069399414584
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L126": {
+      "inclusive_s": 1.357009750790894e-06,
+      "self_s": 1.357009750790894e-06,
+      "calls": 2,
+      "max_s": 7.930066203698516e-07
+    },
+    "da3.backbone_forward.host": {
+      "inclusive_s": 1.3246994609944522,
+      "self_s": 1.3246994609944522,
+      "calls": 2,
+      "max_s": 1.294904239999596
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132": {
+      "inclusive_s": 1.324987814994529,
+      "self_s": 0.0002883540000766516,
+      "calls": 2,
+      "max_s": 1.295050815999275
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L136": {
+      "inclusive_s": 6.072994438000023e-06,
+      "self_s": 6.072994438000023e-06,
+      "calls": 2,
+      "max_s": 3.1819945434108377e-06
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_depth_head:L209": {
+      "inclusive_s": 0.6854672120098257,
+      "self_s": 0.6854672120098257,
+      "calls": 2,
+      "max_s": 0.401862502010772
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_camera_estimation:L215": {
+      "inclusive_s": 0.0805229830002645,
+      "self_s": 0.0805229830002645,
+      "calls": 2,
+      "max_s": 0.08052173600299284
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_camera_estimation:L228": {
+      "inclusive_s": 1.6120029613375664e-06,
+      "self_s": 1.6120029613375664e-06,
+      "calls": 2,
+      "max_s": 1.0750081855803728e-06
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139": {
+      "inclusive_s": 0.7662704090034822,
+      "self_s": 0.00027860199043061584,
+      "calls": 2,
+      "max_s": 0.4825573630077997
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L159": {
+      "inclusive_s": 3.1080126063898206e-06,
+      "self_s": 3.1080126063898206e-06,
+      "calls": 2,
+      "max_s": 1.767999492585659e-06
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148": {
+      "inclusive_s": 0.12212672100577038,
+      "self_s": 0.0002716669987421483,
+      "calls": 2,
+      "max_s": 0.12211425600980874
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L151": {
+      "inclusive_s": 3.162100620102137e-05,
+      "self_s": 3.162100620102137e-05,
+      "calls": 2,
+      "max_s": 1.7892001778818667e-05
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L153": {
+      "inclusive_s": 8.160131983458996e-07,
+      "self_s": 8.160131983458996e-07,
+      "calls": 2,
+      "max_s": 4.080065991729498e-07
+    },
+    "da3.branch_forward.host": {
+      "inclusive_s": 2.2136105060053524,
+      "self_s": 0.00018569397798273712,
+      "calls": 2,
+      "max_s": 1.7777410670096288
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362": {
+      "inclusive_s": 1.7778871670016088,
+      "self_s": 0.00014609999198000878,
+      "calls": 1,
+      "max_s": 1.7778871670016088
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L161": {
+      "inclusive_s": 0.00011761899804696441,
+      "self_s": 0.00011761899804696441,
+      "calls": 1,
+      "max_s": 0.00011761899804696441
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L162": {
+      "inclusive_s": 0.05801709399383981,
+      "self_s": 0.05801709399383981,
+      "calls": 1,
+      "max_s": 0.05801709399383981
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L164": {
+      "inclusive_s": 0.00020090800535399467,
+      "self_s": 0.00020090800535399467,
+      "calls": 1,
+      "max_s": 0.00020090800535399467
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L167": {
+      "inclusive_s": 0.01156960400112439,
+      "self_s": 0.01156960400112439,
+      "calls": 1,
+      "max_s": 0.01156960400112439
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L168": {
+      "inclusive_s": 0.004932020994601771,
+      "self_s": 0.004932020994601771,
+      "calls": 1,
+      "max_s": 0.004932020994601771
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L173": {
+      "inclusive_s": 0.04657016400597058,
+      "self_s": 0.04657016400597058,
+      "calls": 1,
+      "max_s": 0.04657016400597058
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L176": {
+      "inclusive_s": 0.00044366400106810033,
+      "self_s": 0.00044366400106810033,
+      "calls": 1,
+      "max_s": 0.00044366400106810033
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L179": {
+      "inclusive_s": 8.719944162294269e-07,
+      "self_s": 8.719944162294269e-07,
+      "calls": 1,
+      "max_s": 8.719944162294269e-07
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365": {
+      "inclusive_s": 0.4360086969973054,
+      "self_s": 0.0001392580015817657,
+      "calls": 1,
+      "max_s": 0.4360086969973054
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_metric_scaling:L379": {
+      "inclusive_s": 0.00021170300897210836,
+      "self_s": 0.00021170300897210836,
+      "calls": 1,
+      "max_s": 0.00021170300897210836
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_metric_scaling:L383": {
+      "inclusive_s": 5.70013071410358e-07,
+      "self_s": 5.70013071410358e-07,
+      "calls": 1,
+      "max_s": 5.70013071410358e-07
+    },
+    "da3.metric_scaling.host": {
+      "inclusive_s": 0.00023719199816696346,
+      "self_s": 2.4918976123444736e-05,
+      "calls": 1,
+      "max_s": 0.00023719199816696346
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L368": {
+      "inclusive_s": 0.00030828299350105226,
+      "self_s": 7.10909953340888e-05,
+      "calls": 1,
+      "max_s": 0.00030828299350105226
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L390": {
+      "inclusive_s": 4.371898830868304e-05,
+      "self_s": 4.371898830868304e-05,
+      "calls": 1,
+      "max_s": 4.371898830868304e-05
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L393": {
+      "inclusive_s": 0.00013811200915370136,
+      "self_s": 0.00013811200915370136,
+      "calls": 1,
+      "max_s": 0.00013811200915370136
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L396": {
+      "inclusive_s": 0.00015334199997596443,
+      "self_s": 0.00015334199997596443,
+      "calls": 1,
+      "max_s": 0.00015334199997596443
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L397": {
+      "inclusive_s": 0.0013803800102323294,
+      "self_s": 0.0013803800102323294,
+      "calls": 1,
+      "max_s": 0.0013803800102323294
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L398": {
+      "inclusive_s": 0.00041198798862751573,
+      "self_s": 0.00041198798862751573,
+      "calls": 1,
+      "max_s": 0.00041198798862751573
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L401": {
+      "inclusive_s": 0.00018609200196806341,
+      "self_s": 0.00018609200196806341,
+      "calls": 1,
+      "max_s": 0.00018609200196806341
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L406": {
+      "inclusive_s": 0.00011830400035250932,
+      "self_s": 0.00011830400035250932,
+      "calls": 1,
+      "max_s": 0.00011830400035250932
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L407": {
+      "inclusive_s": 0.00010946899419650435,
+      "self_s": 0.00010946899419650435,
+      "calls": 1,
+      "max_s": 0.00010946899419650435
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L408": {
+      "inclusive_s": 0.0009621640056138858,
+      "self_s": 0.0009621640056138858,
+      "calls": 1,
+      "max_s": 0.0009621640056138858
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L411": {
+      "inclusive_s": 3.9229009416885674e-05,
+      "self_s": 3.9229009416885674e-05,
+      "calls": 1,
+      "max_s": 3.9229009416885674e-05
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L412": {
+      "inclusive_s": 5.0511007430031896e-05,
+      "self_s": 5.0511007430031896e-05,
+      "calls": 1,
+      "max_s": 5.0511007430031896e-05
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L413": {
+      "inclusive_s": 5.829992005601525e-06,
+      "self_s": 5.829992005601525e-06,
+      "calls": 1,
+      "max_s": 5.829992005601525e-06
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L414": {
+      "inclusive_s": 3.7605001125484705e-05,
+      "self_s": 3.7605001125484705e-05,
+      "calls": 1,
+      "max_s": 3.7605001125484705e-05
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L416": {
+      "inclusive_s": 6.379996193572879e-07,
+      "self_s": 6.379996193572879e-07,
+      "calls": 1,
+      "max_s": 6.379996193572879e-07
+    },
+    "da3.depth_alignment.host": {
+      "inclusive_s": 0.003858506999677047,
+      "self_s": 0.0002211239916505292,
+      "calls": 1,
+      "max_s": 0.003858506999677047
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369": {
+      "inclusive_s": 0.0039449769974453375,
+      "self_s": 8.646999776829034e-05,
+      "calls": 1,
+      "max_s": 0.0039449769974453375
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L425": {
+      "inclusive_s": 3.7949997931718826e-05,
+      "self_s": 3.7949997931718826e-05,
+      "calls": 1,
+      "max_s": 3.7949997931718826e-05
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L429": {
+      "inclusive_s": 0.00012045199400745332,
+      "self_s": 0.00012045199400745332,
+      "calls": 1,
+      "max_s": 0.00012045199400745332
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L430": {
+      "inclusive_s": 6.804500299040228e-05,
+      "self_s": 6.804500299040228e-05,
+      "calls": 1,
+      "max_s": 6.804500299040228e-05
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L435": {
+      "inclusive_s": 0.00037033099215477705,
+      "self_s": 0.00037033099215477705,
+      "calls": 1,
+      "max_s": 0.00037033099215477705
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L438": {
+      "inclusive_s": 0.00024314499751199037,
+      "self_s": 0.00024314499751199037,
+      "calls": 1,
+      "max_s": 0.00024314499751199037
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L442": {
+      "inclusive_s": 6.199989002197981e-07,
+      "self_s": 6.199989002197981e-07,
+      "calls": 1,
+      "max_s": 6.199989002197981e-07
+    },
+    "da3.sky_handling.host": {
+      "inclusive_s": 0.0009332389890914783,
+      "self_s": 9.269600559491664e-05,
+      "calls": 1,
+      "max_s": 0.0009332389890914783
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370": {
+      "inclusive_s": 0.0010121109953615814,
+      "self_s": 7.887200627010316e-05,
+      "calls": 1,
+      "max_s": 0.0010121109953615814
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L372": {
+      "inclusive_s": 5.290057742968202e-07,
+      "self_s": 5.290057742968202e-07,
+      "calls": 1,
+      "max_s": 5.290057742968202e-07
+    },
+    "da3.nested_forward.host": {
+      "inclusive_s": 2.2192355719889747,
+      "self_s": 7.38079979782924e-05,
+      "calls": 1,
+      "max_s": 2.2192355719889747
+    },
+    "da3.forward_native_sync": {
+      "inclusive_s": 2.2202671300037764,
+      "self_s": 0.0010315580148017034,
+      "calls": 1,
+      "max_s": 2.2202671300037764
+    },
+    "da3.prediction_D2H": {
+      "inclusive_s": 0.014679233005153947,
+      "self_s": 0.014679233005153947,
+      "calls": 1,
+      "max_s": 0.014679233005153947
+    },
+    "da3.processed_RGB": {
+      "inclusive_s": 0.16933434500242583,
+      "self_s": 0.16933434500242583,
+      "calls": 1,
+      "max_s": 0.16933434500242583
+    },
+    "src/da3_runner.py:main:L237": {
+      "inclusive_s": 2.598868050001329,
+      "self_s": 0.0002272139972774312,
+      "calls": 1,
+      "max_s": 2.598868050001329
+    },
+    "src/da3_runner.py:main:L243": {
+      "inclusive_s": 0.00017095501243602484,
+      "self_s": 0.00017095501243602484,
+      "calls": 1,
+      "max_s": 0.00017095501243602484
+    },
+    "src/da3_runner.py:main:L247": {
+      "inclusive_s": 1.410997356288135e-06,
+      "self_s": 1.410997356288135e-06,
+      "calls": 1,
+      "max_s": 1.410997356288135e-06
+    },
+    "src/da3_runner.py:main:L248": {
+      "inclusive_s": 5.710026016458869e-07,
+      "self_s": 5.710026016458869e-07,
+      "calls": 1,
+      "max_s": 5.710026016458869e-07
+    },
+    "src/da3_runner.py:main:L253": {
+      "inclusive_s": 6.949994713068008e-07,
+      "self_s": 6.949994713068008e-07,
+      "calls": 1,
+      "max_s": 6.949994713068008e-07
+    },
+    "src/da3_runner.py:main:L254": {
+      "inclusive_s": 4.8906003939919174e-05,
+      "self_s": 4.8906003939919174e-05,
+      "calls": 1,
+      "max_s": 4.8906003939919174e-05
+    },
+    "src/da3_runner.py:main:L256": {
+      "inclusive_s": 7.148992153815925e-06,
+      "self_s": 7.148992153815925e-06,
+      "calls": 1,
+      "max_s": 7.148992153815925e-06
+    },
+    "src/da3_runner.py:main:L257": {
+      "inclusive_s": 1.077001797966659e-06,
+      "self_s": 1.077001797966659e-06,
+      "calls": 1,
+      "max_s": 1.077001797966659e-06
+    },
+    "src/da3_runner.py:main:L260": {
+      "inclusive_s": 1.1800002539530396e-06,
+      "self_s": 1.1800002539530396e-06,
+      "calls": 1,
+      "max_s": 1.1800002539530396e-06
+    },
+    "src/da3_runner.py:main:L261": {
+      "inclusive_s": 8.560018613934517e-07,
+      "self_s": 8.560018613934517e-07,
+      "calls": 1,
+      "max_s": 8.560018613934517e-07
+    },
+    "src/da3_runner.py:main:L262": {
+      "inclusive_s": 1.1230004020035267e-06,
+      "self_s": 1.1230004020035267e-06,
+      "calls": 1,
+      "max_s": 1.1230004020035267e-06
+    },
+    "src/da3_runner.py:main:L265": {
+      "inclusive_s": 5.920010153204203e-07,
+      "self_s": 5.920010153204203e-07,
+      "calls": 1,
+      "max_s": 5.920010153204203e-07
+    },
+    "src/da3_runner.py:main:L266": {
+      "inclusive_s": 3.011999069713056e-06,
+      "self_s": 3.011999069713056e-06,
+      "calls": 1,
+      "max_s": 3.011999069713056e-06
+    },
+    "src/da3_runner.py:main:L267": {
+      "inclusive_s": 0.0037411700031952932,
+      "self_s": 0.0037411700031952932,
+      "calls": 1,
+      "max_s": 0.0037411700031952932
+    },
+    "da3.CPU_backprojection": {
+      "inclusive_s": 0.09166195899888407,
+      "self_s": 0.09166195899888407,
+      "calls": 1,
+      "max_s": 0.09166195899888407
+    },
+    "src/da3_runner.py:main:L271": {
+      "inclusive_s": 0.09169897399260662,
+      "self_s": 3.701499372255057e-05,
+      "calls": 1,
+      "max_s": 0.09169897399260662
+    },
+    "src/da3_runner.py:main:L272": {
+      "inclusive_s": 4.95299173053354e-06,
+      "self_s": 4.95299173053354e-06,
+      "calls": 1,
+      "max_s": 4.95299173053354e-06
+    },
+    "src/da3_runner.py:main:L277": {
+      "inclusive_s": 0.0003396669926587492,
+      "self_s": 0.0003396669926587492,
+      "calls": 1,
+      "max_s": 0.0003396669926587492
+    },
+    "src/da3_runner.py:main:L278": {
+      "inclusive_s": 9.260998922400177e-06,
+      "self_s": 9.260998922400177e-06,
+      "calls": 1,
+      "max_s": 9.260998922400177e-06
+    },
+    "src/da3_runner.py:main:L279": {
+      "inclusive_s": 0.0002468780003255233,
+      "self_s": 0.0002468780003255233,
+      "calls": 1,
+      "max_s": 0.0002468780003255233
+    },
+    "src/da3_runner.py:main:L284": {
+      "inclusive_s": 5.212999531067908e-05,
+      "self_s": 5.212999531067908e-05,
+      "calls": 1,
+      "max_s": 5.212999531067908e-05
+    },
+    "src/da3_runner.py:main:L285": {
+      "inclusive_s": 2.9218994313851e-05,
+      "self_s": 2.9218994313851e-05,
+      "calls": 1,
+      "max_s": 2.9218994313851e-05
+    },
+    "src/da3_runner.py:main:L288": {
+      "inclusive_s": 8.297996828332543e-06,
+      "self_s": 8.297996828332543e-06,
+      "calls": 1,
+      "max_s": 8.297996828332543e-06
+    },
+    "src/da3_runner.py:main:L289": {
+      "inclusive_s": 5.035006324760616e-06,
+      "self_s": 5.035006324760616e-06,
+      "calls": 1,
+      "max_s": 5.035006324760616e-06
+    },
+    "src/da3_runner.py:main:L291": {
+      "inclusive_s": 1.7197002307511866e-05,
+      "self_s": 1.7197002307511866e-05,
+      "calls": 1,
+      "max_s": 1.7197002307511866e-05
+    },
+    "src/da3_runner.py:main:L292": {
+      "inclusive_s": 6.422300066333264e-05,
+      "self_s": 6.422300066333264e-05,
+      "calls": 1,
+      "max_s": 6.422300066333264e-05
+    },
+    "da3.NPZ_write_excluding_argument_evaluation": {
+      "inclusive_s": 0.2100818829931086,
+      "self_s": 0.2100818829931086,
+      "calls": 1,
+      "max_s": 0.2100818829931086
+    },
+    "src/da3_runner.py:main:L295": {
+      "inclusive_s": 0.2461322029994335,
+      "self_s": 0.03605032000632491,
+      "calls": 1,
+      "max_s": 0.2461322029994335
+    },
+    "src/da3_runner.py:main:L329": {
+      "inclusive_s": 0.00014272899716161191,
+      "self_s": 0.00014272899716161191,
+      "calls": 1,
+      "max_s": 0.00014272899716161191
+    },
+    "da3.runner_main": {
+      "inclusive_s": 17.59443094400922,
+      "self_s": 0.005495182020240463,
+      "calls": 1,
+      "max_s": 17.59443094400922
+    }
+  },
+  "wall_contexts": {
+    "imports": {
+      "inclusive_s": 1.4682033890130697,
+      "self_s": 1.4682033890130697,
+      "calls": 1,
+      "max_s": 1.4682033890130697
+    },
+    "da3.imports": {
+      "inclusive_s": 2.864697053999407,
+      "self_s": 2.864697053999407,
+      "calls": 1,
+      "max_s": 2.864697053999407
+    },
+    "da3.runner_main > src/da3_runner.py:main:L197": {
+      "inclusive_s": 0.0008414890035055578,
+      "self_s": 0.0008414890035055578,
+      "calls": 1,
+      "max_s": 0.0008414890035055578
+    },
+    "da3.runner_main > src/da3_runner.py:main:L198": {
+      "inclusive_s": 4.9340014811605215e-06,
+      "self_s": 4.9340014811605215e-06,
+      "calls": 1,
+      "max_s": 4.9340014811605215e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L199": {
+      "inclusive_s": 0.0008410160080529749,
+      "self_s": 0.0008410160080529749,
+      "calls": 1,
+      "max_s": 0.0008410160080529749
+    },
+    "da3.runner_main > src/da3_runner.py:main:L204": {
+      "inclusive_s": 4.137007636018097e-06,
+      "self_s": 4.137007636018097e-06,
+      "calls": 1,
+      "max_s": 4.137007636018097e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L205": {
+      "inclusive_s": 3.416993422433734e-06,
+      "self_s": 3.416993422433734e-06,
+      "calls": 1,
+      "max_s": 3.416993422433734e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L207": {
+      "inclusive_s": 1.782800245564431e-05,
+      "self_s": 1.782800245564431e-05,
+      "calls": 1,
+      "max_s": 1.782800245564431e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L208": {
+      "inclusive_s": 0.0005209810042288154,
+      "self_s": 0.0005209810042288154,
+      "calls": 1,
+      "max_s": 0.0005209810042288154
+    },
+    "da3.runner_main > src/da3_runner.py:main:L216": {
+      "inclusive_s": 7.839989848434925e-07,
+      "self_s": 7.839989848434925e-07,
+      "calls": 1,
+      "max_s": 7.839989848434925e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L218": {
+      "inclusive_s": 0.00016177500947378576,
+      "self_s": 0.00016177500947378576,
+      "calls": 1,
+      "max_s": 0.00016177500947378576
+    },
+    "da3.runner_main > src/da3_runner.py:main:L220": {
+      "inclusive_s": 0.5013055549934506,
+      "self_s": 0.5013055549934506,
+      "calls": 1,
+      "max_s": 0.5013055549934506
+    },
+    "da3.runner_main > src/da3_runner.py:main:L221": {
+      "inclusive_s": 3.0354989576153457e-05,
+      "self_s": 3.0354989576153457e-05,
+      "calls": 1,
+      "max_s": 3.0354989576153457e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L222": {
+      "inclusive_s": 0.00010278499394189566,
+      "self_s": 0.00010278499394189566,
+      "calls": 1,
+      "max_s": 0.00010278499394189566
+    },
+    "da3.runner_main > src/da3_runner.py:main:L224": {
+      "inclusive_s": 2.4724009563215077e-05,
+      "self_s": 2.4724009563215077e-05,
+      "calls": 1,
+      "max_s": 2.4724009563215077e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L226": {
+      "inclusive_s": 1.5586992958560586e-05,
+      "self_s": 1.5586992958560586e-05,
+      "calls": 1,
+      "max_s": 1.5586992958560586e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L227": {
+      "inclusive_s": 1.253996742889285e-06,
+      "self_s": 1.253996742889285e-06,
+      "calls": 1,
+      "max_s": 1.253996742889285e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L228 > da3.network_constructor": {
+      "inclusive_s": 11.40879768099694,
+      "self_s": 11.40879768099694,
+      "calls": 1,
+      "max_s": 11.40879768099694
+    },
+    "da3.runner_main > src/da3_runner.py:main:L228 > da3.safetensors_load_model > da3.safetensors_load_file": {
+      "inclusive_s": 0.08546564599964768,
+      "self_s": 0.08546564599964768,
+      "calls": 1,
+      "max_s": 0.08546564599964768
+    },
+    "da3.runner_main > src/da3_runner.py:main:L228 > da3.safetensors_load_model > da3.state_assignment": {
+      "inclusive_s": 0.5633231160027208,
+      "self_s": 0.5633231160027208,
+      "calls": 1,
+      "max_s": 0.5633231160027208
+    },
+    "da3.runner_main > src/da3_runner.py:main:L228 > da3.safetensors_load_model": {
+      "inclusive_s": 0.7978927450021729,
+      "self_s": 0.14910398299980443,
+      "calls": 1,
+      "max_s": 0.7978927450021729
+    },
+    "da3.runner_main > src/da3_runner.py:main:L228 > da3.model_to_device": {
+      "inclusive_s": 1.8794045700051356,
+      "self_s": 1.8794045700051356,
+      "calls": 1,
+      "max_s": 1.8794045700051356
+    },
+    "da3.runner_main > src/da3_runner.py:main:L228": {
+      "inclusive_s": 14.086980154010234,
+      "self_s": 0.0008851580059854314,
+      "calls": 1,
+      "max_s": 14.086980154010234
+    },
+    "da3.runner_main > src/da3_runner.py:main:L230": {
+      "inclusive_s": 0.0050616569933481514,
+      "self_s": 0.0050616569933481514,
+      "calls": 1,
+      "max_s": 0.0050616569933481514
+    },
+    "da3.runner_main > src/da3_runner.py:main:L231": {
+      "inclusive_s": 0.00018486499902792275,
+      "self_s": 0.00018486499902792275,
+      "calls": 1,
+      "max_s": 0.00018486499902792275
+    },
+    "da3.runner_main > src/da3_runner.py:main:L233": {
+      "inclusive_s": 0.051232676007202826,
+      "self_s": 0.051232676007202826,
+      "calls": 1,
+      "max_s": 0.051232676007202826
+    },
+    "da3.runner_main > src/da3_runner.py:main:L236": {
+      "inclusive_s": 2.27498821914196e-06,
+      "self_s": 2.27498821914196e-06,
+      "calls": 1,
+      "max_s": 2.27498821914196e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.preprocess": {
+      "inclusive_s": 0.18206943399854936,
+      "self_s": 0.18206943399854936,
+      "calls": 1,
+      "max_s": 0.18206943399854936
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.input_enqueue": {
+      "inclusive_s": 0.01229069399414584,
+      "self_s": 0.01229069399414584,
+      "calls": 1,
+      "max_s": 0.01229069399414584
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L126": {
+      "inclusive_s": 7.930066203698516e-07,
+      "self_s": 7.930066203698516e-07,
+      "calls": 1,
+      "max_s": 7.930066203698516e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132 > da3.backbone_forward.host": {
+      "inclusive_s": 1.294904239999596,
+      "self_s": 1.294904239999596,
+      "calls": 1,
+      "max_s": 1.294904239999596
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132": {
+      "inclusive_s": 1.295050815999275,
+      "self_s": 0.0001465759996790439,
+      "calls": 1,
+      "max_s": 1.295050815999275
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L136": {
+      "inclusive_s": 3.1819945434108377e-06,
+      "self_s": 3.1819945434108377e-06,
+      "calls": 1,
+      "max_s": 3.1819945434108377e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_depth_head:L209": {
+      "inclusive_s": 0.401862502010772,
+      "self_s": 0.401862502010772,
+      "calls": 1,
+      "max_s": 0.401862502010772
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_camera_estimation:L215": {
+      "inclusive_s": 0.08052173600299284,
+      "self_s": 0.08052173600299284,
+      "calls": 1,
+      "max_s": 0.08052173600299284
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_camera_estimation:L228": {
+      "inclusive_s": 1.0750081855803728e-06,
+      "self_s": 1.0750081855803728e-06,
+      "calls": 1,
+      "max_s": 1.0750081855803728e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139": {
+      "inclusive_s": 0.4825573630077997,
+      "self_s": 0.00017204998584929854,
+      "calls": 1,
+      "max_s": 0.4825573630077997
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L159": {
+      "inclusive_s": 1.767999492585659e-06,
+      "self_s": 1.767999492585659e-06,
+      "calls": 1,
+      "max_s": 1.767999492585659e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148": {
+      "inclusive_s": 1.2464995961636305e-05,
+      "self_s": 1.0696996469050646e-05,
+      "calls": 1,
+      "max_s": 1.2464995961636305e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L151": {
+      "inclusive_s": 1.7892001778818667e-05,
+      "self_s": 1.7892001778818667e-05,
+      "calls": 1,
+      "max_s": 1.7892001778818667e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L153": {
+      "inclusive_s": 4.080065991729498e-07,
+      "self_s": 4.080065991729498e-07,
+      "calls": 1,
+      "max_s": 4.080065991729498e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362 > da3.branch_forward.host": {
+      "inclusive_s": 1.7777410670096288,
+      "self_s": 9.814799705054611e-05,
+      "calls": 1,
+      "max_s": 1.7777410670096288
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362": {
+      "inclusive_s": 1.7778871670016088,
+      "self_s": 0.00014609999198000878,
+      "calls": 1,
+      "max_s": 1.7778871670016088
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L126": {
+      "inclusive_s": 5.640031304210424e-07,
+      "self_s": 5.640031304210424e-07,
+      "calls": 1,
+      "max_s": 5.640031304210424e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132 > da3.backbone_forward.host": {
+      "inclusive_s": 0.02979522099485621,
+      "self_s": 0.02979522099485621,
+      "calls": 1,
+      "max_s": 0.02979522099485621
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132": {
+      "inclusive_s": 0.029936998995253816,
+      "self_s": 0.00014177800039760768,
+      "calls": 1,
+      "max_s": 0.029936998995253816
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L136": {
+      "inclusive_s": 2.8909998945891857e-06,
+      "self_s": 2.8909998945891857e-06,
+      "calls": 1,
+      "max_s": 2.8909998945891857e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_depth_head:L209": {
+      "inclusive_s": 0.28360470999905374,
+      "self_s": 0.28360470999905374,
+      "calls": 1,
+      "max_s": 0.28360470999905374
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_camera_estimation:L215": {
+      "inclusive_s": 1.2469972716644406e-06,
+      "self_s": 1.2469972716644406e-06,
+      "calls": 1,
+      "max_s": 1.2469972716644406e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_camera_estimation:L228": {
+      "inclusive_s": 5.369947757571936e-07,
+      "self_s": 5.369947757571936e-07,
+      "calls": 1,
+      "max_s": 5.369947757571936e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139": {
+      "inclusive_s": 0.2837130459956825,
+      "self_s": 0.0001065520045813173,
+      "calls": 1,
+      "max_s": 0.2837130459956825
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L159": {
+      "inclusive_s": 1.3400131138041615e-06,
+      "self_s": 1.3400131138041615e-06,
+      "calls": 1,
+      "max_s": 1.3400131138041615e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L161": {
+      "inclusive_s": 0.00011761899804696441,
+      "self_s": 0.00011761899804696441,
+      "calls": 1,
+      "max_s": 0.00011761899804696441
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L162": {
+      "inclusive_s": 0.05801709399383981,
+      "self_s": 0.05801709399383981,
+      "calls": 1,
+      "max_s": 0.05801709399383981
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L164": {
+      "inclusive_s": 0.00020090800535399467,
+      "self_s": 0.00020090800535399467,
+      "calls": 1,
+      "max_s": 0.00020090800535399467
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L167": {
+      "inclusive_s": 0.01156960400112439,
+      "self_s": 0.01156960400112439,
+      "calls": 1,
+      "max_s": 0.01156960400112439
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L168": {
+      "inclusive_s": 0.004932020994601771,
+      "self_s": 0.004932020994601771,
+      "calls": 1,
+      "max_s": 0.004932020994601771
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L173": {
+      "inclusive_s": 0.04657016400597058,
+      "self_s": 0.04657016400597058,
+      "calls": 1,
+      "max_s": 0.04657016400597058
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L176": {
+      "inclusive_s": 0.00044366400106810033,
+      "self_s": 0.00044366400106810033,
+      "calls": 1,
+      "max_s": 0.00044366400106810033
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148 > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L179": {
+      "inclusive_s": 8.719944162294269e-07,
+      "self_s": 8.719944162294269e-07,
+      "calls": 1,
+      "max_s": 8.719944162294269e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148": {
+      "inclusive_s": 0.12211425600980874,
+      "self_s": 0.00026097000227309763,
+      "calls": 1,
+      "max_s": 0.12211425600980874
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L151": {
+      "inclusive_s": 1.3729004422202706e-05,
+      "self_s": 1.3729004422202706e-05,
+      "calls": 1,
+      "max_s": 1.3729004422202706e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L153": {
+      "inclusive_s": 4.080065991729498e-07,
+      "self_s": 4.080065991729498e-07,
+      "calls": 1,
+      "max_s": 4.080065991729498e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365 > da3.branch_forward.host": {
+      "inclusive_s": 0.4358694389957236,
+      "self_s": 8.754598093219101e-05,
+      "calls": 1,
+      "max_s": 0.4358694389957236
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365": {
+      "inclusive_s": 0.4360086969973054,
+      "self_s": 0.0001392580015817657,
+      "calls": 1,
+      "max_s": 0.4360086969973054
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L368 > da3.metric_scaling.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_metric_scaling:L379": {
+      "inclusive_s": 0.00021170300897210836,
+      "self_s": 0.00021170300897210836,
+      "calls": 1,
+      "max_s": 0.00021170300897210836
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L368 > da3.metric_scaling.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_metric_scaling:L383": {
+      "inclusive_s": 5.70013071410358e-07,
+      "self_s": 5.70013071410358e-07,
+      "calls": 1,
+      "max_s": 5.70013071410358e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L368 > da3.metric_scaling.host": {
+      "inclusive_s": 0.00023719199816696346,
+      "self_s": 2.4918976123444736e-05,
+      "calls": 1,
+      "max_s": 0.00023719199816696346
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L368": {
+      "inclusive_s": 0.00030828299350105226,
+      "self_s": 7.10909953340888e-05,
+      "calls": 1,
+      "max_s": 0.00030828299350105226
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L390": {
+      "inclusive_s": 4.371898830868304e-05,
+      "self_s": 4.371898830868304e-05,
+      "calls": 1,
+      "max_s": 4.371898830868304e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L393": {
+      "inclusive_s": 0.00013811200915370136,
+      "self_s": 0.00013811200915370136,
+      "calls": 1,
+      "max_s": 0.00013811200915370136
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L396": {
+      "inclusive_s": 0.00015334199997596443,
+      "self_s": 0.00015334199997596443,
+      "calls": 1,
+      "max_s": 0.00015334199997596443
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L397": {
+      "inclusive_s": 0.0013803800102323294,
+      "self_s": 0.0013803800102323294,
+      "calls": 1,
+      "max_s": 0.0013803800102323294
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L398": {
+      "inclusive_s": 0.00041198798862751573,
+      "self_s": 0.00041198798862751573,
+      "calls": 1,
+      "max_s": 0.00041198798862751573
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L401": {
+      "inclusive_s": 0.00018609200196806341,
+      "self_s": 0.00018609200196806341,
+      "calls": 1,
+      "max_s": 0.00018609200196806341
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L406": {
+      "inclusive_s": 0.00011830400035250932,
+      "self_s": 0.00011830400035250932,
+      "calls": 1,
+      "max_s": 0.00011830400035250932
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L407": {
+      "inclusive_s": 0.00010946899419650435,
+      "self_s": 0.00010946899419650435,
+      "calls": 1,
+      "max_s": 0.00010946899419650435
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L408": {
+      "inclusive_s": 0.0009621640056138858,
+      "self_s": 0.0009621640056138858,
+      "calls": 1,
+      "max_s": 0.0009621640056138858
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L411": {
+      "inclusive_s": 3.9229009416885674e-05,
+      "self_s": 3.9229009416885674e-05,
+      "calls": 1,
+      "max_s": 3.9229009416885674e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L412": {
+      "inclusive_s": 5.0511007430031896e-05,
+      "self_s": 5.0511007430031896e-05,
+      "calls": 1,
+      "max_s": 5.0511007430031896e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L413": {
+      "inclusive_s": 5.829992005601525e-06,
+      "self_s": 5.829992005601525e-06,
+      "calls": 1,
+      "max_s": 5.829992005601525e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L414": {
+      "inclusive_s": 3.7605001125484705e-05,
+      "self_s": 3.7605001125484705e-05,
+      "calls": 1,
+      "max_s": 3.7605001125484705e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L416": {
+      "inclusive_s": 6.379996193572879e-07,
+      "self_s": 6.379996193572879e-07,
+      "calls": 1,
+      "max_s": 6.379996193572879e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369 > da3.depth_alignment.host": {
+      "inclusive_s": 0.003858506999677047,
+      "self_s": 0.0002211239916505292,
+      "calls": 1,
+      "max_s": 0.003858506999677047
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369": {
+      "inclusive_s": 0.0039449769974453375,
+      "self_s": 8.646999776829034e-05,
+      "calls": 1,
+      "max_s": 0.0039449769974453375
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L425": {
+      "inclusive_s": 3.7949997931718826e-05,
+      "self_s": 3.7949997931718826e-05,
+      "calls": 1,
+      "max_s": 3.7949997931718826e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L429": {
+      "inclusive_s": 0.00012045199400745332,
+      "self_s": 0.00012045199400745332,
+      "calls": 1,
+      "max_s": 0.00012045199400745332
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L430": {
+      "inclusive_s": 6.804500299040228e-05,
+      "self_s": 6.804500299040228e-05,
+      "calls": 1,
+      "max_s": 6.804500299040228e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L435": {
+      "inclusive_s": 0.00037033099215477705,
+      "self_s": 0.00037033099215477705,
+      "calls": 1,
+      "max_s": 0.00037033099215477705
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L438": {
+      "inclusive_s": 0.00024314499751199037,
+      "self_s": 0.00024314499751199037,
+      "calls": 1,
+      "max_s": 0.00024314499751199037
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L442": {
+      "inclusive_s": 6.199989002197981e-07,
+      "self_s": 6.199989002197981e-07,
+      "calls": 1,
+      "max_s": 6.199989002197981e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370 > da3.sky_handling.host": {
+      "inclusive_s": 0.0009332389890914783,
+      "self_s": 9.269600559491664e-05,
+      "calls": 1,
+      "max_s": 0.0009332389890914783
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370": {
+      "inclusive_s": 0.0010121109953615814,
+      "self_s": 7.887200627010316e-05,
+      "calls": 1,
+      "max_s": 0.0010121109953615814
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host > Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L372": {
+      "inclusive_s": 5.290057742968202e-07,
+      "self_s": 5.290057742968202e-07,
+      "calls": 1,
+      "max_s": 5.290057742968202e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync > da3.nested_forward.host": {
+      "inclusive_s": 2.2192355719889747,
+      "self_s": 7.38079979782924e-05,
+      "calls": 1,
+      "max_s": 2.2192355719889747
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.forward_native_sync": {
+      "inclusive_s": 2.2202671300037764,
+      "self_s": 0.0010315580148017034,
+      "calls": 1,
+      "max_s": 2.2202671300037764
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.prediction_D2H": {
+      "inclusive_s": 0.014679233005153947,
+      "self_s": 0.014679233005153947,
+      "calls": 1,
+      "max_s": 0.014679233005153947
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237 > da3.processed_RGB": {
+      "inclusive_s": 0.16933434500242583,
+      "self_s": 0.16933434500242583,
+      "calls": 1,
+      "max_s": 0.16933434500242583
+    },
+    "da3.runner_main > src/da3_runner.py:main:L237": {
+      "inclusive_s": 2.598868050001329,
+      "self_s": 0.0002272139972774312,
+      "calls": 1,
+      "max_s": 2.598868050001329
+    },
+    "da3.runner_main > src/da3_runner.py:main:L243": {
+      "inclusive_s": 0.00017095501243602484,
+      "self_s": 0.00017095501243602484,
+      "calls": 1,
+      "max_s": 0.00017095501243602484
+    },
+    "da3.runner_main > src/da3_runner.py:main:L247": {
+      "inclusive_s": 1.410997356288135e-06,
+      "self_s": 1.410997356288135e-06,
+      "calls": 1,
+      "max_s": 1.410997356288135e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L248": {
+      "inclusive_s": 5.710026016458869e-07,
+      "self_s": 5.710026016458869e-07,
+      "calls": 1,
+      "max_s": 5.710026016458869e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L253": {
+      "inclusive_s": 6.949994713068008e-07,
+      "self_s": 6.949994713068008e-07,
+      "calls": 1,
+      "max_s": 6.949994713068008e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L254": {
+      "inclusive_s": 4.8906003939919174e-05,
+      "self_s": 4.8906003939919174e-05,
+      "calls": 1,
+      "max_s": 4.8906003939919174e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L256": {
+      "inclusive_s": 7.148992153815925e-06,
+      "self_s": 7.148992153815925e-06,
+      "calls": 1,
+      "max_s": 7.148992153815925e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L257": {
+      "inclusive_s": 1.077001797966659e-06,
+      "self_s": 1.077001797966659e-06,
+      "calls": 1,
+      "max_s": 1.077001797966659e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L260": {
+      "inclusive_s": 1.1800002539530396e-06,
+      "self_s": 1.1800002539530396e-06,
+      "calls": 1,
+      "max_s": 1.1800002539530396e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L261": {
+      "inclusive_s": 8.560018613934517e-07,
+      "self_s": 8.560018613934517e-07,
+      "calls": 1,
+      "max_s": 8.560018613934517e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L262": {
+      "inclusive_s": 1.1230004020035267e-06,
+      "self_s": 1.1230004020035267e-06,
+      "calls": 1,
+      "max_s": 1.1230004020035267e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L265": {
+      "inclusive_s": 5.920010153204203e-07,
+      "self_s": 5.920010153204203e-07,
+      "calls": 1,
+      "max_s": 5.920010153204203e-07
+    },
+    "da3.runner_main > src/da3_runner.py:main:L266": {
+      "inclusive_s": 3.011999069713056e-06,
+      "self_s": 3.011999069713056e-06,
+      "calls": 1,
+      "max_s": 3.011999069713056e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L267": {
+      "inclusive_s": 0.0037411700031952932,
+      "self_s": 0.0037411700031952932,
+      "calls": 1,
+      "max_s": 0.0037411700031952932
+    },
+    "da3.runner_main > src/da3_runner.py:main:L271 > da3.CPU_backprojection": {
+      "inclusive_s": 0.09166195899888407,
+      "self_s": 0.09166195899888407,
+      "calls": 1,
+      "max_s": 0.09166195899888407
+    },
+    "da3.runner_main > src/da3_runner.py:main:L271": {
+      "inclusive_s": 0.09169897399260662,
+      "self_s": 3.701499372255057e-05,
+      "calls": 1,
+      "max_s": 0.09169897399260662
+    },
+    "da3.runner_main > src/da3_runner.py:main:L272": {
+      "inclusive_s": 4.95299173053354e-06,
+      "self_s": 4.95299173053354e-06,
+      "calls": 1,
+      "max_s": 4.95299173053354e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L277": {
+      "inclusive_s": 0.0003396669926587492,
+      "self_s": 0.0003396669926587492,
+      "calls": 1,
+      "max_s": 0.0003396669926587492
+    },
+    "da3.runner_main > src/da3_runner.py:main:L278": {
+      "inclusive_s": 9.260998922400177e-06,
+      "self_s": 9.260998922400177e-06,
+      "calls": 1,
+      "max_s": 9.260998922400177e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L279": {
+      "inclusive_s": 0.0002468780003255233,
+      "self_s": 0.0002468780003255233,
+      "calls": 1,
+      "max_s": 0.0002468780003255233
+    },
+    "da3.runner_main > src/da3_runner.py:main:L284": {
+      "inclusive_s": 5.212999531067908e-05,
+      "self_s": 5.212999531067908e-05,
+      "calls": 1,
+      "max_s": 5.212999531067908e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L285": {
+      "inclusive_s": 2.9218994313851e-05,
+      "self_s": 2.9218994313851e-05,
+      "calls": 1,
+      "max_s": 2.9218994313851e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L288": {
+      "inclusive_s": 8.297996828332543e-06,
+      "self_s": 8.297996828332543e-06,
+      "calls": 1,
+      "max_s": 8.297996828332543e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L289": {
+      "inclusive_s": 5.035006324760616e-06,
+      "self_s": 5.035006324760616e-06,
+      "calls": 1,
+      "max_s": 5.035006324760616e-06
+    },
+    "da3.runner_main > src/da3_runner.py:main:L291": {
+      "inclusive_s": 1.7197002307511866e-05,
+      "self_s": 1.7197002307511866e-05,
+      "calls": 1,
+      "max_s": 1.7197002307511866e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L292": {
+      "inclusive_s": 6.422300066333264e-05,
+      "self_s": 6.422300066333264e-05,
+      "calls": 1,
+      "max_s": 6.422300066333264e-05
+    },
+    "da3.runner_main > src/da3_runner.py:main:L295 > da3.NPZ_write_excluding_argument_evaluation": {
+      "inclusive_s": 0.2100818829931086,
+      "self_s": 0.2100818829931086,
+      "calls": 1,
+      "max_s": 0.2100818829931086
+    },
+    "da3.runner_main > src/da3_runner.py:main:L295": {
+      "inclusive_s": 0.2461322029994335,
+      "self_s": 0.03605032000632491,
+      "calls": 1,
+      "max_s": 0.2461322029994335
+    },
+    "da3.runner_main > src/da3_runner.py:main:L329": {
+      "inclusive_s": 0.00014272899716161191,
+      "self_s": 0.00014272899716161191,
+      "calls": 1,
+      "max_s": 0.00014272899716161191
+    },
+    "da3.runner_main": {
+      "inclusive_s": 17.59443094400922,
+      "self_s": 0.005495182020240463,
+      "calls": 1,
+      "max_s": 17.59443094400922
+    }
+  },
+  "source_mapping": {
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L126": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net.forward",
+      "line": 126,
+      "end_line": 130,
+      "statement": "if extrinsics is not None:"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L132": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net.forward",
+      "line": 132,
+      "end_line": 134,
+      "statement": "feats, aux_feats = self.backbone("
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L136": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net.forward",
+      "line": 136,
+      "end_line": 136,
+      "statement": "H, W = x.shape[-2], x.shape[-1]"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L139": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net.forward",
+      "line": 139,
+      "end_line": 146,
+      "statement": "with torch.autocast(device_type=x.device.type, enabled=False):"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L148": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net.forward",
+      "line": 148,
+      "end_line": 148,
+      "statement": "output = self._process_mono_sky_estimation(output)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L151": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net.forward",
+      "line": 151,
+      "end_line": 151,
+      "statement": "output.aux = self._extract_auxiliary_features(aux_feats, export_feat_layers, H, W)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net.forward:L153": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net.forward",
+      "line": 153,
+      "end_line": 153,
+      "statement": "return output"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L159": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 159,
+      "end_line": 160,
+      "statement": "if \"sky\" not in output:"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L161": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 161,
+      "end_line": 161,
+      "statement": "non_sky_mask = compute_sky_mask(output.sky, threshold=0.3)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L162": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 162,
+      "end_line": 163,
+      "statement": "if non_sky_mask.sum() <= 10:"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L164": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 164,
+      "end_line": 165,
+      "statement": "if (~non_sky_mask).sum() <= 10:"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L167": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 167,
+      "end_line": 167,
+      "statement": "non_sky_depth = output.depth[non_sky_mask]"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L168": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 168,
+      "end_line": 172,
+      "statement": "if non_sky_depth.numel() > 100000:"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L173": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 173,
+      "end_line": 173,
+      "statement": "non_sky_max = torch.quantile(sampled_depth, 0.99)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L176": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 176,
+      "end_line": 178,
+      "statement": "output.depth, _ = set_sky_regions_to_max_depth("
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_mono_sky_estimation:L179": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_mono_sky_estimation",
+      "line": 179,
+      "end_line": 179,
+      "statement": "return output"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_ray_pose_estimation:L185": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_ray_pose_estimation",
+      "line": 185,
+      "end_line": 202,
+      "statement": "if \"ray\" in output and \"ray_conf\" in output:"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_ray_pose_estimation:L203": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_ray_pose_estimation",
+      "line": 203,
+      "end_line": 203,
+      "statement": "return output"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_depth_head:L209": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_depth_head",
+      "line": 209,
+      "end_line": 209,
+      "statement": "return self.head(feats, H, W, patch_start_idx=0)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_camera_estimation:L215": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_camera_estimation",
+      "line": 215,
+      "end_line": 226,
+      "statement": "if self.cam_dec is not None:"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:DepthAnything3Net._process_camera_estimation:L228": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "DepthAnything3Net._process_camera_estimation",
+      "line": 228,
+      "end_line": 228,
+      "statement": "return output"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L362": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net.forward",
+      "line": 362,
+      "end_line": 364,
+      "statement": "output = self.da3("
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L365": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net.forward",
+      "line": 365,
+      "end_line": 365,
+      "statement": "metric_output = self.da3_metric(x)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L368": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net.forward",
+      "line": 368,
+      "end_line": 368,
+      "statement": "output = self._apply_metric_scaling(output, metric_output)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L369": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net.forward",
+      "line": 369,
+      "end_line": 369,
+      "statement": "output = self._apply_depth_alignment(output, metric_output)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L370": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net.forward",
+      "line": 370,
+      "end_line": 370,
+      "statement": "output = self._handle_sky_regions(output, metric_output)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net.forward:L372": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net.forward",
+      "line": 372,
+      "end_line": 372,
+      "statement": "return output"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_metric_scaling:L379": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_metric_scaling",
+      "line": 379,
+      "end_line": 382,
+      "statement": "metric_output.depth = apply_metric_scaling("
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_metric_scaling:L383": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_metric_scaling",
+      "line": 383,
+      "end_line": 383,
+      "statement": "return output"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L390": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 390,
+      "end_line": 390,
+      "statement": "non_sky_mask = compute_sky_mask(metric_output.sky, threshold=0.3)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L393": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 393,
+      "end_line": 393,
+      "statement": "assert non_sky_mask.sum() > 10, \"Insufficient non-sky pixels for alignment\""
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L396": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 396,
+      "end_line": 396,
+      "statement": "depth_conf_ns = output.depth_conf[non_sky_mask]"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L397": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 397,
+      "end_line": 397,
+      "statement": "depth_conf_sampled = sample_tensor_for_quantile(depth_conf_ns, max_samples=100000)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L398": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 398,
+      "end_line": 398,
+      "statement": "median_conf = torch.quantile(depth_conf_sampled, 0.5)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L401": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 401,
+      "end_line": 403,
+      "statement": "align_mask = compute_alignment_mask("
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L406": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 406,
+      "end_line": 406,
+      "statement": "valid_depth = output.depth[align_mask]"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L407": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 407,
+      "end_line": 407,
+      "statement": "valid_metric_depth = metric_output.depth[align_mask]"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L408": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 408,
+      "end_line": 408,
+      "statement": "scale_factor = least_squares_scale_scalar(valid_metric_depth, valid_depth)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L411": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 411,
+      "end_line": 411,
+      "statement": "output.depth *= scale_factor"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L412": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 412,
+      "end_line": 412,
+      "statement": "output.extrinsics[:, :, :3, 3] *= scale_factor"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L413": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 413,
+      "end_line": 413,
+      "statement": "output.is_metric = 1"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L414": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 414,
+      "end_line": 414,
+      "statement": "output.scale_factor = scale_factor.item()"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._apply_depth_alignment:L416": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._apply_depth_alignment",
+      "line": 416,
+      "end_line": 416,
+      "statement": "return output"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L425": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._handle_sky_regions",
+      "line": 425,
+      "end_line": 425,
+      "statement": "non_sky_mask = compute_sky_mask(metric_output.sky, threshold=0.3)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L429": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._handle_sky_regions",
+      "line": 429,
+      "end_line": 429,
+      "statement": "non_sky_depth = output.depth[non_sky_mask]"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L430": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._handle_sky_regions",
+      "line": 430,
+      "end_line": 434,
+      "statement": "if non_sky_depth.numel() > 100000:"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L435": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._handle_sky_regions",
+      "line": 435,
+      "end_line": 435,
+      "statement": "non_sky_max = min(torch.quantile(sampled_depth, 0.99), sky_depth_def)"
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L438": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._handle_sky_regions",
+      "line": 438,
+      "end_line": 440,
+      "statement": "output.depth, output.depth_conf = set_sky_regions_to_max_depth("
+    },
+    "Depth-Anything-3/src/depth_anything_3/model/da3.py:NestedDepthAnything3Net._handle_sky_regions:L442": {
+      "path": "Depth-Anything-3/src/depth_anything_3/model/da3.py",
+      "function": "NestedDepthAnything3Net._handle_sky_regions",
+      "line": 442,
+      "end_line": 442,
+      "statement": "return output"
+    },
+    "src/da3_runner.py:main:L197": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 197,
+      "end_line": 197,
+      "statement": "args = _parse_args(argv)"
+    },
+    "src/da3_runner.py:main:L198": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 198,
+      "end_line": 198,
+      "statement": "args.model_path = _validate_model_id(args.model_path)"
+    },
+    "src/da3_runner.py:main:L199": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 199,
+      "end_line": 202,
+      "statement": "if args.seed is not None:"
+    },
+    "src/da3_runner.py:main:L204": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 204,
+      "end_line": 204,
+      "statement": "from depth_anything_3.api import DepthAnything3"
+    },
+    "src/da3_runner.py:main:L205": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 205,
+      "end_line": 205,
+      "statement": "from PIL import Image"
+    },
+    "src/da3_runner.py:main:L207": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 207,
+      "end_line": 207,
+      "statement": "input_dir = Path(args.input_dir)"
+    },
+    "src/da3_runner.py:main:L208": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 208,
+      "end_line": 215,
+      "statement": "paths = sorted("
+    },
+    "src/da3_runner.py:main:L216": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 216,
+      "end_line": 217,
+      "statement": "if not paths:"
+    },
+    "src/da3_runner.py:main:L218": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 218,
+      "end_line": 218,
+      "statement": "logger.info(f\"[da3_runner] {len(paths)} imgs from {input_dir}\")"
+    },
+    "src/da3_runner.py:main:L220": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 220,
+      "end_line": 220,
+      "statement": "pil_images = [Image.open(p).convert(\"RGB\") for p in paths]"
+    },
+    "src/da3_runner.py:main:L221": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 221,
+      "end_line": 221,
+      "statement": "source_image_sizes = [(image.width, image.height) for image in pil_images]"
+    },
+    "src/da3_runner.py:main:L222": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 222,
+      "end_line": 222,
+      "statement": "_validate_image_orientations(source_image_sizes, args.process_res)"
+    },
+    "src/da3_runner.py:main:L224": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 224,
+      "end_line": 225,
+      "statement": "if \"cuda\" in args.device and not torch.cuda.is_available():"
+    },
+    "src/da3_runner.py:main:L226": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 226,
+      "end_line": 226,
+      "statement": "device = torch.device(args.device)"
+    },
+    "src/da3_runner.py:main:L227": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 227,
+      "end_line": 227,
+      "statement": "t0 = time.time()"
+    },
+    "src/da3_runner.py:main:L228": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 228,
+      "end_line": 229,
+      "statement": "if model is None:"
+    },
+    "src/da3_runner.py:main:L230": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 230,
+      "end_line": 230,
+      "statement": "model.eval()"
+    },
+    "src/da3_runner.py:main:L231": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 231,
+      "end_line": 231,
+      "statement": "logger.info(f\"[da3_runner] model loaded on {device} ({time.time()-t0:.1f}s)\")"
+    },
+    "src/da3_runner.py:main:L233": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 233,
+      "end_line": 235,
+      "statement": "source_image_sha256 = np.asarray("
+    },
+    "src/da3_runner.py:main:L236": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 236,
+      "end_line": 236,
+      "statement": "t1 = time.time()"
+    },
+    "src/da3_runner.py:main:L237": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 237,
+      "end_line": 242,
+      "statement": "prediction = model.inference("
+    },
+    "src/da3_runner.py:main:L243": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 243,
+      "end_line": 243,
+      "statement": "logger.info(f\"[da3_runner] inference done ({time.time()-t1:.1f}s)\")"
+    },
+    "src/da3_runner.py:main:L247": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 247,
+      "end_line": 247,
+      "statement": "is_metric = int(prediction.is_metric)"
+    },
+    "src/da3_runner.py:main:L248": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 248,
+      "end_line": 252,
+      "statement": "if is_metric != 1:"
+    },
+    "src/da3_runner.py:main:L253": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 253,
+      "end_line": 253,
+      "statement": "scale_factor = prediction.scale_factor"
+    },
+    "src/da3_runner.py:main:L254": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 254,
+      "end_line": 254,
+      "statement": "logger.info(f\"[da3_runner] metric gate OK: is_metric=1 scale_factor={scale_factor}\")"
+    },
+    "src/da3_runner.py:main:L256": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 256,
+      "end_line": 256,
+      "statement": "depth = np.asarray(prediction.depth, dtype=np.float32)"
+    },
+    "src/da3_runner.py:main:L257": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 257,
+      "end_line": 259,
+      "statement": "extrinsics = np.asarray("
+    },
+    "src/da3_runner.py:main:L260": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 260,
+      "end_line": 260,
+      "statement": "intrinsics = np.asarray(prediction.intrinsics, dtype=np.float32)"
+    },
+    "src/da3_runner.py:main:L261": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 261,
+      "end_line": 261,
+      "statement": "conf = prediction.conf"
+    },
+    "src/da3_runner.py:main:L262": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 262,
+      "end_line": 264,
+      "statement": "conf = ("
+    },
+    "src/da3_runner.py:main:L265": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 265,
+      "end_line": 265,
+      "statement": "proc_imgs = prediction.processed_images"
+    },
+    "src/da3_runner.py:main:L266": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 266,
+      "end_line": 266,
+      "statement": "N, H, W = depth.shape"
+    },
+    "src/da3_runner.py:main:L267": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 267,
+      "end_line": 269,
+      "statement": "logger.info("
+    },
+    "src/da3_runner.py:main:L271": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 271,
+      "end_line": 271,
+      "statement": "world_points = _depth_to_world_points(depth, intrinsics, extrinsics)"
+    },
+    "src/da3_runner.py:main:L272": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 272,
+      "end_line": 276,
+      "statement": "images_np = ("
+    },
+    "src/da3_runner.py:main:L277": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 277,
+      "end_line": 277,
+      "statement": "image_ids = _extract_image_ids(paths)"
+    },
+    "src/da3_runner.py:main:L278": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 278,
+      "end_line": 278,
+      "statement": "image_ids_array = np.asarray(image_ids, dtype=np.int32)"
+    },
+    "src/da3_runner.py:main:L279": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 279,
+      "end_line": 281,
+      "statement": "source_to_processed_affine = _source_to_processed_affines("
+    },
+    "src/da3_runner.py:main:L284": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 284,
+      "end_line": 284,
+      "statement": "sorted_indices = np.argsort(image_ids_array)"
+    },
+    "src/da3_runner.py:main:L285": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 285,
+      "end_line": 287,
+      "statement": "id_to_frame_map = {"
+    },
+    "src/da3_runner.py:main:L288": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 288,
+      "end_line": 288,
+      "statement": "map_keys = np.array(list(id_to_frame_map.keys()), dtype=np.int32)"
+    },
+    "src/da3_runner.py:main:L289": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 289,
+      "end_line": 289,
+      "statement": "map_values = np.array(list(id_to_frame_map.values()), dtype=np.int32)"
+    },
+    "src/da3_runner.py:main:L291": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 291,
+      "end_line": 291,
+      "statement": "out = Path(args.output_npz)"
+    },
+    "src/da3_runner.py:main:L292": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 292,
+      "end_line": 292,
+      "statement": "out.parent.mkdir(parents=True, exist_ok=True)"
+    },
+    "src/da3_runner.py:main:L295": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 295,
+      "end_line": 328,
+      "statement": "with out.open(\"wb\") as stream:"
+    },
+    "src/da3_runner.py:main:L329": {
+      "path": "src/da3_runner.py",
+      "function": "main",
+      "line": 329,
+      "end_line": 329,
+      "statement": "logger.info(f\"[da3_runner] saved {out} (total {time.time()-t0:.1f}s)\")"
+    }
+  },
+  "rss_hwm_kib": 14473872,
+  "cpu_user_s": 22.561868,
+  "cpu_system_s": 4.174351,
+  "peak_allocated_bytes": 12251022848,
+  "peak_reserved_bytes": 15422455808,
+  "final_allocated_bytes": 8519680
+}

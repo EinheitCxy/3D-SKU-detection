@@ -1,0 +1,20 @@
+{
+  "status": "complete",
+  "finished_at": "2026-10-18 19:58:51 CST",
+  "main_wall_s": 248.8995973669953,
+  "source_commit": "bf9bde8",
+  "gpu_index": 2,
+  "full_main_runs": 1,
+  "independent_component_runs": 4,
+  "extra_overlap_replays": 1,
+  "production_source_modified": false,
+  "push_performed": false,
+  "task_gpu_processes_remaining": false,
+  "existing_gpu2_pids_preserved": [
+    6221,
+    8550
+  ],
+  "resources": "Runtime model copy approx6.3GiB and local artifacts retained; final disk available approx15GiB",
+  "validation": "validation.json",
+  "canonical": "../../docs/profiling_breakdown.md"
+}

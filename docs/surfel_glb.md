@@ -1,5 +1,7 @@
 # 通用网页可加载的 Surfel GLB
 
+性能计时统一见[GPU2 profiling](profiling_breakdown.md)；本轮改动与对照见[video3优化记录](../reports/latency-optimization-20261018/README.md)。逐步骤实现见[LOD、烘焙与编码说明](../reports/profiling-20261018/algorithms_delivery.md)，旧计时摘录已退役。
+
 将现有 **DA3 Surfel bundle** 导出为自包含的标准纹理 GLB。普通 glTF 2.0 加载器只需支持 Khronos `KHR_materials_unlit`，不需要本项目的 renderer、shader 或外部纹理文件。
 
 ```bash
@@ -25,9 +27,11 @@ CPU 烘焙沿用基线 Viewer 的 footprint 限制、深度连续性和 source-d
 
 ### 实验性导出参数
 
+`export_scene_glb(..., projection_mode="source_world")`保留原world→camera→projection的float32顺序，并按来源帧共享K/inverse K/affine/texel网格常量。显式`projection_mode="camera_basis"`复用中心与变换后的U/V生成texels；真实video3样本已出现少量边界alpha/RGB差异，因此保持实验选项，不作默认推广。两种模式均保留f16几何输入、规范JPEG解码、深度比较、页顺序和6倍native最终直径限制；非法mode直接拒绝，没有自动切换模式。
+
 WP-G 将 GLB 导出接口扩展为可调 `radius`、`tile_size`、`lod` 和 `palette_colors`；Docker `export_scene_glb` 的默认值仍为 `2.0`、`8`、`True` 和 `128`。设置 `palette_colors=None` 会输出 RGBA PNG 并保留二值 alpha，不执行颜色索引量化。当前 Viewer clarity 评估在 D1 阶段因 video3 基线 frame 24 无有效比较像素而无法判定，E3 未运行；因此没有本轮候选的文件大小或耗时收益可报告，也没有据此变更生产参数。
 
-2026-10-17 的 CPU 候选为 `export_scene_glb(..., encoder_workers=1/2/4)`，默认仍为 `1`。`2` 和 `4` 分别允许最多两页和四页待编码/写入，线程只编码独立页面；主线程按原顺序写 geometry、PNG 和材质，页面交出后只读。任一生产、编码或写入异常都会取消未开始的任务并等待运行任务退出，再向调用方抛出。默认命令行仍是既有非 compact 导出；并行候选用 Python compact 接口：
+`export_scene_glb(..., encoder_workers=1/2/4)`当前默认为`2`。2026-10-18同generation完整导出1/2/4各一次为108.396/67.627/66.638秒，所有geometry和解码RGBA一致；4相对2的额外0.989秒尚未证明稳定收益，因此保留显式4而采用默认2。`2`和`4`分别允许最多两页和四页待编码/写入，线程只编码独立页面；主线程按原顺序写geometry、PNG和材质，页面交出后只读。任一生产、编码或写入异常都会取消未开始的任务并等待运行任务退出，再向调用方抛出。普通命令行仍是既有非compact导出；并行流水使用Python compact接口：
 
 ```python
 from src.surfel_glb import export_scene_glb
@@ -35,7 +39,7 @@ from src.surfel_glb import export_scene_glb
 report = export_scene_glb("path/to/generation", "Output/parallel.glb", encoder_workers=2)
 ```
 
-两线程/四线程、小型真实 PNG、乱序完成、有界队列、完整 GLB byte equality 和异常清理等功能测试已通过。完整 video3 的两组 B1/C1/C2/B2 对照也已通过：2 线程为 70.663/70.555 秒，相对本组串行 112.818/111.459 秒；4 线程为 69.699/69.908 秒，相对本组串行 112.707/109.559 秒。两组都约节省 37%，各次完整 GLB、全部页数组及解码资产一致。计时包含同样的页面捕获，使用同一组 4 个逻辑 CPU；两组分别运行，不能用约 0.8 秒的候选均值差断言 4 线程更优。当前推荐先使用 2 线程，默认参数仍为 1；本测试不更新完整流水线基线。[结果与独立复核](../reports/viewer-latency-20261017/STATUS.md#complete-atlas-comparison)。
+两线程/四线程、小型真实PNG、乱序完成、有界队列、完整GLB byte equality和异常清理等功能测试已通过。历史两组B1/C1/C2/B2组件对照也支持约37%的完整导出节省；其命令/页面捕获/CPU条件见[历史结果与复核](../reports/viewer-latency-20261017/STATUS.md#complete-atlas-comparison)。当时默认为1；当前默认2依据本轮完整输出和GPU2流水线对照，具体数值仅在[统一profiling第12节](profiling_breakdown.md#12-后续已实现的优化固定video3前后完整对照)维护，不将不同组时间混算。
 
 更多线程不保证更快：页面烘焙是单一 producer，编码与烘焙也共享 CPU。满页原始 RGBA/geometry 数组约 20 MiB，四页约 80 MiB，只是队列数组规模，不能代替进程 RSS。两组测试进程峰值分别约 2.321/2.296 GiB，包含保留的比较数据及 allocator 历史，不代表独立导出器的内存差异。当前 Pillow 12.3.0 的 [MEDIANCUT 循环](https://github.com/python-pillow/Pillow/blob/12.3.0/src/libImaging/Quant.c#L1699)和 [PNG 编码循环](https://github.com/python-pillow/Pillow/blob/12.3.0/src/libImaging/ZipEncode.c#L138)有释放 GIL 的区间，具备实际线程并行条件。
 

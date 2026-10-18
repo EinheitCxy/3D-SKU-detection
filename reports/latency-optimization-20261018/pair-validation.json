@@ -1,0 +1,596 @@
+{
+  "status": "pass",
+  "numeric_outputs": {
+    "depth": {
+      "equal": true,
+      "shape": [
+        29,
+        504,
+        280,
+        1
+      ],
+      "dtype": "float32"
+    },
+    "depth_conf": {
+      "equal": true,
+      "shape": [
+        29,
+        504,
+        280
+      ],
+      "dtype": "float32"
+    },
+    "world_points": {
+      "equal": true,
+      "shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "dtype": "float32"
+    },
+    "world_points_conf": {
+      "equal": true,
+      "shape": [
+        29,
+        504,
+        280
+      ],
+      "dtype": "float32"
+    },
+    "extrinsic": {
+      "equal": true,
+      "shape": [
+        29,
+        3,
+        4
+      ],
+      "dtype": "float32"
+    },
+    "intrinsic": {
+      "equal": true,
+      "shape": [
+        29,
+        3,
+        3
+      ],
+      "dtype": "float32"
+    },
+    "images": {
+      "equal": true,
+      "shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "dtype": "uint8"
+    },
+    "image_ids": {
+      "equal": true,
+      "shape": [
+        29
+      ],
+      "dtype": "int32"
+    },
+    "source_image_sizes": {
+      "equal": true,
+      "shape": [
+        29,
+        2
+      ],
+      "dtype": "int32"
+    },
+    "source_to_processed_affine": {
+      "equal": true,
+      "shape": [
+        29,
+        2,
+        3
+      ],
+      "dtype": "float32"
+    },
+    "is_metric": {
+      "equal": true,
+      "shape": [],
+      "dtype": "int32"
+    },
+    "scale_factor": {
+      "equal": true,
+      "shape": [],
+      "dtype": "float32"
+    },
+    "frame_alignment_sorted_indices": {
+      "equal": true,
+      "shape": [
+        29
+      ],
+      "dtype": "int64"
+    },
+    "frame_alignment_map_keys": {
+      "equal": true,
+      "shape": [
+        29
+      ],
+      "dtype": "int32"
+    },
+    "frame_alignment_map_values": {
+      "equal": true,
+      "shape": [
+        29
+      ],
+      "dtype": "int32"
+    }
+  },
+  "viewer_arrays": {
+    "positions.f32.bin": {
+      "equal": true,
+      "before_bytes": 28831068,
+      "after_bytes": 28831068
+    },
+    "colors.u8.bin": {
+      "equal": true,
+      "before_bytes": 7207767,
+      "after_bytes": 7207767
+    },
+    "normals.i8.bin": {
+      "equal": true,
+      "before_bytes": 7207767,
+      "after_bytes": 7207767
+    },
+    "surfel-u.f16.bin": {
+      "equal": true,
+      "before_bytes": 14415534,
+      "after_bytes": 14415534
+    },
+    "surfel-v.f16.bin": {
+      "equal": true,
+      "before_bytes": 14415534,
+      "after_bytes": 14415534
+    },
+    "surfel-scale.f16.bin": {
+      "equal": true,
+      "before_bytes": 9610356,
+      "after_bytes": 9610356
+    },
+    "surfel-frame.u8.bin": {
+      "equal": true,
+      "before_bytes": 2402589,
+      "after_bytes": 2402589
+    },
+    "surfel-depth.f16.bin": {
+      "equal": true,
+      "before_bytes": 8184960,
+      "after_bytes": 8184960
+    }
+  },
+  "resources": {
+    "baseline": {
+      "sample_interval_ms": 200,
+      "target_pids": [
+        2857728,
+        2857733,
+        2857931,
+        2857934,
+        2900388,
+        2900391
+      ],
+      "clock_anchor": {
+        "epoch_s": 1792328609.0497663,
+        "monotonic_s": 106642.210246562,
+        "uncertainty_s": 3.4699769457802176e-07,
+        "purpose": "Map nvidia-smi local timestamps to monotonic stage intervals"
+      },
+      "gpu_task_driver_peak_mib": 15132.0,
+      "gpu_task_peak_timestamp": "2026/10/18 21:03:56.991",
+      "gpu_task_peak_members_mib": {
+        "2857934": 15132.0
+      },
+      "gpu_task_peak_offset_s": 27.94107445490954,
+      "gpu_device_peak_mib": 20181.0,
+      "gpu_foreign_min_sum_mib": 5030.0,
+      "gpu_foreign_max_sum_mib": 5030.0,
+      "gpu_device_rows": 1264,
+      "gpu_process_task_timestamps": 534,
+      "phase_peaks": [
+        {
+          "name": "core_imports_and_instrumentation",
+          "start_offset_s": 0.07112835100269876,
+          "end_offset_s": 5.032535124002607,
+          "task_peak_mib": 0,
+          "members_mib": {},
+          "timestamp": "2026/10/18 21:03:29.285",
+          "valid_query_timestamps": 24,
+          "observed_no_task_gpu_process": true
+        },
+        {
+          "name": "run_reconstruction",
+          "start_offset_s": 5.056312749002245,
+          "end_offset_s": 30.18893728000694,
+          "task_peak_mib": 15132.0,
+          "members_mib": {
+            "2857934": 15132.0
+          },
+          "timestamp": "2026/10/18 21:03:57.794",
+          "valid_query_timestamps": 125,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "prepare_web_viewer_geometry",
+          "start_offset_s": 30.189777400999446,
+          "end_offset_s": 45.39664770600211,
+          "task_peak_mib": 1052.0,
+          "members_mib": {
+            "2857733": 1052.0
+          },
+          "timestamp": "2026/10/18 21:04:05.224",
+          "valid_query_timestamps": 75,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "run_sku_matching",
+          "start_offset_s": 30.189936843002215,
+          "end_offset_s": 60.852581325001665,
+          "task_peak_mib": 3788.0,
+          "members_mib": {
+            "2857733": 3788.0
+          },
+          "timestamp": "2026/10/18 21:04:21.088",
+          "valid_query_timestamps": 152,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "run_dedup_sequence",
+          "start_offset_s": 60.8527667090093,
+          "end_offset_s": 60.99559232300089,
+          "task_peak_mib": 2914.0,
+          "members_mib": {
+            "2857733": 2914.0
+          },
+          "timestamp": "2026/10/18 21:04:29.925",
+          "valid_query_timestamps": 1,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "export_web_viewer_bundle",
+          "start_offset_s": 60.99575505399844,
+          "end_offset_s": 129.85437357600313,
+          "task_peak_mib": 2914.0,
+          "members_mib": {
+            "2857733": 2914.0
+          },
+          "timestamp": "2026/10/18 21:05:23.158",
+          "valid_query_timestamps": 343,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "da3_runner_main",
+          "start_offset_s": 9.50322172101005,
+          "end_offset_s": 28.577875753006083,
+          "task_peak_mib": 15132.0,
+          "members_mib": {
+            "2857934": 15132.0
+          },
+          "timestamp": "2026/10/18 21:03:57.594",
+          "valid_query_timestamps": 95,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "delivery_imports",
+          "start_offset_s": 131.87719004500832,
+          "end_offset_s": 135.35123634099727,
+          "task_peak_mib": 0,
+          "members_mib": {},
+          "timestamp": "2026/10/18 21:05:41.259",
+          "valid_query_timestamps": 17,
+          "observed_no_task_gpu_process": true
+        },
+        {
+          "name": "zip_pack",
+          "start_offset_s": 135.35155333399598,
+          "end_offset_s": 138.0966905660025,
+          "task_peak_mib": 0,
+          "members_mib": {},
+          "timestamp": "2026/10/18 21:05:47.079",
+          "valid_query_timestamps": 14,
+          "observed_no_task_gpu_process": true
+        },
+        {
+          "name": "glb_export",
+          "start_offset_s": 138.09687650299747,
+          "end_offset_s": 252.1382599799981,
+          "task_peak_mib": 0,
+          "members_mib": {},
+          "timestamp": "2026/10/18 21:06:12.970",
+          "valid_query_timestamps": 568,
+          "observed_no_task_gpu_process": true
+        }
+      ],
+      "gpu_device_coverage_s": 252.92400002479553,
+      "host_tree_peak_bytes": 14855249920,
+      "host_tree_peak_offset_s": 23.400084167005843,
+      "host_tree_peak_stage": "core",
+      "host_tree_by_stage_bytes": {
+        "core": 14855249920,
+        "delivery": 994881536
+      },
+      "process_lifetimes": [
+        {
+          "pid": 2857733,
+          "argv": [
+            "/home/xingyu/3D_Recognization/reports/latency-optimization-20261018/profile_core.py"
+          ],
+          "elapsed_s": 129.853456464989,
+          "rss_hwm_kib": 5723996,
+          "cpu_user_s": 188.500058,
+          "cpu_system_s": 12.752274,
+          "peak_scope": "process lifetime; no allocator resets",
+          "torch_threads": 4,
+          "torch_interop_threads": 20,
+          "cuda_allocated_peak_bytes": 3341922304,
+          "cuda_reserved_peak_bytes": 3527409664,
+          "cuda_allocated_final_bytes": 2476861440
+        },
+        {
+          "pid": 2857934,
+          "argv": [
+            "/home/xingyu/3D_Recognization/reports/latency-optimization-20261018/profile_da3.py",
+            "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261018/baseline-code/src/da3_runner.py",
+            "--input_dir",
+            "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261018/baseline-video3/dataset/images",
+            "--output_npz",
+            "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261018/baseline-video3/outputs/dataset/da3_cache/predictions.npz.partial",
+            "--model_path",
+            "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3-model/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+            "--device",
+            "cuda",
+            "--process_res",
+            "504"
+          ],
+          "elapsed_s": 23.433359250993817,
+          "rss_hwm_kib": 14578860,
+          "cpu_user_s": 23.69454,
+          "cpu_system_s": 4.461273,
+          "peak_scope": "process lifetime; no allocator resets",
+          "torch_threads": 4,
+          "torch_interop_threads": 20,
+          "cuda_allocated_peak_bytes": 12251022848,
+          "cuda_reserved_peak_bytes": 15422455808,
+          "cuda_allocated_final_bytes": 8519680
+        },
+        {
+          "pid": 2900391,
+          "argv": [
+            "/home/xingyu/3D_Recognization/reports/latency-optimization-20261018/profile_delivery.py"
+          ],
+          "elapsed_s": 120.27341934099968,
+          "rss_hwm_kib": 931740,
+          "cpu_user_s": 144.90761,
+          "cpu_system_s": 121.207858,
+          "peak_scope": "process lifetime; no allocator resets",
+          "torch_threads": 4,
+          "torch_interop_threads": 20
+        }
+      ],
+      "definition": "200ms sampled simultaneous task PID sums; existing residents excluded. RSS can double-count shared pages. Phase peaks and allocator/process peaks overlap and must not be added."
+    },
+    "candidate": {
+      "sample_interval_ms": 200,
+      "target_pids": [
+        3105893,
+        3105898,
+        3106261,
+        3106308,
+        3113380,
+        3113425
+      ],
+      "clock_anchor": {
+        "epoch_s": 1792330081.2248278,
+        "monotonic_s": 108114.3853077095,
+        "uncertainty_s": 3.964960342273116e-07,
+        "purpose": "Map nvidia-smi local timestamps to monotonic stage intervals"
+      },
+      "gpu_task_driver_peak_mib": 15132.0,
+      "gpu_task_peak_timestamp": "2026/10/18 21:28:17.723",
+      "gpu_task_peak_members_mib": {
+        "3106308": 15132.0
+      },
+      "gpu_task_peak_offset_s": 16.498004671026138,
+      "gpu_device_peak_mib": 20181.0,
+      "gpu_foreign_min_sum_mib": 5030.0,
+      "gpu_foreign_max_sum_mib": 5030.0,
+      "gpu_device_rows": 934,
+      "gpu_process_task_timestamps": 487,
+      "phase_peaks": [
+        {
+          "name": "core_imports_and_instrumentation",
+          "start_offset_s": 0.07093288999749348,
+          "end_offset_s": 4.961140120009077,
+          "task_peak_mib": 0,
+          "members_mib": {},
+          "timestamp": "2026/10/18 21:28:02.868",
+          "valid_query_timestamps": 24,
+          "observed_no_task_gpu_process": true
+        },
+        {
+          "name": "run_reconstruction",
+          "start_offset_s": 4.98395321200951,
+          "end_offset_s": 18.69027681001171,
+          "task_peak_mib": 15132.0,
+          "members_mib": {
+            "3106308": 15132.0
+          },
+          "timestamp": "2026/10/18 21:28:19.130",
+          "valid_query_timestamps": 68,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "prepare_web_viewer_geometry",
+          "start_offset_s": 18.691208550008014,
+          "end_offset_s": 33.31896421100828,
+          "task_peak_mib": 1052.0,
+          "members_mib": {
+            "3105898": 1052.0
+          },
+          "timestamp": "2026/10/18 21:28:24.150",
+          "valid_query_timestamps": 73,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "run_sku_matching",
+          "start_offset_s": 18.6913020840002,
+          "end_offset_s": 48.398845457006246,
+          "task_peak_mib": 3788.0,
+          "members_mib": {
+            "3105898": 3788.0
+          },
+          "timestamp": "2026/10/18 21:28:44.231",
+          "valid_query_timestamps": 148,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "run_dedup_sequence",
+          "start_offset_s": 48.39902246900601,
+          "end_offset_s": 48.54719162500987,
+          "task_peak_mib": 2914.0,
+          "members_mib": {
+            "3105898": 2914.0
+          },
+          "timestamp": "2026/10/18 21:28:49.655",
+          "valid_query_timestamps": 1,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "export_web_viewer_bundle",
+          "start_offset_s": 48.547409762002644,
+          "end_offset_s": 109.16265973400732,
+          "task_peak_mib": 2914.0,
+          "members_mib": {
+            "3105898": 2914.0
+          },
+          "timestamp": "2026/10/18 21:29:19.584",
+          "valid_query_timestamps": 302,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "da3_runner_main",
+          "start_offset_s": 9.348850441005197,
+          "end_offset_s": 17.21459103000234,
+          "task_peak_mib": 15132.0,
+          "members_mib": {
+            "3106308": 15132.0
+          },
+          "timestamp": "2026/10/18 21:28:18.125",
+          "valid_query_timestamps": 39,
+          "observed_no_task_gpu_process": false
+        },
+        {
+          "name": "delivery_imports",
+          "start_offset_s": 111.02085012500174,
+          "end_offset_s": 114.58735100300692,
+          "task_peak_mib": 0,
+          "members_mib": {},
+          "timestamp": "2026/10/18 21:29:55.740",
+          "valid_query_timestamps": 18,
+          "observed_no_task_gpu_process": true
+        },
+        {
+          "name": "zip_pack",
+          "start_offset_s": 114.587693346999,
+          "end_offset_s": 117.3620098070096,
+          "task_peak_mib": 0,
+          "members_mib": {},
+          "timestamp": "2026/10/18 21:29:58.148",
+          "valid_query_timestamps": 14,
+          "observed_no_task_gpu_process": true
+        },
+        {
+          "name": "glb_export",
+          "start_offset_s": 117.36221966300218,
+          "end_offset_s": 186.13259202100744,
+          "task_peak_mib": 0,
+          "members_mib": {},
+          "timestamp": "2026/10/18 21:30:24.244",
+          "valid_query_timestamps": 342,
+          "observed_no_task_gpu_process": true
+        }
+      ],
+      "gpu_device_coverage_s": 186.83700013160706,
+      "host_tree_peak_bytes": 13362380800,
+      "host_tree_peak_offset_s": 12.030812164011877,
+      "host_tree_peak_stage": "core",
+      "host_tree_by_stage_bytes": {
+        "core": 13362380800,
+        "delivery": 1067806720
+      },
+      "process_lifetimes": [
+        {
+          "pid": 3105898,
+          "argv": [
+            "/home/xingyu/3D_Recognization/reports/latency-optimization-20261018/profile_core.py"
+          ],
+          "elapsed_s": 109.14662470399344,
+          "rss_hwm_kib": 5730664,
+          "cpu_user_s": 178.579562,
+          "cpu_system_s": 11.476971,
+          "peak_scope": "process lifetime; no allocator resets",
+          "torch_threads": 4,
+          "torch_interop_threads": 20,
+          "cuda_allocated_peak_bytes": 3341922304,
+          "cuda_reserved_peak_bytes": 3527409664,
+          "cuda_allocated_final_bytes": 2476861440
+        },
+        {
+          "pid": 3106308,
+          "argv": [
+            "/home/xingyu/3D_Recognization/reports/latency-optimization-20261018/profile_da3.py",
+            "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261018/candidate-code/src/da3_runner.py",
+            "--input_dir",
+            "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261018/candidate-video3/dataset/images",
+            "--output_npz",
+            "/home/xingyu/3D_Recognization/runtime/latency-optimization-20261018/candidate-video3/outputs/dataset/da3_cache/predictions.npz.partial",
+            "--model_path",
+            "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3-model/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+            "--device",
+            "cuda",
+            "--process_res",
+            "504"
+          ],
+          "elapsed_s": 12.142996673006564,
+          "rss_hwm_kib": 14664420,
+          "cpu_user_s": 13.541826,
+          "cpu_system_s": 4.2175,
+          "peak_scope": "process lifetime; no allocator resets",
+          "torch_threads": 4,
+          "torch_interop_threads": 20,
+          "cuda_allocated_peak_bytes": 12251022848,
+          "cuda_reserved_peak_bytes": 15422455808,
+          "cuda_allocated_final_bytes": 8519680
+        },
+        {
+          "pid": 3113425,
+          "argv": [
+            "/home/xingyu/3D_Recognization/reports/latency-optimization-20261018/profile_delivery.py"
+          ],
+          "elapsed_s": 75.11778256800608,
+          "rss_hwm_kib": 1006608,
+          "cpu_user_s": 122.509953,
+          "cpu_system_s": 20.194899,
+          "peak_scope": "process lifetime; no allocator resets",
+          "torch_threads": 4,
+          "torch_interop_threads": 20
+        }
+      ],
+      "definition": "200ms sampled simultaneous task PID sums; existing residents excluded. RSS can double-count shared pages. Phase peaks and allocator/process peaks overlap and must not be added."
+    }
+  },
+  "scope": "Actual same-input video3 output/format/resource checks; no hashes, detector/classifier/browser/accuracy benchmark",
+  "da3_outputs_exact": true,
+  "global_mapping_equal": true,
+  "viewer_arrays_exact": true,
+  "viewer_objects_equal": true,
+  "viewer_manifest_equal": true,
+  "glb_payload_equal": true,
+  "interpretation": "DA3/matching equality is a hard check. Viewer/GLB equality is reported separately because native randomized plane fitting remains enabled; differences must be investigated rather than silently accepted."
+}

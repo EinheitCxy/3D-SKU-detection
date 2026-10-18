@@ -1,0 +1,38 @@
+{
+  "status": "pass",
+  "updated_utc": "2026-10-18T13:41:40.008406+00:00",
+  "python_ast": {
+    "status": "pass",
+    "file_count": 23
+  },
+  "local_markdown_links": {
+    "status": "pass",
+    "markdown_files": 10,
+    "checked": 49,
+    "missing": [],
+    "scope": "new task report plus canonical profiling; existence only, no external requests"
+  },
+  "git_diff_check": {
+    "status": "pass",
+    "returncode": 0,
+    "output": ""
+  },
+  "pair_validation_status": "pass",
+  "final_reviews": {
+    "profile_gpu_map": "pass",
+    "profile_geometry_map": "pass",
+    "profile_delivery_map": "pass"
+  },
+  "performance_population": "video3, fixed29frames/711detections, n=1 per arm, GPU2, seed42, threads4; no optimized multi-video mean",
+  "default_candidate": {
+    "ground_proposal_max_points": 0,
+    "projection_mode": "source_world",
+    "encoder_workers": 2
+  },
+  "experiments_not_promoted": [
+    "ground50K: changed background and unaccepted plane semantics",
+    "camera_basis: real alpha differences"
+  ],
+  "resource_cleanup": "Owned processes completed; 2026-10-18 21:32 CST GPU2 snapshot retained only original resident PIDs6221/8550; GPU0/1 untouched",
+  "publication": "No commit, push, deployment or upload"
+}

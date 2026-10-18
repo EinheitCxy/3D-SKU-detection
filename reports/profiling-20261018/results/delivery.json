@@ -1,0 +1,6527 @@
+{
+  "status": "complete",
+  "base": "/home/xingyu/3D_Recognization/runtime/profiling-20261018",
+  "output": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/delivery",
+  "command": [
+    "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/bin/python",
+    "/home/xingyu/3D_Recognization/reports/profiling-20261018/diagnose_delivery.py",
+    "--base",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018",
+    "--out",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/delivery"
+  ],
+  "python": "3.11.11 (main, Jun 20 2025, 00:00:00) [GCC 11.5.0 20240719 (Red Hat 11.5.0-5)]",
+  "artifacts_retained": true,
+  "source_locations": {
+    "glb._load": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb.py",
+      "line": 85
+    },
+    "lod.select_surfel_lod": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_lod.py",
+      "line": 49
+    },
+    "lod._covered": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_lod.py",
+      "line": 8
+    },
+    "lod._bound_footprint": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_mesh.py",
+      "line": 16
+    },
+    "bake._bound_footprint": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_mesh.py",
+      "line": 16
+    },
+    "bake._limit_final_diameter": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_mesh.py",
+      "line": 34
+    },
+    "bake._bilinear": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_mesh.py",
+      "line": 64
+    },
+    "bake._dilate_rgb": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_mesh.py",
+      "line": 74
+    },
+    "bake._page": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_mesh.py",
+      "line": 156
+    },
+    "texture.encode_atlas": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_texture.py",
+      "line": 27
+    },
+    "texture._binary_alpha": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_texture.py",
+      "line": 15
+    },
+    "texture._compact_rgba": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_texture.py",
+      "line": 33
+    },
+    "texture._rgba_png": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_texture.py",
+      "line": 67
+    },
+    "compact._write_glb": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_compact.py",
+      "line": 79
+    },
+    "compact.geometry": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_compact.py",
+      "line": 143
+    },
+    "compact.image": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_compact.py",
+      "line": 171
+    },
+    "compact.finish": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_compact.py",
+      "line": 181
+    },
+    "compact.view": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_glb_compact.py",
+      "line": 121
+    },
+    "PIL.convert": {
+      "file": "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/PIL/Image.py",
+      "line": 1017
+    },
+    "PIL.quantize": {
+      "file": "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/PIL/Image.py",
+      "line": 1273
+    },
+    "PIL.save": {
+      "file": "/home/xingyu/3D_Recognization/runtime/viewer-latency-20261017/test-env/lib64/python3.11/site-packages/PIL/Image.py",
+      "line": 2592
+    },
+    "bake._bake_batch": {
+      "file": "/home/xingyu/3D_Recognization/src/surfel_mesh.py",
+      "line": 95
+    }
+  },
+  "timing_definition": "inclusive includes nested spans; self subtracts direct children on the same thread; do not sum parent and child inclusive_s",
+  "resource_definition": "RUSAGE_SELF CPU deltas; maxrss is process-lifetime Linux KiB, not a stage-local allocation peak",
+  "performance_scope": "Independent instrumented CPU delivery; not pipeline latency or GPU time",
+  "environment": {
+    "numpy": "1.26.4",
+    "pillow": "12.3.0",
+    "cpu_affinity": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39
+    ],
+    "variables": {
+      "OMP_NUM_THREADS": "4",
+      "OPENBLAS_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4",
+      "NUMEXPR_NUM_THREADS": null,
+      "CUDA_VISIBLE_DEVICES": "",
+      "TMPDIR": null
+    }
+  },
+  "export_defaults": {
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128,
+    "encoder_workers": 1
+  },
+  "baker_defaults": {
+    "radius": 2.0,
+    "tile_size": 8,
+    "atlas_size": 2048,
+    "batch_size": 1024,
+    "image_format": "png"
+  },
+  "final_diameter_max_native": 6.0,
+  "configuration": {
+    "encoder_workers": 1,
+    "overrides": "encoder_workers only; other values use recorded production defaults"
+  },
+  "batch_instrumentation": {
+    "file": "/home/xingyu/3D_Recognization/src/surfel_mesh.py",
+    "first_line": 95,
+    "boundaries": [
+      {
+        "offset": 0,
+        "label": "camera_visibility"
+      },
+      {
+        "offset": 15,
+        "label": "footprint_and_continuity"
+      },
+      {
+        "offset": 27,
+        "label": "radius_final_diameter"
+      },
+      {
+        "offset": 30,
+        "label": "texel_projection_mask"
+      },
+      {
+        "offset": 41,
+        "label": "depth_and_source_mask"
+      },
+      {
+        "offset": 51,
+        "label": "bilinear_rgb"
+      },
+      {
+        "offset": 54,
+        "label": "tile_corners_dilation"
+      }
+    ]
+  },
+  "zip_members": [
+    {
+      "name": "manifest.json",
+      "category": "json",
+      "input_bytes": 753,
+      "compressed_bytes": 753,
+      "compression": 0,
+      "wall_s": 0.00030477700056508183
+    },
+    {
+      "name": "positions.f32.bin",
+      "category": "binary",
+      "input_bytes": 28831068,
+      "compressed_bytes": 24921782,
+      "compression": 8,
+      "wall_s": 1.2553774460102431
+    },
+    {
+      "name": "colors.u8.bin",
+      "category": "binary",
+      "input_bytes": 7207767,
+      "compressed_bytes": 5952485,
+      "compression": 8,
+      "wall_s": 0.24576753200381063
+    },
+    {
+      "name": "normals.i8.bin",
+      "category": "binary",
+      "input_bytes": 7207767,
+      "compressed_bytes": 31463,
+      "compression": 8,
+      "wall_s": 0.031192997004836798
+    },
+    {
+      "name": "objects.json",
+      "category": "json",
+      "input_bytes": 214736,
+      "compressed_bytes": 214736,
+      "compression": 0,
+      "wall_s": 0.0008504220022587106
+    },
+    {
+      "name": "surfel.json",
+      "category": "json",
+      "input_bytes": 17942,
+      "compressed_bytes": 17942,
+      "compression": 0,
+      "wall_s": 0.00015975198766682297
+    },
+    {
+      "name": "surfel-u.f16.bin",
+      "category": "binary",
+      "input_bytes": 14415534,
+      "compressed_bytes": 10089557,
+      "compression": 8,
+      "wall_s": 0.5112243850016966
+    },
+    {
+      "name": "surfel-v.f16.bin",
+      "category": "binary",
+      "input_bytes": 14415534,
+      "compressed_bytes": 9641838,
+      "compression": 8,
+      "wall_s": 0.4615724909963319
+    },
+    {
+      "name": "surfel-frame.u8.bin",
+      "category": "binary",
+      "input_bytes": 2402589,
+      "compressed_bytes": 12812,
+      "compression": 8,
+      "wall_s": 0.010253878994262777
+    },
+    {
+      "name": "surfel-depth.f16.bin",
+      "category": "binary",
+      "input_bytes": 8184960,
+      "compressed_bytes": 3406986,
+      "compression": 8,
+      "wall_s": 0.15326624498993624
+    },
+    {
+      "name": "surfel-texture-0.jpg",
+      "category": "jpeg",
+      "input_bytes": 843252,
+      "compressed_bytes": 843252,
+      "compression": 0,
+      "wall_s": 0.002511425002012402
+    },
+    {
+      "name": "surfel-texture-1.jpg",
+      "category": "jpeg",
+      "input_bytes": 780870,
+      "compressed_bytes": 780870,
+      "compression": 0,
+      "wall_s": 0.0021334009943529963
+    },
+    {
+      "name": "surfel-texture-2.jpg",
+      "category": "jpeg",
+      "input_bytes": 704945,
+      "compressed_bytes": 704945,
+      "compression": 0,
+      "wall_s": 0.0019345129985595122
+    },
+    {
+      "name": "surfel-texture-3.jpg",
+      "category": "jpeg",
+      "input_bytes": 639120,
+      "compressed_bytes": 639120,
+      "compression": 0,
+      "wall_s": 0.0019604420085670426
+    },
+    {
+      "name": "surfel-texture-4.jpg",
+      "category": "jpeg",
+      "input_bytes": 710875,
+      "compressed_bytes": 710875,
+      "compression": 0,
+      "wall_s": 0.0019147220009472221
+    },
+    {
+      "name": "surfel-texture-5.jpg",
+      "category": "jpeg",
+      "input_bytes": 677307,
+      "compressed_bytes": 677307,
+      "compression": 0,
+      "wall_s": 0.0019135440088575706
+    },
+    {
+      "name": "surfel-texture-6.jpg",
+      "category": "jpeg",
+      "input_bytes": 771353,
+      "compressed_bytes": 771353,
+      "compression": 0,
+      "wall_s": 0.002125119004631415
+    },
+    {
+      "name": "surfel-texture-7.jpg",
+      "category": "jpeg",
+      "input_bytes": 843573,
+      "compressed_bytes": 843573,
+      "compression": 0,
+      "wall_s": 0.002296249003848061
+    },
+    {
+      "name": "surfel-texture-8.jpg",
+      "category": "jpeg",
+      "input_bytes": 880187,
+      "compressed_bytes": 880187,
+      "compression": 0,
+      "wall_s": 0.0024715510080568492
+    },
+    {
+      "name": "surfel-texture-9.jpg",
+      "category": "jpeg",
+      "input_bytes": 800796,
+      "compressed_bytes": 800796,
+      "compression": 0,
+      "wall_s": 0.0021740879892604426
+    },
+    {
+      "name": "surfel-texture-10.jpg",
+      "category": "jpeg",
+      "input_bytes": 791677,
+      "compressed_bytes": 791677,
+      "compression": 0,
+      "wall_s": 0.002176484005758539
+    },
+    {
+      "name": "surfel-texture-11.jpg",
+      "category": "jpeg",
+      "input_bytes": 576955,
+      "compressed_bytes": 576955,
+      "compression": 0,
+      "wall_s": 0.0016083710070233792
+    },
+    {
+      "name": "surfel-texture-12.jpg",
+      "category": "jpeg",
+      "input_bytes": 650578,
+      "compressed_bytes": 650578,
+      "compression": 0,
+      "wall_s": 0.0017468230071244761
+    },
+    {
+      "name": "surfel-texture-13.jpg",
+      "category": "jpeg",
+      "input_bytes": 531041,
+      "compressed_bytes": 531041,
+      "compression": 0,
+      "wall_s": 0.0014034430059837177
+    },
+    {
+      "name": "surfel-texture-14.jpg",
+      "category": "jpeg",
+      "input_bytes": 754542,
+      "compressed_bytes": 754542,
+      "compression": 0,
+      "wall_s": 0.0019461599877104163
+    },
+    {
+      "name": "surfel-texture-15.jpg",
+      "category": "jpeg",
+      "input_bytes": 798706,
+      "compressed_bytes": 798706,
+      "compression": 0,
+      "wall_s": 0.0024057410046225414
+    },
+    {
+      "name": "surfel-texture-16.jpg",
+      "category": "jpeg",
+      "input_bytes": 748920,
+      "compressed_bytes": 748920,
+      "compression": 0,
+      "wall_s": 0.002049011003691703
+    },
+    {
+      "name": "surfel-texture-17.jpg",
+      "category": "jpeg",
+      "input_bytes": 689030,
+      "compressed_bytes": 689030,
+      "compression": 0,
+      "wall_s": 0.0018014009983744472
+    },
+    {
+      "name": "surfel-texture-18.jpg",
+      "category": "jpeg",
+      "input_bytes": 727174,
+      "compressed_bytes": 727174,
+      "compression": 0,
+      "wall_s": 0.0019058589969063178
+    },
+    {
+      "name": "surfel-texture-19.jpg",
+      "category": "jpeg",
+      "input_bytes": 760232,
+      "compressed_bytes": 760232,
+      "compression": 0,
+      "wall_s": 0.0019270909979240969
+    },
+    {
+      "name": "surfel-texture-20.jpg",
+      "category": "jpeg",
+      "input_bytes": 787995,
+      "compressed_bytes": 787995,
+      "compression": 0,
+      "wall_s": 0.0021838850079802796
+    },
+    {
+      "name": "surfel-texture-21.jpg",
+      "category": "jpeg",
+      "input_bytes": 712577,
+      "compressed_bytes": 712577,
+      "compression": 0,
+      "wall_s": 0.0018635219894349575
+    },
+    {
+      "name": "surfel-texture-22.jpg",
+      "category": "jpeg",
+      "input_bytes": 739516,
+      "compressed_bytes": 739516,
+      "compression": 0,
+      "wall_s": 0.0019656939984997734
+    },
+    {
+      "name": "surfel-texture-23.jpg",
+      "category": "jpeg",
+      "input_bytes": 642245,
+      "compressed_bytes": 642245,
+      "compression": 0,
+      "wall_s": 0.0017206900083692744
+    },
+    {
+      "name": "surfel-texture-24.jpg",
+      "category": "jpeg",
+      "input_bytes": 758083,
+      "compressed_bytes": 758083,
+      "compression": 0,
+      "wall_s": 0.0021668119879905134
+    },
+    {
+      "name": "surfel-texture-25.jpg",
+      "category": "jpeg",
+      "input_bytes": 864733,
+      "compressed_bytes": 864733,
+      "compression": 0,
+      "wall_s": 0.0023180790012702346
+    },
+    {
+      "name": "surfel-texture-26.jpg",
+      "category": "jpeg",
+      "input_bytes": 792802,
+      "compressed_bytes": 792802,
+      "compression": 0,
+      "wall_s": 0.0023737570008961484
+    },
+    {
+      "name": "surfel-texture-27.jpg",
+      "category": "jpeg",
+      "input_bytes": 850092,
+      "compressed_bytes": 850092,
+      "compression": 0,
+      "wall_s": 0.002266055002110079
+    },
+    {
+      "name": "surfel-texture-28.jpg",
+      "category": "jpeg",
+      "input_bytes": 805633,
+      "compressed_bytes": 805633,
+      "compression": 0,
+      "wall_s": 0.0020792479917872697
+    },
+    {
+      "name": "surfel-scale.f16.bin",
+      "category": "binary",
+      "input_bytes": 9610356,
+      "compressed_bytes": 605898,
+      "compression": 8,
+      "wall_s": 0.06250369100598618
+    },
+    {
+      "name": "thumbs/100_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4005,
+      "compressed_bytes": 4005,
+      "compression": 0,
+      "wall_s": 0.00015295299817807972
+    },
+    {
+      "name": "thumbs/101_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4130,
+      "compressed_bytes": 4130,
+      "compression": 0,
+      "wall_s": 0.00010679800470825285
+    },
+    {
+      "name": "thumbs/102_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2788,
+      "compressed_bytes": 2788,
+      "compression": 0,
+      "wall_s": 9.44720086408779e-05
+    },
+    {
+      "name": "thumbs/103_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3381,
+      "compressed_bytes": 3381,
+      "compression": 0,
+      "wall_s": 0.00011518799874465913
+    },
+    {
+      "name": "thumbs/104_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2955,
+      "compressed_bytes": 2955,
+      "compression": 0,
+      "wall_s": 9.559700265526772e-05
+    },
+    {
+      "name": "thumbs/104_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2865,
+      "compressed_bytes": 2865,
+      "compression": 0,
+      "wall_s": 9.194499580189586e-05
+    },
+    {
+      "name": "thumbs/105_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6757,
+      "compressed_bytes": 6757,
+      "compression": 0,
+      "wall_s": 0.0001346140052191913
+    },
+    {
+      "name": "thumbs/105_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4773,
+      "compressed_bytes": 4773,
+      "compression": 0,
+      "wall_s": 9.836499521043152e-05
+    },
+    {
+      "name": "thumbs/106_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3501,
+      "compressed_bytes": 3501,
+      "compression": 0,
+      "wall_s": 9.056000271812081e-05
+    },
+    {
+      "name": "thumbs/107_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3314,
+      "compressed_bytes": 3314,
+      "compression": 0,
+      "wall_s": 9.024700557347387e-05
+    },
+    {
+      "name": "thumbs/108_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3498,
+      "compressed_bytes": 3498,
+      "compression": 0,
+      "wall_s": 9.34939889702946e-05
+    },
+    {
+      "name": "thumbs/109_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4002,
+      "compressed_bytes": 4002,
+      "compression": 0,
+      "wall_s": 0.00011758400069084018
+    },
+    {
+      "name": "thumbs/10_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4740,
+      "compressed_bytes": 4740,
+      "compression": 0,
+      "wall_s": 9.556599252391607e-05
+    },
+    {
+      "name": "thumbs/10_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5280,
+      "compressed_bytes": 5280,
+      "compression": 0,
+      "wall_s": 9.545500506646931e-05
+    },
+    {
+      "name": "thumbs/10_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5102,
+      "compressed_bytes": 5102,
+      "compression": 0,
+      "wall_s": 0.00010438599565532058
+    },
+    {
+      "name": "thumbs/10_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5832,
+      "compressed_bytes": 5832,
+      "compression": 0,
+      "wall_s": 0.00010470199049450457
+    },
+    {
+      "name": "thumbs/10_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4945,
+      "compressed_bytes": 4945,
+      "compression": 0,
+      "wall_s": 9.430099453311414e-05
+    },
+    {
+      "name": "thumbs/110_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3229,
+      "compressed_bytes": 3229,
+      "compression": 0,
+      "wall_s": 8.946900197770447e-05
+    },
+    {
+      "name": "thumbs/111_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3336,
+      "compressed_bytes": 3336,
+      "compression": 0,
+      "wall_s": 9.295900235883892e-05
+    },
+    {
+      "name": "thumbs/111_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4782,
+      "compressed_bytes": 4782,
+      "compression": 0,
+      "wall_s": 9.754899656400084e-05
+    },
+    {
+      "name": "thumbs/112_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3977,
+      "compressed_bytes": 3977,
+      "compression": 0,
+      "wall_s": 9.145599324256182e-05
+    },
+    {
+      "name": "thumbs/112_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4815,
+      "compressed_bytes": 4815,
+      "compression": 0,
+      "wall_s": 0.00010428199311718345
+    },
+    {
+      "name": "thumbs/113_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2328,
+      "compressed_bytes": 2328,
+      "compression": 0,
+      "wall_s": 8.666299981996417e-05
+    },
+    {
+      "name": "thumbs/113_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2701,
+      "compressed_bytes": 2701,
+      "compression": 0,
+      "wall_s": 9.212100121658295e-05
+    },
+    {
+      "name": "thumbs/114_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3195,
+      "compressed_bytes": 3195,
+      "compression": 0,
+      "wall_s": 0.0001061509974533692
+    },
+    {
+      "name": "thumbs/115_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2373,
+      "compressed_bytes": 2373,
+      "compression": 0,
+      "wall_s": 9.285300620831549e-05
+    },
+    {
+      "name": "thumbs/116_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2435,
+      "compressed_bytes": 2435,
+      "compression": 0,
+      "wall_s": 8.42139997985214e-05
+    },
+    {
+      "name": "thumbs/117_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2285,
+      "compressed_bytes": 2285,
+      "compression": 0,
+      "wall_s": 8.622299355920404e-05
+    },
+    {
+      "name": "thumbs/117_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2536,
+      "compressed_bytes": 2536,
+      "compression": 0,
+      "wall_s": 8.516499656252563e-05
+    },
+    {
+      "name": "thumbs/118_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2970,
+      "compressed_bytes": 2970,
+      "compression": 0,
+      "wall_s": 8.96989949978888e-05
+    },
+    {
+      "name": "thumbs/119_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4800,
+      "compressed_bytes": 4800,
+      "compression": 0,
+      "wall_s": 9.226900874637067e-05
+    },
+    {
+      "name": "thumbs/119_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5461,
+      "compressed_bytes": 5461,
+      "compression": 0,
+      "wall_s": 9.534099081065506e-05
+    },
+    {
+      "name": "thumbs/11_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4729,
+      "compressed_bytes": 4729,
+      "compression": 0,
+      "wall_s": 0.00010196900984738022
+    },
+    {
+      "name": "thumbs/11_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4886,
+      "compressed_bytes": 4886,
+      "compression": 0,
+      "wall_s": 9.737598884385079e-05
+    },
+    {
+      "name": "thumbs/11_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5301,
+      "compressed_bytes": 5301,
+      "compression": 0,
+      "wall_s": 9.476300328969955e-05
+    },
+    {
+      "name": "thumbs/11_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5065,
+      "compressed_bytes": 5065,
+      "compression": 0,
+      "wall_s": 9.376800153404474e-05
+    },
+    {
+      "name": "thumbs/11_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5195,
+      "compressed_bytes": 5195,
+      "compression": 0,
+      "wall_s": 9.319800301454961e-05
+    },
+    {
+      "name": "thumbs/120_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5002,
+      "compressed_bytes": 5002,
+      "compression": 0,
+      "wall_s": 0.00010611600009724498
+    },
+    {
+      "name": "thumbs/121_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5113,
+      "compressed_bytes": 5113,
+      "compression": 0,
+      "wall_s": 9.101099567487836e-05
+    },
+    {
+      "name": "thumbs/122_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4673,
+      "compressed_bytes": 4673,
+      "compression": 0,
+      "wall_s": 0.00021422099962364882
+    },
+    {
+      "name": "thumbs/122_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5580,
+      "compressed_bytes": 5580,
+      "compression": 0,
+      "wall_s": 0.00012384999718051404
+    },
+    {
+      "name": "thumbs/123_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5654,
+      "compressed_bytes": 5654,
+      "compression": 0,
+      "wall_s": 9.60549950832501e-05
+    },
+    {
+      "name": "thumbs/124_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4973,
+      "compressed_bytes": 4973,
+      "compression": 0,
+      "wall_s": 9.761199180502445e-05
+    },
+    {
+      "name": "thumbs/125_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6032,
+      "compressed_bytes": 6032,
+      "compression": 0,
+      "wall_s": 9.498799045104533e-05
+    },
+    {
+      "name": "thumbs/126_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5973,
+      "compressed_bytes": 5973,
+      "compression": 0,
+      "wall_s": 9.848100307863206e-05
+    },
+    {
+      "name": "thumbs/126_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6174,
+      "compressed_bytes": 6174,
+      "compression": 0,
+      "wall_s": 0.00011515901132952422
+    },
+    {
+      "name": "thumbs/127_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4088,
+      "compressed_bytes": 4088,
+      "compression": 0,
+      "wall_s": 9.784099529497325e-05
+    },
+    {
+      "name": "thumbs/127_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4067,
+      "compressed_bytes": 4067,
+      "compression": 0,
+      "wall_s": 9.57790034590289e-05
+    },
+    {
+      "name": "thumbs/128_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5321,
+      "compressed_bytes": 5321,
+      "compression": 0,
+      "wall_s": 0.00011043199629057199
+    },
+    {
+      "name": "thumbs/128_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5321,
+      "compressed_bytes": 5321,
+      "compression": 0,
+      "wall_s": 0.00010123199899680912
+    },
+    {
+      "name": "thumbs/129_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4764,
+      "compressed_bytes": 4764,
+      "compression": 0,
+      "wall_s": 0.00010543399548623711
+    },
+    {
+      "name": "thumbs/12_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5026,
+      "compressed_bytes": 5026,
+      "compression": 0,
+      "wall_s": 9.390500781591982e-05
+    },
+    {
+      "name": "thumbs/12_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5952,
+      "compressed_bytes": 5952,
+      "compression": 0,
+      "wall_s": 9.590800618752837e-05
+    },
+    {
+      "name": "thumbs/12_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5718,
+      "compressed_bytes": 5718,
+      "compression": 0,
+      "wall_s": 9.49749955907464e-05
+    },
+    {
+      "name": "thumbs/12_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 6246,
+      "compressed_bytes": 6246,
+      "compression": 0,
+      "wall_s": 9.364100696984679e-05
+    },
+    {
+      "name": "thumbs/12_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4876,
+      "compressed_bytes": 4876,
+      "compression": 0,
+      "wall_s": 9.378299000672996e-05
+    },
+    {
+      "name": "thumbs/130_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4094,
+      "compressed_bytes": 4094,
+      "compression": 0,
+      "wall_s": 9.012500231619924e-05
+    },
+    {
+      "name": "thumbs/131_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4360,
+      "compressed_bytes": 4360,
+      "compression": 0,
+      "wall_s": 0.00010456699237693101
+    },
+    {
+      "name": "thumbs/132_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3672,
+      "compressed_bytes": 3672,
+      "compression": 0,
+      "wall_s": 8.956200326792896e-05
+    },
+    {
+      "name": "thumbs/133_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2971,
+      "compressed_bytes": 2971,
+      "compression": 0,
+      "wall_s": 8.520198753103614e-05
+    },
+    {
+      "name": "thumbs/133_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4013,
+      "compressed_bytes": 4013,
+      "compression": 0,
+      "wall_s": 8.684700878802687e-05
+    },
+    {
+      "name": "thumbs/134_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3134,
+      "compressed_bytes": 3134,
+      "compression": 0,
+      "wall_s": 8.653999248053879e-05
+    },
+    {
+      "name": "thumbs/134_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3913,
+      "compressed_bytes": 3913,
+      "compression": 0,
+      "wall_s": 9.183899965137243e-05
+    },
+    {
+      "name": "thumbs/135_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2417,
+      "compressed_bytes": 2417,
+      "compression": 0,
+      "wall_s": 8.643598994240165e-05
+    },
+    {
+      "name": "thumbs/136_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2331,
+      "compressed_bytes": 2331,
+      "compression": 0,
+      "wall_s": 8.753201109357178e-05
+    },
+    {
+      "name": "thumbs/137_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2303,
+      "compressed_bytes": 2303,
+      "compression": 0,
+      "wall_s": 8.567298937123269e-05
+    },
+    {
+      "name": "thumbs/138_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2652,
+      "compressed_bytes": 2652,
+      "compression": 0,
+      "wall_s": 9.843800216913223e-05
+    },
+    {
+      "name": "thumbs/139_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2769,
+      "compressed_bytes": 2769,
+      "compression": 0,
+      "wall_s": 8.52899975143373e-05
+    },
+    {
+      "name": "thumbs/13_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5269,
+      "compressed_bytes": 5269,
+      "compression": 0,
+      "wall_s": 9.602899081073701e-05
+    },
+    {
+      "name": "thumbs/13_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4555,
+      "compressed_bytes": 4555,
+      "compression": 0,
+      "wall_s": 9.521700849290937e-05
+    },
+    {
+      "name": "thumbs/13_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4343,
+      "compressed_bytes": 4343,
+      "compression": 0,
+      "wall_s": 9.177500032819808e-05
+    },
+    {
+      "name": "thumbs/13_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5207,
+      "compressed_bytes": 5207,
+      "compression": 0,
+      "wall_s": 9.166001109406352e-05
+    },
+    {
+      "name": "thumbs/13_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5522,
+      "compressed_bytes": 5522,
+      "compression": 0,
+      "wall_s": 9.198000770993531e-05
+    },
+    {
+      "name": "thumbs/140_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2373,
+      "compressed_bytes": 2373,
+      "compression": 0,
+      "wall_s": 8.630100637674332e-05
+    },
+    {
+      "name": "thumbs/141_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2303,
+      "compressed_bytes": 2303,
+      "compression": 0,
+      "wall_s": 8.864799747243524e-05
+    },
+    {
+      "name": "thumbs/142_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 7198,
+      "compressed_bytes": 7198,
+      "compression": 0,
+      "wall_s": 0.00010193699563387781
+    },
+    {
+      "name": "thumbs/143_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5969,
+      "compressed_bytes": 5969,
+      "compression": 0,
+      "wall_s": 0.00010699799167923629
+    },
+    {
+      "name": "thumbs/143_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7498,
+      "compressed_bytes": 7498,
+      "compression": 0,
+      "wall_s": 0.0001015659945551306
+    },
+    {
+      "name": "thumbs/144_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5373,
+      "compressed_bytes": 5373,
+      "compression": 0,
+      "wall_s": 9.345599391963333e-05
+    },
+    {
+      "name": "thumbs/145_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4906,
+      "compressed_bytes": 4906,
+      "compression": 0,
+      "wall_s": 0.0002189470105804503
+    },
+    {
+      "name": "thumbs/145_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5776,
+      "compressed_bytes": 5776,
+      "compression": 0,
+      "wall_s": 0.00011921599798370153
+    },
+    {
+      "name": "thumbs/146_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5553,
+      "compressed_bytes": 5553,
+      "compression": 0,
+      "wall_s": 9.969100938178599e-05
+    },
+    {
+      "name": "thumbs/146_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7030,
+      "compressed_bytes": 7030,
+      "compression": 0,
+      "wall_s": 0.00011178100248798728
+    },
+    {
+      "name": "thumbs/147_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5104,
+      "compressed_bytes": 5104,
+      "compression": 0,
+      "wall_s": 0.00010209900210611522
+    },
+    {
+      "name": "thumbs/148_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5049,
+      "compressed_bytes": 5049,
+      "compression": 0,
+      "wall_s": 9.280900121666491e-05
+    },
+    {
+      "name": "thumbs/148_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6641,
+      "compressed_bytes": 6641,
+      "compression": 0,
+      "wall_s": 9.647999831940979e-05
+    },
+    {
+      "name": "thumbs/149_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3920,
+      "compressed_bytes": 3920,
+      "compression": 0,
+      "wall_s": 8.66129994392395e-05
+    },
+    {
+      "name": "thumbs/14_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4395,
+      "compressed_bytes": 4395,
+      "compression": 0,
+      "wall_s": 0.00010408399975858629
+    },
+    {
+      "name": "thumbs/14_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6325,
+      "compressed_bytes": 6325,
+      "compression": 0,
+      "wall_s": 9.99830081127584e-05
+    },
+    {
+      "name": "thumbs/14_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5205,
+      "compressed_bytes": 5205,
+      "compression": 0,
+      "wall_s": 0.00012681698717642576
+    },
+    {
+      "name": "thumbs/14_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 6807,
+      "compressed_bytes": 6807,
+      "compression": 0,
+      "wall_s": 9.859399870038033e-05
+    },
+    {
+      "name": "thumbs/14_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5648,
+      "compressed_bytes": 5648,
+      "compression": 0,
+      "wall_s": 0.00011244601046200842
+    },
+    {
+      "name": "thumbs/14_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 5374,
+      "compressed_bytes": 5374,
+      "compression": 0,
+      "wall_s": 9.694900654722005e-05
+    },
+    {
+      "name": "thumbs/14_6.jpg",
+      "category": "jpeg",
+      "input_bytes": 3414,
+      "compressed_bytes": 3414,
+      "compression": 0,
+      "wall_s": 9.218300692737103e-05
+    },
+    {
+      "name": "thumbs/150_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6150,
+      "compressed_bytes": 6150,
+      "compression": 0,
+      "wall_s": 9.879699791781604e-05
+    },
+    {
+      "name": "thumbs/150_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7142,
+      "compressed_bytes": 7142,
+      "compression": 0,
+      "wall_s": 9.987200610339642e-05
+    },
+    {
+      "name": "thumbs/151_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6325,
+      "compressed_bytes": 6325,
+      "compression": 0,
+      "wall_s": 0.00010104200919158757
+    },
+    {
+      "name": "thumbs/152_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5542,
+      "compressed_bytes": 5542,
+      "compression": 0,
+      "wall_s": 9.573998977430165e-05
+    },
+    {
+      "name": "thumbs/153_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 7014,
+      "compressed_bytes": 7014,
+      "compression": 0,
+      "wall_s": 9.941999451257288e-05
+    },
+    {
+      "name": "thumbs/154_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3866,
+      "compressed_bytes": 3866,
+      "compression": 0,
+      "wall_s": 9.014600072987378e-05
+    },
+    {
+      "name": "thumbs/155_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4845,
+      "compressed_bytes": 4845,
+      "compression": 0,
+      "wall_s": 9.966400102712214e-05
+    },
+    {
+      "name": "thumbs/155_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4594,
+      "compressed_bytes": 4594,
+      "compression": 0,
+      "wall_s": 9.647500701248646e-05
+    },
+    {
+      "name": "thumbs/156_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3688,
+      "compressed_bytes": 3688,
+      "compression": 0,
+      "wall_s": 8.782501390669495e-05
+    },
+    {
+      "name": "thumbs/157_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2239,
+      "compressed_bytes": 2239,
+      "compression": 0,
+      "wall_s": 8.631200762465596e-05
+    },
+    {
+      "name": "thumbs/158_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2400,
+      "compressed_bytes": 2400,
+      "compression": 0,
+      "wall_s": 8.440000237897038e-05
+    },
+    {
+      "name": "thumbs/159_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2455,
+      "compressed_bytes": 2455,
+      "compression": 0,
+      "wall_s": 8.54239915497601e-05
+    },
+    {
+      "name": "thumbs/15_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4616,
+      "compressed_bytes": 4616,
+      "compression": 0,
+      "wall_s": 9.078299626708031e-05
+    },
+    {
+      "name": "thumbs/15_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5243,
+      "compressed_bytes": 5243,
+      "compression": 0,
+      "wall_s": 9.413600491825491e-05
+    },
+    {
+      "name": "thumbs/15_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4820,
+      "compressed_bytes": 4820,
+      "compression": 0,
+      "wall_s": 0.00010057899635285139
+    },
+    {
+      "name": "thumbs/15_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 3299,
+      "compressed_bytes": 3299,
+      "compression": 0,
+      "wall_s": 9.346999286208302e-05
+    },
+    {
+      "name": "thumbs/15_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4844,
+      "compressed_bytes": 4844,
+      "compression": 0,
+      "wall_s": 9.460900037083775e-05
+    },
+    {
+      "name": "thumbs/15_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 4365,
+      "compressed_bytes": 4365,
+      "compression": 0,
+      "wall_s": 9.426199540030211e-05
+    },
+    {
+      "name": "thumbs/160_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3197,
+      "compressed_bytes": 3197,
+      "compression": 0,
+      "wall_s": 8.532500942237675e-05
+    },
+    {
+      "name": "thumbs/161_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2403,
+      "compressed_bytes": 2403,
+      "compression": 0,
+      "wall_s": 8.804899698588997e-05
+    },
+    {
+      "name": "thumbs/162_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 7055,
+      "compressed_bytes": 7055,
+      "compression": 0,
+      "wall_s": 9.857400436885655e-05
+    },
+    {
+      "name": "thumbs/163_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6504,
+      "compressed_bytes": 6504,
+      "compression": 0,
+      "wall_s": 9.339199459645897e-05
+    },
+    {
+      "name": "thumbs/164_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5634,
+      "compressed_bytes": 5634,
+      "compression": 0,
+      "wall_s": 0.00026238600548822433
+    },
+    {
+      "name": "thumbs/164_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5876,
+      "compressed_bytes": 5876,
+      "compression": 0,
+      "wall_s": 0.00011729101242963225
+    },
+    {
+      "name": "thumbs/164_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3658,
+      "compressed_bytes": 3658,
+      "compression": 0,
+      "wall_s": 0.00010255399683956057
+    },
+    {
+      "name": "thumbs/165_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5881,
+      "compressed_bytes": 5881,
+      "compression": 0,
+      "wall_s": 9.645298996474594e-05
+    },
+    {
+      "name": "thumbs/165_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5524,
+      "compressed_bytes": 5524,
+      "compression": 0,
+      "wall_s": 9.458699787501246e-05
+    },
+    {
+      "name": "thumbs/165_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 6526,
+      "compressed_bytes": 6526,
+      "compression": 0,
+      "wall_s": 9.468899224884808e-05
+    },
+    {
+      "name": "thumbs/165_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 3088,
+      "compressed_bytes": 3088,
+      "compression": 0,
+      "wall_s": 8.733500726521015e-05
+    },
+    {
+      "name": "thumbs/166_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6362,
+      "compressed_bytes": 6362,
+      "compression": 0,
+      "wall_s": 9.745100396685302e-05
+    },
+    {
+      "name": "thumbs/166_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7248,
+      "compressed_bytes": 7248,
+      "compression": 0,
+      "wall_s": 9.471499652136117e-05
+    },
+    {
+      "name": "thumbs/167_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5811,
+      "compressed_bytes": 5811,
+      "compression": 0,
+      "wall_s": 0.00010805799684021622
+    },
+    {
+      "name": "thumbs/168_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5031,
+      "compressed_bytes": 5031,
+      "compression": 0,
+      "wall_s": 9.609600238036364e-05
+    },
+    {
+      "name": "thumbs/169_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6258,
+      "compressed_bytes": 6258,
+      "compression": 0,
+      "wall_s": 9.632899309508502e-05
+    },
+    {
+      "name": "thumbs/169_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6062,
+      "compressed_bytes": 6062,
+      "compression": 0,
+      "wall_s": 9.681899973656982e-05
+    },
+    {
+      "name": "thumbs/16_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3411,
+      "compressed_bytes": 3411,
+      "compression": 0,
+      "wall_s": 9.05619963305071e-05
+    },
+    {
+      "name": "thumbs/16_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4396,
+      "compressed_bytes": 4396,
+      "compression": 0,
+      "wall_s": 0.00010044900409411639
+    },
+    {
+      "name": "thumbs/16_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4455,
+      "compressed_bytes": 4455,
+      "compression": 0,
+      "wall_s": 9.24540072446689e-05
+    },
+    {
+      "name": "thumbs/16_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 3878,
+      "compressed_bytes": 3878,
+      "compression": 0,
+      "wall_s": 8.928398892749101e-05
+    },
+    {
+      "name": "thumbs/16_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 3478,
+      "compressed_bytes": 3478,
+      "compression": 0,
+      "wall_s": 8.804700337350368e-05
+    },
+    {
+      "name": "thumbs/16_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 3717,
+      "compressed_bytes": 3717,
+      "compression": 0,
+      "wall_s": 9.769499592948705e-05
+    },
+    {
+      "name": "thumbs/170_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6275,
+      "compressed_bytes": 6275,
+      "compression": 0,
+      "wall_s": 9.527899965178221e-05
+    },
+    {
+      "name": "thumbs/170_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7128,
+      "compressed_bytes": 7128,
+      "compression": 0,
+      "wall_s": 9.725199197418988e-05
+    },
+    {
+      "name": "thumbs/170_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4152,
+      "compressed_bytes": 4152,
+      "compression": 0,
+      "wall_s": 8.988899935502559e-05
+    },
+    {
+      "name": "thumbs/171_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6433,
+      "compressed_bytes": 6433,
+      "compression": 0,
+      "wall_s": 9.655600297264755e-05
+    },
+    {
+      "name": "thumbs/171_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6574,
+      "compressed_bytes": 6574,
+      "compression": 0,
+      "wall_s": 9.292901086155325e-05
+    },
+    {
+      "name": "thumbs/171_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4676,
+      "compressed_bytes": 4676,
+      "compression": 0,
+      "wall_s": 9.590999979991466e-05
+    },
+    {
+      "name": "thumbs/172_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3047,
+      "compressed_bytes": 3047,
+      "compression": 0,
+      "wall_s": 8.41129949549213e-05
+    },
+    {
+      "name": "thumbs/172_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3362,
+      "compressed_bytes": 3362,
+      "compression": 0,
+      "wall_s": 8.659400918986648e-05
+    },
+    {
+      "name": "thumbs/172_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3811,
+      "compressed_bytes": 3811,
+      "compression": 0,
+      "wall_s": 9.755100472830236e-05
+    },
+    {
+      "name": "thumbs/173_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5345,
+      "compressed_bytes": 5345,
+      "compression": 0,
+      "wall_s": 9.267000132240355e-05
+    },
+    {
+      "name": "thumbs/173_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6911,
+      "compressed_bytes": 6911,
+      "compression": 0,
+      "wall_s": 9.531299292575568e-05
+    },
+    {
+      "name": "thumbs/173_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 6210,
+      "compressed_bytes": 6210,
+      "compression": 0,
+      "wall_s": 9.474900434724987e-05
+    },
+    {
+      "name": "thumbs/174_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6781,
+      "compressed_bytes": 6781,
+      "compression": 0,
+      "wall_s": 9.268999565392733e-05
+    },
+    {
+      "name": "thumbs/174_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6607,
+      "compressed_bytes": 6607,
+      "compression": 0,
+      "wall_s": 9.785000293049961e-05
+    },
+    {
+      "name": "thumbs/174_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 7503,
+      "compressed_bytes": 7503,
+      "compression": 0,
+      "wall_s": 9.729000157676637e-05
+    },
+    {
+      "name": "thumbs/175_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3031,
+      "compressed_bytes": 3031,
+      "compression": 0,
+      "wall_s": 0.0001551850000396371
+    },
+    {
+      "name": "thumbs/175_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2909,
+      "compressed_bytes": 2909,
+      "compression": 0,
+      "wall_s": 9.523599874228239e-05
+    },
+    {
+      "name": "thumbs/175_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3170,
+      "compressed_bytes": 3170,
+      "compression": 0,
+      "wall_s": 9.428100020159036e-05
+    },
+    {
+      "name": "thumbs/176_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2946,
+      "compressed_bytes": 2946,
+      "compression": 0,
+      "wall_s": 8.602200250606984e-05
+    },
+    {
+      "name": "thumbs/176_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3354,
+      "compressed_bytes": 3354,
+      "compression": 0,
+      "wall_s": 8.771200373303145e-05
+    },
+    {
+      "name": "thumbs/176_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3112,
+      "compressed_bytes": 3112,
+      "compression": 0,
+      "wall_s": 8.885499846655875e-05
+    },
+    {
+      "name": "thumbs/177_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2907,
+      "compressed_bytes": 2907,
+      "compression": 0,
+      "wall_s": 8.927300223149359e-05
+    },
+    {
+      "name": "thumbs/177_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3521,
+      "compressed_bytes": 3521,
+      "compression": 0,
+      "wall_s": 9.016600961331278e-05
+    },
+    {
+      "name": "thumbs/177_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3234,
+      "compressed_bytes": 3234,
+      "compression": 0,
+      "wall_s": 9.145200601778924e-05
+    },
+    {
+      "name": "thumbs/178_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2922,
+      "compressed_bytes": 2922,
+      "compression": 0,
+      "wall_s": 9.025300096254796e-05
+    },
+    {
+      "name": "thumbs/178_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3225,
+      "compressed_bytes": 3225,
+      "compression": 0,
+      "wall_s": 0.00010535799083299935
+    },
+    {
+      "name": "thumbs/178_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3709,
+      "compressed_bytes": 3709,
+      "compression": 0,
+      "wall_s": 0.0001079520006896928
+    },
+    {
+      "name": "thumbs/179_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2970,
+      "compressed_bytes": 2970,
+      "compression": 0,
+      "wall_s": 9.12449904717505e-05
+    },
+    {
+      "name": "thumbs/179_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3286,
+      "compressed_bytes": 3286,
+      "compression": 0,
+      "wall_s": 8.811299630906433e-05
+    },
+    {
+      "name": "thumbs/179_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3663,
+      "compressed_bytes": 3663,
+      "compression": 0,
+      "wall_s": 8.904999413061887e-05
+    },
+    {
+      "name": "thumbs/17_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3693,
+      "compressed_bytes": 3693,
+      "compression": 0,
+      "wall_s": 9.01729945326224e-05
+    },
+    {
+      "name": "thumbs/17_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4779,
+      "compressed_bytes": 4779,
+      "compression": 0,
+      "wall_s": 9.565499203745276e-05
+    },
+    {
+      "name": "thumbs/17_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4493,
+      "compressed_bytes": 4493,
+      "compression": 0,
+      "wall_s": 9.34799900278449e-05
+    },
+    {
+      "name": "thumbs/17_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 4004,
+      "compressed_bytes": 4004,
+      "compression": 0,
+      "wall_s": 9.143100760411471e-05
+    },
+    {
+      "name": "thumbs/17_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 3843,
+      "compressed_bytes": 3843,
+      "compression": 0,
+      "wall_s": 0.00010013800056185573
+    },
+    {
+      "name": "thumbs/17_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 3914,
+      "compressed_bytes": 3914,
+      "compression": 0,
+      "wall_s": 9.478699939791113e-05
+    },
+    {
+      "name": "thumbs/180_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3051,
+      "compressed_bytes": 3051,
+      "compression": 0,
+      "wall_s": 9.054200199898332e-05
+    },
+    {
+      "name": "thumbs/180_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3300,
+      "compressed_bytes": 3300,
+      "compression": 0,
+      "wall_s": 8.543698641005903e-05
+    },
+    {
+      "name": "thumbs/180_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3545,
+      "compressed_bytes": 3545,
+      "compression": 0,
+      "wall_s": 8.865099516697228e-05
+    },
+    {
+      "name": "thumbs/181_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3226,
+      "compressed_bytes": 3226,
+      "compression": 0,
+      "wall_s": 9.255499753635377e-05
+    },
+    {
+      "name": "thumbs/181_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2818,
+      "compressed_bytes": 2818,
+      "compression": 0,
+      "wall_s": 9.125001088250428e-05
+    },
+    {
+      "name": "thumbs/182_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2502,
+      "compressed_bytes": 2502,
+      "compression": 0,
+      "wall_s": 8.672599506098777e-05
+    },
+    {
+      "name": "thumbs/182_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2856,
+      "compressed_bytes": 2856,
+      "compression": 0,
+      "wall_s": 8.8237997260876e-05
+    },
+    {
+      "name": "thumbs/183_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3330,
+      "compressed_bytes": 3330,
+      "compression": 0,
+      "wall_s": 8.829899888951331e-05
+    },
+    {
+      "name": "thumbs/183_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2939,
+      "compressed_bytes": 2939,
+      "compression": 0,
+      "wall_s": 9.470799705013633e-05
+    },
+    {
+      "name": "thumbs/184_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3257,
+      "compressed_bytes": 3257,
+      "compression": 0,
+      "wall_s": 8.738398901186883e-05
+    },
+    {
+      "name": "thumbs/184_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2856,
+      "compressed_bytes": 2856,
+      "compression": 0,
+      "wall_s": 8.887299918569624e-05
+    },
+    {
+      "name": "thumbs/185_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2130,
+      "compressed_bytes": 2130,
+      "compression": 0,
+      "wall_s": 9.001100261230022e-05
+    },
+    {
+      "name": "thumbs/186_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2192,
+      "compressed_bytes": 2192,
+      "compression": 0,
+      "wall_s": 8.370299474336207e-05
+    },
+    {
+      "name": "thumbs/187_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5670,
+      "compressed_bytes": 5670,
+      "compression": 0,
+      "wall_s": 9.996800508815795e-05
+    },
+    {
+      "name": "thumbs/187_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6532,
+      "compressed_bytes": 6532,
+      "compression": 0,
+      "wall_s": 9.725301060825586e-05
+    },
+    {
+      "name": "thumbs/187_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4063,
+      "compressed_bytes": 4063,
+      "compression": 0,
+      "wall_s": 0.0002609970106277615
+    },
+    {
+      "name": "thumbs/188_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6321,
+      "compressed_bytes": 6321,
+      "compression": 0,
+      "wall_s": 0.00011491899203974754
+    },
+    {
+      "name": "thumbs/188_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7025,
+      "compressed_bytes": 7025,
+      "compression": 0,
+      "wall_s": 0.00010499499330762774
+    },
+    {
+      "name": "thumbs/188_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4732,
+      "compressed_bytes": 4732,
+      "compression": 0,
+      "wall_s": 9.68550011748448e-05
+    },
+    {
+      "name": "thumbs/189_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5654,
+      "compressed_bytes": 5654,
+      "compression": 0,
+      "wall_s": 9.503499313723296e-05
+    },
+    {
+      "name": "thumbs/189_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5391,
+      "compressed_bytes": 5391,
+      "compression": 0,
+      "wall_s": 9.465598850511014e-05
+    },
+    {
+      "name": "thumbs/189_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3200,
+      "compressed_bytes": 3200,
+      "compression": 0,
+      "wall_s": 8.970400085672736e-05
+    },
+    {
+      "name": "thumbs/18_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5167,
+      "compressed_bytes": 5167,
+      "compression": 0,
+      "wall_s": 9.818399848882109e-05
+    },
+    {
+      "name": "thumbs/18_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4928,
+      "compressed_bytes": 4928,
+      "compression": 0,
+      "wall_s": 9.672899614088237e-05
+    },
+    {
+      "name": "thumbs/18_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3673,
+      "compressed_bytes": 3673,
+      "compression": 0,
+      "wall_s": 0.0001145999995060265
+    },
+    {
+      "name": "thumbs/18_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 4839,
+      "compressed_bytes": 4839,
+      "compression": 0,
+      "wall_s": 0.00010774499969556928
+    },
+    {
+      "name": "thumbs/18_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4891,
+      "compressed_bytes": 4891,
+      "compression": 0,
+      "wall_s": 9.26729990169406e-05
+    },
+    {
+      "name": "thumbs/18_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 5162,
+      "compressed_bytes": 5162,
+      "compression": 0,
+      "wall_s": 0.00021378500969149172
+    },
+    {
+      "name": "thumbs/190_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6376,
+      "compressed_bytes": 6376,
+      "compression": 0,
+      "wall_s": 0.00010727498738560826
+    },
+    {
+      "name": "thumbs/190_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7209,
+      "compressed_bytes": 7209,
+      "compression": 0,
+      "wall_s": 9.733499609865248e-05
+    },
+    {
+      "name": "thumbs/190_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4696,
+      "compressed_bytes": 4696,
+      "compression": 0,
+      "wall_s": 9.584400686435401e-05
+    },
+    {
+      "name": "thumbs/191_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3065,
+      "compressed_bytes": 3065,
+      "compression": 0,
+      "wall_s": 9.807699825614691e-05
+    },
+    {
+      "name": "thumbs/191_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3557,
+      "compressed_bytes": 3557,
+      "compression": 0,
+      "wall_s": 8.867999713402241e-05
+    },
+    {
+      "name": "thumbs/191_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3547,
+      "compressed_bytes": 3547,
+      "compression": 0,
+      "wall_s": 8.920300751924515e-05
+    },
+    {
+      "name": "thumbs/192_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3084,
+      "compressed_bytes": 3084,
+      "compression": 0,
+      "wall_s": 8.804698882158846e-05
+    },
+    {
+      "name": "thumbs/192_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3275,
+      "compressed_bytes": 3275,
+      "compression": 0,
+      "wall_s": 8.907400479074568e-05
+    },
+    {
+      "name": "thumbs/193_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3286,
+      "compressed_bytes": 3286,
+      "compression": 0,
+      "wall_s": 8.605100447311997e-05
+    },
+    {
+      "name": "thumbs/193_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3186,
+      "compressed_bytes": 3186,
+      "compression": 0,
+      "wall_s": 8.272100239992142e-05
+    },
+    {
+      "name": "thumbs/194_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2848,
+      "compressed_bytes": 2848,
+      "compression": 0,
+      "wall_s": 8.483100100420415e-05
+    },
+    {
+      "name": "thumbs/194_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3337,
+      "compressed_bytes": 3337,
+      "compression": 0,
+      "wall_s": 8.754500595387071e-05
+    },
+    {
+      "name": "thumbs/194_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3316,
+      "compressed_bytes": 3316,
+      "compression": 0,
+      "wall_s": 8.615398837719113e-05
+    },
+    {
+      "name": "thumbs/195_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3077,
+      "compressed_bytes": 3077,
+      "compression": 0,
+      "wall_s": 9.540199243929237e-05
+    },
+    {
+      "name": "thumbs/195_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3173,
+      "compressed_bytes": 3173,
+      "compression": 0,
+      "wall_s": 8.401399827562273e-05
+    },
+    {
+      "name": "thumbs/196_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3388,
+      "compressed_bytes": 3388,
+      "compression": 0,
+      "wall_s": 9.728400618769228e-05
+    },
+    {
+      "name": "thumbs/196_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3157,
+      "compressed_bytes": 3157,
+      "compression": 0,
+      "wall_s": 8.713098941370845e-05
+    },
+    {
+      "name": "thumbs/197_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3080,
+      "compressed_bytes": 3080,
+      "compression": 0,
+      "wall_s": 8.612799865659326e-05
+    },
+    {
+      "name": "thumbs/197_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3263,
+      "compressed_bytes": 3263,
+      "compression": 0,
+      "wall_s": 9.244499960914254e-05
+    },
+    {
+      "name": "thumbs/198_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3367,
+      "compressed_bytes": 3367,
+      "compression": 0,
+      "wall_s": 8.447800064459443e-05
+    },
+    {
+      "name": "thumbs/198_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3066,
+      "compressed_bytes": 3066,
+      "compression": 0,
+      "wall_s": 8.986100147012621e-05
+    },
+    {
+      "name": "thumbs/199_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2829,
+      "compressed_bytes": 2829,
+      "compression": 0,
+      "wall_s": 8.981199061963707e-05
+    },
+    {
+      "name": "thumbs/199_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3180,
+      "compressed_bytes": 3180,
+      "compression": 0,
+      "wall_s": 9.487599891144782e-05
+    },
+    {
+      "name": "thumbs/199_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3177,
+      "compressed_bytes": 3177,
+      "compression": 0,
+      "wall_s": 8.456800424028188e-05
+    },
+    {
+      "name": "thumbs/19_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4682,
+      "compressed_bytes": 4682,
+      "compression": 0,
+      "wall_s": 9.438199049327523e-05
+    },
+    {
+      "name": "thumbs/19_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5513,
+      "compressed_bytes": 5513,
+      "compression": 0,
+      "wall_s": 9.240899817086756e-05
+    },
+    {
+      "name": "thumbs/19_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4828,
+      "compressed_bytes": 4828,
+      "compression": 0,
+      "wall_s": 9.177299216389656e-05
+    },
+    {
+      "name": "thumbs/19_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 4300,
+      "compressed_bytes": 4300,
+      "compression": 0,
+      "wall_s": 9.186199167743325e-05
+    },
+    {
+      "name": "thumbs/19_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5843,
+      "compressed_bytes": 5843,
+      "compression": 0,
+      "wall_s": 9.396600944455713e-05
+    },
+    {
+      "name": "thumbs/19_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 4529,
+      "compressed_bytes": 4529,
+      "compression": 0,
+      "wall_s": 9.410099301021546e-05
+    },
+    {
+      "name": "thumbs/1_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5174,
+      "compressed_bytes": 5174,
+      "compression": 0,
+      "wall_s": 9.333800699096173e-05
+    },
+    {
+      "name": "thumbs/1_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4508,
+      "compressed_bytes": 4508,
+      "compression": 0,
+      "wall_s": 0.00013231999764684588
+    },
+    {
+      "name": "thumbs/1_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4503,
+      "compressed_bytes": 4503,
+      "compression": 0,
+      "wall_s": 9.726099960971624e-05
+    },
+    {
+      "name": "thumbs/1_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5160,
+      "compressed_bytes": 5160,
+      "compression": 0,
+      "wall_s": 9.860299178399146e-05
+    },
+    {
+      "name": "thumbs/1_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5533,
+      "compressed_bytes": 5533,
+      "compression": 0,
+      "wall_s": 9.774799400474876e-05
+    },
+    {
+      "name": "thumbs/200_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3390,
+      "compressed_bytes": 3390,
+      "compression": 0,
+      "wall_s": 8.919899119064212e-05
+    },
+    {
+      "name": "thumbs/200_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3289,
+      "compressed_bytes": 3289,
+      "compression": 0,
+      "wall_s": 8.827100100461394e-05
+    },
+    {
+      "name": "thumbs/200_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3641,
+      "compressed_bytes": 3641,
+      "compression": 0,
+      "wall_s": 8.71660013217479e-05
+    },
+    {
+      "name": "thumbs/201_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 7373,
+      "compressed_bytes": 7373,
+      "compression": 0,
+      "wall_s": 0.00010904901137109846
+    },
+    {
+      "name": "thumbs/201_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6301,
+      "compressed_bytes": 6301,
+      "compression": 0,
+      "wall_s": 0.0001019769988488406
+    },
+    {
+      "name": "thumbs/202_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 8056,
+      "compressed_bytes": 8056,
+      "compression": 0,
+      "wall_s": 0.00011204200563952327
+    },
+    {
+      "name": "thumbs/202_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7416,
+      "compressed_bytes": 7416,
+      "compression": 0,
+      "wall_s": 0.00023689799127168953
+    },
+    {
+      "name": "thumbs/203_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3339,
+      "compressed_bytes": 3339,
+      "compression": 0,
+      "wall_s": 0.0001072610029950738
+    },
+    {
+      "name": "thumbs/203_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3267,
+      "compressed_bytes": 3267,
+      "compression": 0,
+      "wall_s": 9.348799358122051e-05
+    },
+    {
+      "name": "thumbs/204_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3575,
+      "compressed_bytes": 3575,
+      "compression": 0,
+      "wall_s": 9.090699313674122e-05
+    },
+    {
+      "name": "thumbs/204_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3876,
+      "compressed_bytes": 3876,
+      "compression": 0,
+      "wall_s": 9.275999036617577e-05
+    },
+    {
+      "name": "thumbs/205_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3351,
+      "compressed_bytes": 3351,
+      "compression": 0,
+      "wall_s": 9.553300333209336e-05
+    },
+    {
+      "name": "thumbs/205_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3260,
+      "compressed_bytes": 3260,
+      "compression": 0,
+      "wall_s": 0.00010332399688195437
+    },
+    {
+      "name": "thumbs/206_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3123,
+      "compressed_bytes": 3123,
+      "compression": 0,
+      "wall_s": 9.158499597106129e-05
+    },
+    {
+      "name": "thumbs/207_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3709,
+      "compressed_bytes": 3709,
+      "compression": 0,
+      "wall_s": 9.404000593349338e-05
+    },
+    {
+      "name": "thumbs/208_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3321,
+      "compressed_bytes": 3321,
+      "compression": 0,
+      "wall_s": 9.20899910852313e-05
+    },
+    {
+      "name": "thumbs/209_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3516,
+      "compressed_bytes": 3516,
+      "compression": 0,
+      "wall_s": 9.239499922841787e-05
+    },
+    {
+      "name": "thumbs/20_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3441,
+      "compressed_bytes": 3441,
+      "compression": 0,
+      "wall_s": 0.00010044100054074079
+    },
+    {
+      "name": "thumbs/20_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4625,
+      "compressed_bytes": 4625,
+      "compression": 0,
+      "wall_s": 9.216599573846906e-05
+    },
+    {
+      "name": "thumbs/20_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5482,
+      "compressed_bytes": 5482,
+      "compression": 0,
+      "wall_s": 9.27889923332259e-05
+    },
+    {
+      "name": "thumbs/20_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 4761,
+      "compressed_bytes": 4761,
+      "compression": 0,
+      "wall_s": 9.311499889008701e-05
+    },
+    {
+      "name": "thumbs/20_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4454,
+      "compressed_bytes": 4454,
+      "compression": 0,
+      "wall_s": 9.594899893272668e-05
+    },
+    {
+      "name": "thumbs/20_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 2735,
+      "compressed_bytes": 2735,
+      "compression": 0,
+      "wall_s": 8.462299592792988e-05
+    },
+    {
+      "name": "thumbs/210_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4363,
+      "compressed_bytes": 4363,
+      "compression": 0,
+      "wall_s": 9.180798952002078e-05
+    },
+    {
+      "name": "thumbs/211_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4956,
+      "compressed_bytes": 4956,
+      "compression": 0,
+      "wall_s": 9.801499254535884e-05
+    },
+    {
+      "name": "thumbs/212_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6072,
+      "compressed_bytes": 6072,
+      "compression": 0,
+      "wall_s": 9.898300049826503e-05
+    },
+    {
+      "name": "thumbs/213_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2739,
+      "compressed_bytes": 2739,
+      "compression": 0,
+      "wall_s": 8.926400914788246e-05
+    },
+    {
+      "name": "thumbs/213_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6023,
+      "compressed_bytes": 6023,
+      "compression": 0,
+      "wall_s": 9.741498797666281e-05
+    },
+    {
+      "name": "thumbs/214_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2888,
+      "compressed_bytes": 2888,
+      "compression": 0,
+      "wall_s": 8.976299432106316e-05
+    },
+    {
+      "name": "thumbs/215_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3533,
+      "compressed_bytes": 3533,
+      "compression": 0,
+      "wall_s": 0.00010556800407357514
+    },
+    {
+      "name": "thumbs/216_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3847,
+      "compressed_bytes": 3847,
+      "compression": 0,
+      "wall_s": 9.37650038395077e-05
+    },
+    {
+      "name": "thumbs/216_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5290,
+      "compressed_bytes": 5290,
+      "compression": 0,
+      "wall_s": 9.49380046222359e-05
+    },
+    {
+      "name": "thumbs/217_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3033,
+      "compressed_bytes": 3033,
+      "compression": 0,
+      "wall_s": 8.668898954056203e-05
+    },
+    {
+      "name": "thumbs/217_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 7019,
+      "compressed_bytes": 7019,
+      "compression": 0,
+      "wall_s": 9.646799298934639e-05
+    },
+    {
+      "name": "thumbs/218_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5011,
+      "compressed_bytes": 5011,
+      "compression": 0,
+      "wall_s": 9.286499698646367e-05
+    },
+    {
+      "name": "thumbs/218_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5295,
+      "compressed_bytes": 5295,
+      "compression": 0,
+      "wall_s": 0.000103650992969051
+    },
+    {
+      "name": "thumbs/219_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6764,
+      "compressed_bytes": 6764,
+      "compression": 0,
+      "wall_s": 9.685699478723109e-05
+    },
+    {
+      "name": "thumbs/219_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3433,
+      "compressed_bytes": 3433,
+      "compression": 0,
+      "wall_s": 8.994899690151215e-05
+    },
+    {
+      "name": "thumbs/219_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3120,
+      "compressed_bytes": 3120,
+      "compression": 0,
+      "wall_s": 8.380399958696216e-05
+    },
+    {
+      "name": "thumbs/21_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3624,
+      "compressed_bytes": 3624,
+      "compression": 0,
+      "wall_s": 9.667199628893286e-05
+    },
+    {
+      "name": "thumbs/21_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4900,
+      "compressed_bytes": 4900,
+      "compression": 0,
+      "wall_s": 9.583600331097841e-05
+    },
+    {
+      "name": "thumbs/21_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4522,
+      "compressed_bytes": 4522,
+      "compression": 0,
+      "wall_s": 9.077799040824175e-05
+    },
+    {
+      "name": "thumbs/21_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 2801,
+      "compressed_bytes": 2801,
+      "compression": 0,
+      "wall_s": 8.358398918062449e-05
+    },
+    {
+      "name": "thumbs/220_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5527,
+      "compressed_bytes": 5527,
+      "compression": 0,
+      "wall_s": 9.528700320515782e-05
+    },
+    {
+      "name": "thumbs/220_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5924,
+      "compressed_bytes": 5924,
+      "compression": 0,
+      "wall_s": 9.364199650008231e-05
+    },
+    {
+      "name": "thumbs/220_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4734,
+      "compressed_bytes": 4734,
+      "compression": 0,
+      "wall_s": 9.162200149148703e-05
+    },
+    {
+      "name": "thumbs/221_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4248,
+      "compressed_bytes": 4248,
+      "compression": 0,
+      "wall_s": 9.188700641971081e-05
+    },
+    {
+      "name": "thumbs/221_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4898,
+      "compressed_bytes": 4898,
+      "compression": 0,
+      "wall_s": 9.389300248585641e-05
+    },
+    {
+      "name": "thumbs/222_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3576,
+      "compressed_bytes": 3576,
+      "compression": 0,
+      "wall_s": 9.664800018072128e-05
+    },
+    {
+      "name": "thumbs/223_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6360,
+      "compressed_bytes": 6360,
+      "compression": 0,
+      "wall_s": 0.00023247300123330206
+    },
+    {
+      "name": "thumbs/223_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4932,
+      "compressed_bytes": 4932,
+      "compression": 0,
+      "wall_s": 0.00010833999840542674
+    },
+    {
+      "name": "thumbs/223_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5484,
+      "compressed_bytes": 5484,
+      "compression": 0,
+      "wall_s": 9.651399159338325e-05
+    },
+    {
+      "name": "thumbs/224_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4131,
+      "compressed_bytes": 4131,
+      "compression": 0,
+      "wall_s": 9.05150081962347e-05
+    },
+    {
+      "name": "thumbs/224_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4402,
+      "compressed_bytes": 4402,
+      "compression": 0,
+      "wall_s": 9.22860053833574e-05
+    },
+    {
+      "name": "thumbs/225_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2776,
+      "compressed_bytes": 2776,
+      "compression": 0,
+      "wall_s": 8.570600766688585e-05
+    },
+    {
+      "name": "thumbs/226_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4277,
+      "compressed_bytes": 4277,
+      "compression": 0,
+      "wall_s": 9.069200314115733e-05
+    },
+    {
+      "name": "thumbs/226_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2582,
+      "compressed_bytes": 2582,
+      "compression": 0,
+      "wall_s": 9.558799501974136e-05
+    },
+    {
+      "name": "thumbs/226_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3091,
+      "compressed_bytes": 3091,
+      "compression": 0,
+      "wall_s": 8.713098941370845e-05
+    },
+    {
+      "name": "thumbs/227_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3534,
+      "compressed_bytes": 3534,
+      "compression": 0,
+      "wall_s": 8.680600149091333e-05
+    },
+    {
+      "name": "thumbs/228_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3863,
+      "compressed_bytes": 3863,
+      "compression": 0,
+      "wall_s": 8.666599751450121e-05
+    },
+    {
+      "name": "thumbs/228_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4824,
+      "compressed_bytes": 4824,
+      "compression": 0,
+      "wall_s": 9.363600111100823e-05
+    },
+    {
+      "name": "thumbs/229_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5329,
+      "compressed_bytes": 5329,
+      "compression": 0,
+      "wall_s": 9.323398990090936e-05
+    },
+    {
+      "name": "thumbs/229_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5296,
+      "compressed_bytes": 5296,
+      "compression": 0,
+      "wall_s": 9.985500946640968e-05
+    },
+    {
+      "name": "thumbs/22_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3556,
+      "compressed_bytes": 3556,
+      "compression": 0,
+      "wall_s": 8.49089992698282e-05
+    },
+    {
+      "name": "thumbs/22_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4713,
+      "compressed_bytes": 4713,
+      "compression": 0,
+      "wall_s": 9.27889923332259e-05
+    },
+    {
+      "name": "thumbs/22_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5742,
+      "compressed_bytes": 5742,
+      "compression": 0,
+      "wall_s": 0.0001018049952108413
+    },
+    {
+      "name": "thumbs/22_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5807,
+      "compressed_bytes": 5807,
+      "compression": 0,
+      "wall_s": 9.82160127023235e-05
+    },
+    {
+      "name": "thumbs/22_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5346,
+      "compressed_bytes": 5346,
+      "compression": 0,
+      "wall_s": 0.00010660900443326682
+    },
+    {
+      "name": "thumbs/22_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 4545,
+      "compressed_bytes": 4545,
+      "compression": 0,
+      "wall_s": 9.955500718206167e-05
+    },
+    {
+      "name": "thumbs/22_6.jpg",
+      "category": "jpeg",
+      "input_bytes": 2697,
+      "compressed_bytes": 2697,
+      "compression": 0,
+      "wall_s": 8.543000149074942e-05
+    },
+    {
+      "name": "thumbs/230_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5357,
+      "compressed_bytes": 5357,
+      "compression": 0,
+      "wall_s": 9.784199937712401e-05
+    },
+    {
+      "name": "thumbs/230_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3564,
+      "compressed_bytes": 3564,
+      "compression": 0,
+      "wall_s": 8.858999353833497e-05
+    },
+    {
+      "name": "thumbs/231_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3753,
+      "compressed_bytes": 3753,
+      "compression": 0,
+      "wall_s": 9.035400580614805e-05
+    },
+    {
+      "name": "thumbs/232_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6871,
+      "compressed_bytes": 6871,
+      "compression": 0,
+      "wall_s": 9.515599231235683e-05
+    },
+    {
+      "name": "thumbs/232_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5590,
+      "compressed_bytes": 5590,
+      "compression": 0,
+      "wall_s": 0.00010929899872280657
+    },
+    {
+      "name": "thumbs/233_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5424,
+      "compressed_bytes": 5424,
+      "compression": 0,
+      "wall_s": 9.311600297223777e-05
+    },
+    {
+      "name": "thumbs/234_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4453,
+      "compressed_bytes": 4453,
+      "compression": 0,
+      "wall_s": 9.186600800603628e-05
+    },
+    {
+      "name": "thumbs/234_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5342,
+      "compressed_bytes": 5342,
+      "compression": 0,
+      "wall_s": 9.247100388165563e-05
+    },
+    {
+      "name": "thumbs/234_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3977,
+      "compressed_bytes": 3977,
+      "compression": 0,
+      "wall_s": 8.795899339020252e-05
+    },
+    {
+      "name": "thumbs/235_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3389,
+      "compressed_bytes": 3389,
+      "compression": 0,
+      "wall_s": 0.00010110500443261117
+    },
+    {
+      "name": "thumbs/235_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5842,
+      "compressed_bytes": 5842,
+      "compression": 0,
+      "wall_s": 9.687599958851933e-05
+    },
+    {
+      "name": "thumbs/235_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4111,
+      "compressed_bytes": 4111,
+      "compression": 0,
+      "wall_s": 9.133300045505166e-05
+    },
+    {
+      "name": "thumbs/236_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6295,
+      "compressed_bytes": 6295,
+      "compression": 0,
+      "wall_s": 9.37489967327565e-05
+    },
+    {
+      "name": "thumbs/237_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3761,
+      "compressed_bytes": 3761,
+      "compression": 0,
+      "wall_s": 9.882199810817838e-05
+    },
+    {
+      "name": "thumbs/238_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3473,
+      "compressed_bytes": 3473,
+      "compression": 0,
+      "wall_s": 9.076799324247986e-05
+    },
+    {
+      "name": "thumbs/239_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4734,
+      "compressed_bytes": 4734,
+      "compression": 0,
+      "wall_s": 9.430700447410345e-05
+    },
+    {
+      "name": "thumbs/23_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3824,
+      "compressed_bytes": 3824,
+      "compression": 0,
+      "wall_s": 8.778800838626921e-05
+    },
+    {
+      "name": "thumbs/23_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5076,
+      "compressed_bytes": 5076,
+      "compression": 0,
+      "wall_s": 9.125100041273981e-05
+    },
+    {
+      "name": "thumbs/23_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5196,
+      "compressed_bytes": 5196,
+      "compression": 0,
+      "wall_s": 9.223500092048198e-05
+    },
+    {
+      "name": "thumbs/23_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 6651,
+      "compressed_bytes": 6651,
+      "compression": 0,
+      "wall_s": 0.00016811900422908366
+    },
+    {
+      "name": "thumbs/23_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4616,
+      "compressed_bytes": 4616,
+      "compression": 0,
+      "wall_s": 9.717899956740439e-05
+    },
+    {
+      "name": "thumbs/23_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 4680,
+      "compressed_bytes": 4680,
+      "compression": 0,
+      "wall_s": 0.00010440099867992103
+    },
+    {
+      "name": "thumbs/23_6.jpg",
+      "category": "jpeg",
+      "input_bytes": 3939,
+      "compressed_bytes": 3939,
+      "compression": 0,
+      "wall_s": 8.977099787443876e-05
+    },
+    {
+      "name": "thumbs/240_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3695,
+      "compressed_bytes": 3695,
+      "compression": 0,
+      "wall_s": 9.39619931159541e-05
+    },
+    {
+      "name": "thumbs/240_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4128,
+      "compressed_bytes": 4128,
+      "compression": 0,
+      "wall_s": 9.086700447369367e-05
+    },
+    {
+      "name": "thumbs/241_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4077,
+      "compressed_bytes": 4077,
+      "compression": 0,
+      "wall_s": 8.895699284039438e-05
+    },
+    {
+      "name": "thumbs/241_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4094,
+      "compressed_bytes": 4094,
+      "compression": 0,
+      "wall_s": 8.93219985300675e-05
+    },
+    {
+      "name": "thumbs/242_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3921,
+      "compressed_bytes": 3921,
+      "compression": 0,
+      "wall_s": 8.606599294580519e-05
+    },
+    {
+      "name": "thumbs/242_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4650,
+      "compressed_bytes": 4650,
+      "compression": 0,
+      "wall_s": 9.178600157611072e-05
+    },
+    {
+      "name": "thumbs/243_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2962,
+      "compressed_bytes": 2962,
+      "compression": 0,
+      "wall_s": 8.219399023801088e-05
+    },
+    {
+      "name": "thumbs/243_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3691,
+      "compressed_bytes": 3691,
+      "compression": 0,
+      "wall_s": 8.91250092536211e-05
+    },
+    {
+      "name": "thumbs/244_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3125,
+      "compressed_bytes": 3125,
+      "compression": 0,
+      "wall_s": 9.390099148731679e-05
+    },
+    {
+      "name": "thumbs/244_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3038,
+      "compressed_bytes": 3038,
+      "compression": 0,
+      "wall_s": 8.782200166024268e-05
+    },
+    {
+      "name": "thumbs/245_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5087,
+      "compressed_bytes": 5087,
+      "compression": 0,
+      "wall_s": 9.238699567504227e-05
+    },
+    {
+      "name": "thumbs/245_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3038,
+      "compressed_bytes": 3038,
+      "compression": 0,
+      "wall_s": 8.590500510763377e-05
+    },
+    {
+      "name": "thumbs/246_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3248,
+      "compressed_bytes": 3248,
+      "compression": 0,
+      "wall_s": 8.625799091532826e-05
+    },
+    {
+      "name": "thumbs/246_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2431,
+      "compressed_bytes": 2431,
+      "compression": 0,
+      "wall_s": 8.163599704857916e-05
+    },
+    {
+      "name": "thumbs/247_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4783,
+      "compressed_bytes": 4783,
+      "compression": 0,
+      "wall_s": 9.170999692287296e-05
+    },
+    {
+      "name": "thumbs/248_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3209,
+      "compressed_bytes": 3209,
+      "compression": 0,
+      "wall_s": 8.47549963509664e-05
+    },
+    {
+      "name": "thumbs/248_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5289,
+      "compressed_bytes": 5289,
+      "compression": 0,
+      "wall_s": 9.847100591287017e-05
+    },
+    {
+      "name": "thumbs/249_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4088,
+      "compressed_bytes": 4088,
+      "compression": 0,
+      "wall_s": 0.00010119599755853415
+    },
+    {
+      "name": "thumbs/24_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3523,
+      "compressed_bytes": 3523,
+      "compression": 0,
+      "wall_s": 8.931299089454114e-05
+    },
+    {
+      "name": "thumbs/24_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4507,
+      "compressed_bytes": 4507,
+      "compression": 0,
+      "wall_s": 9.590100671630353e-05
+    },
+    {
+      "name": "thumbs/24_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4188,
+      "compressed_bytes": 4188,
+      "compression": 0,
+      "wall_s": 9.203399531543255e-05
+    },
+    {
+      "name": "thumbs/24_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 2527,
+      "compressed_bytes": 2527,
+      "compression": 0,
+      "wall_s": 8.2054000813514e-05
+    },
+    {
+      "name": "thumbs/250_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3182,
+      "compressed_bytes": 3182,
+      "compression": 0,
+      "wall_s": 8.908599556889385e-05
+    },
+    {
+      "name": "thumbs/250_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3506,
+      "compressed_bytes": 3506,
+      "compression": 0,
+      "wall_s": 8.852301107253879e-05
+    },
+    {
+      "name": "thumbs/251_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3361,
+      "compressed_bytes": 3361,
+      "compression": 0,
+      "wall_s": 8.618200081400573e-05
+    },
+    {
+      "name": "thumbs/252_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2544,
+      "compressed_bytes": 2544,
+      "compression": 0,
+      "wall_s": 8.559500565752387e-05
+    },
+    {
+      "name": "thumbs/253_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4525,
+      "compressed_bytes": 4525,
+      "compression": 0,
+      "wall_s": 0.00011920000542886555
+    },
+    {
+      "name": "thumbs/253_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2315,
+      "compressed_bytes": 2315,
+      "compression": 0,
+      "wall_s": 8.89570073923096e-05
+    },
+    {
+      "name": "thumbs/254_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4641,
+      "compressed_bytes": 4641,
+      "compression": 0,
+      "wall_s": 9.574400610290468e-05
+    },
+    {
+      "name": "thumbs/254_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4597,
+      "compressed_bytes": 4597,
+      "compression": 0,
+      "wall_s": 9.254699398297817e-05
+    },
+    {
+      "name": "thumbs/255_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4175,
+      "compressed_bytes": 4175,
+      "compression": 0,
+      "wall_s": 9.890699584502727e-05
+    },
+    {
+      "name": "thumbs/256_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5244,
+      "compressed_bytes": 5244,
+      "compression": 0,
+      "wall_s": 9.918499563354999e-05
+    },
+    {
+      "name": "thumbs/257_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4524,
+      "compressed_bytes": 4524,
+      "compression": 0,
+      "wall_s": 9.36639989959076e-05
+    },
+    {
+      "name": "thumbs/258_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5371,
+      "compressed_bytes": 5371,
+      "compression": 0,
+      "wall_s": 9.788598981685936e-05
+    },
+    {
+      "name": "thumbs/258_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4619,
+      "compressed_bytes": 4619,
+      "compression": 0,
+      "wall_s": 0.00011197499406989664
+    },
+    {
+      "name": "thumbs/259_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4628,
+      "compressed_bytes": 4628,
+      "compression": 0,
+      "wall_s": 9.663900709711015e-05
+    },
+    {
+      "name": "thumbs/259_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4533,
+      "compressed_bytes": 4533,
+      "compression": 0,
+      "wall_s": 9.198299085255712e-05
+    },
+    {
+      "name": "thumbs/25_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2809,
+      "compressed_bytes": 2809,
+      "compression": 0,
+      "wall_s": 8.575600804761052e-05
+    },
+    {
+      "name": "thumbs/25_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4500,
+      "compressed_bytes": 4500,
+      "compression": 0,
+      "wall_s": 9.375798981636763e-05
+    },
+    {
+      "name": "thumbs/25_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4849,
+      "compressed_bytes": 4849,
+      "compression": 0,
+      "wall_s": 9.176999446935952e-05
+    },
+    {
+      "name": "thumbs/25_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 4264,
+      "compressed_bytes": 4264,
+      "compression": 0,
+      "wall_s": 8.954200893640518e-05
+    },
+    {
+      "name": "thumbs/25_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 3666,
+      "compressed_bytes": 3666,
+      "compression": 0,
+      "wall_s": 8.574400271754712e-05
+    },
+    {
+      "name": "thumbs/25_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 3954,
+      "compressed_bytes": 3954,
+      "compression": 0,
+      "wall_s": 0.0001904579985421151
+    },
+    {
+      "name": "thumbs/260_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2803,
+      "compressed_bytes": 2803,
+      "compression": 0,
+      "wall_s": 0.0001045849930960685
+    },
+    {
+      "name": "thumbs/261_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2983,
+      "compressed_bytes": 2983,
+      "compression": 0,
+      "wall_s": 8.808099664747715e-05
+    },
+    {
+      "name": "thumbs/262_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3039,
+      "compressed_bytes": 3039,
+      "compression": 0,
+      "wall_s": 8.74639954417944e-05
+    },
+    {
+      "name": "thumbs/263_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2271,
+      "compressed_bytes": 2271,
+      "compression": 0,
+      "wall_s": 8.398000500164926e-05
+    },
+    {
+      "name": "thumbs/264_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3236,
+      "compressed_bytes": 3236,
+      "compression": 0,
+      "wall_s": 8.515699300915003e-05
+    },
+    {
+      "name": "thumbs/265_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3202,
+      "compressed_bytes": 3202,
+      "compression": 0,
+      "wall_s": 8.825899567455053e-05
+    },
+    {
+      "name": "thumbs/265_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3050,
+      "compressed_bytes": 3050,
+      "compression": 0,
+      "wall_s": 8.436199277639389e-05
+    },
+    {
+      "name": "thumbs/266_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3273,
+      "compressed_bytes": 3273,
+      "compression": 0,
+      "wall_s": 8.580800204072148e-05
+    },
+    {
+      "name": "thumbs/267_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3056,
+      "compressed_bytes": 3056,
+      "compression": 0,
+      "wall_s": 8.713899296708405e-05
+    },
+    {
+      "name": "thumbs/267_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2885,
+      "compressed_bytes": 2885,
+      "compression": 0,
+      "wall_s": 9.765099093783647e-05
+    },
+    {
+      "name": "thumbs/268_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3223,
+      "compressed_bytes": 3223,
+      "compression": 0,
+      "wall_s": 8.746299135964364e-05
+    },
+    {
+      "name": "thumbs/269_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3999,
+      "compressed_bytes": 3999,
+      "compression": 0,
+      "wall_s": 9.267999848816544e-05
+    },
+    {
+      "name": "thumbs/26_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3086,
+      "compressed_bytes": 3086,
+      "compression": 0,
+      "wall_s": 8.348299888893962e-05
+    },
+    {
+      "name": "thumbs/26_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4765,
+      "compressed_bytes": 4765,
+      "compression": 0,
+      "wall_s": 9.120799950323999e-05
+    },
+    {
+      "name": "thumbs/26_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3687,
+      "compressed_bytes": 3687,
+      "compression": 0,
+      "wall_s": 8.57960112625733e-05
+    },
+    {
+      "name": "thumbs/26_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 4747,
+      "compressed_bytes": 4747,
+      "compression": 0,
+      "wall_s": 9.254600445274264e-05
+    },
+    {
+      "name": "thumbs/26_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4197,
+      "compressed_bytes": 4197,
+      "compression": 0,
+      "wall_s": 8.97249992704019e-05
+    },
+    {
+      "name": "thumbs/26_5.jpg",
+      "category": "jpeg",
+      "input_bytes": 3839,
+      "compressed_bytes": 3839,
+      "compression": 0,
+      "wall_s": 8.801900548860431e-05
+    },
+    {
+      "name": "thumbs/26_6.jpg",
+      "category": "jpeg",
+      "input_bytes": 3432,
+      "compressed_bytes": 3432,
+      "compression": 0,
+      "wall_s": 9.543600026518106e-05
+    },
+    {
+      "name": "thumbs/270_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2755,
+      "compressed_bytes": 2755,
+      "compression": 0,
+      "wall_s": 8.857599459588528e-05
+    },
+    {
+      "name": "thumbs/271_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2401,
+      "compressed_bytes": 2401,
+      "compression": 0,
+      "wall_s": 8.61529988469556e-05
+    },
+    {
+      "name": "thumbs/272_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4512,
+      "compressed_bytes": 4512,
+      "compression": 0,
+      "wall_s": 9.172700811177492e-05
+    },
+    {
+      "name": "thumbs/272_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3136,
+      "compressed_bytes": 3136,
+      "compression": 0,
+      "wall_s": 8.905600407160819e-05
+    },
+    {
+      "name": "thumbs/273_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4396,
+      "compressed_bytes": 4396,
+      "compression": 0,
+      "wall_s": 9.321099787484854e-05
+    },
+    {
+      "name": "thumbs/274_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3910,
+      "compressed_bytes": 3910,
+      "compression": 0,
+      "wall_s": 8.639499719720334e-05
+    },
+    {
+      "name": "thumbs/275_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4421,
+      "compressed_bytes": 4421,
+      "compression": 0,
+      "wall_s": 9.272299939766526e-05
+    },
+    {
+      "name": "thumbs/275_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4153,
+      "compressed_bytes": 4153,
+      "compression": 0,
+      "wall_s": 9.101300383917987e-05
+    },
+    {
+      "name": "thumbs/276_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4076,
+      "compressed_bytes": 4076,
+      "compression": 0,
+      "wall_s": 9.418700938113034e-05
+    },
+    {
+      "name": "thumbs/276_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3503,
+      "compressed_bytes": 3503,
+      "compression": 0,
+      "wall_s": 9.122400660999119e-05
+    },
+    {
+      "name": "thumbs/277_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3796,
+      "compressed_bytes": 3796,
+      "compression": 0,
+      "wall_s": 8.622200402896851e-05
+    },
+    {
+      "name": "thumbs/278_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4071,
+      "compressed_bytes": 4071,
+      "compression": 0,
+      "wall_s": 8.964100561570376e-05
+    },
+    {
+      "name": "thumbs/279_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4189,
+      "compressed_bytes": 4189,
+      "compression": 0,
+      "wall_s": 9.101700561586767e-05
+    },
+    {
+      "name": "thumbs/27_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4524,
+      "compressed_bytes": 4524,
+      "compression": 0,
+      "wall_s": 9.039900032803416e-05
+    },
+    {
+      "name": "thumbs/280_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4628,
+      "compressed_bytes": 4628,
+      "compression": 0,
+      "wall_s": 8.975900709629059e-05
+    },
+    {
+      "name": "thumbs/281_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2747,
+      "compressed_bytes": 2747,
+      "compression": 0,
+      "wall_s": 8.776200411375612e-05
+    },
+    {
+      "name": "thumbs/281_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3934,
+      "compressed_bytes": 3934,
+      "compression": 0,
+      "wall_s": 9.12140094442293e-05
+    },
+    {
+      "name": "thumbs/282_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3306,
+      "compressed_bytes": 3306,
+      "compression": 0,
+      "wall_s": 8.582801092416048e-05
+    },
+    {
+      "name": "thumbs/282_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4793,
+      "compressed_bytes": 4793,
+      "compression": 0,
+      "wall_s": 0.00012470799265429378
+    },
+    {
+      "name": "thumbs/283_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6386,
+      "compressed_bytes": 6386,
+      "compression": 0,
+      "wall_s": 0.00010035900049842894
+    },
+    {
+      "name": "thumbs/284_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2737,
+      "compressed_bytes": 2737,
+      "compression": 0,
+      "wall_s": 0.00010300299618393183
+    },
+    {
+      "name": "thumbs/285_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3363,
+      "compressed_bytes": 3363,
+      "compression": 0,
+      "wall_s": 9.462500747758895e-05
+    },
+    {
+      "name": "thumbs/286_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3443,
+      "compressed_bytes": 3443,
+      "compression": 0,
+      "wall_s": 8.735198935028166e-05
+    },
+    {
+      "name": "thumbs/286_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4077,
+      "compressed_bytes": 4077,
+      "compression": 0,
+      "wall_s": 9.617800242267549e-05
+    },
+    {
+      "name": "thumbs/287_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2173,
+      "compressed_bytes": 2173,
+      "compression": 0,
+      "wall_s": 8.795900794211775e-05
+    },
+    {
+      "name": "thumbs/288_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3428,
+      "compressed_bytes": 3428,
+      "compression": 0,
+      "wall_s": 9.373901411890984e-05
+    },
+    {
+      "name": "thumbs/288_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3601,
+      "compressed_bytes": 3601,
+      "compression": 0,
+      "wall_s": 8.831500599626452e-05
+    },
+    {
+      "name": "thumbs/289_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3440,
+      "compressed_bytes": 3440,
+      "compression": 0,
+      "wall_s": 0.00023957599478308111
+    },
+    {
+      "name": "thumbs/289_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3372,
+      "compressed_bytes": 3372,
+      "compression": 0,
+      "wall_s": 9.823100117500871e-05
+    },
+    {
+      "name": "thumbs/28_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3490,
+      "compressed_bytes": 3490,
+      "compression": 0,
+      "wall_s": 9.553399286232889e-05
+    },
+    {
+      "name": "thumbs/290_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4158,
+      "compressed_bytes": 4158,
+      "compression": 0,
+      "wall_s": 0.00022898199677001685
+    },
+    {
+      "name": "thumbs/291_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3431,
+      "compressed_bytes": 3431,
+      "compression": 0,
+      "wall_s": 9.653600864112377e-05
+    },
+    {
+      "name": "thumbs/292_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3448,
+      "compressed_bytes": 3448,
+      "compression": 0,
+      "wall_s": 9.052800305653363e-05
+    },
+    {
+      "name": "thumbs/293_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3459,
+      "compressed_bytes": 3459,
+      "compression": 0,
+      "wall_s": 0.00010181100515183061
+    },
+    {
+      "name": "thumbs/294_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4181,
+      "compressed_bytes": 4181,
+      "compression": 0,
+      "wall_s": 9.389300248585641e-05
+    },
+    {
+      "name": "thumbs/295_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3486,
+      "compressed_bytes": 3486,
+      "compression": 0,
+      "wall_s": 9.239400969818234e-05
+    },
+    {
+      "name": "thumbs/296_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3508,
+      "compressed_bytes": 3508,
+      "compression": 0,
+      "wall_s": 9.015599789563566e-05
+    },
+    {
+      "name": "thumbs/297_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3548,
+      "compressed_bytes": 3548,
+      "compression": 0,
+      "wall_s": 8.390900620725006e-05
+    },
+    {
+      "name": "thumbs/298_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2734,
+      "compressed_bytes": 2734,
+      "compression": 0,
+      "wall_s": 8.349701238330454e-05
+    },
+    {
+      "name": "thumbs/299_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4057,
+      "compressed_bytes": 4057,
+      "compression": 0,
+      "wall_s": 9.572500130161643e-05
+    },
+    {
+      "name": "thumbs/29_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4877,
+      "compressed_bytes": 4877,
+      "compression": 0,
+      "wall_s": 9.88569954643026e-05
+    },
+    {
+      "name": "thumbs/29_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6539,
+      "compressed_bytes": 6539,
+      "compression": 0,
+      "wall_s": 9.789199975784868e-05
+    },
+    {
+      "name": "thumbs/2_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4629,
+      "compressed_bytes": 4629,
+      "compression": 0,
+      "wall_s": 0.0001037479960359633
+    },
+    {
+      "name": "thumbs/2_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4601,
+      "compressed_bytes": 4601,
+      "compression": 0,
+      "wall_s": 9.404300362803042e-05
+    },
+    {
+      "name": "thumbs/2_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5462,
+      "compressed_bytes": 5462,
+      "compression": 0,
+      "wall_s": 9.588300599716604e-05
+    },
+    {
+      "name": "thumbs/2_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 4791,
+      "compressed_bytes": 4791,
+      "compression": 0,
+      "wall_s": 9.569300164002925e-05
+    },
+    {
+      "name": "thumbs/300_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3195,
+      "compressed_bytes": 3195,
+      "compression": 0,
+      "wall_s": 8.778901246841997e-05
+    },
+    {
+      "name": "thumbs/301_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3722,
+      "compressed_bytes": 3722,
+      "compression": 0,
+      "wall_s": 8.328199328389019e-05
+    },
+    {
+      "name": "thumbs/301_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3575,
+      "compressed_bytes": 3575,
+      "compression": 0,
+      "wall_s": 8.727000385988504e-05
+    },
+    {
+      "name": "thumbs/302_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4095,
+      "compressed_bytes": 4095,
+      "compression": 0,
+      "wall_s": 8.945100125856698e-05
+    },
+    {
+      "name": "thumbs/302_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3431,
+      "compressed_bytes": 3431,
+      "compression": 0,
+      "wall_s": 9.023699385579675e-05
+    },
+    {
+      "name": "thumbs/303_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3321,
+      "compressed_bytes": 3321,
+      "compression": 0,
+      "wall_s": 0.00011517301027197391
+    },
+    {
+      "name": "thumbs/304_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4222,
+      "compressed_bytes": 4222,
+      "compression": 0,
+      "wall_s": 9.506900096312165e-05
+    },
+    {
+      "name": "thumbs/304_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3614,
+      "compressed_bytes": 3614,
+      "compression": 0,
+      "wall_s": 8.67469934746623e-05
+    },
+    {
+      "name": "thumbs/305_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4319,
+      "compressed_bytes": 4319,
+      "compression": 0,
+      "wall_s": 9.256899647880346e-05
+    },
+    {
+      "name": "thumbs/306_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3839,
+      "compressed_bytes": 3839,
+      "compression": 0,
+      "wall_s": 9.216601029038429e-05
+    },
+    {
+      "name": "thumbs/306_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3162,
+      "compressed_bytes": 3162,
+      "compression": 0,
+      "wall_s": 8.703299681656063e-05
+    },
+    {
+      "name": "thumbs/307_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4175,
+      "compressed_bytes": 4175,
+      "compression": 0,
+      "wall_s": 9.136900189332664e-05
+    },
+    {
+      "name": "thumbs/308_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3514,
+      "compressed_bytes": 3514,
+      "compression": 0,
+      "wall_s": 8.546399476472288e-05
+    },
+    {
+      "name": "thumbs/308_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3522,
+      "compressed_bytes": 3522,
+      "compression": 0,
+      "wall_s": 8.585800242144614e-05
+    },
+    {
+      "name": "thumbs/309_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3140,
+      "compressed_bytes": 3140,
+      "compression": 0,
+      "wall_s": 9.485000919084996e-05
+    },
+    {
+      "name": "thumbs/30_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5445,
+      "compressed_bytes": 5445,
+      "compression": 0,
+      "wall_s": 9.926900384016335e-05
+    },
+    {
+      "name": "thumbs/30_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6119,
+      "compressed_bytes": 6119,
+      "compression": 0,
+      "wall_s": 9.448199125472456e-05
+    },
+    {
+      "name": "thumbs/310_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5771,
+      "compressed_bytes": 5771,
+      "compression": 0,
+      "wall_s": 9.498200961388648e-05
+    },
+    {
+      "name": "thumbs/311_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5032,
+      "compressed_bytes": 5032,
+      "compression": 0,
+      "wall_s": 9.660000796429813e-05
+    },
+    {
+      "name": "thumbs/312_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4653,
+      "compressed_bytes": 4653,
+      "compression": 0,
+      "wall_s": 9.114400018006563e-05
+    },
+    {
+      "name": "thumbs/312_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5729,
+      "compressed_bytes": 5729,
+      "compression": 0,
+      "wall_s": 9.421000140719116e-05
+    },
+    {
+      "name": "thumbs/313_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3659,
+      "compressed_bytes": 3659,
+      "compression": 0,
+      "wall_s": 8.560999413020909e-05
+    },
+    {
+      "name": "thumbs/314_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6279,
+      "compressed_bytes": 6279,
+      "compression": 0,
+      "wall_s": 9.358998795505613e-05
+    },
+    {
+      "name": "thumbs/315_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4334,
+      "compressed_bytes": 4334,
+      "compression": 0,
+      "wall_s": 9.876200056169182e-05
+    },
+    {
+      "name": "thumbs/316_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5194,
+      "compressed_bytes": 5194,
+      "compression": 0,
+      "wall_s": 9.326700819656253e-05
+    },
+    {
+      "name": "thumbs/316_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5220,
+      "compressed_bytes": 5220,
+      "compression": 0,
+      "wall_s": 9.476700506638736e-05
+    },
+    {
+      "name": "thumbs/317_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4919,
+      "compressed_bytes": 4919,
+      "compression": 0,
+      "wall_s": 0.00019242199778091162
+    },
+    {
+      "name": "thumbs/317_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4805,
+      "compressed_bytes": 4805,
+      "compression": 0,
+      "wall_s": 0.00010171299800276756
+    },
+    {
+      "name": "thumbs/318_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4082,
+      "compressed_bytes": 4082,
+      "compression": 0,
+      "wall_s": 9.617100295145065e-05
+    },
+    {
+      "name": "thumbs/318_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3736,
+      "compressed_bytes": 3736,
+      "compression": 0,
+      "wall_s": 8.74559918884188e-05
+    },
+    {
+      "name": "thumbs/319_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5997,
+      "compressed_bytes": 5997,
+      "compression": 0,
+      "wall_s": 9.382498683407903e-05
+    },
+    {
+      "name": "thumbs/31_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5397,
+      "compressed_bytes": 5397,
+      "compression": 0,
+      "wall_s": 9.496000711806118e-05
+    },
+    {
+      "name": "thumbs/31_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5770,
+      "compressed_bytes": 5770,
+      "compression": 0,
+      "wall_s": 9.997301094699651e-05
+    },
+    {
+      "name": "thumbs/320_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4692,
+      "compressed_bytes": 4692,
+      "compression": 0,
+      "wall_s": 9.260099614039063e-05
+    },
+    {
+      "name": "thumbs/321_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3870,
+      "compressed_bytes": 3870,
+      "compression": 0,
+      "wall_s": 9.429900092072785e-05
+    },
+    {
+      "name": "thumbs/322_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4902,
+      "compressed_bytes": 4902,
+      "compression": 0,
+      "wall_s": 9.278299694415182e-05
+    },
+    {
+      "name": "thumbs/322_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6589,
+      "compressed_bytes": 6589,
+      "compression": 0,
+      "wall_s": 0.00010736800322774798
+    },
+    {
+      "name": "thumbs/323_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2670,
+      "compressed_bytes": 2670,
+      "compression": 0,
+      "wall_s": 8.926200098358095e-05
+    },
+    {
+      "name": "thumbs/324_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6018,
+      "compressed_bytes": 6018,
+      "compression": 0,
+      "wall_s": 9.86889936029911e-05
+    },
+    {
+      "name": "thumbs/325_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5410,
+      "compressed_bytes": 5410,
+      "compression": 0,
+      "wall_s": 9.334100468549877e-05
+    },
+    {
+      "name": "thumbs/326_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5124,
+      "compressed_bytes": 5124,
+      "compression": 0,
+      "wall_s": 0.00011680999887175858
+    },
+    {
+      "name": "thumbs/327_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 6342,
+      "compressed_bytes": 6342,
+      "compression": 0,
+      "wall_s": 9.836800745688379e-05
+    },
+    {
+      "name": "thumbs/328_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3900,
+      "compressed_bytes": 3900,
+      "compression": 0,
+      "wall_s": 8.7567008449696e-05
+    },
+    {
+      "name": "thumbs/329_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5184,
+      "compressed_bytes": 5184,
+      "compression": 0,
+      "wall_s": 9.282499377150089e-05
+    },
+    {
+      "name": "thumbs/329_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3717,
+      "compressed_bytes": 3717,
+      "compression": 0,
+      "wall_s": 8.681000326760113e-05
+    },
+    {
+      "name": "thumbs/32_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4151,
+      "compressed_bytes": 4151,
+      "compression": 0,
+      "wall_s": 9.396400128025562e-05
+    },
+    {
+      "name": "thumbs/32_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3813,
+      "compressed_bytes": 3813,
+      "compression": 0,
+      "wall_s": 8.622401219327003e-05
+    },
+    {
+      "name": "thumbs/330_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4077,
+      "compressed_bytes": 4077,
+      "compression": 0,
+      "wall_s": 9.213700832333416e-05
+    },
+    {
+      "name": "thumbs/330_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5479,
+      "compressed_bytes": 5479,
+      "compression": 0,
+      "wall_s": 0.00011343300866428763
+    },
+    {
+      "name": "thumbs/331_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4240,
+      "compressed_bytes": 4240,
+      "compression": 0,
+      "wall_s": 0.00010082600056193769
+    },
+    {
+      "name": "thumbs/331_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4150,
+      "compressed_bytes": 4150,
+      "compression": 0,
+      "wall_s": 9.544500790070742e-05
+    },
+    {
+      "name": "thumbs/332_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4084,
+      "compressed_bytes": 4084,
+      "compression": 0,
+      "wall_s": 9.110700921155512e-05
+    },
+    {
+      "name": "thumbs/332_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5525,
+      "compressed_bytes": 5525,
+      "compression": 0,
+      "wall_s": 9.294800111092627e-05
+    },
+    {
+      "name": "thumbs/333_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3608,
+      "compressed_bytes": 3608,
+      "compression": 0,
+      "wall_s": 8.600400178693235e-05
+    },
+    {
+      "name": "thumbs/334_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5312,
+      "compressed_bytes": 5312,
+      "compression": 0,
+      "wall_s": 9.260600199922919e-05
+    },
+    {
+      "name": "thumbs/334_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4587,
+      "compressed_bytes": 4587,
+      "compression": 0,
+      "wall_s": 9.684899123385549e-05
+    },
+    {
+      "name": "thumbs/335_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5311,
+      "compressed_bytes": 5311,
+      "compression": 0,
+      "wall_s": 9.294300980400294e-05
+    },
+    {
+      "name": "thumbs/336_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5135,
+      "compressed_bytes": 5135,
+      "compression": 0,
+      "wall_s": 9.823600703384727e-05
+    },
+    {
+      "name": "thumbs/337_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5284,
+      "compressed_bytes": 5284,
+      "compression": 0,
+      "wall_s": 0.00010371601092629135
+    },
+    {
+      "name": "thumbs/337_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4319,
+      "compressed_bytes": 4319,
+      "compression": 0,
+      "wall_s": 9.293999755755067e-05
+    },
+    {
+      "name": "thumbs/338_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3374,
+      "compressed_bytes": 3374,
+      "compression": 0,
+      "wall_s": 8.71700030984357e-05
+    },
+    {
+      "name": "thumbs/339_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3328,
+      "compressed_bytes": 3328,
+      "compression": 0,
+      "wall_s": 8.618200081400573e-05
+    },
+    {
+      "name": "thumbs/339_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4790,
+      "compressed_bytes": 4790,
+      "compression": 0,
+      "wall_s": 9.06000059330836e-05
+    },
+    {
+      "name": "thumbs/33_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4671,
+      "compressed_bytes": 4671,
+      "compression": 0,
+      "wall_s": 9.141999180428684e-05
+    },
+    {
+      "name": "thumbs/33_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3410,
+      "compressed_bytes": 3410,
+      "compression": 0,
+      "wall_s": 8.908500603865832e-05
+    },
+    {
+      "name": "thumbs/340_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5505,
+      "compressed_bytes": 5505,
+      "compression": 0,
+      "wall_s": 0.0001613710046513006
+    },
+    {
+      "name": "thumbs/340_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4166,
+      "compressed_bytes": 4166,
+      "compression": 0,
+      "wall_s": 9.839200356509537e-05
+    },
+    {
+      "name": "thumbs/341_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5348,
+      "compressed_bytes": 5348,
+      "compression": 0,
+      "wall_s": 0.00010325500625185668
+    },
+    {
+      "name": "thumbs/341_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4245,
+      "compressed_bytes": 4245,
+      "compression": 0,
+      "wall_s": 9.146500087808818e-05
+    },
+    {
+      "name": "thumbs/342_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3186,
+      "compressed_bytes": 3186,
+      "compression": 0,
+      "wall_s": 8.630099182482809e-05
+    },
+    {
+      "name": "thumbs/342_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3637,
+      "compressed_bytes": 3637,
+      "compression": 0,
+      "wall_s": 8.588499622419477e-05
+    },
+    {
+      "name": "thumbs/343_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4340,
+      "compressed_bytes": 4340,
+      "compression": 0,
+      "wall_s": 8.978199912235141e-05
+    },
+    {
+      "name": "thumbs/343_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5163,
+      "compressed_bytes": 5163,
+      "compression": 0,
+      "wall_s": 9.000999853014946e-05
+    },
+    {
+      "name": "thumbs/344_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3268,
+      "compressed_bytes": 3268,
+      "compression": 0,
+      "wall_s": 8.364199311472476e-05
+    },
+    {
+      "name": "thumbs/345_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5621,
+      "compressed_bytes": 5621,
+      "compression": 0,
+      "wall_s": 0.00010873099381569773
+    },
+    {
+      "name": "thumbs/345_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5346,
+      "compressed_bytes": 5346,
+      "compression": 0,
+      "wall_s": 0.0001022100041154772
+    },
+    {
+      "name": "thumbs/346_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5586,
+      "compressed_bytes": 5586,
+      "compression": 0,
+      "wall_s": 0.00011826300760731101
+    },
+    {
+      "name": "thumbs/347_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4828,
+      "compressed_bytes": 4828,
+      "compression": 0,
+      "wall_s": 0.00010811600077431649
+    },
+    {
+      "name": "thumbs/347_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 2712,
+      "compressed_bytes": 2712,
+      "compression": 0,
+      "wall_s": 9.013299131765962e-05
+    },
+    {
+      "name": "thumbs/348_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4123,
+      "compressed_bytes": 4123,
+      "compression": 0,
+      "wall_s": 9.16720018722117e-05
+    },
+    {
+      "name": "thumbs/348_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4729,
+      "compressed_bytes": 4729,
+      "compression": 0,
+      "wall_s": 9.357099770568311e-05
+    },
+    {
+      "name": "thumbs/349_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4883,
+      "compressed_bytes": 4883,
+      "compression": 0,
+      "wall_s": 9.318100637756288e-05
+    },
+    {
+      "name": "thumbs/34_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4711,
+      "compressed_bytes": 4711,
+      "compression": 0,
+      "wall_s": 9.130100079346448e-05
+    },
+    {
+      "name": "thumbs/350_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4818,
+      "compressed_bytes": 4818,
+      "compression": 0,
+      "wall_s": 9.352101187687367e-05
+    },
+    {
+      "name": "thumbs/351_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5352,
+      "compressed_bytes": 5352,
+      "compression": 0,
+      "wall_s": 0.00011675599671434611
+    },
+    {
+      "name": "thumbs/351_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3788,
+      "compressed_bytes": 3788,
+      "compression": 0,
+      "wall_s": 9.890600631479174e-05
+    },
+    {
+      "name": "thumbs/352_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4962,
+      "compressed_bytes": 4962,
+      "compression": 0,
+      "wall_s": 9.669200517237186e-05
+    },
+    {
+      "name": "thumbs/353_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5248,
+      "compressed_bytes": 5248,
+      "compression": 0,
+      "wall_s": 0.0001003640063572675
+    },
+    {
+      "name": "thumbs/354_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5313,
+      "compressed_bytes": 5313,
+      "compression": 0,
+      "wall_s": 9.623799996916205e-05
+    },
+    {
+      "name": "thumbs/355_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4942,
+      "compressed_bytes": 4942,
+      "compression": 0,
+      "wall_s": 9.374199726153165e-05
+    },
+    {
+      "name": "thumbs/355_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4776,
+      "compressed_bytes": 4776,
+      "compression": 0,
+      "wall_s": 9.63950005825609e-05
+    },
+    {
+      "name": "thumbs/356_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5330,
+      "compressed_bytes": 5330,
+      "compression": 0,
+      "wall_s": 9.380999836139381e-05
+    },
+    {
+      "name": "thumbs/357_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3097,
+      "compressed_bytes": 3097,
+      "compression": 0,
+      "wall_s": 9.116099681705236e-05
+    },
+    {
+      "name": "thumbs/357_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4764,
+      "compressed_bytes": 4764,
+      "compression": 0,
+      "wall_s": 0.00010396599827799946
+    },
+    {
+      "name": "thumbs/358_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3370,
+      "compressed_bytes": 3370,
+      "compression": 0,
+      "wall_s": 9.092999971471727e-05
+    },
+    {
+      "name": "thumbs/358_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5075,
+      "compressed_bytes": 5075,
+      "compression": 0,
+      "wall_s": 9.451698861084878e-05
+    },
+    {
+      "name": "thumbs/359_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2100,
+      "compressed_bytes": 2100,
+      "compression": 0,
+      "wall_s": 9.49420063989237e-05
+    },
+    {
+      "name": "thumbs/35_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5458,
+      "compressed_bytes": 5458,
+      "compression": 0,
+      "wall_s": 9.775000216905028e-05
+    },
+    {
+      "name": "thumbs/35_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5021,
+      "compressed_bytes": 5021,
+      "compression": 0,
+      "wall_s": 9.561399929225445e-05
+    },
+    {
+      "name": "thumbs/360_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3981,
+      "compressed_bytes": 3981,
+      "compression": 0,
+      "wall_s": 9.309199231211096e-05
+    },
+    {
+      "name": "thumbs/360_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4334,
+      "compressed_bytes": 4334,
+      "compression": 0,
+      "wall_s": 9.5523995696567e-05
+    },
+    {
+      "name": "thumbs/360_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3281,
+      "compressed_bytes": 3281,
+      "compression": 0,
+      "wall_s": 8.833000902086496e-05
+    },
+    {
+      "name": "thumbs/361_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4554,
+      "compressed_bytes": 4554,
+      "compression": 0,
+      "wall_s": 0.00010363300680182874
+    },
+    {
+      "name": "thumbs/361_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4593,
+      "compressed_bytes": 4593,
+      "compression": 0,
+      "wall_s": 9.849100024439394e-05
+    },
+    {
+      "name": "thumbs/361_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4074,
+      "compressed_bytes": 4074,
+      "compression": 0,
+      "wall_s": 9.35889984248206e-05
+    },
+    {
+      "name": "thumbs/362_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4249,
+      "compressed_bytes": 4249,
+      "compression": 0,
+      "wall_s": 9.447199408896267e-05
+    },
+    {
+      "name": "thumbs/362_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3722,
+      "compressed_bytes": 3722,
+      "compression": 0,
+      "wall_s": 0.00023889599833637476
+    },
+    {
+      "name": "thumbs/363_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4178,
+      "compressed_bytes": 4178,
+      "compression": 0,
+      "wall_s": 0.00011295700096525252
+    },
+    {
+      "name": "thumbs/363_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3632,
+      "compressed_bytes": 3632,
+      "compression": 0,
+      "wall_s": 8.798998896963894e-05
+    },
+    {
+      "name": "thumbs/364_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4188,
+      "compressed_bytes": 4188,
+      "compression": 0,
+      "wall_s": 9.264200343750417e-05
+    },
+    {
+      "name": "thumbs/364_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4476,
+      "compressed_bytes": 4476,
+      "compression": 0,
+      "wall_s": 0.00011470999743323773
+    },
+    {
+      "name": "thumbs/364_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3699,
+      "compressed_bytes": 3699,
+      "compression": 0,
+      "wall_s": 8.938500832300633e-05
+    },
+    {
+      "name": "thumbs/365_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3977,
+      "compressed_bytes": 3977,
+      "compression": 0,
+      "wall_s": 9.071700333151966e-05
+    },
+    {
+      "name": "thumbs/365_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4264,
+      "compressed_bytes": 4264,
+      "compression": 0,
+      "wall_s": 9.308599692303687e-05
+    },
+    {
+      "name": "thumbs/365_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3455,
+      "compressed_bytes": 3455,
+      "compression": 0,
+      "wall_s": 8.609199721831828e-05
+    },
+    {
+      "name": "thumbs/366_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4760,
+      "compressed_bytes": 4760,
+      "compression": 0,
+      "wall_s": 0.00011824000102933496
+    },
+    {
+      "name": "thumbs/366_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4871,
+      "compressed_bytes": 4871,
+      "compression": 0,
+      "wall_s": 0.00010040000779554248
+    },
+    {
+      "name": "thumbs/366_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4140,
+      "compressed_bytes": 4140,
+      "compression": 0,
+      "wall_s": 9.55909927142784e-05
+    },
+    {
+      "name": "thumbs/367_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5133,
+      "compressed_bytes": 5133,
+      "compression": 0,
+      "wall_s": 0.00010887799726333469
+    },
+    {
+      "name": "thumbs/367_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5002,
+      "compressed_bytes": 5002,
+      "compression": 0,
+      "wall_s": 9.808399772737175e-05
+    },
+    {
+      "name": "thumbs/367_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4351,
+      "compressed_bytes": 4351,
+      "compression": 0,
+      "wall_s": 9.321499965153635e-05
+    },
+    {
+      "name": "thumbs/368_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4926,
+      "compressed_bytes": 4926,
+      "compression": 0,
+      "wall_s": 9.9580007372424e-05
+    },
+    {
+      "name": "thumbs/368_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4818,
+      "compressed_bytes": 4818,
+      "compression": 0,
+      "wall_s": 9.752600453794003e-05
+    },
+    {
+      "name": "thumbs/369_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3075,
+      "compressed_bytes": 3075,
+      "compression": 0,
+      "wall_s": 9.113400301430374e-05
+    },
+    {
+      "name": "thumbs/369_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3709,
+      "compressed_bytes": 3709,
+      "compression": 0,
+      "wall_s": 8.791300933808088e-05
+    },
+    {
+      "name": "thumbs/369_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 2757,
+      "compressed_bytes": 2757,
+      "compression": 0,
+      "wall_s": 9.078599396161735e-05
+    },
+    {
+      "name": "thumbs/36_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4458,
+      "compressed_bytes": 4458,
+      "compression": 0,
+      "wall_s": 0.00010242199641652405
+    },
+    {
+      "name": "thumbs/36_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3794,
+      "compressed_bytes": 3794,
+      "compression": 0,
+      "wall_s": 9.949799277819693e-05
+    },
+    {
+      "name": "thumbs/370_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4766,
+      "compressed_bytes": 4766,
+      "compression": 0,
+      "wall_s": 9.734201012179255e-05
+    },
+    {
+      "name": "thumbs/370_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5050,
+      "compressed_bytes": 5050,
+      "compression": 0,
+      "wall_s": 9.664800018072128e-05
+    },
+    {
+      "name": "thumbs/371_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4365,
+      "compressed_bytes": 4365,
+      "compression": 0,
+      "wall_s": 9.34839918045327e-05
+    },
+    {
+      "name": "thumbs/371_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3842,
+      "compressed_bytes": 3842,
+      "compression": 0,
+      "wall_s": 8.934900688473135e-05
+    },
+    {
+      "name": "thumbs/372_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3253,
+      "compressed_bytes": 3253,
+      "compression": 0,
+      "wall_s": 9.482300083618611e-05
+    },
+    {
+      "name": "thumbs/373_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2778,
+      "compressed_bytes": 2778,
+      "compression": 0,
+      "wall_s": 8.45869944896549e-05
+    },
+    {
+      "name": "thumbs/374_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4567,
+      "compressed_bytes": 4567,
+      "compression": 0,
+      "wall_s": 8.993298979476094e-05
+    },
+    {
+      "name": "thumbs/374_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5200,
+      "compressed_bytes": 5200,
+      "compression": 0,
+      "wall_s": 9.804699220694602e-05
+    },
+    {
+      "name": "thumbs/375_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2363,
+      "compressed_bytes": 2363,
+      "compression": 0,
+      "wall_s": 8.17399995867163e-05
+    },
+    {
+      "name": "thumbs/376_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3924,
+      "compressed_bytes": 3924,
+      "compression": 0,
+      "wall_s": 9.159899491351098e-05
+    },
+    {
+      "name": "thumbs/376_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4065,
+      "compressed_bytes": 4065,
+      "compression": 0,
+      "wall_s": 9.394799417350441e-05
+    },
+    {
+      "name": "thumbs/377_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4987,
+      "compressed_bytes": 4987,
+      "compression": 0,
+      "wall_s": 9.215700265485793e-05
+    },
+    {
+      "name": "thumbs/377_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6002,
+      "compressed_bytes": 6002,
+      "compression": 0,
+      "wall_s": 9.482700261287391e-05
+    },
+    {
+      "name": "thumbs/378_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4757,
+      "compressed_bytes": 4757,
+      "compression": 0,
+      "wall_s": 9.16339922696352e-05
+    },
+    {
+      "name": "thumbs/378_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4874,
+      "compressed_bytes": 4874,
+      "compression": 0,
+      "wall_s": 9.523899643681943e-05
+    },
+    {
+      "name": "thumbs/379_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4112,
+      "compressed_bytes": 4112,
+      "compression": 0,
+      "wall_s": 8.948700269684196e-05
+    },
+    {
+      "name": "thumbs/37_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5908,
+      "compressed_bytes": 5908,
+      "compression": 0,
+      "wall_s": 9.620199853088707e-05
+    },
+    {
+      "name": "thumbs/37_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4608,
+      "compressed_bytes": 4608,
+      "compression": 0,
+      "wall_s": 9.426299948245287e-05
+    },
+    {
+      "name": "thumbs/380_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3680,
+      "compressed_bytes": 3680,
+      "compression": 0,
+      "wall_s": 0.00010795400885399431
+    },
+    {
+      "name": "thumbs/381_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4257,
+      "compressed_bytes": 4257,
+      "compression": 0,
+      "wall_s": 9.763801062945276e-05
+    },
+    {
+      "name": "thumbs/382_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4396,
+      "compressed_bytes": 4396,
+      "compression": 0,
+      "wall_s": 9.317300282418728e-05
+    },
+    {
+      "name": "thumbs/383_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3035,
+      "compressed_bytes": 3035,
+      "compression": 0,
+      "wall_s": 0.00016503199003636837
+    },
+    {
+      "name": "thumbs/384_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4346,
+      "compressed_bytes": 4346,
+      "compression": 0,
+      "wall_s": 9.968999074772e-05
+    },
+    {
+      "name": "thumbs/385_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4286,
+      "compressed_bytes": 4286,
+      "compression": 0,
+      "wall_s": 9.038099960889667e-05
+    },
+    {
+      "name": "thumbs/38_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4930,
+      "compressed_bytes": 4930,
+      "compression": 0,
+      "wall_s": 9.192599100060761e-05
+    },
+    {
+      "name": "thumbs/39_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4826,
+      "compressed_bytes": 4826,
+      "compression": 0,
+      "wall_s": 9.204099478665739e-05
+    },
+    {
+      "name": "thumbs/39_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3746,
+      "compressed_bytes": 3746,
+      "compression": 0,
+      "wall_s": 9.836099343374372e-05
+    },
+    {
+      "name": "thumbs/3_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5017,
+      "compressed_bytes": 5017,
+      "compression": 0,
+      "wall_s": 0.00010101699444931
+    },
+    {
+      "name": "thumbs/3_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4349,
+      "compressed_bytes": 4349,
+      "compression": 0,
+      "wall_s": 9.499800216872245e-05
+    },
+    {
+      "name": "thumbs/3_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4737,
+      "compressed_bytes": 4737,
+      "compression": 0,
+      "wall_s": 9.55360010266304e-05
+    },
+    {
+      "name": "thumbs/3_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5056,
+      "compressed_bytes": 5056,
+      "compression": 0,
+      "wall_s": 9.429700730834156e-05
+    },
+    {
+      "name": "thumbs/3_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5374,
+      "compressed_bytes": 5374,
+      "compression": 0,
+      "wall_s": 9.369700273964554e-05
+    },
+    {
+      "name": "thumbs/40_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4706,
+      "compressed_bytes": 4706,
+      "compression": 0,
+      "wall_s": 9.11230017663911e-05
+    },
+    {
+      "name": "thumbs/40_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3526,
+      "compressed_bytes": 3526,
+      "compression": 0,
+      "wall_s": 8.670899842400104e-05
+    },
+    {
+      "name": "thumbs/41_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4641,
+      "compressed_bytes": 4641,
+      "compression": 0,
+      "wall_s": 9.235700417775661e-05
+    },
+    {
+      "name": "thumbs/41_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4124,
+      "compressed_bytes": 4124,
+      "compression": 0,
+      "wall_s": 0.00010744699102360755
+    },
+    {
+      "name": "thumbs/42_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4121,
+      "compressed_bytes": 4121,
+      "compression": 0,
+      "wall_s": 0.00011314099538139999
+    },
+    {
+      "name": "thumbs/43_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4740,
+      "compressed_bytes": 4740,
+      "compression": 0,
+      "wall_s": 9.853200754150748e-05
+    },
+    {
+      "name": "thumbs/43_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3476,
+      "compressed_bytes": 3476,
+      "compression": 0,
+      "wall_s": 9.665499965194613e-05
+    },
+    {
+      "name": "thumbs/44_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3988,
+      "compressed_bytes": 3988,
+      "compression": 0,
+      "wall_s": 9.171200508717448e-05
+    },
+    {
+      "name": "thumbs/45_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3403,
+      "compressed_bytes": 3403,
+      "compression": 0,
+      "wall_s": 9.30780079215765e-05
+    },
+    {
+      "name": "thumbs/46_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5546,
+      "compressed_bytes": 5546,
+      "compression": 0,
+      "wall_s": 9.889999637380242e-05
+    },
+    {
+      "name": "thumbs/46_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4708,
+      "compressed_bytes": 4708,
+      "compression": 0,
+      "wall_s": 9.469399810768664e-05
+    },
+    {
+      "name": "thumbs/47_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3603,
+      "compressed_bytes": 3603,
+      "compression": 0,
+      "wall_s": 9.789600153453648e-05
+    },
+    {
+      "name": "thumbs/48_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4211,
+      "compressed_bytes": 4211,
+      "compression": 0,
+      "wall_s": 9.950899402610958e-05
+    },
+    {
+      "name": "thumbs/49_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4043,
+      "compressed_bytes": 4043,
+      "compression": 0,
+      "wall_s": 7.227300375234336e-05
+    },
+    {
+      "name": "thumbs/4_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4686,
+      "compressed_bytes": 4686,
+      "compression": 0,
+      "wall_s": 7.117500354070216e-05
+    },
+    {
+      "name": "thumbs/4_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4980,
+      "compressed_bytes": 4980,
+      "compression": 0,
+      "wall_s": 7.818700396455824e-05
+    },
+    {
+      "name": "thumbs/4_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5426,
+      "compressed_bytes": 5426,
+      "compression": 0,
+      "wall_s": 6.912299431860447e-05
+    },
+    {
+      "name": "thumbs/4_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5600,
+      "compressed_bytes": 5600,
+      "compression": 0,
+      "wall_s": 7.064899546094239e-05
+    },
+    {
+      "name": "thumbs/4_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4869,
+      "compressed_bytes": 4869,
+      "compression": 0,
+      "wall_s": 6.419599230866879e-05
+    },
+    {
+      "name": "thumbs/50_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3356,
+      "compressed_bytes": 3356,
+      "compression": 0,
+      "wall_s": 7.922100485302508e-05
+    },
+    {
+      "name": "thumbs/51_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4140,
+      "compressed_bytes": 4140,
+      "compression": 0,
+      "wall_s": 6.446400948334485e-05
+    },
+    {
+      "name": "thumbs/52_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3783,
+      "compressed_bytes": 3783,
+      "compression": 0,
+      "wall_s": 6.269199366215616e-05
+    },
+    {
+      "name": "thumbs/53_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4420,
+      "compressed_bytes": 4420,
+      "compression": 0,
+      "wall_s": 6.597400351893157e-05
+    },
+    {
+      "name": "thumbs/54_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4212,
+      "compressed_bytes": 4212,
+      "compression": 0,
+      "wall_s": 7.836800068616867e-05
+    },
+    {
+      "name": "thumbs/55_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4122,
+      "compressed_bytes": 4122,
+      "compression": 0,
+      "wall_s": 7.575900235679e-05
+    },
+    {
+      "name": "thumbs/56_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3224,
+      "compressed_bytes": 3224,
+      "compression": 0,
+      "wall_s": 6.136999581940472e-05
+    },
+    {
+      "name": "thumbs/57_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4061,
+      "compressed_bytes": 4061,
+      "compression": 0,
+      "wall_s": 6.449400098063052e-05
+    },
+    {
+      "name": "thumbs/58_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4104,
+      "compressed_bytes": 4104,
+      "compression": 0,
+      "wall_s": 6.84569968143478e-05
+    },
+    {
+      "name": "thumbs/59_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4036,
+      "compressed_bytes": 4036,
+      "compression": 0,
+      "wall_s": 6.251499871723354e-05
+    },
+    {
+      "name": "thumbs/5_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4371,
+      "compressed_bytes": 4371,
+      "compression": 0,
+      "wall_s": 6.523801130242646e-05
+    },
+    {
+      "name": "thumbs/5_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5536,
+      "compressed_bytes": 5536,
+      "compression": 0,
+      "wall_s": 6.767000013496727e-05
+    },
+    {
+      "name": "thumbs/5_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4824,
+      "compressed_bytes": 4824,
+      "compression": 0,
+      "wall_s": 0.00015333500050473958
+    },
+    {
+      "name": "thumbs/5_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5368,
+      "compressed_bytes": 5368,
+      "compression": 0,
+      "wall_s": 8.292999700643122e-05
+    },
+    {
+      "name": "thumbs/5_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4489,
+      "compressed_bytes": 4489,
+      "compression": 0,
+      "wall_s": 6.807799218222499e-05
+    },
+    {
+      "name": "thumbs/60_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4125,
+      "compressed_bytes": 4125,
+      "compression": 0,
+      "wall_s": 9.31289978325367e-05
+    },
+    {
+      "name": "thumbs/61_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3938,
+      "compressed_bytes": 3938,
+      "compression": 0,
+      "wall_s": 6.486100028268993e-05
+    },
+    {
+      "name": "thumbs/61_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5741,
+      "compressed_bytes": 5741,
+      "compression": 0,
+      "wall_s": 6.844400195404887e-05
+    },
+    {
+      "name": "thumbs/61_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5652,
+      "compressed_bytes": 5652,
+      "compression": 0,
+      "wall_s": 6.879199645482004e-05
+    },
+    {
+      "name": "thumbs/62_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3981,
+      "compressed_bytes": 3981,
+      "compression": 0,
+      "wall_s": 7.167099101934582e-05
+    },
+    {
+      "name": "thumbs/63_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5932,
+      "compressed_bytes": 5932,
+      "compression": 0,
+      "wall_s": 6.853300146758556e-05
+    },
+    {
+      "name": "thumbs/64_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2919,
+      "compressed_bytes": 2919,
+      "compression": 0,
+      "wall_s": 5.958900146652013e-05
+    },
+    {
+      "name": "thumbs/65_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3010,
+      "compressed_bytes": 3010,
+      "compression": 0,
+      "wall_s": 5.6805991334840655e-05
+    },
+    {
+      "name": "thumbs/65_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4721,
+      "compressed_bytes": 4721,
+      "compression": 0,
+      "wall_s": 6.487499922513962e-05
+    },
+    {
+      "name": "thumbs/66_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 2498,
+      "compressed_bytes": 2498,
+      "compression": 0,
+      "wall_s": 5.640900053549558e-05
+    },
+    {
+      "name": "thumbs/67_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4432,
+      "compressed_bytes": 4432,
+      "compression": 0,
+      "wall_s": 7.035200542304665e-05
+    },
+    {
+      "name": "thumbs/67_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4672,
+      "compressed_bytes": 4672,
+      "compression": 0,
+      "wall_s": 6.763399869669229e-05
+    },
+    {
+      "name": "thumbs/68_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3066,
+      "compressed_bytes": 3066,
+      "compression": 0,
+      "wall_s": 6.239800131879747e-05
+    },
+    {
+      "name": "thumbs/68_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4983,
+      "compressed_bytes": 4983,
+      "compression": 0,
+      "wall_s": 0.00010285500320605934
+    },
+    {
+      "name": "thumbs/69_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4687,
+      "compressed_bytes": 4687,
+      "compression": 0,
+      "wall_s": 6.861399742774665e-05
+    },
+    {
+      "name": "thumbs/6_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5093,
+      "compressed_bytes": 5093,
+      "compression": 0,
+      "wall_s": 6.389500049408525e-05
+    },
+    {
+      "name": "thumbs/6_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4661,
+      "compressed_bytes": 4661,
+      "compression": 0,
+      "wall_s": 6.377100362442434e-05
+    },
+    {
+      "name": "thumbs/6_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 4452,
+      "compressed_bytes": 4452,
+      "compression": 0,
+      "wall_s": 0.00013293900701683015
+    },
+    {
+      "name": "thumbs/6_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5303,
+      "compressed_bytes": 5303,
+      "compression": 0,
+      "wall_s": 7.383900810964406e-05
+    },
+    {
+      "name": "thumbs/6_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5623,
+      "compressed_bytes": 5623,
+      "compression": 0,
+      "wall_s": 7.098600326571614e-05
+    },
+    {
+      "name": "thumbs/70_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5637,
+      "compressed_bytes": 5637,
+      "compression": 0,
+      "wall_s": 6.901600863784552e-05
+    },
+    {
+      "name": "thumbs/70_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5023,
+      "compressed_bytes": 5023,
+      "compression": 0,
+      "wall_s": 6.481200398411602e-05
+    },
+    {
+      "name": "thumbs/71_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 7187,
+      "compressed_bytes": 7187,
+      "compression": 0,
+      "wall_s": 6.806600140407681e-05
+    },
+    {
+      "name": "thumbs/71_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6444,
+      "compressed_bytes": 6444,
+      "compression": 0,
+      "wall_s": 6.792799104005098e-05
+    },
+    {
+      "name": "thumbs/72_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4022,
+      "compressed_bytes": 4022,
+      "compression": 0,
+      "wall_s": 7.956899935379624e-05
+    },
+    {
+      "name": "thumbs/72_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5454,
+      "compressed_bytes": 5454,
+      "compression": 0,
+      "wall_s": 6.754598871339113e-05
+    },
+    {
+      "name": "thumbs/73_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5225,
+      "compressed_bytes": 5225,
+      "compression": 0,
+      "wall_s": 6.437700358219445e-05
+    },
+    {
+      "name": "thumbs/73_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4274,
+      "compressed_bytes": 4274,
+      "compression": 0,
+      "wall_s": 6.461598968598992e-05
+    },
+    {
+      "name": "thumbs/74_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3555,
+      "compressed_bytes": 3555,
+      "compression": 0,
+      "wall_s": 6.024999311193824e-05
+    },
+    {
+      "name": "thumbs/75_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5064,
+      "compressed_bytes": 5064,
+      "compression": 0,
+      "wall_s": 7.46509904274717e-05
+    },
+    {
+      "name": "thumbs/75_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4357,
+      "compressed_bytes": 4357,
+      "compression": 0,
+      "wall_s": 6.330500764306635e-05
+    },
+    {
+      "name": "thumbs/76_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4881,
+      "compressed_bytes": 4881,
+      "compression": 0,
+      "wall_s": 6.25160027993843e-05
+    },
+    {
+      "name": "thumbs/76_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5265,
+      "compressed_bytes": 5265,
+      "compression": 0,
+      "wall_s": 6.330199539661407e-05
+    },
+    {
+      "name": "thumbs/77_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4207,
+      "compressed_bytes": 4207,
+      "compression": 0,
+      "wall_s": 6.642700463999063e-05
+    },
+    {
+      "name": "thumbs/78_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3676,
+      "compressed_bytes": 3676,
+      "compression": 0,
+      "wall_s": 6.0323000070638955e-05
+    },
+    {
+      "name": "thumbs/78_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3448,
+      "compressed_bytes": 3448,
+      "compression": 0,
+      "wall_s": 5.9712008805945516e-05
+    },
+    {
+      "name": "thumbs/79_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4170,
+      "compressed_bytes": 4170,
+      "compression": 0,
+      "wall_s": 0.00020539099932648242
+    },
+    {
+      "name": "thumbs/7_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4707,
+      "compressed_bytes": 4707,
+      "compression": 0,
+      "wall_s": 7.761699089314789e-05
+    },
+    {
+      "name": "thumbs/7_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4947,
+      "compressed_bytes": 4947,
+      "compression": 0,
+      "wall_s": 6.722999387420714e-05
+    },
+    {
+      "name": "thumbs/7_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 6153,
+      "compressed_bytes": 6153,
+      "compression": 0,
+      "wall_s": 7.190099859144539e-05
+    },
+    {
+      "name": "thumbs/7_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5023,
+      "compressed_bytes": 5023,
+      "compression": 0,
+      "wall_s": 6.5723987063393e-05
+    },
+    {
+      "name": "thumbs/7_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 5035,
+      "compressed_bytes": 5035,
+      "compression": 0,
+      "wall_s": 6.774200301151723e-05
+    },
+    {
+      "name": "thumbs/80_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5335,
+      "compressed_bytes": 5335,
+      "compression": 0,
+      "wall_s": 6.790900079067796e-05
+    },
+    {
+      "name": "thumbs/80_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4941,
+      "compressed_bytes": 4941,
+      "compression": 0,
+      "wall_s": 6.430399662349373e-05
+    },
+    {
+      "name": "thumbs/81_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3391,
+      "compressed_bytes": 3391,
+      "compression": 0,
+      "wall_s": 6.561698683071882e-05
+    },
+    {
+      "name": "thumbs/81_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6932,
+      "compressed_bytes": 6932,
+      "compression": 0,
+      "wall_s": 6.982899503782392e-05
+    },
+    {
+      "name": "thumbs/82_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5715,
+      "compressed_bytes": 5715,
+      "compression": 0,
+      "wall_s": 6.841000868007541e-05
+    },
+    {
+      "name": "thumbs/83_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5323,
+      "compressed_bytes": 5323,
+      "compression": 0,
+      "wall_s": 6.62340025883168e-05
+    },
+    {
+      "name": "thumbs/84_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4842,
+      "compressed_bytes": 4842,
+      "compression": 0,
+      "wall_s": 8.013600017875433e-05
+    },
+    {
+      "name": "thumbs/84_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4707,
+      "compressed_bytes": 4707,
+      "compression": 0,
+      "wall_s": 7.424999785143882e-05
+    },
+    {
+      "name": "thumbs/85_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5640,
+      "compressed_bytes": 5640,
+      "compression": 0,
+      "wall_s": 8.10610072221607e-05
+    },
+    {
+      "name": "thumbs/85_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4920,
+      "compressed_bytes": 4920,
+      "compression": 0,
+      "wall_s": 6.426400796044618e-05
+    },
+    {
+      "name": "thumbs/86_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4213,
+      "compressed_bytes": 4213,
+      "compression": 0,
+      "wall_s": 6.198900518938899e-05
+    },
+    {
+      "name": "thumbs/86_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5676,
+      "compressed_bytes": 5676,
+      "compression": 0,
+      "wall_s": 6.431399378925562e-05
+    },
+    {
+      "name": "thumbs/87_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3870,
+      "compressed_bytes": 3870,
+      "compression": 0,
+      "wall_s": 6.378699617926031e-05
+    },
+    {
+      "name": "thumbs/88_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3643,
+      "compressed_bytes": 3643,
+      "compression": 0,
+      "wall_s": 6.046099588274956e-05
+    },
+    {
+      "name": "thumbs/88_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 3736,
+      "compressed_bytes": 3736,
+      "compression": 0,
+      "wall_s": 6.364099681377411e-05
+    },
+    {
+      "name": "thumbs/89_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5688,
+      "compressed_bytes": 5688,
+      "compression": 0,
+      "wall_s": 6.779500108677894e-05
+    },
+    {
+      "name": "thumbs/8_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4440,
+      "compressed_bytes": 4440,
+      "compression": 0,
+      "wall_s": 6.71599991619587e-05
+    },
+    {
+      "name": "thumbs/8_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5026,
+      "compressed_bytes": 5026,
+      "compression": 0,
+      "wall_s": 6.660800136160105e-05
+    },
+    {
+      "name": "thumbs/8_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 3908,
+      "compressed_bytes": 3908,
+      "compression": 0,
+      "wall_s": 6.331699842121452e-05
+    },
+    {
+      "name": "thumbs/8_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 5301,
+      "compressed_bytes": 5301,
+      "compression": 0,
+      "wall_s": 9.513700206298381e-05
+    },
+    {
+      "name": "thumbs/8_4.jpg",
+      "category": "jpeg",
+      "input_bytes": 4510,
+      "compressed_bytes": 4510,
+      "compression": 0,
+      "wall_s": 7.019599433988333e-05
+    },
+    {
+      "name": "thumbs/90_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4628,
+      "compressed_bytes": 4628,
+      "compression": 0,
+      "wall_s": 6.672101153526455e-05
+    },
+    {
+      "name": "thumbs/90_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4429,
+      "compressed_bytes": 4429,
+      "compression": 0,
+      "wall_s": 6.563799979630858e-05
+    },
+    {
+      "name": "thumbs/91_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5249,
+      "compressed_bytes": 5249,
+      "compression": 0,
+      "wall_s": 6.603600922971964e-05
+    },
+    {
+      "name": "thumbs/91_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 5442,
+      "compressed_bytes": 5442,
+      "compression": 0,
+      "wall_s": 6.742200639564544e-05
+    },
+    {
+      "name": "thumbs/92_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5082,
+      "compressed_bytes": 5082,
+      "compression": 0,
+      "wall_s": 6.489299994427711e-05
+    },
+    {
+      "name": "thumbs/93_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4044,
+      "compressed_bytes": 4044,
+      "compression": 0,
+      "wall_s": 6.759000825695693e-05
+    },
+    {
+      "name": "thumbs/93_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4368,
+      "compressed_bytes": 4368,
+      "compression": 0,
+      "wall_s": 7.152100442908704e-05
+    },
+    {
+      "name": "thumbs/94_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5052,
+      "compressed_bytes": 5052,
+      "compression": 0,
+      "wall_s": 6.489599763881415e-05
+    },
+    {
+      "name": "thumbs/95_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3824,
+      "compressed_bytes": 3824,
+      "compression": 0,
+      "wall_s": 6.116500298958272e-05
+    },
+    {
+      "name": "thumbs/96_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 3154,
+      "compressed_bytes": 3154,
+      "compression": 0,
+      "wall_s": 6.352800119202584e-05
+    },
+    {
+      "name": "thumbs/96_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 6577,
+      "compressed_bytes": 6577,
+      "compression": 0,
+      "wall_s": 8.33550002425909e-05
+    },
+    {
+      "name": "thumbs/97_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5571,
+      "compressed_bytes": 5571,
+      "compression": 0,
+      "wall_s": 0.0001489280111854896
+    },
+    {
+      "name": "thumbs/98_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5162,
+      "compressed_bytes": 5162,
+      "compression": 0,
+      "wall_s": 7.528500282205641e-05
+    },
+    {
+      "name": "thumbs/99_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 5721,
+      "compressed_bytes": 5721,
+      "compression": 0,
+      "wall_s": 7.84820003900677e-05
+    },
+    {
+      "name": "thumbs/99_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4610,
+      "compressed_bytes": 4610,
+      "compression": 0,
+      "wall_s": 6.888598727528006e-05
+    },
+    {
+      "name": "thumbs/9_0.jpg",
+      "category": "jpeg",
+      "input_bytes": 4964,
+      "compressed_bytes": 4964,
+      "compression": 0,
+      "wall_s": 8.682499174028635e-05
+    },
+    {
+      "name": "thumbs/9_1.jpg",
+      "category": "jpeg",
+      "input_bytes": 4593,
+      "compressed_bytes": 4593,
+      "compression": 0,
+      "wall_s": 6.51540030958131e-05
+    },
+    {
+      "name": "thumbs/9_2.jpg",
+      "category": "jpeg",
+      "input_bytes": 5590,
+      "compressed_bytes": 5590,
+      "compression": 0,
+      "wall_s": 6.668399146292359e-05
+    },
+    {
+      "name": "thumbs/9_3.jpg",
+      "category": "jpeg",
+      "input_bytes": 4865,
+      "compressed_bytes": 4865,
+      "compression": 0,
+      "wall_s": 6.99640077073127e-05
+    }
+  ],
+  "generation": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/viewer/runs/a09b45c4cbe7471c8a9b02c40f7e1c12",
+  "run_id": "a09b45c4cbe7471c8a9b02c40f7e1c12",
+  "zip_bytes": 79733167,
+  "production_report": {
+    "output": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/delivery/diagnostic.glb",
+    "glb_bytes": 121211016,
+    "elapsed_seconds": 110.95565483999962,
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128,
+    "encoder_workers": 1,
+    "delivery_mode": "streamed",
+    "bake": {
+      "source": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/viewer/runs/a09b45c4cbe7471c8a9b02c40f7e1c12",
+      "global_id": null,
+      "input_point_count": 2402589,
+      "point_count": 2402589,
+      "selected_point_count": 1297845,
+      "lod": {
+        "input_count": 2402589,
+        "selected_count": 1297845,
+        "removed_count": 1104744,
+        "eligible_blocks": 452666,
+        "reduced_blocks": 368248
+      },
+      "lod_removed_point_count": 1104744,
+      "baked_surfel_count": 1282900,
+      "skipped_surfel_count": 14945,
+      "triangle_count": 2565800,
+      "atlas_pages": 31,
+      "glb_bytes": null,
+      "elapsed_seconds": 66.88407609699061,
+      "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+      "tile_size": 8,
+      "atlas_size": 2048,
+      "radius": 2.0,
+      "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+    },
+    "compact": {
+      "geometry_bytes_before": 133421600,
+      "geometry_bytes_after": 76974000,
+      "texture_bytes_before": null,
+      "texture_bytes_after": 44155561,
+      "max_position_error": 7.594053210624452e-05,
+      "max_uv_error": 7.62802083223435e-06,
+      "triangle_count": 2565800,
+      "output": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/delivery/diagnostic.glb",
+      "glb_bytes": 121211016,
+      "primitive_count": 93,
+      "source_bytes": null,
+      "elapsed_seconds": 44.07020253800147,
+      "encoder_workers": 1,
+      "encoder_queue_pages": 1,
+      "encoding_join_seconds": 42.23486652200518,
+      "main_thread_write_seconds": 1.8353360159962904,
+      "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+    }
+  },
+  "elapsed_wall_s": 117.48445399300545,
+  "metrics": {
+    "imports": {
+      "calls": 1,
+      "inclusive_s": 3.607010931998957,
+      "self_s": 3.607010931998957,
+      "max_s": 3.607010931998957
+    },
+    "resolve_generation": {
+      "calls": 1,
+      "inclusive_s": 0.00026565500593278557,
+      "self_s": 0.00026565500593278557,
+      "max_s": 0.00026565500593278557
+    },
+    "zip.member.json": {
+      "calls": 3,
+      "inclusive_s": 0.0012529519881354645,
+      "self_s": 0.0012529519881354645,
+      "max_s": 0.0008245119970524684
+    },
+    "zip.member.binary": {
+      "calls": 8,
+      "inclusive_s": 2.730738869984634,
+      "self_s": 2.730738869984634,
+      "max_s": 1.2553417929884745
+    },
+    "zip.member.jpeg": {
+      "calls": 740,
+      "inclusive_s": 0.12021066337183584,
+      "self_s": 0.12021066337183584,
+      "max_s": 0.0024573419941589236
+    },
+    "zip.total": {
+      "calls": 1,
+      "inclusive_s": 2.878987470990978,
+      "self_s": 0.02678498564637266,
+      "max_s": 2.878987470990978
+    },
+    "glb._load": {
+      "calls": 1,
+      "inclusive_s": 0.17979672399815172,
+      "self_s": 0.17979672399815172,
+      "max_s": 0.17979672399815172
+    },
+    "lod._bound_footprint": {
+      "calls": 72,
+      "inclusive_s": 0.078497804919607,
+      "self_s": 0.078497804919607,
+      "max_s": 0.0017255359998671338
+    },
+    "lod._covered": {
+      "calls": 72,
+      "inclusive_s": 1.6150030150456587,
+      "self_s": 1.5365052101260517,
+      "max_s": 0.03421559199341573
+    },
+    "lod.select_surfel_lod": {
+      "calls": 1,
+      "inclusive_s": 5.145434612000827,
+      "self_s": 3.530431596955168,
+      "max_s": 5.145434612000827
+    },
+    "PIL.convert": {
+      "calls": 60,
+      "inclusive_s": 0.8368403470085468,
+      "self_s": 0.8368403470085468,
+      "max_s": 0.02381869799864944
+    },
+    "bake.block.camera_visibility": {
+      "calls": 1280,
+      "inclusive_s": 0.4910539222910302,
+      "self_s": 0.4910539222910302,
+      "max_s": 0.0006373659998644143
+    },
+    "bake._bound_footprint": {
+      "calls": 1280,
+      "inclusive_s": 0.38002897669503,
+      "self_s": 0.38002897669503,
+      "max_s": 0.0004878210020251572
+    },
+    "bake.block.footprint_and_continuity": {
+      "calls": 1280,
+      "inclusive_s": 1.1220468850369798,
+      "self_s": 0.7420179083419498,
+      "max_s": 0.001338437999947928
+    },
+    "bake._limit_final_diameter": {
+      "calls": 1280,
+      "inclusive_s": 0.46183046634541824,
+      "self_s": 0.46183046634541824,
+      "max_s": 0.0006493840046459809
+    },
+    "bake.block.radius_final_diameter": {
+      "calls": 1280,
+      "inclusive_s": 0.5304076686734334,
+      "self_s": 0.06857720232801512,
+      "max_s": 0.0007124489929992706
+    },
+    "bake.block.texel_projection_mask": {
+      "calls": 1280,
+      "inclusive_s": 11.860237636006786,
+      "self_s": 11.860237636006786,
+      "max_s": 0.017362794998916797
+    },
+    "bake.block.depth_and_source_mask": {
+      "calls": 1280,
+      "inclusive_s": 5.312471718614688,
+      "self_s": 5.312471718614688,
+      "max_s": 0.008053290992393158
+    },
+    "bake._bilinear": {
+      "calls": 1280,
+      "inclusive_s": 15.543698465960915,
+      "self_s": 15.543698465960915,
+      "max_s": 0.020190528986859135
+    },
+    "bake.block.bilinear_rgb": {
+      "calls": 1280,
+      "inclusive_s": 15.903635537135415,
+      "self_s": 0.3599370711744996,
+      "max_s": 0.020706072013126686
+    },
+    "bake._dilate_rgb": {
+      "calls": 1280,
+      "inclusive_s": 22.716722759898403,
+      "self_s": 22.716722759898403,
+      "max_s": 0.03397977599524893
+    },
+    "bake.block.tile_corners_dilation": {
+      "calls": 1280,
+      "inclusive_s": 24.27152806914819,
+      "self_s": 1.5548053092497867,
+      "max_s": 0.0361133999977028
+    },
+    "bake._bake_batch": {
+      "calls": 1280,
+      "inclusive_s": 59.62419940401742,
+      "self_s": 0.13281796711089555,
+      "max_s": 0.0738452820078237
+    },
+    "bake._page": {
+      "calls": 31,
+      "inclusive_s": 0.6198992740683025,
+      "self_s": 0.6198992740683025,
+      "max_s": 0.024152822006726637
+    },
+    "compact.view": {
+      "calls": 310,
+      "inclusive_s": 0.09771719395939726,
+      "self_s": 0.09771719395939726,
+      "max_s": 0.0014331929996842518
+    },
+    "compact.geometry": {
+      "calls": 31,
+      "inclusive_s": 1.7184731620363891,
+      "self_s": 1.653807356095058,
+      "max_s": 0.06128812899987679
+    },
+    "texture._binary_alpha": {
+      "calls": 31,
+      "inclusive_s": 0.9973074030131102,
+      "self_s": 0.9973074030131102,
+      "max_s": 0.03616924601374194
+    },
+    "PIL.quantize": {
+      "calls": 31,
+      "inclusive_s": 18.62159129201609,
+      "self_s": 18.62159129201609,
+      "max_s": 0.7503184340021107
+    },
+    "PIL.save": {
+      "calls": 31,
+      "inclusive_s": 21.540497870955733,
+      "self_s": 21.540497870955733,
+      "max_s": 0.9015120990079595
+    },
+    "texture._compact_rgba": {
+      "calls": 31,
+      "inclusive_s": 41.23286637701676,
+      "self_s": 0.8211307600286091,
+      "max_s": 1.6182807149889413
+    },
+    "texture.encode_atlas": {
+      "calls": 31,
+      "inclusive_s": 42.234403462003684,
+      "self_s": 0.004229681973811239,
+      "max_s": 1.6501325080025708
+    },
+    "compact.image": {
+      "calls": 31,
+      "inclusive_s": 0.03389022595365532,
+      "self_s": 0.0008388379355892539,
+      "max_s": 0.001467377005610615
+    },
+    "compact._write_glb": {
+      "calls": 1,
+      "inclusive_s": 0.08163584300200455,
+      "self_s": 0.08163584300200455,
+      "max_s": 0.08163584300200455
+    },
+    "compact.finish": {
+      "calls": 1,
+      "inclusive_s": 0.0817068449978251,
+      "self_s": 7.100199582055211e-05,
+      "max_s": 0.0817068449978251
+    },
+    "glb.total": {
+      "calls": 1,
+      "inclusive_s": 110.9559372789954,
+      "self_s": 0.730939676926937,
+      "max_s": 110.9559372789954
+    },
+    "delivery_wall": {
+      "calls": 1,
+      "inclusive_s": 113.83496450498933,
+      "self_s": 3.975500294473022e-05,
+      "max_s": 113.83496450498933
+    }
+  },
+  "resources_before": {
+    "user_s": 0.035066,
+    "system_s": 0.008021,
+    "process_lifetime_maxrss_kib": 41232,
+    "minor_faults": 2186,
+    "major_faults": 0,
+    "block_inputs": 0,
+    "block_outputs": 0
+  },
+  "resources_after": {
+    "user_s": 140.110959,
+    "system_s": 120.236024,
+    "process_lifetime_maxrss_kib": 943124,
+    "minor_faults": 265630,
+    "major_faults": 0,
+    "block_inputs": 304,
+    "block_outputs": 629120
+  },
+  "cpu_user_s": 140.075893,
+  "cpu_system_s": 120.228003,
+  "artifacts": {
+    "diagnostic.zip": 79733167,
+    "diagnostic.glb": 121211016
+  }
+}

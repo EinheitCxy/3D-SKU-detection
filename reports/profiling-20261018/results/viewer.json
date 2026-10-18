@@ -1,0 +1,1354 @@
+{
+  "status": "complete",
+  "base": "/home/xingyu/3D_Recognization/runtime/profiling-20261018",
+  "out": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/viewer",
+  "result": {
+    "viewer": {
+      "output_dir": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/viewer/viewer",
+      "manifest_path": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/viewer/viewer/runs/17e1a21f1d5445ffa3c8d54b362e4410/manifest.json",
+      "point_count": 2402589,
+      "thumbnail_count": 711
+    },
+    "dedup": {
+      "success": true,
+      "duration_s": 0.13644727600330953,
+      "details": {
+        "count": 29,
+        "output_dir": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/viewer/outputs/dataset/dedup_detections"
+      }
+    }
+  },
+  "exception": null,
+  "elapsed_s": 82.65546519700729,
+  "metrics": {
+    "dedup.parse_all_matches": {
+      "calls": 1,
+      "inclusive_s": 0.0031184359977487475,
+      "self_s": 0.0031184359977487475,
+      "max_s": 0.0031184359977487475
+    },
+    "dedup.build_global_mapping": {
+      "calls": 1,
+      "inclusive_s": 0.02184911200311035,
+      "self_s": 0.02184911200311035,
+      "max_s": 0.02184911200311035
+    },
+    "dedup.add_global_id_to_jsons": {
+      "calls": 1,
+      "inclusive_s": 0.03299926800536923,
+      "self_s": 0.03299926800536923,
+      "max_s": 0.03299926800536923
+    },
+    "dedup._publish_global_pair": {
+      "calls": 1,
+      "inclusive_s": 0.02636386100493837,
+      "self_s": 0.02636386100493837,
+      "max_s": 0.02636386100493837
+    },
+    "dedup.total": {
+      "calls": 1,
+      "inclusive_s": 0.13654929600306787,
+      "self_s": 0.05221861899190117,
+      "max_s": 0.13654929600306787
+    },
+    "viewer._load_da3_cache": {
+      "calls": 1,
+      "inclusive_s": 0.13558598500094377,
+      "self_s": 0.13558598500094377,
+      "max_s": 0.13558598500094377
+    },
+    "surfel.grid_tangents": {
+      "calls": 1,
+      "inclusive_s": 1.7762429699942004,
+      "self_s": 1.7762429699942004,
+      "max_s": 1.7762429699942004
+    },
+    "filter.NN_native": {
+      "calls": 1,
+      "inclusive_s": 3.3229624239902478,
+      "self_s": 3.3229624239902478,
+      "max_s": 3.3229624239902478
+    },
+    "filter._median_nn_distance": {
+      "calls": 1,
+      "inclusive_s": 3.360166598999058,
+      "self_s": 0.037204175008810125,
+      "max_s": 3.360166598999058
+    },
+    "filter.SOR_native": {
+      "calls": 1,
+      "inclusive_s": 5.739382425002987,
+      "self_s": 5.739382425002987,
+      "max_s": 5.739382425002987
+    },
+    "filter.prepare_scene_filter": {
+      "calls": 1,
+      "inclusive_s": 11.05738690099679,
+      "self_s": 1.9578378769947449,
+      "max_s": 11.05738690099679
+    },
+    "surfel.prepare_surfel_textures": {
+      "calls": 1,
+      "inclusive_s": 0.9658854650042485,
+      "self_s": 0.9658854650042485,
+      "max_s": 0.9658854650042485
+    },
+    "viewer.prepare_web_viewer_geometry": {
+      "calls": 1,
+      "inclusive_s": 14.158751770999515,
+      "self_s": 0.2236504500033334,
+      "max_s": 14.158751770999515
+    },
+    "viewer.prepare_total": {
+      "calls": 1,
+      "inclusive_s": 14.158833581008366,
+      "self_s": 8.181000885087997e-05,
+      "max_s": 14.158833581008366
+    },
+    "viewer._generate_thumbnails": {
+      "calls": 1,
+      "inclusive_s": 1.6478527589933947,
+      "self_s": 1.6478527589933947,
+      "max_s": 1.6478527589933947
+    },
+    "orientation.NN_native": {
+      "calls": 1,
+      "inclusive_s": 0.13227073500456754,
+      "self_s": 0.13227073500456754,
+      "max_s": 0.13227073500456754
+    },
+    "orientation.RANSAC_native": {
+      "calls": 2,
+      "inclusive_s": 1.1876756769925123,
+      "self_s": 1.1876756769925123,
+      "max_s": 0.6171159429941326
+    },
+    "orientation.pcd_select": {
+      "calls": 1,
+      "inclusive_s": 0.004854990998865105,
+      "self_s": 0.004854990998865105,
+      "max_s": 0.004854990998865105
+    },
+    "orientation.fit_scene_orientation": {
+      "calls": 1,
+      "inclusive_s": 1.3547313040035078,
+      "self_s": 0.029929901007562876,
+      "max_s": 1.3547313040035078
+    },
+    "viewer.get_scene_orientation": {
+      "calls": 1,
+      "inclusive_s": 1.7871986249956535,
+      "self_s": 0.4324673209921457,
+      "max_s": 1.7871986249956535
+    },
+    "sampling.setup_geometry": {
+      "calls": 1,
+      "inclusive_s": 0.3990844600048149,
+      "self_s": 0.3990844600048149,
+      "max_s": 0.3990844600048149
+    },
+    "viewer._instance_labels_v2": {
+      "calls": 1,
+      "inclusive_s": 0.20313366399204824,
+      "self_s": 0.20313366399204824,
+      "max_s": 0.20313366399204824
+    },
+    "sampling.labels": {
+      "calls": 1,
+      "inclusive_s": 0.20887530100299045,
+      "self_s": 0.005741637010942213,
+      "max_s": 0.20887530100299045
+    },
+    "adaptive.features": {
+      "calls": 1,
+      "inclusive_s": 0.3795375970075838,
+      "self_s": 0.3795375970075838,
+      "max_s": 0.3795375970075838
+    },
+    "sampling.features": {
+      "calls": 1,
+      "inclusive_s": 0.46357788699970115,
+      "self_s": 0.08404028999211732,
+      "max_s": 0.46357788699970115
+    },
+    "filter.pcd_select": {
+      "calls": 3,
+      "inclusive_s": 1.8511645879916614,
+      "self_s": 1.8511645879916614,
+      "max_s": 0.6515838479972444
+    },
+    "filter.SOR_apply_block": {
+      "calls": 1,
+      "inclusive_s": 0.7614643820124911,
+      "self_s": 0.10988053401524667,
+      "max_s": 0.7614643820124911
+    },
+    "filter.DBSCAN_native": {
+      "calls": 1,
+      "inclusive_s": 38.7278938130039,
+      "self_s": 38.7278938130039,
+      "max_s": 38.7278938130039
+    },
+    "filter._cluster_labels": {
+      "calls": 1,
+      "inclusive_s": 38.7336839769996,
+      "self_s": 0.005790163995698094,
+      "max_s": 38.7336839769996
+    },
+    "filter.DBSCAN_block": {
+      "calls": 1,
+      "inclusive_s": 39.49768223000865,
+      "self_s": 0.15800668101292104,
+      "max_s": 39.49768223000865
+    },
+    "filter.RANSAC_native": {
+      "calls": 1,
+      "inclusive_s": 10.517557518993272,
+      "self_s": 10.517557518993272,
+      "max_s": 10.517557518993272
+    },
+    "filter.ground_block": {
+      "calls": 1,
+      "inclusive_s": 11.260213155997917,
+      "self_s": 0.14906646900635678,
+      "max_s": 11.260213155997917
+    },
+    "filter.filter_scene_points": {
+      "calls": 1,
+      "inclusive_s": 51.696391789009795,
+      "self_s": 0.17703202099073678,
+      "max_s": 51.696391789009795
+    },
+    "sampling.geometry_filter": {
+      "calls": 1,
+      "inclusive_s": 51.69970826699864,
+      "self_s": 0.0033164779888466,
+      "max_s": 51.69970826699864
+    },
+    "sampling.selection_filters": {
+      "calls": 1,
+      "inclusive_s": 0.08438330900389701,
+      "self_s": 0.08438330900389701,
+      "max_s": 0.08438330900389701
+    },
+    "viewer._select_background_voxels": {
+      "calls": 1,
+      "inclusive_s": 0.8687616289971629,
+      "self_s": 0.8687616289971629,
+      "max_s": 0.8687616289971629
+    },
+    "sampling.postfilter_voxels": {
+      "calls": 1,
+      "inclusive_s": 1.1248704960016767,
+      "self_s": 0.25610886700451374,
+      "max_s": 1.1248704960016767
+    },
+    "adaptive.select": {
+      "calls": 2,
+      "inclusive_s": 2.5644808009965345,
+      "self_s": 2.5644808009965345,
+      "max_s": 1.4959155910037225
+    },
+    "viewer._sample_product_points": {
+      "calls": 1,
+      "inclusive_s": 1.5357849930005614,
+      "self_s": 0.03986940199683886,
+      "max_s": 1.5357849930005614
+    },
+    "sampling.budget": {
+      "calls": 1,
+      "inclusive_s": 2.6932875720085576,
+      "self_s": 0.08893736901518423,
+      "max_s": 2.6932875720085576
+    },
+    "sampling.serialize_arrays": {
+      "calls": 1,
+      "inclusive_s": 0.555306901995209,
+      "self_s": 0.555306901995209,
+      "max_s": 0.555306901995209
+    },
+    "viewer._sample_points": {
+      "calls": 1,
+      "inclusive_s": 57.23641501298698,
+      "self_s": 0.007320818971493281,
+      "max_s": 57.23641501298698
+    },
+    "surfel.prepare_surfels": {
+      "calls": 1,
+      "inclusive_s": 0.18597263999981806,
+      "self_s": 0.18597263999981806,
+      "max_s": 0.18597263999981806
+    },
+    "viewer._attach_point_index_ranges": {
+      "calls": 1,
+      "inclusive_s": 3.545817154998076,
+      "self_s": 3.545817154998076,
+      "max_s": 3.545817154998076
+    },
+    "viewer._robust_display_bounds": {
+      "calls": 1,
+      "inclusive_s": 0.12129262500093319,
+      "self_s": 0.12129262500093319,
+      "max_s": 0.12129262500093319
+    },
+    "viewer._compute_world_to_view": {
+      "calls": 1,
+      "inclusive_s": 0.13937858899589628,
+      "self_s": 0.13937858899589628,
+      "max_s": 0.13937858899589628
+    },
+    "viewer._minimal_objects": {
+      "calls": 1,
+      "inclusive_s": 0.0026965019933413714,
+      "self_s": 0.0026965019933413714,
+      "max_s": 0.0026965019933413714
+    },
+    "viewer._publish_bundle": {
+      "calls": 1,
+      "inclusive_s": 0.12087203700502869,
+      "self_s": 0.12087203700502869,
+      "max_s": 0.12087203700502869
+    },
+    "viewer.export_web_viewer_bundle": {
+      "calls": 1,
+      "inclusive_s": 64.83744813399971,
+      "self_s": 0.0499521890305914,
+      "max_s": 64.83744813399971
+    },
+    "viewer.finalize_total": {
+      "calls": 1,
+      "inclusive_s": 64.83762836099777,
+      "self_s": 0.00018022699805442244,
+      "max_s": 64.83762836099777
+    },
+    "diagnostic.total": {
+      "calls": 1,
+      "inclusive_s": 82.65538028199808,
+      "self_s": 3.522369043988874,
+      "max_s": 82.65538028199808
+    }
+  },
+  "counts": [
+    {
+      "event": "dedup.parse_all_matches.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "dedup.build_global_mapping.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "dedup.add_global_id_to_jsons.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "dedup._publish_global_pair.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "viewer.prepare_web_viewer_geometry.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "viewer._load_da3_cache.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "surfel.grid_tangents.input",
+      "thread": "MainThread",
+      "points_count": 29
+    },
+    {
+      "event": "filter.prepare_scene_filter.input",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.prepare_scene_filter.enter",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.prepare_scene_filter.after_median_nn_sor_mask",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "base_mask_count": 4092480,
+      "base_mask_true": 4092480,
+      "median_nn": 0.0,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter._median_nn_distance.input",
+      "thread": "MainThread",
+      "pcd_count": 4092480
+    },
+    {
+      "event": "filter._median_nn_distance.enter",
+      "thread": "MainThread",
+      "pcd_count": 4092480
+    },
+    {
+      "event": "filter.NN_native.input",
+      "thread": "MainThread",
+      "pcd_count": 4092480
+    },
+    {
+      "event": "filter._median_nn_distance.return",
+      "thread": "MainThread",
+      "pcd_count": 4092480
+    },
+    {
+      "event": "filter.SOR_native.input",
+      "thread": "MainThread",
+      "pcd_count": 4092480
+    },
+    {
+      "event": "filter.SOR_native.output",
+      "thread": "MainThread",
+      "inliers_count": 3888385
+    },
+    {
+      "event": "filter.prepare_scene_filter.return",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "base_mask_count": 4092480,
+      "base_mask_true": 4092480,
+      "sor_mask_count": 4092480,
+      "sor_mask_true": 3888385,
+      "median_nn": 0.003933914440139902,
+      "pcd_count": 4092480,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "surfel.prepare_surfel_textures.input",
+      "thread": "MainThread",
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "prepared.summary",
+      "thread": "MainThread",
+      "valid_indices_count": 4092480,
+      "prepared_median_nn": 0.003933914440139902,
+      "prepared_base": 4092480,
+      "prepared_raw_sor": 3888385,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "viewer.export_web_viewer_bundle.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "viewer._generate_thumbnails.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "viewer.get_scene_orientation.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "orientation.fit_scene_orientation.input",
+      "thread": "MainThread",
+      "valid_points_count": 4092480
+    },
+    {
+      "event": "orientation.fit_scene_orientation.enter",
+      "thread": "MainThread",
+      "valid_points_count": 4092480
+    },
+    {
+      "event": "orientation.NN_native.input",
+      "thread": "MainThread",
+      "pcd_count": 200000
+    },
+    {
+      "event": "orientation.fit_scene_orientation.after_median_nn",
+      "thread": "MainThread",
+      "valid_points_count": 4092480,
+      "subsample_count": 200000,
+      "median_nn": 0.012754492996731318,
+      "pcd_count": 200000
+    },
+    {
+      "event": "orientation.fit_scene_orientation.after_remaining",
+      "thread": "MainThread",
+      "valid_points_count": 4092480,
+      "subsample_count": 200000,
+      "median_nn": 0.012754492996731318,
+      "distance_threshold": 0.03826347899019396,
+      "min_inliers": 10000.0,
+      "pcd_count": 200000,
+      "remaining_count": 200000
+    },
+    {
+      "event": "orientation.RANSAC_native.input",
+      "thread": "MainThread",
+      "pcd_count": 200000
+    },
+    {
+      "event": "orientation.RANSAC_native.output",
+      "thread": "MainThread",
+      "inliers_count": 17856
+    },
+    {
+      "event": "orientation.pcd_select.input",
+      "thread": "MainThread",
+      "pcd_count": 200000
+    },
+    {
+      "event": "orientation.RANSAC_native.input",
+      "thread": "MainThread",
+      "pcd_count": 182144
+    },
+    {
+      "event": "orientation.RANSAC_native.output",
+      "thread": "MainThread",
+      "inliers_count": 19480
+    },
+    {
+      "event": "orientation.fit_scene_orientation.return",
+      "thread": "MainThread",
+      "valid_points_count": 4092480,
+      "subsample_count": 200000,
+      "inliers_count": 19480,
+      "median_nn": 0.012754492996731318,
+      "distance_threshold": 0.03826347899019396,
+      "min_inliers": 10000.0,
+      "tilt_deg": 20.462598101327615,
+      "below_ratio": 1e-05,
+      "pcd_count": 200000,
+      "remaining_count": 182144
+    },
+    {
+      "event": "viewer._sample_points.input",
+      "thread": "MainThread",
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "sampling._sample_points.enter",
+      "thread": "MainThread",
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "viewer._instance_labels_v2.input",
+      "thread": "MainThread",
+      "valid_indices_count": 4092480,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "sampling._sample_points.after_labels",
+      "thread": "MainThread",
+      "valid_points_count": 4092480,
+      "valid_indices_count": 4092480,
+      "valid_count": 4092480,
+      "valid_true": 4092480,
+      "labels_count": 4092480,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 2189891,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "adaptive.features.input",
+      "thread": "MainThread",
+      "valid_count": 4092480,
+      "valid_true": 4092480,
+      "spacing": 0.004364659544080496
+    },
+    {
+      "event": "filter.filter_scene_points.input",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "prepared_median_nn": 0.003933914440139902,
+      "prepared_base": 4092480,
+      "prepared_raw_sor": 3888385,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.filter_scene_points.enter",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "prepared_median_nn": 0.003933914440139902,
+      "prepared_base": 4092480,
+      "prepared_raw_sor": 3888385,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.filter_scene_points.after_valid_idx",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "valid_idx_count": 4092480,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 4092480,
+      "base_mask_count": 4092480,
+      "base_mask_true": 4092480,
+      "n": 4092480,
+      "prepared_median_nn": 0.003933914440139902,
+      "prepared_base": 4092480,
+      "prepared_raw_sor": 3888385,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.filter_scene_points.after_median_nn",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "valid_idx_count": 4092480,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 4092480,
+      "base_mask_count": 4092480,
+      "base_mask_true": 4092480,
+      "median_nn": 0.003933914440139902,
+      "n": 4092480,
+      "prepared_median_nn": 0.003933914440139902,
+      "prepared_base": 4092480,
+      "prepared_raw_sor": 3888385,
+      "pcd_count": 4092480,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.enter",
+      "thread": "MainThread",
+      "valid_idx_count": 4092480,
+      "sub_keep_count": 4092480,
+      "sub_keep_true": 3888385,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 4092480,
+      "stage": "statistical outlier removal",
+      "pcd_count": 4092480,
+      "protected_current": 1902589,
+      "protected_rescued": 825,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_stage_keep",
+      "thread": "MainThread",
+      "valid_idx_count": 4092480,
+      "sub_keep_count": 4092480,
+      "sub_keep_true": 3888385,
+      "stage_keep_count": 4092480,
+      "stage_keep_true": 3889210,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 4092480,
+      "stage": "statistical outlier removal",
+      "pcd_count": 4092480,
+      "protected_current": 1902589,
+      "protected_rescued": 825,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_stage_keep_valid_idx",
+      "thread": "MainThread",
+      "valid_idx_count": 4092480,
+      "sub_keep_count": 4092480,
+      "sub_keep_true": 3888385,
+      "stage_keep_count": 4092480,
+      "stage_keep_true": 3889210,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3889210,
+      "stage": "statistical outlier removal",
+      "pcd_count": 4092480,
+      "protected_current": 1902589,
+      "protected_rescued": 825,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_valid_idx",
+      "thread": "MainThread",
+      "valid_idx_count": 3889210,
+      "sub_keep_count": 4092480,
+      "sub_keep_true": 3888385,
+      "stage_keep_count": 4092480,
+      "stage_keep_true": 3889210,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3889210,
+      "stage": "statistical outlier removal",
+      "pcd_count": 4092480,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.pcd_select.input",
+      "thread": "MainThread",
+      "pcd_count": 4092480
+    },
+    {
+      "event": "filter._cluster_labels.input",
+      "thread": "MainThread",
+      "median_nn": 0.003933914440139902,
+      "pcd_count": 3889210,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter._cluster_labels.enter",
+      "thread": "MainThread",
+      "median_nn": 0.003933914440139902,
+      "pcd_count": 3889210,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.DBSCAN_native.input",
+      "thread": "MainThread",
+      "pcd_count": 3889210
+    },
+    {
+      "event": "filter.DBSCAN_native.output",
+      "thread": "MainThread",
+      "labels_count": 3889210,
+      "labels_nonnegative": 3450828,
+      "labels_negative": 438382
+    },
+    {
+      "event": "filter._cluster_labels.return",
+      "thread": "MainThread",
+      "median_nn": 0.003933914440139902,
+      "pcd_count": 3889210,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.enter",
+      "thread": "MainThread",
+      "valid_idx_count": 3889210,
+      "sub_keep_count": 3889210,
+      "sub_keep_true": 3402853,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3889210,
+      "stage": "cluster retention",
+      "pcd_count": 3889210,
+      "protected_current": 1902589,
+      "protected_rescued": 22822,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_stage_keep",
+      "thread": "MainThread",
+      "valid_idx_count": 3889210,
+      "sub_keep_count": 3889210,
+      "sub_keep_true": 3402853,
+      "stage_keep_count": 3889210,
+      "stage_keep_true": 3425675,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3889210,
+      "stage": "cluster retention",
+      "pcd_count": 3889210,
+      "protected_current": 1902589,
+      "protected_rescued": 22822,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_stage_keep_valid_idx",
+      "thread": "MainThread",
+      "valid_idx_count": 3889210,
+      "sub_keep_count": 3889210,
+      "sub_keep_true": 3402853,
+      "stage_keep_count": 3889210,
+      "stage_keep_true": 3425675,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3425675,
+      "stage": "cluster retention",
+      "pcd_count": 3889210,
+      "protected_current": 1902589,
+      "protected_rescued": 22822,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_valid_idx",
+      "thread": "MainThread",
+      "valid_idx_count": 3425675,
+      "sub_keep_count": 3889210,
+      "sub_keep_true": 3402853,
+      "stage_keep_count": 3889210,
+      "stage_keep_true": 3425675,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3425675,
+      "stage": "cluster retention",
+      "pcd_count": 3889210,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.pcd_select.input",
+      "thread": "MainThread",
+      "pcd_count": 3889210
+    },
+    {
+      "event": "filter.RANSAC_native.input",
+      "thread": "MainThread",
+      "pcd_count": 3425675
+    },
+    {
+      "event": "filter.RANSAC_native.output",
+      "thread": "MainThread",
+      "inliers_count": 305027
+    },
+    {
+      "event": "filter.apply.enter",
+      "thread": "MainThread",
+      "valid_idx_count": 3425675,
+      "sub_keep_count": 3425675,
+      "sub_keep_true": 3120648,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3425675,
+      "stage": "ground-plane removal",
+      "pcd_count": 3425675,
+      "protected_current": 1902589,
+      "protected_rescued": 246927,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_stage_keep",
+      "thread": "MainThread",
+      "valid_idx_count": 3425675,
+      "sub_keep_count": 3425675,
+      "sub_keep_true": 3120648,
+      "stage_keep_count": 3425675,
+      "stage_keep_true": 3367575,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3425675,
+      "stage": "ground-plane removal",
+      "pcd_count": 3425675,
+      "protected_current": 1902589,
+      "protected_rescued": 246927,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_stage_keep_valid_idx",
+      "thread": "MainThread",
+      "valid_idx_count": 3425675,
+      "sub_keep_count": 3425675,
+      "sub_keep_true": 3120648,
+      "stage_keep_count": 3425675,
+      "stage_keep_true": 3367575,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3367575,
+      "stage": "ground-plane removal",
+      "pcd_count": 3425675,
+      "protected_current": 1902589,
+      "protected_rescued": 246927,
+      "guard_skipped": false,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.apply.after_valid_idx",
+      "thread": "MainThread",
+      "valid_idx_count": 3367575,
+      "sub_keep_count": 3425675,
+      "sub_keep_true": 3120648,
+      "stage_keep_count": 3425675,
+      "stage_keep_true": 3367575,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "keep_count": 4092480,
+      "keep_true": 3367575,
+      "stage": "ground-plane removal",
+      "pcd_count": 3425675,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "filter.pcd_select.input",
+      "thread": "MainThread",
+      "pcd_count": 3425675
+    },
+    {
+      "event": "filter.filter_scene_points.return",
+      "thread": "MainThread",
+      "points_count": 4092480,
+      "valid_idx_count": 3367575,
+      "protected_count": 4092480,
+      "protected_true": 1902589,
+      "inliers_count": 305027,
+      "rest_count": 3120648,
+      "keep_count": 4092480,
+      "keep_true": 3367575,
+      "base_mask_count": 4092480,
+      "base_mask_true": 4092480,
+      "cluster_mask_count": 3889210,
+      "cluster_mask_true": 3402853,
+      "ground_mask_count": 3425675,
+      "ground_mask_true": 3120648,
+      "labels_count": 3889210,
+      "labels_nonnegative": 3450828,
+      "labels_negative": 438382,
+      "median_nn": 0.003933914440139902,
+      "dist": 0.02,
+      "on_pos": 2962271,
+      "on_neg": 144374,
+      "n": 4092480,
+      "prepared_median_nn": 0.003933914440139902,
+      "prepared_base": 4092480,
+      "prepared_raw_sor": 3888385,
+      "pcd_count": 3367575,
+      "cluster_proxy_voxel_scale": 0.0
+    },
+    {
+      "event": "sampling._sample_points.after_filtered_points",
+      "thread": "MainThread",
+      "valid_points_count": 4092480,
+      "valid_indices_count": 4092480,
+      "filtered_points_count": 3367575,
+      "valid_count": 4092480,
+      "valid_true": 4092480,
+      "keep_filter_count": 4092480,
+      "keep_filter_true": 3367575,
+      "product_count": 4092480,
+      "product_true": 1902589,
+      "labels_count": 4092480,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 2189891,
+      "kept_product": 1902589,
+      "kept_background": 1464986,
+      "spacing": 0.004364659544080496,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "sampling._sample_points.after_labels",
+      "thread": "MainThread",
+      "valid_points_count": 4092480,
+      "valid_indices_count": 4092480,
+      "filtered_points_count": 3367575,
+      "valid_count": 4092480,
+      "valid_true": 4092480,
+      "keep_filter_count": 4092480,
+      "keep_filter_true": 3367575,
+      "product_count": 4092480,
+      "product_true": 1902589,
+      "labels_count": 3367575,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 1464986,
+      "spacing": 0.004364659544080496,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "viewer._select_background_voxels.input",
+      "thread": "MainThread",
+      "points_count": 3367575,
+      "background_count": 1464986
+    },
+    {
+      "event": "viewer._select_background_voxels.output",
+      "thread": "MainThread",
+      "background_keep_count": 1097823
+    },
+    {
+      "event": "sampling._sample_points.after_background_keep",
+      "thread": "MainThread",
+      "points_count": 3367575,
+      "valid_points_count": 4092480,
+      "valid_indices_count": 4092480,
+      "filtered_points_count": 3367575,
+      "background_count": 1464986,
+      "protected_count": 1902589,
+      "background_keep_count": 1097823,
+      "valid_count": 4092480,
+      "valid_true": 4092480,
+      "keep_filter_count": 4092480,
+      "keep_filter_true": 3367575,
+      "product_count": 4092480,
+      "product_true": 1902589,
+      "labels_count": 3367575,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 1464986,
+      "spacing": 0.004364659544080496,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "sampling.sample_group.enter",
+      "thread": "MainThread",
+      "budget": 500000
+    },
+    {
+      "event": "adaptive.select.input",
+      "thread": "MainThread",
+      "indices_count": 1097823,
+      "budget": 500000
+    },
+    {
+      "event": "adaptive.select.output",
+      "thread": "MainThread",
+      "selected_count": 500000
+    },
+    {
+      "event": "sampling._sample_points.return",
+      "thread": "MainThread",
+      "budget": 500000
+    },
+    {
+      "event": "viewer._sample_product_points.input",
+      "thread": "MainThread",
+      "indices_count": 1902589,
+      "labels_count": 3367575,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 1464986
+    },
+    {
+      "event": "sampling.sample_group.enter",
+      "thread": "MainThread",
+      "budget": 1902589
+    },
+    {
+      "event": "adaptive.select.input",
+      "thread": "MainThread",
+      "indices_count": 1902589,
+      "budget": 1902589
+    },
+    {
+      "event": "adaptive.select.output",
+      "thread": "MainThread",
+      "selected_count": 1902589
+    },
+    {
+      "event": "sampling._sample_points.return",
+      "thread": "MainThread",
+      "budget": 1902589
+    },
+    {
+      "event": "viewer._sample_product_points.output",
+      "thread": "MainThread",
+      "product_keep_count": 1902589
+    },
+    {
+      "event": "sampling._sample_points.after_product_keep",
+      "thread": "MainThread",
+      "points_count": 3367575,
+      "valid_points_count": 4092480,
+      "valid_indices_count": 4092480,
+      "filtered_points_count": 3367575,
+      "background_count": 1464986,
+      "protected_count": 1902589,
+      "background_keep_count": 500000,
+      "product_keep_count": 1902589,
+      "valid_count": 4092480,
+      "valid_true": 4092480,
+      "keep_filter_count": 4092480,
+      "keep_filter_true": 3367575,
+      "product_count": 4092480,
+      "product_true": 1902589,
+      "labels_count": 3367575,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 1464986,
+      "spacing": 0.004364659544080496,
+      "background_budget": 500000,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "sampling._sample_points.return",
+      "thread": "MainThread",
+      "points_count": 2402589,
+      "valid_points_count": 4092480,
+      "valid_indices_count": 4092480,
+      "filtered_points_count": 3367575,
+      "background_count": 1464986,
+      "protected_count": 1902589,
+      "background_keep_count": 500000,
+      "product_keep_count": 1902589,
+      "keep_count": 2402589,
+      "order_count": 2402589,
+      "valid_count": 4092480,
+      "valid_true": 4092480,
+      "keep_filter_count": 4092480,
+      "keep_filter_true": 3367575,
+      "product_count": 4092480,
+      "product_true": 1902589,
+      "labels_count": 3367575,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 1464986,
+      "spacing": 0.004364659544080496,
+      "background_budget": 500000,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "viewer._sample_points.output",
+      "thread": "MainThread",
+      "points_count": 2402589,
+      "labels_count": 2402589,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 500000
+    },
+    {
+      "event": "surfel.prepare_surfels.input",
+      "thread": "MainThread",
+      "indices_count": 2402589,
+      "native_shape": [
+        29,
+        504,
+        280,
+        3
+      ],
+      "native_points": 4092480
+    },
+    {
+      "event": "viewer._attach_point_index_ranges.input",
+      "thread": "MainThread",
+      "labels_count": 2402589,
+      "labels_nonnegative": 1902589,
+      "labels_negative": 500000
+    },
+    {
+      "event": "viewer._robust_display_bounds.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "viewer._compute_world_to_view.input",
+      "thread": "MainThread",
+      "filtered_points_count": 3367575
+    },
+    {
+      "event": "viewer._minimal_objects.input",
+      "thread": "MainThread"
+    },
+    {
+      "event": "viewer._publish_bundle.input",
+      "thread": "MainThread"
+    }
+  ],
+  "source_map": [
+    {
+      "function": "_median_nn_distance",
+      "path": "utils/pointcloud_filter.py",
+      "first_line": 48,
+      "last_line": 52,
+      "spans": [
+        {
+          "name": "filter.NN_native",
+          "line": 49
+        }
+      ]
+    },
+    {
+      "function": "prepare_scene_filter",
+      "path": "utils/pointcloud_filter.py",
+      "first_line": 71,
+      "last_line": 100,
+      "spans": [
+        {
+          "name": "filter.SOR_native",
+          "line": 92
+        }
+      ]
+    },
+    {
+      "function": "_cluster_labels",
+      "path": "utils/pointcloud_filter.py",
+      "first_line": 103,
+      "last_line": 127,
+      "spans": [
+        {
+          "name": "filter.DBSCAN_native",
+          "line": 107
+        },
+        {
+          "name": "filter.DBSCAN_native",
+          "line": 126
+        }
+      ]
+    },
+    {
+      "function": "filter_scene_points",
+      "path": "utils/pointcloud_filter.py",
+      "first_line": 130,
+      "last_line": 234,
+      "spans": [
+        {
+          "name": "filter.pcd_select",
+          "line": 188
+        },
+        {
+          "name": "filter.SOR_apply_block",
+          "line": 191
+        },
+        {
+          "name": "filter.DBSCAN_block",
+          "line": 195
+        },
+        {
+          "name": "filter.RANSAC_native",
+          "line": 211
+        },
+        {
+          "name": "filter.ground_block",
+          "line": 209
+        }
+      ]
+    },
+    {
+      "function": "fit_scene_orientation",
+      "path": "utils/scene_orientation.py",
+      "first_line": 36,
+      "last_line": 114,
+      "spans": [
+        {
+          "name": "orientation.NN_native",
+          "line": 60
+        },
+        {
+          "name": "orientation.RANSAC_native",
+          "line": 68
+        },
+        {
+          "name": "orientation.pcd_select",
+          "line": 76
+        },
+        {
+          "name": "orientation.pcd_select",
+          "line": 104
+        }
+      ]
+    },
+    {
+      "function": "_sample_points",
+      "path": "src/web_viewer_export.py",
+      "first_line": 542,
+      "last_line": 756,
+      "spans": [],
+      "coarse_spans": [
+        {
+          "name": "sampling.setup_geometry",
+          "first_line": 560,
+          "last_line": 587
+        },
+        {
+          "name": "sampling.labels",
+          "first_line": 588,
+          "last_line": 590
+        },
+        {
+          "name": "sampling.features",
+          "first_line": 591,
+          "last_line": 612
+        },
+        {
+          "name": "sampling.geometry_filter",
+          "first_line": 613,
+          "last_line": 644
+        },
+        {
+          "name": "sampling.selection_filters",
+          "first_line": 645,
+          "last_line": 686
+        },
+        {
+          "name": "sampling.postfilter_voxels",
+          "first_line": 687,
+          "last_line": 693
+        },
+        {
+          "name": "sampling.budget",
+          "first_line": 694,
+          "last_line": 725
+        },
+        {
+          "name": "sampling.serialize_arrays",
+          "first_line": 726,
+          "last_line": 755
+        }
+      ]
+    }
+  ],
+  "rss_hwm_kib": 3689572,
+  "cpu_user_s": 149.58716700000002,
+  "cpu_system_s": 9.069529,
+  "threads": {
+    "OMP_NUM_THREADS": "4",
+    "OPENBLAS_NUM_THREADS": "4",
+    "MKL_NUM_THREADS": "4",
+    "CUDA_VISIBLE_DEVICES": ""
+  },
+  "scope": "Independent serial CPU diagnostic; instrumented timings do not replace baseline or measure matching overlap. No RNG seeding or production algorithm changes."
+}

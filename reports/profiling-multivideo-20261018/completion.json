@@ -1,0 +1,28 @@
+{
+  "status": "complete",
+  "video_ids": [
+    1,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "frames": 161,
+  "objects": 6508,
+  "attempted": 6,
+  "succeeded": 6,
+  "failed": [],
+  "pending": [
+    {
+      "video_id": 2,
+      "status": "awaiting_sampling"
+    }
+  ],
+  "production_changes": false,
+  "committed": false,
+  "pushed": false,
+  "validation": "validation.json",
+  "reviews": "review.md",
+  "gpu2_owned_jobs_remaining": 0
+}

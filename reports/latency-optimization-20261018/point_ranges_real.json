@@ -1,0 +1,13 @@
+{
+  "status": "pass",
+  "case": "runtime/latency-optimization-20261018/baseline-video3",
+  "labels_count": 2402589,
+  "labels_dtype": "int32",
+  "observations": 711,
+  "timings_s": {
+    "baseline": 3.489543447998585,
+    "candidate": 0.000963655998930335
+  },
+  "range_endpoints_equal": true,
+  "scope": "One same-array CPU component comparison; not an end-to-end speedup"
+}

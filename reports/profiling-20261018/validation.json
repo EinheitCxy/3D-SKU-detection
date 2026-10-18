@@ -1,0 +1,29 @@
+{
+  "status": "pass",
+  "main_stages": 2,
+  "full_main_runs": 1,
+  "independent_component_diagnostics": 4,
+  "extra_bounded_overlap_replays": 1,
+  "phase_closure_error_s": 0.0,
+  "references": 29,
+  "mask_manifests": 29,
+  "observations": 711,
+  "global_ids": 385,
+  "viewer_points": 2402589,
+  "zip_members": 751,
+  "glb_header_valid": true,
+  "component_statuses": {
+    "da3": "success",
+    "pvs": "success",
+    "viewer": "complete",
+    "delivery": "complete",
+    "overlap": "success"
+  },
+  "new_python_scripts_ast_valid": 10,
+  "local_markdown_links_checked": 46,
+  "production_source_changes": false,
+  "pytest_run": false,
+  "browser_run": false,
+  "hash_or_crc_comparison_run": false,
+  "limitations": "One current-default scene; sampled driver/RSS peaks; independent diagnostics nonadditive; no visual/accuracy acceptance or warm-service latency."
+}

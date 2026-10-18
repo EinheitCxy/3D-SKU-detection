@@ -1,0 +1,898 @@
+{
+  "status": "complete",
+  "total_wall_s": 248.8995973669953,
+  "phases": [
+    {
+      "name": "run_reconstruction",
+      "seconds": 27.100440508002066,
+      "start_offset_s": 5.193319623998832,
+      "end_offset_s": 32.2937601320009
+    },
+    {
+      "name": "run_sku_matching",
+      "seconds": 29.83722471499641,
+      "start_offset_s": 32.29471421299968,
+      "end_offset_s": 62.13193892799609
+    },
+    {
+      "name": "run_dedup_sequence",
+      "seconds": 0.13460803299676627,
+      "start_offset_s": 62.13203538900416,
+      "end_offset_s": 62.266643422000925
+    },
+    {
+      "name": "export_web_viewer_bundle",
+      "seconds": 66.48317477099772,
+      "start_offset_s": 62.26678537100088,
+      "end_offset_s": 128.7499601419986
+    },
+    {
+      "name": "zip_pack",
+      "seconds": 2.6813155350100715,
+      "start_offset_s": 134.4671375869948,
+      "end_offset_s": 137.14845312200487
+    },
+    {
+      "name": "glb_export",
+      "seconds": 111.11846006799897,
+      "start_offset_s": 137.14864651000244,
+      "end_offset_s": 248.2671065780014
+    },
+    {
+      "name": "imports_process_lifecycle_and_unattributed",
+      "seconds": 11.544373736993293
+    }
+  ],
+  "input": {
+    "frames": 29,
+    "objects": 711,
+    "prepared_source": "/home/xingyu/3D_Recognization/runtime/video3-full-profile-20261016/dataset",
+    "source_description": "same previously restored JPEG quality95 and canonical detections; no detector/classifier run",
+    "frame_times_s": [
+      0.0,
+      1.5,
+      3.0,
+      4.5,
+      6.0,
+      7.5,
+      9.0,
+      10.5,
+      12.0,
+      13.5,
+      15.0,
+      16.5,
+      18.0,
+      19.5,
+      21.0,
+      22.5,
+      24.0,
+      25.5,
+      27.0,
+      28.5,
+      30.0,
+      31.5,
+      33.0,
+      34.5,
+      36.0,
+      37.5,
+      39.0,
+      40.5,
+      42.0
+    ]
+  },
+  "settings": {
+    "CUDA_VISIBLE_DEVICES": "GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7",
+    "CUDA_DEVICE_ORDER": "PCI_BUS_ID",
+    "HF_HUB_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+    "OMP_NUM_THREADS": "4",
+    "OPENBLAS_NUM_THREADS": "4",
+    "MKL_NUM_THREADS": "4",
+    "PROFILE_MODEL_PATH": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3-model/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+    "DA3_VENV_PYTHON": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3_python.sh"
+  },
+  "milestones_s": {
+    "viewer_publish": 128.7473932809953,
+    "viewer_export_return": 128.7499601419986,
+    "zip_ready": 137.14845312200487,
+    "glb_ready": 248.2671065780014
+  },
+  "preparation": {
+    "seconds": 15.106235288010794,
+    "start_offset_s": 32.29450539499521,
+    "end_offset_s": 47.400740683006006,
+    "matching_overlap_s": 15.106026470006327,
+    "seconds_outside_matching": 0.00020881800446659327
+  },
+  "spans": {
+    "core_process_wall": {
+      "calls": 1,
+      "total_s": 130.8541710099962,
+      "min_s": 130.8541710099962,
+      "max_s": 130.8541710099962,
+      "median_s": 130.8541710099962
+    },
+    "delivery_process_wall": {
+      "calls": 1,
+      "total_s": 118.04398865799885,
+      "min_s": 118.04398865799885,
+      "max_s": 118.04398865799885,
+      "median_s": 118.04398865799885
+    },
+    "core_imports": {
+      "calls": 1,
+      "total_s": 5.113902234006673,
+      "min_s": 5.113902234006673,
+      "max_s": 5.113902234006673,
+      "median_s": 5.113902234006673
+    },
+    "validate_dataset": {
+      "calls": 1,
+      "total_s": 5.840399535372853e-05,
+      "min_s": 5.840399535372853e-05,
+      "max_s": 5.840399535372853e-05,
+      "median_s": 5.840399535372853e-05
+    },
+    "run_reconstruction": {
+      "calls": 1,
+      "total_s": 27.100440508002066,
+      "min_s": 27.100440508002066,
+      "max_s": 27.100440508002066,
+      "median_s": 27.100440508002066
+    },
+    "_load_da3_cache": {
+      "calls": 1,
+      "total_s": 0.20551723400421906,
+      "min_s": 0.20551723400421906,
+      "max_s": 0.20551723400421906,
+      "median_s": 0.20551723400421906
+    },
+    "grid_tangents": {
+      "calls": 1,
+      "total_s": 2.0213935900101205,
+      "min_s": 2.0213935900101205,
+      "max_s": 2.0213935900101205,
+      "median_s": 2.0213935900101205
+    },
+    "_median_nn_distance": {
+      "calls": 1,
+      "total_s": 3.541630195992184,
+      "min_s": 3.541630195992184,
+      "max_s": 3.541630195992184,
+      "median_s": 3.541630195992184
+    },
+    "prepare_scene_filter": {
+      "calls": 1,
+      "total_s": 11.596434981998755,
+      "min_s": 11.596434981998755,
+      "max_s": 11.596434981998755,
+      "median_s": 11.596434981998755
+    },
+    "prepare_surfel_textures": {
+      "calls": 1,
+      "total_s": 1.0434765810059616,
+      "min_s": 1.0434765810059616,
+      "max_s": 1.0434765810059616,
+      "median_s": 1.0434765810059616
+    },
+    "prepare_web_viewer_geometry": {
+      "calls": 1,
+      "total_s": 15.106235288010794,
+      "min_s": 15.106235288010794,
+      "max_s": 15.106235288010794,
+      "median_s": 15.106235288010794
+    },
+    "pvs_model_load": {
+      "calls": 1,
+      "total_s": 20.117868045010255,
+      "min_s": 20.117868045010255,
+      "max_s": 20.117868045010255,
+      "median_s": 20.117868045010255
+    },
+    "pvs_predict": {
+      "calls": 29,
+      "total_s": 4.322085126928869,
+      "min_s": 0.09801828800118528,
+      "max_s": 0.47039658098947257,
+      "median_s": 0.13888549800321925
+    },
+    "reference_matching": {
+      "calls": 29,
+      "total_s": 29.821804658015026,
+      "min_s": 0.1550616530003026,
+      "max_s": 21.31578061399341,
+      "median_s": 0.3179735220037401
+    },
+    "run_sku_matching": {
+      "calls": 1,
+      "total_s": 29.83722471499641,
+      "min_s": 29.83722471499641,
+      "max_s": 29.83722471499641,
+      "median_s": 29.83722471499641
+    },
+    "run_dedup_sequence": {
+      "calls": 1,
+      "total_s": 0.13460803299676627,
+      "min_s": 0.13460803299676627,
+      "max_s": 0.13460803299676627,
+      "median_s": 0.13460803299676627
+    },
+    "_generate_thumbnails": {
+      "calls": 1,
+      "total_s": 1.6492542909982149,
+      "min_s": 1.6492542909982149,
+      "max_s": 1.6492542909982149,
+      "median_s": 1.6492542909982149
+    },
+    "get_scene_orientation": {
+      "calls": 1,
+      "total_s": 2.696161244006362,
+      "min_s": 2.696161244006362,
+      "max_s": 2.696161244006362,
+      "median_s": 2.696161244006362
+    },
+    "_instance_labels_v2": {
+      "calls": 1,
+      "total_s": 0.20459459400444757,
+      "min_s": 0.20459459400444757,
+      "max_s": 0.20459459400444757,
+      "median_s": 0.20459459400444757
+    },
+    "filter_scene_points": {
+      "calls": 1,
+      "total_s": 51.40409969200846,
+      "min_s": 51.40409969200846,
+      "max_s": 51.40409969200846,
+      "median_s": 51.40409969200846
+    },
+    "_select_background_voxels": {
+      "calls": 1,
+      "total_s": 1.0248685739934444,
+      "min_s": 1.0248685739934444,
+      "max_s": 1.0248685739934444,
+      "median_s": 1.0248685739934444
+    },
+    "_sample_points": {
+      "calls": 1,
+      "total_s": 57.555024319997756,
+      "min_s": 57.555024319997756,
+      "max_s": 57.555024319997756,
+      "median_s": 57.555024319997756
+    },
+    "prepare_surfels": {
+      "calls": 1,
+      "total_s": 0.22102145799726713,
+      "min_s": 0.22102145799726713,
+      "max_s": 0.22102145799726713,
+      "median_s": 0.22102145799726713
+    },
+    "_attach_point_index_ranges": {
+      "calls": 1,
+      "total_s": 3.861610166000901,
+      "min_s": 3.861610166000901,
+      "max_s": 3.861610166000901,
+      "median_s": 3.861610166000901
+    },
+    "_publish_bundle": {
+      "calls": 1,
+      "total_s": 0.11993562999123242,
+      "min_s": 0.11993562999123242,
+      "max_s": 0.11993562999123242,
+      "median_s": 0.11993562999123242
+    },
+    "export_web_viewer_bundle": {
+      "calls": 1,
+      "total_s": 66.48317477099772,
+      "min_s": 66.48317477099772,
+      "max_s": 66.48317477099772,
+      "median_s": 66.48317477099772
+    },
+    "core_pipeline": {
+      "calls": 1,
+      "total_s": 123.57811815300374,
+      "min_s": 123.57811815300374,
+      "max_s": 123.57811815300374,
+      "median_s": 123.57811815300374
+    },
+    "da3_imports": {
+      "calls": 1,
+      "total_s": 5.641364865994547,
+      "min_s": 5.641364865994547,
+      "max_s": 5.641364865994547,
+      "median_s": 5.641364865994547
+    },
+    "da3_load_cpu": {
+      "calls": 1,
+      "total_s": 13.445242562011117,
+      "min_s": 13.445242562011117,
+      "max_s": 13.445242562011117,
+      "median_s": 13.445242562011117
+    },
+    "da3_inference_api": {
+      "calls": 1,
+      "total_s": 2.86391681501118,
+      "min_s": 2.86391681501118,
+      "max_s": 2.86391681501118,
+      "median_s": 2.86391681501118
+    },
+    "da3_backprojection": {
+      "calls": 1,
+      "total_s": 0.09508183298748918,
+      "min_s": 0.09508183298748918,
+      "max_s": 0.09508183298748918,
+      "median_s": 0.09508183298748918
+    },
+    "da3_npz_write": {
+      "calls": 1,
+      "total_s": 0.20367928699124604,
+      "min_s": 0.20367928699124604,
+      "max_s": 0.20367928699124604,
+      "median_s": 0.20367928699124604
+    },
+    "da3_runner_main": {
+      "calls": 1,
+      "total_s": 19.084275727000204,
+      "min_s": 19.084275727000204,
+      "max_s": 19.084275727000204,
+      "median_s": 19.084275727000204
+    },
+    "delivery_imports": {
+      "calls": 1,
+      "total_s": 3.55102624099527,
+      "min_s": 3.55102624099527,
+      "max_s": 3.55102624099527,
+      "median_s": 3.55102624099527
+    },
+    "zip_pack": {
+      "calls": 1,
+      "total_s": 2.6813155350100715,
+      "min_s": 2.6813155350100715,
+      "max_s": 2.6813155350100715,
+      "median_s": 2.6813155350100715
+    },
+    "glb_export": {
+      "calls": 1,
+      "total_s": 111.11846006799897,
+      "min_s": 111.11846006799897,
+      "max_s": 111.11846006799897,
+      "median_s": 111.11846006799897
+    }
+  },
+  "pvs_native": {
+    "frames": 29,
+    "boxes": 711,
+    "encoder_s": 2.087644369006739,
+    "inference_and_postprocess_including_encoder_s": 3.7416783469816437
+  },
+  "matching_stages": {
+    "load_data": {
+      "total": 0.20297717599896714,
+      "calls": 29
+    },
+    "build_transforms": {
+      "total": 0.0049499549641041085,
+      "calls": 29
+    },
+    "cache_npz_load": {
+      "total": 0.0002794540050672367,
+      "calls": 1
+    },
+    "scene_data_build": {
+      "total": 0.16325944699929096,
+      "calls": 1
+    },
+    "sam3_mask": {
+      "total": 24.794822703959653,
+      "calls": 29
+    },
+    "mask_postprocess": {
+      "total": 4.2135987314395607e-05,
+      "calls": 29
+    },
+    "ref_point_sampling": {
+      "total": 1.0561663981497986,
+      "calls": 711
+    },
+    "world_to_camera": {
+      "total": 0.1198760409897659,
+      "calls": 697
+    },
+    "projection_3d_to_2d": {
+      "total": 0.2358477359812241,
+      "calls": 697
+    },
+    "projection_postprocess": {
+      "total": 0.19861253720591776,
+      "calls": 697
+    },
+    "target_bbox_match": {
+      "total": 1.6807452307257336,
+      "calls": 697
+    },
+    "uniqueness_constraint": {
+      "total": 0.0009597580501576886,
+      "calls": 27
+    },
+    "post_process": {
+      "total": 0.01429852498404216,
+      "calls": 29
+    },
+    "process_images": {
+      "total": 28.777932298005908,
+      "calls": 29
+    },
+    "per_ref_total": {
+      "total": 28.81762456893921,
+      "calls": 29
+    },
+    "batch_all_refs_total": {
+      "total": 29.834967371003586,
+      "calls": 1
+    }
+  },
+  "references": [
+    {
+      "reference_slot": 0,
+      "target_slot": 1,
+      "wall_s": 21.31578061399341,
+      "pvs_wall_s": 0.47039658098947257,
+      "boxes": 28,
+      "native_encoder_s": 0.29880582899204455,
+      "native_predict_including_encoder_s": 0.4505852029978996
+    },
+    {
+      "reference_slot": 1,
+      "target_slot": 2,
+      "wall_s": 0.33956400099850725,
+      "pvs_wall_s": 0.15265105199068785,
+      "boxes": 30,
+      "native_encoder_s": 0.06398340000305325,
+      "native_predict_including_encoder_s": 0.1361367070057895
+    },
+    {
+      "reference_slot": 2,
+      "target_slot": 3,
+      "wall_s": 0.420783408000716,
+      "pvs_wall_s": 0.17122667700459715,
+      "boxes": 48,
+      "native_encoder_s": 0.06402201698801946,
+      "native_predict_including_encoder_s": 0.15586626999720465
+    },
+    {
+      "reference_slot": 3,
+      "target_slot": 4,
+      "wall_s": 0.33696290699299425,
+      "pvs_wall_s": 0.17583131599531043,
+      "boxes": 25,
+      "native_encoder_s": 0.06323629000689834,
+      "native_predict_including_encoder_s": 0.1580229800019879
+    },
+    {
+      "reference_slot": 4,
+      "target_slot": 5,
+      "wall_s": 0.28895455300516915,
+      "pvs_wall_s": 0.13487865299975965,
+      "boxes": 25,
+      "native_encoder_s": 0.06401091100997292,
+      "native_predict_including_encoder_s": 0.11830180700053461
+    },
+    {
+      "reference_slot": 5,
+      "target_slot": 6,
+      "wall_s": 0.3059107330045663,
+      "pvs_wall_s": 0.1410188789886888,
+      "boxes": 30,
+      "native_encoder_s": 0.06406424500164576,
+      "native_predict_including_encoder_s": 0.1247854079992976
+    },
+    {
+      "reference_slot": 6,
+      "target_slot": 7,
+      "wall_s": 0.2890198630047962,
+      "pvs_wall_s": 0.13924117700662464,
+      "boxes": 30,
+      "native_encoder_s": 0.06370679999236017,
+      "native_predict_including_encoder_s": 0.12420595699222758
+    },
+    {
+      "reference_slot": 7,
+      "target_slot": 8,
+      "wall_s": 0.2802544700098224,
+      "pvs_wall_s": 0.13531209899520036,
+      "boxes": 27,
+      "native_encoder_s": 0.06397182299406268,
+      "native_predict_including_encoder_s": 0.12017564599227626
+    },
+    {
+      "reference_slot": 8,
+      "target_slot": 9,
+      "wall_s": 0.3470797310001217,
+      "pvs_wall_s": 0.14150712500850204,
+      "boxes": 31,
+      "native_encoder_s": 0.06419678300153464,
+      "native_predict_including_encoder_s": 0.12661756201123353
+    },
+    {
+      "reference_slot": 9,
+      "target_slot": 10,
+      "wall_s": 0.4019622799969511,
+      "pvs_wall_s": 0.1529551550047472,
+      "boxes": 38,
+      "native_encoder_s": 0.06420200600405224,
+      "native_predict_including_encoder_s": 0.13796170300338417
+    },
+    {
+      "reference_slot": 10,
+      "target_slot": 11,
+      "wall_s": 0.3398188430001028,
+      "pvs_wall_s": 0.14887357800034806,
+      "boxes": 36,
+      "native_encoder_s": 0.06490452100115363,
+      "native_predict_including_encoder_s": 0.13337670100736432
+    },
+    {
+      "reference_slot": 11,
+      "target_slot": 12,
+      "wall_s": 0.1871927659958601,
+      "pvs_wall_s": 0.10759754499304108,
+      "boxes": 10,
+      "native_encoder_s": 0.06401420600013807,
+      "native_predict_including_encoder_s": 0.09257671899104025
+    },
+    {
+      "reference_slot": 12,
+      "target_slot": 13,
+      "wall_s": 0.1550616530003026,
+      "pvs_wall_s": 0.10023757599992678,
+      "boxes": 2,
+      "native_encoder_s": 0.0635457390017109,
+      "native_predict_including_encoder_s": 0.07379493600456044
+    },
+    {
+      "reference_slot": 13,
+      "target_slot": 14,
+      "wall_s": 0.18517277200589888,
+      "pvs_wall_s": 0.09801828800118528,
+      "boxes": 5,
+      "native_encoder_s": 0.06387576299312059,
+      "native_predict_including_encoder_s": 0.0819198279932607
+    },
+    {
+      "reference_slot": 14,
+      "target_slot": 15,
+      "wall_s": 0.33522574001108296,
+      "pvs_wall_s": 0.12855015799868852,
+      "boxes": 24,
+      "native_encoder_s": 0.063463683007285,
+      "native_predict_including_encoder_s": 0.112470944004599
+    },
+    {
+      "reference_slot": 15,
+      "target_slot": 16,
+      "wall_s": 0.34997360600391403,
+      "pvs_wall_s": 0.13966225399053656,
+      "boxes": 28,
+      "native_encoder_s": 0.06423691401141696,
+      "native_predict_including_encoder_s": 0.12163167200924363
+    },
+    {
+      "reference_slot": 16,
+      "target_slot": 17,
+      "wall_s": 0.35952344299585093,
+      "pvs_wall_s": 0.16492691299936268,
+      "boxes": 34,
+      "native_encoder_s": 0.06390025599102955,
+      "native_predict_including_encoder_s": 0.1391304189892253
+    },
+    {
+      "reference_slot": 17,
+      "target_slot": 18,
+      "wall_s": 0.31448036000074353,
+      "pvs_wall_s": 0.1476688199909404,
+      "boxes": 23,
+      "native_encoder_s": 0.06456431599508505,
+      "native_predict_including_encoder_s": 0.12277592299506068
+    },
+    {
+      "reference_slot": 18,
+      "target_slot": 19,
+      "wall_s": 0.3179735220037401,
+      "pvs_wall_s": 0.14730695199978072,
+      "boxes": 28,
+      "native_encoder_s": 0.06322658598946873,
+      "native_predict_including_encoder_s": 0.1217635130014969
+    },
+    {
+      "reference_slot": 19,
+      "target_slot": 20,
+      "wall_s": 0.27647210500435904,
+      "pvs_wall_s": 0.13231092899513897,
+      "boxes": 19,
+      "native_encoder_s": 0.06433408500743099,
+      "native_predict_including_encoder_s": 0.10774415200285148
+    },
+    {
+      "reference_slot": 20,
+      "target_slot": 21,
+      "wall_s": 0.23765585500223096,
+      "pvs_wall_s": 0.1213035469991155,
+      "boxes": 15,
+      "native_encoder_s": 0.06318893299612682,
+      "native_predict_including_encoder_s": 0.09593561699148268
+    },
+    {
+      "reference_slot": 21,
+      "target_slot": 22,
+      "wall_s": 0.24426986699108966,
+      "pvs_wall_s": 0.12047085899394006,
+      "boxes": 16,
+      "native_encoder_s": 0.06414301499899011,
+      "native_predict_including_encoder_s": 0.09654923899506684
+    },
+    {
+      "reference_slot": 22,
+      "target_slot": 23,
+      "wall_s": 0.28682346499408595,
+      "pvs_wall_s": 0.13457402199856006,
+      "boxes": 22,
+      "native_encoder_s": 0.06425249899621122,
+      "native_predict_including_encoder_s": 0.1110009190015262
+    },
+    {
+      "reference_slot": 23,
+      "target_slot": 24,
+      "wall_s": 0.29037135500402655,
+      "pvs_wall_s": 0.13323842799582053,
+      "boxes": 22,
+      "native_encoder_s": 0.06416391101083718,
+      "native_predict_including_encoder_s": 0.10956058400915936
+    },
+    {
+      "reference_slot": 24,
+      "target_slot": 25,
+      "wall_s": 0.3221032579895109,
+      "pvs_wall_s": 0.13723804098844994,
+      "boxes": 23,
+      "native_encoder_s": 0.0632511970034102,
+      "native_predict_including_encoder_s": 0.11359685599745717
+    },
+    {
+      "reference_slot": 25,
+      "target_slot": 26,
+      "wall_s": 0.2829787430091528,
+      "pvs_wall_s": 0.12909313800628297,
+      "boxes": 20,
+      "native_encoder_s": 0.06344161699234974,
+      "native_predict_including_encoder_s": 0.10463632899336517
+    },
+    {
+      "reference_slot": 26,
+      "target_slot": 27,
+      "wall_s": 0.3341889290022664,
+      "pvs_wall_s": 0.13662423599453177,
+      "boxes": 22,
+      "native_encoder_s": 0.06421777200012002,
+      "native_predict_including_encoder_s": 0.11262923300091643
+    },
+    {
+      "reference_slot": 27,
+      "target_slot": 28,
+      "wall_s": 0.3332492689951323,
+      "pvs_wall_s": 0.13888549800321925,
+      "boxes": 24,
+      "native_encoder_s": 0.06345549500838388,
+      "native_predict_including_encoder_s": 0.11330609199649189
+    },
+    {
+      "reference_slot": 28,
+      "target_slot": 0,
+      "wall_s": 0.34299654699862003,
+      "pvs_wall_s": 0.14048563099640887,
+      "boxes": 26,
+      "native_encoder_s": 0.06326375700882636,
+      "native_predict_including_encoder_s": 0.12461942799563985
+    }
+  ],
+  "memory": {
+    "sample_interval_ms": 200,
+    "target_pids": [
+      2234132,
+      2234137,
+      2234390,
+      2234393,
+      2274629,
+      2274657
+    ],
+    "gpu_task_driver_peak_mib": 15132.0,
+    "gpu_task_peak_timestamp": "2026/10/18 19:33:01.679",
+    "gpu_task_peak_members_mib": {
+      "2234393": 15132.0
+    },
+    "gpu_foreign_min_sum_mib": 5030.0,
+    "gpu_foreign_max_sum_mib": 5030.0,
+    "gpu_device_peak_mib": 20181.0,
+    "gpu_process_valid_rows": 3003,
+    "gpu_device_rows": 1243,
+    "gpu_device_coverage_seconds": 248.777,
+    "gpu_device_first_timestamp": "2026/10/18 19:32:32.369",
+    "gpu_device_last_timestamp": "2026/10/18 19:36:41.146",
+    "host_tree_peak_bytes": 14860701696,
+    "host_tree_peak_stage": "core",
+    "host_tree_peak_offset_s": 24.75556909800798,
+    "host_tree_by_stage_bytes": {
+      "core": 14860701696,
+      "delivery": 998809600
+    },
+    "definition": "GPU target process samples aligned by timestamp and actual process-tree PIDs; existing processes excluded. RSS is simultaneous tree sum with possible shared-page duplication. All sampled peaks can miss sub-200ms transients."
+  },
+  "process_lifetimes": [
+    {
+      "pid": 2234137,
+      "argv": [
+        "/home/xingyu/3D_Recognization/reports/profiling-20261018/profile_core.py"
+      ],
+      "rss_hwm_kib": 5686668,
+      "cpu_user_s": 179.848247,
+      "cpu_system_s": 13.895879,
+      "peak_scope": "process lifetime; no allocator peak resets",
+      "cuda_allocated_peak_bytes": 3341922304,
+      "cuda_reserved_peak_bytes": 3527409664,
+      "cuda_allocated_final_bytes": 2476861440,
+      "cuda_reserved_final_bytes": 2610954240,
+      "cuda_logical_device": 0,
+      "cuda_name": "NVIDIA GeForce RTX 4090 D"
+    },
+    {
+      "pid": 2234393,
+      "argv": [
+        "/home/xingyu/3D_Recognization/reports/profiling-20261018/profile_da3.py",
+        "/home/xingyu/3D_Recognization/src/da3_runner.py",
+        "--input_dir",
+        "/home/xingyu/3D_Recognization/runtime/profiling-20261018/dataset/images",
+        "--output_npz",
+        "/home/xingyu/3D_Recognization/runtime/profiling-20261018/outputs/dataset/da3_cache/predictions.npz.partial",
+        "--model_path",
+        "/home/xingyu/3D_Recognization/runtime/profiling-20261018/da3-model/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+        "--device",
+        "cuda",
+        "--process_res",
+        "504"
+      ],
+      "rss_hwm_kib": 14562564,
+      "cpu_user_s": 24.262526,
+      "cpu_system_s": 4.809158,
+      "peak_scope": "process lifetime; no allocator peak resets",
+      "cuda_allocated_peak_bytes": 12251022848,
+      "cuda_reserved_peak_bytes": 15422455808,
+      "cuda_allocated_final_bytes": 8519680,
+      "cuda_reserved_final_bytes": 15422455808,
+      "cuda_logical_device": 0,
+      "cuda_name": "NVIDIA GeForce RTX 4090 D"
+    },
+    {
+      "pid": 2274657,
+      "argv": [
+        "/home/xingyu/3D_Recognization/reports/profiling-20261018/profile_delivery.py"
+      ],
+      "rss_hwm_kib": 935908,
+      "cpu_user_s": 141.440423,
+      "cpu_system_s": 117.890236,
+      "peak_scope": "process lifetime; no allocator peak resets"
+    }
+  ],
+  "outputs": {
+    "generation": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/viewer/runs/a09b45c4cbe7471c8a9b02c40f7e1c12",
+    "points": 2402589,
+    "frame_count": 29,
+    "global_ids": 385,
+    "thumbnail_count": 711,
+    "viewer_generation_bytes": 117265117,
+    "zip_bytes": 79733167,
+    "glb_bytes": 121211016,
+    "surfel_metadata": {
+      "version": 3,
+      "point_count": 2402589,
+      "grid_size": [
+        280,
+        504
+      ],
+      "texture_longest_edge": 1920,
+      "coverage_radius_pixels": 1.05,
+      "source_depth_relative_tolerance": 0.015
+    },
+    "manifest": {
+      "backend": "DA3",
+      "dataset_name": "dataset",
+      "display_bounds": [
+        -1.8008924865722655,
+        -1.6228643798828124,
+        1.244978380203247,
+        5.057265663146973,
+        0.7620010590553292,
+        6.4254958534240725
+      ],
+      "frame_count": 29,
+      "measurement": {
+        "coordinate_unit": "m",
+        "horizontal_plane": "viewer_xz",
+        "orientation_status": "fitted"
+      },
+      "schema_version": "3.0.0",
+      "world_to_view": [
+        0.9969102121395617,
+        0.0773857380924796,
+        0.013471320341237807,
+        -1.0070393031950282,
+        0.0773857380924796,
+        -0.9381759300680074,
+        -0.3373979427633067,
+        0.713824920222699,
+        -0.013471320341237807,
+        0.3373979427633067,
+        -0.9412657179284457,
+        3.3974822976524455,
+        0.0,
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "glb_report": {
+    "output": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/scene.glb",
+    "glb_bytes": 121211016,
+    "elapsed_seconds": 111.11786722100805,
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128,
+    "encoder_workers": 1,
+    "delivery_mode": "streamed",
+    "bake": {
+      "source": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/viewer/runs/a09b45c4cbe7471c8a9b02c40f7e1c12",
+      "global_id": null,
+      "input_point_count": 2402589,
+      "point_count": 2402589,
+      "selected_point_count": 1297845,
+      "lod": {
+        "input_count": 2402589,
+        "selected_count": 1297845,
+        "removed_count": 1104744,
+        "eligible_blocks": 452666,
+        "reduced_blocks": 368248
+      },
+      "lod_removed_point_count": 1104744,
+      "baked_surfel_count": 1282900,
+      "skipped_surfel_count": 14945,
+      "triangle_count": 2565800,
+      "atlas_pages": 31,
+      "glb_bytes": null,
+      "elapsed_seconds": 66.42146411197609,
+      "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+      "tile_size": 8,
+      "atlas_size": 2048,
+      "radius": 2.0,
+      "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+    },
+    "compact": {
+      "geometry_bytes_before": 133421600,
+      "geometry_bytes_after": 76974000,
+      "texture_bytes_before": null,
+      "texture_bytes_after": 44155561,
+      "max_position_error": 7.594053210624452e-05,
+      "max_uv_error": 7.62802083223435e-06,
+      "triangle_count": 2565800,
+      "output": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/scene.glb",
+      "glb_bytes": 121211016,
+      "primitive_count": 93,
+      "source_bytes": null,
+      "elapsed_seconds": 44.6946027680242,
+      "encoder_workers": 1,
+      "encoder_queue_pages": 1,
+      "encoding_join_seconds": 42.88178828895616,
+      "main_thread_write_seconds": 1.812814479068038,
+      "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+    }
+  },
+  "interpretation": "One current-default GPU2 cold-process/fresh-result-cache run; no end-to-end warm estimate, no detector/classifier/COS/HTTP/browser. Independent component diagnostics are not additive to this run."
+}

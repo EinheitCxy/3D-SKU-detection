@@ -1,0 +1,71 @@
+{
+  "status": "PASS",
+  "cases": [
+    {
+      "video_id": 1,
+      "frames": 21,
+      "objects": 342,
+      "status": "PASS",
+      "zip_members": 374,
+      "viewer_points": 1497310,
+      "prefix_closure_error_max_s": 0.0
+    },
+    {
+      "video_id": 3,
+      "frames": 29,
+      "objects": 711,
+      "status": "PASS",
+      "zip_members": 751,
+      "viewer_points": 2402589,
+      "prefix_closure_error_max_s": 0.0
+    },
+    {
+      "video_id": 4,
+      "frames": 28,
+      "objects": 1381,
+      "status": "PASS",
+      "zip_members": 1420,
+      "viewer_points": 1962913,
+      "prefix_closure_error_max_s": 0.0
+    },
+    {
+      "video_id": 5,
+      "frames": 19,
+      "objects": 899,
+      "status": "PASS",
+      "zip_members": 929,
+      "viewer_points": 1384008,
+      "prefix_closure_error_max_s": 0.0
+    },
+    {
+      "video_id": 6,
+      "frames": 48,
+      "objects": 2780,
+      "status": "PASS",
+      "zip_members": 2839,
+      "viewer_points": 2500000,
+      "prefix_closure_error_max_s": 0.0
+    },
+    {
+      "video_id": 7,
+      "frames": 16,
+      "objects": 395,
+      "status": "PASS",
+      "zip_members": 422,
+      "viewer_points": 837531,
+      "prefix_closure_error_max_s": 0.0
+    }
+  ],
+  "frames": 161,
+  "objects": 6508,
+  "detail_metrics": 2922,
+  "host_wall_labels": 266,
+  "python_scripts": 15,
+  "local_markdown_links": 35,
+  "validation_scope": "Single final syntax/format/count/closure check; no extra model reruns, pytest, CRC, hashes, browser or quality acceptance",
+  "gpu2_final_residents_mib": {
+    "6221": 1580,
+    "8550": 3450
+  },
+  "production_changes": false
+}

@@ -1,0 +1,232 @@
+{
+  "status": "success",
+  "pid": 2374546,
+  "argv": [
+    "/home/xingyu/3D_Recognization/reports/profiling-20261018/diagnose_overlap.py",
+    "--base",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018",
+    "--out",
+    "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/overlap"
+  ],
+  "semantics": "Independent overlap diagnosis, no inference/publication; wall/thread CPU differences and stacks do not prove GIL contention. Per-thread CPU excludes intra-op worker CPU. Sample period 200ms nominal; Python/GIL scheduling can delay sampling.",
+  "environment": {
+    "CUDA_VISIBLE_DEVICES": "GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7",
+    "OMP_NUM_THREADS": "4",
+    "OPENBLAS_NUM_THREADS": "4",
+    "MKL_NUM_THREADS": "4"
+  },
+  "allocator_scope": "process lifetime, no peak resets",
+  "sampling_path": "/home/xingyu/3D_Recognization/runtime/profiling-20261018/diagnostics/overlap/thread-samples.jsonl",
+  "torch_threads": 4,
+  "torch_interop_threads": 20,
+  "replay_limits": "Fresh process and already resident OS file pages; no prior DA3 subprocess/matching scene H2D, reference data loading, or source prefetch replay. These differences can affect initialization.",
+  "checkpoint_tensors": 931,
+  "prepare_complete": true,
+  "pvs_load_complete": true,
+  "prepared_shape": [
+    29,
+    504,
+    280,
+    3
+  ],
+  "elapsed_s": 24.110781302006217,
+  "timers": {
+    "imports": {
+      "wall_s": 4.752897511993069,
+      "self_wall_s": 4.752897511993069,
+      "thread_cpu_ns": 4690899792,
+      "self_thread_cpu_ns": 4690899792,
+      "calls": 1,
+      "max_wall_s": 4.752897511993069
+    },
+    "pvs_model_load > pvs.load_model:L17": {
+      "wall_s": 3.3069998607970774e-05,
+      "self_wall_s": 3.3069998607970774e-05,
+      "thread_cpu_ns": 33350,
+      "self_thread_cpu_ns": 33350,
+      "calls": 1,
+      "max_wall_s": 3.3069998607970774e-05
+    },
+    "pvs_model_load > pvs.load_model:L19": {
+      "wall_s": 0.9874141549953492,
+      "self_wall_s": 0.9874141549953492,
+      "thread_cpu_ns": 951854581,
+      "self_thread_cpu_ns": 951854581,
+      "calls": 1,
+      "max_wall_s": 0.9874141549953492
+    },
+    "prepare_web_viewer_geometry > prepare_scene_filter > NN": {
+      "wall_s": 3.7911116589966696,
+      "self_wall_s": 3.7911116589966696,
+      "thread_cpu_ns": 3729287797,
+      "self_thread_cpu_ns": 3729287797,
+      "calls": 1,
+      "max_wall_s": 3.7911116589966696
+    },
+    "prepare_web_viewer_geometry > prepare_scene_filter > SOR": {
+      "wall_s": 6.120772554000723,
+      "self_wall_s": 6.120772554000723,
+      "thread_cpu_ns": 6010081000,
+      "self_thread_cpu_ns": 6010081000,
+      "calls": 1,
+      "max_wall_s": 6.120772554000723
+    },
+    "prepare_web_viewer_geometry > prepare_scene_filter": {
+      "wall_s": 11.495598690991756,
+      "self_wall_s": 1.5837144779943628,
+      "thread_cpu_ns": 11303429242,
+      "self_thread_cpu_ns": 1564060445,
+      "calls": 1,
+      "max_wall_s": 11.495598690991756
+    },
+    "prepare_web_viewer_geometry": {
+      "wall_s": 14.948040467003011,
+      "self_wall_s": 3.4524417760112556,
+      "thread_cpu_ns": 14500759944,
+      "self_thread_cpu_ns": 3197330702,
+      "calls": 1,
+      "max_wall_s": 14.948040467003011
+    },
+    "pvs_model_load > pvs.load_model:L22": {
+      "wall_s": 17.362314502010122,
+      "self_wall_s": 17.362314502010122,
+      "thread_cpu_ns": 6607440294,
+      "self_thread_cpu_ns": 6607440294,
+      "calls": 1,
+      "max_wall_s": 17.362314502010122
+    },
+    "pvs_model_load > pvs.load_model:L31": {
+      "wall_s": 0.15432580299966503,
+      "self_wall_s": 0.15432580299966503,
+      "thread_cpu_ns": 152879092,
+      "self_thread_cpu_ns": 152879092,
+      "calls": 1,
+      "max_wall_s": 0.15432580299966503
+    },
+    "pvs_model_load > pvs.load_model:L32": {
+      "wall_s": 2.1980085875838995e-06,
+      "self_wall_s": 2.1980085875838995e-06,
+      "thread_cpu_ns": 2306,
+      "self_thread_cpu_ns": 2306,
+      "calls": 1,
+      "max_wall_s": 2.1980085875838995e-06
+    },
+    "pvs_model_load > pvs.load_model:L36": {
+      "wall_s": 0.00031099900661502033,
+      "self_wall_s": 0.00031099900661502033,
+      "thread_cpu_ns": 306215,
+      "self_thread_cpu_ns": 306215,
+      "calls": 1,
+      "max_wall_s": 0.00031099900661502033
+    },
+    "pvs_model_load > pvs.load_model:L41": {
+      "wall_s": 0.00028705700242426246,
+      "self_wall_s": 0.00028705700242426246,
+      "thread_cpu_ns": 287173,
+      "self_thread_cpu_ns": 287173,
+      "calls": 1,
+      "max_wall_s": 0.00028705700242426246
+    },
+    "pvs_model_load > pvs.load_model:L48": {
+      "wall_s": 0.22013321399572305,
+      "self_wall_s": 0.22013321399572305,
+      "thread_cpu_ns": 218915217,
+      "self_thread_cpu_ns": 218915217,
+      "calls": 1,
+      "max_wall_s": 0.22013321399572305
+    },
+    "pvs_model_load > pvs.load_model:L49": {
+      "wall_s": 0.534167414996773,
+      "self_wall_s": 0.534167414996773,
+      "thread_cpu_ns": 531997697,
+      "self_thread_cpu_ns": 531997697,
+      "calls": 1,
+      "max_wall_s": 0.534167414996773
+    },
+    "pvs_model_load > pvs.load_model:L50": {
+      "wall_s": 3.278997610323131e-06,
+      "self_wall_s": 3.278997610323131e-06,
+      "thread_cpu_ns": 3293,
+      "self_thread_cpu_ns": 3293,
+      "calls": 1,
+      "max_wall_s": 3.278997610323131e-06
+    },
+    "pvs_model_load": {
+      "wall_s": 19.30692521900346,
+      "self_wall_s": 0.047933526991982944,
+      "thread_cpu_ns": 8511442588,
+      "self_thread_cpu_ns": 47723370,
+      "calls": 1,
+      "max_wall_s": 19.30692521900346
+    }
+  },
+  "source_mapping": {
+    "pvs.load_model:L17": {
+      "path": "utils/sam31_pvs.py",
+      "line": 17,
+      "end_line": 18,
+      "statement": "if torch.device(device).type != \"cuda\":"
+    },
+    "pvs.load_model:L19": {
+      "path": "utils/sam31_pvs.py",
+      "line": 19,
+      "end_line": 19,
+      "statement": "from sam3.model_builder import build_sam3_multiplex_video_model"
+    },
+    "pvs.load_model:L22": {
+      "path": "utils/sam31_pvs.py",
+      "line": 22,
+      "end_line": 30,
+      "statement": "with torch.cuda.device(device):"
+    },
+    "pvs.load_model:L31": {
+      "path": "utils/sam31_pvs.py",
+      "line": 31,
+      "end_line": 31,
+      "statement": "state = torch.load(checkpoint, map_location=\"cpu\", weights_only=True, mmap=True)"
+    },
+    "pvs.load_model:L32": {
+      "path": "utils/sam31_pvs.py",
+      "line": 32,
+      "end_line": 33,
+      "statement": "if \"model\" in state:"
+    },
+    "pvs.load_model:L36": {
+      "path": "utils/sam31_pvs.py",
+      "line": 36,
+      "end_line": 40,
+      "statement": "weights = {"
+    },
+    "pvs.load_model:L41": {
+      "path": "utils/sam31_pvs.py",
+      "line": 41,
+      "end_line": 47,
+      "statement": "weights.update("
+    },
+    "pvs.load_model:L48": {
+      "path": "utils/sam31_pvs.py",
+      "line": 48,
+      "end_line": 48,
+      "statement": "model.load_state_dict(weights, strict=True)"
+    },
+    "pvs.load_model:L49": {
+      "path": "utils/sam31_pvs.py",
+      "line": 49,
+      "end_line": 49,
+      "statement": "model = model.eval().to(device)"
+    },
+    "pvs.load_model:L50": {
+      "path": "utils/sam31_pvs.py",
+      "line": 50,
+      "end_line": 50,
+      "statement": "return model, len(weights)"
+    }
+  },
+  "rss_hwm_kib": 5566376,
+  "process_cpu_user_s": 44.289818,
+  "process_cpu_system_s": 6.785133,
+  "cuda_initialized": true,
+  "peak_allocated_bytes": 2368897024,
+  "peak_reserved_bytes": 2483027968,
+  "final_allocated_bytes": 0
+}
