@@ -1,0 +1,80 @@
+{
+  "status": "complete",
+  "generation": "runtime/latency-optimization-20261018/baseline-video3/viewer/runs/b1cfa9d40e544d4cb413343d9a91bc3b",
+  "command": [
+    "reports/torch-bake-fusion-20261018/native_export.py",
+    "--generation",
+    "runtime/latency-optimization-20261018/baseline-video3/viewer/runs/b1cfa9d40e544d4cb413343d9a91bc3b",
+    "--out",
+    "runtime/torch-bake-fusion-20261018/native-glb-01"
+  ],
+  "encoder_workers": 2,
+  "projection_mode": "source_world",
+  "imports_wall_s": 3.3355935249855975,
+  "production_report": {
+    "output": "runtime/torch-bake-fusion-20261018/native-glb-01/native.glb",
+    "glb_bytes": 121197580,
+    "elapsed_seconds": 66.58906601001217,
+    "radius": 2.0,
+    "tile_size": 8,
+    "lod": true,
+    "palette_colors": 128,
+    "encoder_workers": 2,
+    "projection_mode": "source_world",
+    "delivery_mode": "streamed",
+    "bake": {
+      "source": "runtime/latency-optimization-20261018/baseline-video3/viewer/runs/b1cfa9d40e544d4cb413343d9a91bc3b",
+      "global_id": null,
+      "input_point_count": 2402589,
+      "point_count": 2402589,
+      "selected_point_count": 1297686,
+      "lod": {
+        "input_count": 2402589,
+        "selected_count": 1297686,
+        "removed_count": 1104903,
+        "eligible_blocks": 452615,
+        "reduced_blocks": 368301
+      },
+      "lod_removed_point_count": 1104903,
+      "baked_surfel_count": 1282759,
+      "skipped_surfel_count": 14927,
+      "triangle_count": 2565518,
+      "atlas_pages": 31,
+      "glb_bytes": null,
+      "elapsed_seconds": 63.420602198995766,
+      "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
+      "tile_size": 8,
+      "atlas_size": 2048,
+      "radius": 2.0,
+      "projection_mode": "source_world",
+      "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"
+    },
+    "compact": {
+      "geometry_bytes_before": 133406936,
+      "geometry_bytes_after": 76965540,
+      "texture_bytes_before": null,
+      "texture_bytes_after": 44150589,
+      "max_position_error": 7.593260846761041e-05,
+      "max_uv_error": 7.62802083223435e-06,
+      "triangle_count": 2565518,
+      "output": "runtime/torch-bake-fusion-20261018/native-glb-01/native.glb",
+      "glb_bytes": 121197580,
+      "primitive_count": 93,
+      "source_bytes": null,
+      "elapsed_seconds": 3.1665378690086072,
+      "encoder_workers": 2,
+      "encoder_queue_pages": 2,
+      "projection_mode": "source_world",
+      "encoding_join_seconds": 0.877399235003395,
+      "main_thread_write_seconds": 2.2891386340052122,
+      "timing_definition": "Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution"
+    }
+  },
+  "export_wall_s": 66.5893224169995,
+  "process_to_export_ready_s": 69.92896311300865,
+  "resources": {
+    "cpu_user_s": 116.97401,
+    "cpu_system_s": 20.02737,
+    "lifetime_maxrss_kib": 997604
+  }
+}

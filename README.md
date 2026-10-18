@@ -6,6 +6,8 @@
 
 当前 profiling 使用 GPU2 上六个视频，从帧就绪计到 Viewer ZIP 与 GLB 落盘；具体输入、边界、重叠和显存口径只在统一文档维护。本轮video3优化的实现、对照与推广决定见[优化记录](reports/latency-optimization-20261018/README.md)。`perf/benchmark.py` 可用于其他数据集诊断，其结果不并入该基线。
 
+后续[有界Torch烘焙实验](reports/torch-bake-fusion-20261018/README.md)在固定video3 generation上将完整GLB导出从66.589降到44.671秒，交付几何与解码RGBA相等；仅为单次组件对照，生产默认仍为CPU baker。
+
 ## 性能与显存
 
 - 检测、匹配、分析、重建、分类、可视化与评估阶段失败直接抛出异常，CLI 非零退出，后续阶段停止；

@@ -1,0 +1,51 @@
+{
+  "status": "pass",
+  "scope": "Fixed video3 generation GLB component, 29frames, one native then one Torch export in fresh processes; full DA3/PVS pipeline not rerun",
+  "generation": "runtime/latency-optimization-20261018/baseline-video3/viewer/runs/b1cfa9d40e544d4cb413343d9a91bc3b",
+  "numpy": "1.26.4",
+  "torch": "2.7.1+cu126",
+  "device": "physical GPU2 GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, RTX4090D",
+  "cpu_threads": 4,
+  "tile_size": 8,
+  "batch_limit": 1024,
+  "encoder_workers": 2,
+  "production_default_changed": false,
+  "export": {
+    "native_wall_s": 66.5893224169995,
+    "torch_wall_s": 44.671010895006475,
+    "saved_s": 21.91831152199302,
+    "reduction_pct": 32.91565483236922,
+    "native_script_to_ready_s": 69.92896311300865,
+    "torch_script_to_ready_s": 48.08427071099868,
+    "includes": "LOD, first CUDA context in candidate, frame uploads, CPU projection, GPU mask/RGB/dilation, D2H, palette/PNG and final write; imports separately measured",
+    "excludes": "outer uv/interpreter startup, correctness comparison, reconstruction/matching/Viewer generation"
+  },
+  "sample": {
+    "input_points": 29696,
+    "baked_points": 29316,
+    "native_wall_s": 1.5267042579798726,
+    "torch_wall_s": 1.3416918919829186,
+    "all_corners_and_raw_rgba_exact": true
+  },
+  "delivery": {
+    "batches": 1280,
+    "rgb_uploads": 29,
+    "depth_uploads": 29,
+    "baked_surfels": 1282759,
+    "triangles": 2565518,
+    "atlas_pages": 31,
+    "glb_bytes": 121197580,
+    "document_accessor_and_decoded_rgba_exact": true,
+    "compared_decoded_texels": 128295600
+  },
+  "memory": {
+    "torch_allocator_allocated_peak_bytes": 38922240,
+    "torch_allocator_reserved_peak_bytes": 56623104,
+    "scope": "candidate process Torch allocator lifetime peak, excludes full CUDA context/driver; RSS windows differ because candidate includes validation, so no export RSS comparison"
+  },
+  "limitations": [
+    "n=1 per arm; fixed order and shared host/GPU residents; host/model file caches not flushed",
+    "full export raw tiles not all directly compared; whole GLB byte identity not checked",
+    "no optimized full-pipeline or multi-video/P95/accuracy/browser result; no production GPU backend selected"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "status": "pass",
+  "updated_utc": "2026-10-18T15:37:53.937479+00:00",
+  "python_ast_files": 4,
+  "json_files": 5,
+  "local_links_checked": 34,
+  "missing_local_links": [],
+  "git_diff_check": {
+    "returncode": 0,
+    "output": ""
+  },
+  "tests": {
+    "cpu_initial": "30 passed; independent worker",
+    "where_update_affected": "10 passed,20 deselected; independent worker",
+    "tiny_cpu_smoke": "12 cases exact; delivery worker",
+    "gpu_real_sample": "29 batches raw RGBA/corners exact",
+    "full_glb": "native and Torch exit0, all document/accessor/decoded RGBA exact"
+  },
+  "reviews": {
+    "profile_gpu_map": "PASS: metrics, timing, resources and final docs",
+    "profile_geometry_map": "PASS: numerical coverage; upload-count wording corrected"
+  },
+  "resources": "2026-10-18 23:36CST GPU2 only original resident PIDs6221/8550, free19038MiB,util0; no owned GPU process",
+  "git_publication": {
+    "previous_commit_pushed": "37019bd",
+    "reports_authorization": "Rick explicitly approved public machine-path/username/GPU UUID metadata and all commits",
+    "this_experiment": "prepared as a separate commit; final pushed revision available in origin/main history"
+  },
+  "production_default_changed": false,
+  "limits": "fixed video3 generation, n=1 per arm; no whole-GLB byte check/full raw-tile sweep, full pipeline rerun, multi-video/P95 or export RSS comparison"
+}

@@ -399,3 +399,26 @@ allocated是PyTorch活跃分配，reserved是allocator保留；同一snapshot的
 **已实现但不推广：** ground50K代理候选在同一3425675点域上10.879015→0.980081秒，但额外删除51286背景点；虽然商品0变化，平面法向与用于摆正的floor夹角87.77度，且81.7%内点靠商品保护救回，因此保留`ground_proposal_max_points=0`默认。`camera_basis`增量投影在29帧/29696样本中几何相同，但6个alpha texel变化，共同不透明RGB最大差1；保持显式实验选项。**这两项的速度未计入安全默认候选收益。**
 
 [实现、复现与定向测试](../reports/latency-optimization-20261018/README.md) · [完整pair JSON](../reports/latency-optimization-20261018/pair-summary.json) · [输出与资源验证](../reports/latency-optimization-20261018/pair-validation.json) · [状态/失败与更正](../reports/latency-optimization-20261018/progress.md) · [PyTorch后续方向](../reports/latency-optimization-20261018/pytorch_candidates.md)。未重新测优化后六视频平均、P95、热服务或外部准确率；本轮没有部署/上传/commit/push。
+
+## 13. 有界Torch采样、mask和方向延展：完整GLB组件实验
+
+2026-10-18 23时，Rick批准测试。复用§12同一video3 generation，native CPU与Torch候选各新进程、按顺序各一次，均source_world／encoder2／tile8／batch≤1024；GPU仅物理2，CPU线程4，页缓存和共享负载未隔离。这里只计已有Viewer后的GLB组件，**没有重跑DA3／matching／Viewer完整流水线**，不直接替换186.894秒。
+
+| 同次GLB组件指标 | Native CPU | Torch候选 |
+|---|---:|---:|
+| 完整export wall | 66.589322s | 44.671011s（减少32.916%） |
+| 脚本计时至GLB就绪，含import | 69.928963s | 48.084271s |
+| imports | 3.335594s | 3.413232s |
+| producer窗口，含LOD等／扣主线程写入与join | 63.420602s | 36.657004s |
+| 主线程compact／write／join | 3.166538s | 8.012695s |
+| ↳ encoding join | .877399s | 5.669511s |
+| baked／triangles／atlas页 | 1282759／2565518／31 | 相同 |
+| GLB bytes | 121197580 | 相同 |
+
+export计时包含候选首次CUDA context、frame／batch上传、CPU投影、GPU mask／RGB／延展、D2H和最终编码／写入；正确性比较在timer外。脚本ready不含外部uv／解释器启动，两脚本起点略有差异；candidate whole59.170519秒还含就绪后约11.086秒验证，不是导出耗时。producer更快后FIFO等待增加，不将join与重叠编码重复相加。
+
+候选仅在[实验实现](../reports/torch-bake-fusion-20261018/torch_bake.py)：CPU保留原source_world、affine／half-pixel浮点运算顺序；Torch显式float64四tap bilinear保持NumPy提升语义，合并mask／nearest depth／round与固定old-known四方向延展，用static-shape where避免每方向动态布尔索引。它是GPU阶段整合，不是单一融合kernel。每frame RGB／depth各一次上传，共29／29；1280batch处理1297686LOD候选，每batch最多1024，只持有当前frame GPU纹理和depth。生产默认未改。
+
+数值验证：真实29批sample共29696input／29316幸存quad，全部corners及2931600raw RGBA texel精确相等（含透明RGB／alpha）；完整GLB的document、所有accessor bufferView字节、31页／128295600decoded RGBA精确相等。未逐项比较全导出的全部raw tiles，也未检查整个GLB文件字节。CPU30项通过，where修改后受影响10项补测通过，12tiny smoke相等，两位medium独立最终结果复核PASS。
+
+Torch allocator生命周期allocated峰37.119MiB、reserved54MiB，不含完整CUDA context／driver；candidate RSS包含后续比较，native不含，不能推导export内存升降。每臂一次、单generation；未测跨视频／重复分布／P95、完整pipeline新耗时或人工准确率。原GPU2 resident保留。[完整报告与命令](../reports/torch-bake-fusion-20261018/README.md) · [汇总](../reports/torch-bake-fusion-20261018/summary.json) · [状态](../reports/torch-bake-fusion-20261018/STATUS.md)。
