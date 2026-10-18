@@ -422,3 +422,11 @@ export计时包含候选首次CUDA context、frame／batch上传、CPU投影、G
 数值验证：真实29批sample共29696input／29316幸存quad，全部corners及2931600raw RGBA texel精确相等（含透明RGB／alpha）；完整GLB的document、所有accessor bufferView字节、31页／128295600decoded RGBA精确相等。未逐项比较全导出的全部raw tiles，也未检查整个GLB文件字节。CPU30项通过，where修改后受影响10项补测通过，12tiny smoke相等，两位medium独立最终结果复核PASS。
 
 Torch allocator生命周期allocated峰37.119MiB、reserved54MiB，不含完整CUDA context／driver；candidate RSS包含后续比较，native不含，不能推导export内存升降。每臂一次、单generation；未测跨视频／重复分布／P95、完整pipeline新耗时或人工准确率。原GPU2 resident保留。[完整报告与命令](../reports/torch-bake-fusion-20261018/README.md) · [汇总](../reports/torch-bake-fusion-20261018/summary.json) · [状态](../reports/torch-bake-fusion-20261018/STATUS.md)。
+
+## 14. 后续14GB预算验证：DA3 allocator候选
+
+Rick随后允许其他流程用GPU，但限制任务峰值。本轮先按十进制14e9bytes、所有owned GPU PID同时合计验证。GPU2固定video3同29帧／504／seed42／原精度，各一次新进程：native allocator启用expandable_segments，并在模型搬GPU前限制allocator12GiB。实际task driver采样峰**12918456320bytes＝12.918GB＝12.03125GiB**，allocated峰12169374720、reserved峰12475957248bytes；15项完整DA3数组dtype／shape／值精确相等。nominal50ms、302timestamp组、实际最大间隔约68ms，未达到13.5GB预警线，无解析失败或不支持警告，worker正常退出；原GPU2 resident保留。
+
+此前15132MiB是另一轮200ms采样，只作历史参照，不计算严格配对降幅或速度收益。本次worker生命周期13.760725s、runner main10.011166s，包含提前初始化／snapshot，与§12窗口不同。fraction不约束所有context／外部CUDA分配，采样也不能证明亚采样瞬时绝不超限；当前结论仅是此video3候选采样达标。
+
+没有修改生产默认，也没有验证完整pipeline新耗时。video6历史活跃tensor峰13688829440bytes已高于该12GiB allocatorcap，不能把此配置推广所有输入；14GB／14GiB单位确认及大输入验证仍待完成。GPU bake正式接入方案已形成，当前根视频入口只有Viewer，未更改Docker或部署。[预算报告／结果与命令](../reports/gpu-latency-budget-20261018/README.md)。
