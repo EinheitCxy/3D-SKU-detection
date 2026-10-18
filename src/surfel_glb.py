@@ -164,11 +164,12 @@ def _load(read, global_id):
 
 
 def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
-                      atlas_size=2048, radius=2.0, lod=False):
+                      atlas_size=2048, radius=2.0, lod=False,
+                      projection_mode='source_world'):
     """Export selected DA3 surfels without overwriting an existing destination."""
     report, _ = _export_surfel_glb(source, output, global_id=global_id,
                                  tile_size=tile_size, atlas_size=atlas_size,
-                                 radius=radius, lod=lod)
+                                 radius=radius, lod=lod, projection_mode=projection_mode)
     return report
 
 
@@ -218,7 +219,7 @@ def _atlas_encoding(pages, image_encoder, workers):
 
 def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
                        atlas_size=2048, radius=2.0, lod=False, image_encoder=None,
-                       encoder_workers=1):
+                       encoder_workers=1, projection_mode='source_world'):
     from src.surfel_mesh import bake_surfel_pages
     from src.surfel_glb_compact import _CompactWriter, _write_glb
 
@@ -226,6 +227,8 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
     output = Path(output)
     if output.exists():
         raise FileExistsError(output)
+    if projection_mode not in ('source_world', 'camera_basis'):
+        raise ValueError('projection_mode must be source_world or camera_basis')
     _integer(tile_size, "tile_size", 1)
     _integer(atlas_size, "atlas_size", tile_size + 2)
     _integer(encoder_workers, "encoder_workers", 1)
@@ -293,7 +296,8 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
 
         page_options = {"image_format": "rgba"} if compact is not None else {}
         pages = bake_surfel_pages(**inputs, radius=radius, tile_size=tile_size,
-                                  atlas_size=atlas_size, **page_options)
+                                  atlas_size=atlas_size, projection_mode=projection_mode,
+                                  **page_options)
         with _atlas_encoding(pages, image_encoder, encoder_workers) as encoded_pages:
             for page, encoded in encoded_pages:
                 positions = np.asarray(page["positions"], dtype="<f4")
@@ -341,6 +345,7 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
                 source_bytes=None, elapsed_seconds=compact_seconds,
                 encoder_workers=encoder_workers,
                 encoder_queue_pages=encoder_workers,
+                projection_mode=projection_mode,
                 encoding_join_seconds=encoding_join_seconds,
                 main_thread_write_seconds=compact_seconds - encoding_join_seconds,
                 timing_definition="Main-thread geometry/image/final-write wall time plus encoding join; excludes overlapping worker execution",
@@ -359,6 +364,7 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             "elapsed_seconds": time.monotonic() - started - compact_seconds,
             "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
             "tile_size": tile_size, "atlas_size": atlas_size, "radius": radius,
+            "projection_mode": projection_mode,
             "appearance": "Static source-texture baking; view-dependent Gaussian blending is not reproduced"}
     return report, compact_report
 
@@ -371,7 +377,8 @@ def export_scene_glb(
     tile_size=8,
     lod=True,
     palette_colors: int | None = 128,
-    encoder_workers: int = 1,
+    encoder_workers: int = 2,
+    projection_mode: str = 'source_world',
 ):
     """Build the compact LOD delivery file from existing Viewer assets on CPU.
 
@@ -381,10 +388,14 @@ def export_scene_glb(
     compact.texture_bytes_before are None. Bake time excludes the separately
     reported main-thread compact/write/join time. With encoder_workers=2 or 4, worker
     execution overlaps baking; encoding_join_seconds measures only the FIFO wait.
-    The default remains serial until the full comparison is accepted.
+    The default uses two bounded FIFO encoder workers; four remain opt-in.
+    projection_mode='source_world' preserves native float32 operation order;
+    'camera_basis' is experimental and may change boundary alpha/RGB rounding.
     """
     from src.surfel_glb_texture import encode_atlas
 
+    if projection_mode not in ('source_world', 'camera_basis'):
+        raise ValueError('projection_mode must be source_world or camera_basis')
     output = Path(output)
     if output.exists():
         raise FileExistsError(output)
@@ -393,7 +404,7 @@ def export_scene_glb(
     bake, compact = _export_surfel_glb(
         source, output, radius=radius, tile_size=tile_size, lod=lod,
         image_encoder=partial(encode_atlas, colors=palette_colors),
-        encoder_workers=encoder_workers,
+        encoder_workers=encoder_workers, projection_mode=projection_mode,
     )
     bake.pop("output")
     return {"output": str(output), "glb_bytes": output.stat().st_size,
@@ -401,6 +412,7 @@ def export_scene_glb(
             "radius": radius, "tile_size": tile_size, "lod": lod,
             "palette_colors": palette_colors,
             "encoder_workers": encoder_workers,
+            "projection_mode": projection_mode,
             "delivery_mode": "streamed",
             "bake": bake, "compact": compact}
 

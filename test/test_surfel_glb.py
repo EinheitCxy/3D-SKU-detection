@@ -63,6 +63,44 @@ def fake_baker(monkeypatch):
     return captured
 
 
+@pytest.mark.parametrize('mode', ['source_world', 'camera_basis'])
+def test_scene_projection_mode_propagates_to_baker_and_reports(bundle, tmp_path, fake_baker, mode):
+    from src.surfel_glb import export_scene_glb
+
+    report = export_scene_glb(bundle, tmp_path / (mode+'.glb'), lod=False, projection_mode=mode)
+    assert fake_baker['projection_mode'] == mode
+    assert report['projection_mode'] == report['bake']['projection_mode'] == mode
+    assert report['compact']['projection_mode'] == mode
+
+
+def test_plain_projection_default_and_invalid_modes(bundle, tmp_path, fake_baker):
+    report = export_surfel_glb(bundle, tmp_path / 'plain.glb')
+    assert fake_baker['projection_mode'] == report['projection_mode'] == 'source_world'
+    with pytest.raises(ValueError, match='projection_mode'):
+        export_surfel_glb(bundle, tmp_path / 'invalid.glb', projection_mode='unknown')
+
+
+def test_scene_invalid_projection_creates_no_parent(bundle, tmp_path):
+    from src.surfel_glb import export_scene_glb
+
+    parent = tmp_path / 'absent' / 'nested'
+    with pytest.raises(ValueError, match='projection_mode'):
+        export_scene_glb(bundle, parent / 'scene.glb', projection_mode='unknown')
+    assert not parent.exists()
+    assert not parent.parent.exists()
+
+
+def test_scene_default_two_encoder_output(bundle, tmp_path, fake_baker):
+    from src.surfel_glb import export_scene_glb
+
+    output = tmp_path / 'default.glb'
+    report = export_scene_glb(bundle, output, lod=False)
+    assert output.stat().st_size == report['glb_bytes'] > 0
+    assert report['encoder_workers'] == report['compact']['encoder_workers'] == 2
+    assert report['compact']['encoder_queue_pages'] == 2
+    assert report['projection_mode'] == fake_baker['projection_mode'] == 'source_world'
+
+
 def parse(path):
     data = path.read_bytes()
     assert struct.unpack_from("<4sII", data) == (b"glTF", 2, len(data))
@@ -369,7 +407,7 @@ def test_parallel_atlas_fifo_is_bounded_and_byte_identical(
 
     bundle, state = three_page_bundle
     serial, parallel = tmp_path / "serial.glb", tmp_path / "parallel.glb"
-    export_scene_glb(bundle, serial, lod=False, palette_colors=palette_colors)
+    export_scene_glb(bundle, serial, lod=False, palette_colors=palette_colors, encoder_workers=1)
     count = 3 if encoder_workers == 2 else 5
     state.update(produced=0, written=0, bounded=True, pages=[], queue_limit=encoder_workers,
                  max_unwritten=0)

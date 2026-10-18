@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from src.surfel_mesh import _dilate_rgb, bake_surfel_pages
+from src.surfel_mesh import _dilate_rgb, _project_texels, bake_surfel_pages
 
 
 def fixture(n=1):
@@ -208,6 +208,77 @@ def test_zero_and_negative_camera_depth_are_skipped_without_warnings():
         page, = bake_surfel_pages(**args)
     assert page['surfel_count'] == 1
     np.testing.assert_array_equal(page['positions'][:, 2], np.ones(4))
+
+
+def test_plane_projection_reuses_center_without_translating_basis_axes():
+    # A non-axis-aligned camera, translated scene and tilted Surfel plane.
+    angle = np.float32(.47)
+    e = np.asarray([[np.cos(angle), 0, np.sin(angle), .125],
+                    [0, 1, 0, -.25],
+                    [-np.sin(angle), 0, np.cos(angle), .375]], dtype=np.float32)
+    k = np.asarray([[420, 0, 140], [0, 425, 252], [0, 0, 1]], dtype=np.float32)
+    p = np.asarray([[.03, -.02, 1.7], [-.08, .06, 2.1]], dtype=np.float32)
+    bu = np.asarray([[.003, .001, .0007], [.002, 0, -.0005]], dtype=np.float32)
+    bv = np.asarray([[0, .004, -.0003], [.001, .003, .0002]], dtype=np.float32)
+    q = (np.arange(8, dtype=np.float32) + .5) / 4 - 1
+    x, y = np.meshgrid(q, q)
+    center = p @ e[:, :3].T + e[:, 3]
+    camera_z, projected = _project_texels(center, center @ k.T, bu, bv, e, k, x, y)
+    world64 = (p.astype(np.float64)[:, None, None]
+               + x[None, ..., None] * bu.astype(np.float64)[:, None, None]
+               + y[None, ..., None] * bv.astype(np.float64)[:, None, None])
+    camera64 = world64 @ e[:, :3].astype(np.float64).T + e[:, 3]
+    np.testing.assert_allclose(camera_z, camera64[..., 2], rtol=3e-7, atol=1e-7)
+    np.testing.assert_allclose(projected, camera64 @ k.astype(np.float64).T,
+                               rtol=3e-7, atol=1e-4)
+    assert camera_z.dtype == projected.dtype == np.float32
+
+
+def test_rotated_translated_camera_preserves_exact_axis_aligned_fixture():
+    original, = bake_surfel_pages(**fixture(), image_format='rgba')
+    args = fixture()
+    rotation = np.asarray([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], dtype=np.float32)
+    translation = np.asarray([.125, -.25, .5], dtype=np.float32)
+    args['positions'] = (args['positions'] - translation) @ rotation
+    args['u'] = args['u'] @ rotation
+    args['v'] = args['v'] @ rotation
+    args['frames'][0]['extrinsic'] = np.column_stack((rotation, translation)).tolist()
+    transformed, = bake_surfel_pages(**args, image_format='rgba')
+    np.testing.assert_array_equal(transformed['image_rgba'], original['image_rgba'])
+    recovered = transformed['positions'] @ rotation.T + translation
+    np.testing.assert_array_equal(recovered, original['positions'])
+
+
+def test_projection_mode_is_explicit_and_frame_constants_are_shared(monkeypatch):
+    from src import surfel_mesh as mesh
+
+    calls = dict(constants=0, basis=0)
+    original_constants, original_basis = mesh._frame_constants, mesh._project_texels
+
+    def constants(*args):
+        calls['constants'] += 1
+        return original_constants(*args)
+
+    def basis(*args):
+        calls['basis'] += 1
+        return original_basis(*args)
+
+    monkeypatch.setattr(mesh, '_frame_constants', constants)
+    monkeypatch.setattr(mesh, '_project_texels', basis)
+    default = list(mesh.bake_surfel_pages(**fixture(5), image_format='rgba'))
+    assert calls == dict(constants=1, basis=0)  # One frame, three batches.
+    experimental = list(mesh.bake_surfel_pages(
+        **fixture(5), image_format='rgba', projection_mode='camera_basis'))
+    assert calls == dict(constants=2, basis=3)
+    for old, new in zip(default, experimental):
+        np.testing.assert_array_equal(old['positions'], new['positions'])
+        np.testing.assert_array_equal(old['image_rgba'], new['image_rgba'])
+
+
+@pytest.mark.parametrize('mode', ['unknown', None, 1])
+def test_invalid_projection_mode_is_rejected(mode):
+    with pytest.raises(ValueError, match='projection_mode'):
+        list(bake_surfel_pages(**fixture(), projection_mode=mode))
 
 
 def _roll_dilate_rgb_reference(tiles):

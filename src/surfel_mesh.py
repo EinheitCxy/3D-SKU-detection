@@ -92,11 +92,43 @@ def _dilate_rgb(tiles):
     return tiles
 
 
-def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size):
+def _frame_constants(frame, tile_size):
+    """Small source-frame constants shared by all its bounded bake batches."""
     e = np.asarray(frame['extrinsic'], dtype=np.float32)
     k = np.asarray(frame['intrinsic'], dtype=np.float32)
     inv_k = np.linalg.inv(k)
     affine = np.asarray(frame['processed_to_source'], dtype=np.float32)
+    q = (np.arange(tile_size, dtype=np.float32) + 0.5) * (2 / tile_size) - 1
+    x, y = np.meshgrid(q, q)
+    return e, k, inv_k, affine, x, y
+
+
+def _project_texels(center, projected, bu, bv, e, k, x, y):
+    """Project a bounded plane from its center and two transformed basis axes.
+
+    This distributes the existing linear transforms over the plane; float32
+    reassociation can move a threshold or RGB-rounding boundary by a few ulps.
+    Depth/source masks retain their original thresholds and comparisons.
+    """
+    camera_u = bu @ e[:3, :3].T
+    camera_v = bv @ e[:3, :3].T
+    camera_z = (center[:, None, None, 2]
+                + x[None] * camera_u[:, None, None, 2]
+                + y[None] * camera_v[:, None, None, 2])
+    projected_u, projected_v = camera_u @ k.T, camera_v @ k.T
+    projection = (projected[:, None, None]
+                  + x[None, ..., None] * projected_u[:, None, None]
+                  + y[None, ..., None] * projected_v[:, None, None])
+    return camera_z, projection
+
+
+def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size, *,
+                constants=None, projection_mode='source_world'):
+    if projection_mode not in ('source_world', 'camera_basis'):
+        raise ValueError('projection_mode must be source_world or camera_basis')
+    e, k, inv_k, affine, grid_x, grid_y = (
+        _frame_constants(frame, tile_size) if constants is None else constants
+    )
     with np.errstate(over='ignore', invalid='ignore'):
         center = p @ e[:3, :3].T + e[:3, 3]
         projected = center @ k.T
@@ -122,20 +154,24 @@ def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size):
     bu = bu * (radius * scales[:, :1])
     bv = bv * (radius * scales[:, 1:])
     bu, bv = _limit_final_diameter(bu, bv, native)
-    q = (np.arange(tile_size, dtype=np.float32) + 0.5) * (2 / tile_size) - 1
-    x, y = np.meshgrid(q, q)
-    world = p[:, None, None] + x[None, ..., None] * bu[:, None, None] + y[None, ..., None] * bv[:, None, None]
-    camera = world @ e[:3, :3].T + e[:3, 3]
-    projection = camera @ k.T
+    x, y = grid_x, grid_y
+    if projection_mode == 'source_world':
+        # Retain the original float32 operation order at visibility/RGB boundaries.
+        world = p[:, None, None] + x[None, ..., None] * bu[:, None, None] + y[None, ..., None] * bv[:, None, None]
+        camera = world @ e[:3, :3].T + e[:3, 3]
+        projection = camera @ k.T
+        camera_z = camera[..., 2]
+    else:
+        camera_z, projection = _project_texels(center, projected, bu, bv, e, k, x, y)
     processed = np.divide(projection[..., :2], projection[..., 2:3], out=np.zeros_like(projection[..., :2]), where=projection[..., 2:3] != 0)
     px, py = processed[..., 0], processed[..., 1]
-    valid = ((x * x + y * y <= 1)[None] & (camera[..., 2] > 0)
+    valid = ((x * x + y * y <= 1)[None] & (camera_z > 0)
              & (px >= 0) & (px <= w - 1) & (py >= 0) & (py <= h - 1)
              & (px >= bounds[:, None, None, 0]) & (px <= bounds[:, None, None, 1])
              & (py >= bounds[:, None, None, 2]) & (py <= bounds[:, None, None, 3]))
     ix, iy = np.floor(px + 0.5).astype(np.intp), np.floor(py + 0.5).astype(np.intp)
     sampled = depth[np.clip(iy, 0, h - 1), np.clip(ix, 0, w - 1)]
-    valid &= (sampled > 0) & (np.abs(sampled - camera[..., 2]) <= 0.015 * sampled + 0.001)
+    valid &= (sampled > 0) & (np.abs(sampled - camera_z) <= 0.015 * sampled + 0.001)
     source = processed @ affine[:2, :2].T + affine[:2, 2]
     sw, sh = frame['source_size']
     valid &= ((source[..., 0] >= 0) & (source[..., 0] <= sw - 1)
@@ -178,11 +214,13 @@ def _page(corners, tiles, count, columns, tile_size, image_format):
 
 def bake_surfel_pages(*, positions, u, v, scales, frame_indices, depths, frames,
                       read_asset, radius=2.0, tile_size=8, atlas_size=2048, batch_size=1024,
-                      image_format='png'):
-    """Yield independent bounded atlas pages in source-frame order."""
+                      image_format='png', projection_mode='source_world'):
+    """Yield pages; camera_basis is an opt-in float32-reassociated experiment."""
     tile_size, atlas_size, batch_size = map(operator.index, (tile_size, atlas_size, batch_size))
     if image_format not in ('png', 'rgba'):
         raise ValueError("image_format must be 'png' or 'rgba'")
+    if projection_mode not in ('source_world', 'camera_basis'):
+        raise ValueError('projection_mode must be source_world or camera_basis')
     if tile_size < 2 or atlas_size < tile_size + 2 or atlas_size > 2048 or batch_size < 1:
         raise ValueError('Require tile_size >= 2, tile_size + 2 <= atlas_size <= 2048, batch_size >= 1')
     if not np.isfinite(radius) or radius <= 0:
@@ -216,11 +254,13 @@ def bake_surfel_pages(*, positions, u, v, scales, frame_indices, depths, frames,
             padded[:image.shape[0], :image.shape[1]] = image
             image = padded
         frame_depth = np.asarray(depths[int(frame_id)], dtype=np.float32)
+        constants = _frame_constants(frame, tile_size)
         slots = np.flatnonzero(frame_indices == frame_id)
         for start in range(0, len(slots), batch_size):
             batch = slots[start:start + batch_size]
             corners, tiles = _bake_batch(positions[batch], u[batch], v[batch], scales[batch],
-                                         frame_depth, frame, image, radius, tile_size)
+                                         frame_depth, frame, image, radius, tile_size,
+                                         constants=constants, projection_mode=projection_mode)
             offset = 0
             while offset < len(corners):
                 take = min(capacity - filled, len(corners) - offset)
