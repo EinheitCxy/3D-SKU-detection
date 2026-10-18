@@ -24,6 +24,7 @@ from pathlib import Path
 # 本脚本位于 src/da3_runner.py，仓库根为 parents[1]
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / "src"))
 from da3_defaults import DEFAULT_PROCESS_RES, PREPROCESS_METHOD
 
 DA3_SRC = REPO_ROOT / "Depth-Anything-3" / "src"
@@ -201,7 +202,6 @@ def main(argv=None, model=None) -> None:
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
 
-    from depth_anything_3.api import DepthAnything3
     from PIL import Image
 
     input_dir = Path(args.input_dir)
@@ -226,7 +226,7 @@ def main(argv=None, model=None) -> None:
     device = torch.device(args.device)
     t0 = time.time()
     if model is None:
-        model = DepthAnything3.from_pretrained(args.model_path).to(device)
+        model = load_model(args.model_path, args.device).to(device)
     model.eval()
     logger.info(f"[da3_runner] model loaded on {device} ({time.time()-t0:.1f}s)")
 
@@ -334,9 +334,9 @@ def load_model(model_path: str, device: str):
     model_path = _validate_model_id(model_path)
     if "cuda" in device and not torch.cuda.is_available():
         raise SystemExit("CUDA device requested but unavailable; refusing CPU fallback")
-    from depth_anything_3.api import DepthAnything3
+    from da3_model_loading import load_da3_model
 
-    return DepthAnything3.from_pretrained(model_path)
+    return load_da3_model(model_path)
 
 
 def _sha256_file(path: Path) -> str:
