@@ -6,6 +6,7 @@ arrays (colors, global_ids, confidences, frame_indices) stay consistent with the
 """
 
 import logging
+from time import perf_counter
 from dataclasses import dataclass, replace
 from typing import Optional, Tuple
 
@@ -30,7 +31,7 @@ class PointCloudFilterConfig:
         10  # DBSCAN core-point threshold (keep low for sparse ground)
     )
     min_cluster_ratio: float = 0.01  # keep clusters holding >= 1% of points
-    remove_ground: bool = True  # RANSAC largest-plane removal with guardrails
+    remove_ground: bool = True  # guarded RANSAC ground-plane removal
     ground_dist_scale: float = 3.0  # plane threshold = median NN distance * scale
     ground_min_inlier_ratio: float = 0.08  # plane must explain >= 8% to count as ground
     min_remaining_ratio: float = 0.2  # never let filtering keep less than 20%
@@ -38,8 +39,14 @@ class PointCloudFilterConfig:
     # Experimental DBSCAN only: voxel edge = original median NN * scale.
     # Cluster sizes use original member counts; min_points counts proxy neighbors.
     cluster_proxy_voxel_scale: float = 0.0  # 0 disables approximation
+    # Uniform proposal only; acceptance always evaluates the complete current cloud.
+    ground_proposal_max_points: int = 0  # sampled proposals require explicit opt-in
 
     def __post_init__(self):
+        if (type(self.ground_proposal_max_points) is not int
+                or self.ground_proposal_max_points < 0
+                or 0 < self.ground_proposal_max_points < 3):
+            raise ValueError("ground_proposal_max_points must be 0 or an integer >= 3")
         if (not np.isfinite(self.cluster_proxy_voxel_scale)
                 or self.cluster_proxy_voxel_scale < 0):
             raise ValueError("cluster_proxy_voxel_scale must be finite and nonnegative")
@@ -127,6 +134,71 @@ def _cluster_labels(pcd, median_nn: float, config: PointCloudFilterConfig) -> np
     return labels[remap[members]]
 
 
+def _ground_filter_mask(pcd, median_nn: float, config: PointCloudFilterConfig):
+    """Propose a plane, then evaluate ground rules on the original working cloud.
+
+    Cap 0 is the original control, including Open3D's returned inlier indices.
+    Positive caps recompute full-domain inliers from the returned refined plane;
+    this deliberately changes the algorithm and is not an equivalent shortcut.
+    """
+    started = perf_counter()
+    points = np.asarray(pcd.points)
+    count = len(points)
+    dist = float(np.clip(median_nn * config.ground_dist_scale, 0.02, 0.15))
+    proposal = pcd
+    cap = config.ground_proposal_max_points
+    if cap and count > cap:
+        # A local generator never changes NumPy's global sampling state. Sorting
+        # the sampled indices preserves original order within the uniform subset.
+        indices = np.sort(np.random.default_rng(42).choice(count, size=cap, replace=False))
+        proposal = pcd.select_by_index(indices)
+    sample_seconds = perf_counter() - started
+    proposed_at = perf_counter()
+    plane, proposal_inliers = proposal.segment_plane(dist, ransac_n=3, num_iterations=1000)
+    proposal_seconds = perf_counter() - proposed_at
+    evaluated_at = perf_counter()
+    plane = np.asarray(plane, dtype=np.float64)
+    info = dict(input_points=count, proposal_points=len(proposal.points), threshold_m=dist,
+                proposal_inliers=len(proposal_inliers), sampling_s=sample_seconds,
+                proposal_s=proposal_seconds, evaluation_s=0.0, inliers=0,
+                support_ratio=0.0, reason="degenerate_plane", control=cap == 0,
+                proposal_seed=42 if cap and count > cap else None)
+    norm = float(np.linalg.norm(plane[:3])) if plane.shape == (4,) else 0.0
+    if plane.shape != (4,) or not np.isfinite(plane).all() or not np.isfinite(norm) or norm <= np.finfo(np.float64).eps:
+        info["evaluation_s"] = perf_counter() - evaluated_at
+        return None, info
+    if cap:
+        plane = plane / norm
+        signed = points @ plane[:3] + plane[3]
+        # Match Open3D's strict distance comparison, not <=. Its returned plane
+        # is refined after final_inliers were found; recomputation is intentional.
+        inliers = np.abs(signed) < dist
+    else:
+        # Preserve pre-refinement final_inliers for the full-cloud control.
+        inliers = np.zeros(count, dtype=bool)
+        inliers[np.asarray(proposal_inliers, dtype=np.int64)] = True
+        signed = None
+    inlier_count = int(np.count_nonzero(inliers))
+    info.update(inliers=inlier_count, support_ratio=inlier_count / count)
+    ground_mask = None
+    if inlier_count < config.ground_min_inlier_ratio * count:
+        info["reason"] = "insufficient_full_support"
+    else:
+        ground_mask = ~inliers
+        if signed is None:
+            signed = points @ plane[:3] + plane[3]
+        rest = signed[ground_mask]
+        on_pos, on_neg = int(np.count_nonzero(rest > dist)), int(np.count_nonzero(rest < -dist))
+        info.update(rest_points=len(rest), positive=on_pos, negative=on_neg)
+        if min(on_pos, on_neg) > 0.15 * len(rest):
+            ground_mask = None
+            info["reason"] = "plane_slices_subject"
+        else:
+            info["reason"] = "eligible_for_protected_apply"
+    info["evaluation_s"] = perf_counter() - evaluated_at
+    return ground_mask, info
+
+
 def filter_scene_points(
     points: np.ndarray,
     config: Optional[PointCloudFilterConfig] = None,
@@ -203,27 +275,25 @@ def filter_scene_points(
             cluster_mask[np.isin(labels, big)] = True
         apply(cluster_mask, "cluster retention")
 
-    # 3. guarded ground-plane removal: the largest plane only counts as ground
+    # 3. guarded ground-plane removal: the proposed plane only counts as ground
     # if the remaining points sit (mostly) on ONE side of it; a plane slicing
     # through the subject (mass on both sides) is rejected.
     if config.remove_ground and len(valid_idx) >= max(3, config.min_points):
-        dist = float(np.clip(median_nn * config.ground_dist_scale, 0.02, 0.15))
-        plane, inliers = pcd.segment_plane(dist, ransac_n=3, num_iterations=1000)
-        inliers = np.asarray(inliers)
-        if inliers.size >= config.ground_min_inlier_ratio * len(valid_idx):
-            ground_mask = np.ones(len(valid_idx), dtype=bool)
-            ground_mask[inliers] = False
-            normal = np.asarray(plane[:3])
-            signed = np.asarray(pcd.points) @ normal + plane[3]
-            rest = signed[ground_mask]
-            on_pos = np.sum(rest > dist)
-            on_neg = np.sum(rest < -dist)
-            if min(on_pos, on_neg) > 0.15 * rest.size:
-                logger.info(
-                    "largest plane slices through the subject; ground removal skipped"
-                )
-            else:
-                apply(ground_mask, "ground-plane removal")
+        ground_mask, ground_info = _ground_filter_mask(pcd, median_nn, config)
+        if ground_mask is not None:
+            before = len(valid_idx)
+            protected_current = protected[valid_idx]
+            ground_info["protected_rescued"] = int(np.count_nonzero(~ground_mask & protected_current))
+            stage_count = before - ground_info["inliers"] + ground_info["protected_rescued"]
+            guard_skipped = stage_count < config.min_remaining_ratio * before
+            applied_at = perf_counter()
+            apply(ground_mask, "ground-plane removal")
+            ground_info["apply_s"] = perf_counter() - applied_at
+            ground_info.update(reason="min_remaining_guard" if guard_skipped else "applied",
+                               output_points=len(valid_idx), removed_points=before - len(valid_idx))
+        else:
+            ground_info.update(output_points=len(valid_idx), removed_points=0)
+        logger.info("ground filter: %s", ground_info)
 
     logger.info(
         "point-cloud filter: %d -> %d points (median NN %.4f m)",
