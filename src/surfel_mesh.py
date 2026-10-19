@@ -122,7 +122,7 @@ def _project_texels(center, projected, bu, bv, e, k, x, y):
     return camera_z, projection
 
 
-def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size, *,
+def _prepare_batch(p, u, v, scales, depth, frame, radius, tile_size, *,
                 constants=None, projection_mode='source_world'):
     if projection_mode not in ('source_world', 'camera_basis'):
         raise ValueError('projection_mode must be source_world or camera_basis')
@@ -137,8 +137,7 @@ def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size, *,
     p, u, v, scales = (a[visible] for a in (p, u, v, scales))
     center, projected = center[visible], projected[visible]
     if not len(p):
-        return (np.empty((0, 4, 3), dtype=np.float32),
-                np.empty((0, tile_size + 2, tile_size + 2, 4), dtype=np.uint8))
+        return None
     native = np.maximum(1e-6, center[:, 2:3] * np.linalg.norm(inv_k[:, :2], axis=0))
     bu, bv = _bound_footprint(u, v, native)
     pixel = np.floor(projected[:, :2] / projected[:, 2:3] + 0.5).astype(np.intp)
@@ -164,6 +163,24 @@ def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size, *,
     else:
         camera_z, projection = _project_texels(center, projected, bu, bv, e, k, x, y)
     processed = np.divide(projection[..., :2], projection[..., 2:3], out=np.zeros_like(projection[..., :2]), where=projection[..., 2:3] != 0)
+    source = processed @ affine[:2, :2].T + affine[:2, 2]
+    area = np.linalg.norm(np.cross(bu, bv), axis=1) > 0
+    corners = np.stack((p - bu - bv, p + bu - bv, p + bu + bv, p - bu + bv), axis=1)
+    return dict(processed=processed, camera_z=camera_z, bounds=bounds,
+                source=source, area=area, corners=corners)
+
+
+def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size, *,
+                constants=None, projection_mode='source_world'):
+    constants = _frame_constants(frame, tile_size) if constants is None else constants
+    prepared = _prepare_batch(p, u, v, scales, depth, frame, radius, tile_size,
+                              constants=constants, projection_mode=projection_mode)
+    if prepared is None:
+        return np.empty((0, 4, 3), dtype=np.float32), np.empty((0, tile_size + 2, tile_size + 2, 4), dtype=np.uint8)
+    processed, camera_z, bounds, source, area, corners = (
+        prepared[key] for key in ('processed', 'camera_z', 'bounds', 'source', 'area', 'corners'))
+    x, y = constants[-2:]
+    h, w = depth.shape
     px, py = processed[..., 0], processed[..., 1]
     valid = ((x * x + y * y <= 1)[None] & (camera_z > 0)
              & (px >= 0) & (px <= w - 1) & (py >= 0) & (py <= h - 1)
@@ -172,11 +189,10 @@ def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size, *,
     ix, iy = np.floor(px + 0.5).astype(np.intp), np.floor(py + 0.5).astype(np.intp)
     sampled = depth[np.clip(iy, 0, h - 1), np.clip(ix, 0, w - 1)]
     valid &= (sampled > 0) & (np.abs(sampled - camera_z) <= 0.015 * sampled + 0.001)
-    source = processed @ affine[:2, :2].T + affine[:2, 2]
     sw, sh = frame['source_size']
     valid &= ((source[..., 0] >= 0) & (source[..., 0] <= sw - 1)
               & (source[..., 1] >= 0) & (source[..., 1] <= sh - 1))
-    valid &= (np.linalg.norm(np.cross(bu, bv), axis=1) > 0)[:, None, None]
+    valid &= area[:, None, None]
     keep = valid.any(axis=(1, 2))
     source, valid = source[keep], valid[keep]
     tw, th = frame['texture_size']
@@ -185,7 +201,7 @@ def _bake_batch(p, u, v, scales, depth, frame, image, radius, tile_size, *,
     tiles = np.zeros((keep.sum(), tile_size + 2, tile_size + 2, 4), dtype=np.uint8)
     tiles[:, 1:-1, 1:-1, :3] = np.rint(rgb).astype(np.uint8)
     tiles[:, 1:-1, 1:-1, 3] = valid * 255
-    corners = np.stack((p - bu - bv, p + bu - bv, p + bu + bv, p - bu + bv), axis=1)[keep]
+    corners = corners[keep]
     return corners, _dilate_rgb(tiles)
 
 
@@ -214,8 +230,10 @@ def _page(corners, tiles, count, columns, tile_size, image_format):
 
 def bake_surfel_pages(*, positions, u, v, scales, frame_indices, depths, frames,
                       read_asset, radius=2.0, tile_size=8, atlas_size=2048, batch_size=1024,
-                      image_format='png', projection_mode='source_world'):
+                      image_format='png', projection_mode='source_world', bake_device='cpu',
+                      bake_fixed_shape=False):
     """Yield pages; camera_basis is an opt-in float32-reassociated experiment."""
+    _validate_bake_options(bake_device, tile_size, batch_size, projection_mode, bake_fixed_shape)
     tile_size, atlas_size, batch_size = map(operator.index, (tile_size, atlas_size, batch_size))
     if image_format not in ('png', 'rgba'):
         raise ValueError("image_format must be 'png' or 'rgba'")
@@ -255,12 +273,21 @@ def bake_surfel_pages(*, positions, u, v, scales, frame_indices, depths, frames,
             image = padded
         frame_depth = np.asarray(depths[int(frame_id)], dtype=np.float32)
         constants = _frame_constants(frame, tile_size)
+        baker = None
+        if bake_device != 'cpu':
+            from src.surfel_mesh_torch import FrameBaker
+            baker = FrameBaker(frame, image, frame_depth, device=bake_device,
+                               radius=radius, tile_size=tile_size, batch_limit=batch_size,
+                               fixed_shape=bake_fixed_shape)
         slots = np.flatnonzero(frame_indices == frame_id)
         for start in range(0, len(slots), batch_size):
             batch = slots[start:start + batch_size]
-            corners, tiles = _bake_batch(positions[batch], u[batch], v[batch], scales[batch],
-                                         frame_depth, frame, image, radius, tile_size,
-                                         constants=constants, projection_mode=projection_mode)
+            if baker is None:
+                corners, tiles = _bake_batch(positions[batch], u[batch], v[batch], scales[batch],
+                                             frame_depth, frame, image, radius, tile_size,
+                                             constants=constants, projection_mode=projection_mode)
+            else:
+                corners, tiles = baker.bake(positions[batch], u[batch], v[batch], scales[batch])
             offset = 0
             while offset < len(corners):
                 take = min(capacity - filled, len(corners) - offset)
@@ -271,5 +298,20 @@ def bake_surfel_pages(*, positions, u, v, scales, frame_indices, depths, frames,
                 if filled == capacity:
                     yield _page(page_corners, page_tiles, filled, columns, tile_size, image_format)
                     filled = 0
+        del baker
     if filled:
         yield _page(page_corners, page_tiles, filled, columns, tile_size, image_format)
+
+
+def _validate_bake_options(device, tile_size, batch_size, projection_mode, fixed_shape):
+    """Validate explicit device selection without importing Torch or touching CUDA."""
+    import re
+    if not isinstance(device, str) or (device != 'cpu' and re.fullmatch(r'cuda:[0-9]+', device) is None):
+        raise ValueError("bake_device must be 'cpu' or 'cuda:N' (logical device index)")
+    if not isinstance(fixed_shape, bool):
+        raise ValueError('bake_fixed_shape must be bool')
+    if device == 'cpu':
+        if fixed_shape:
+            raise ValueError('bake_fixed_shape requires explicit CUDA bake_device')
+    elif tile_size != 8 or not 1 <= batch_size <= 1024 or projection_mode != 'source_world':
+        raise ValueError('CUDA bake requires tile_size=8, batch_size<=1024 and source_world')

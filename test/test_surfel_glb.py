@@ -90,6 +90,49 @@ def test_scene_invalid_projection_creates_no_parent(bundle, tmp_path):
     assert not parent.parent.exists()
 
 
+@pytest.mark.parametrize('fixed_shape', [False, True])
+def test_scene_device_propagates_without_initializing_cuda(bundle, tmp_path, fake_baker, fixed_shape):
+    from src.surfel_glb import export_scene_glb
+
+    report = export_scene_glb(bundle, tmp_path / 'gpu.glb', lod=False,
+                              bake_device='cuda:0', bake_fixed_shape=fixed_shape,
+                              encoder_workers=4)
+    assert fake_baker['bake_device'] == report['bake_device'] == 'cuda:0'
+    assert fake_baker['bake_fixed_shape'] == report['bake_fixed_shape'] == fixed_shape
+    assert report['compact']['encoder_workers'] == 4
+
+
+@pytest.mark.parametrize('options', [dict(bake_device='auto'),
+    dict(bake_device='cuda:0', tile_size=4),
+    dict(bake_device='cuda:0', projection_mode='camera_basis'),
+    dict(bake_fixed_shape=True)])
+def test_scene_invalid_device_creates_no_parent(bundle, tmp_path, options):
+    from src.surfel_glb import export_scene_glb
+
+    parent = tmp_path / 'absent'
+    with pytest.raises(ValueError):
+        export_scene_glb(bundle, parent / 'invalid.glb', **options)
+    assert not parent.exists()
+
+
+def test_compact_delivery_current_is_fixed_and_exports(bundle, tmp_path, fake_baker, capsys):
+    from src.surfel_glb_delivery import current_generation, main
+
+    root = tmp_path / 'viewer'
+    (root / 'runs').mkdir(parents=True)
+    destination = root / 'runs' / 'fixed'
+    bundle.rename(destination)
+    (root / 'CURRENT').write_text(json.dumps({'run_id': 'fixed'}))
+    assert current_generation(root) == destination
+    output = tmp_path / 'delivery.glb'
+    main(['--viewer-root', str(root), '--output', str(output), '--encoder-workers', '4'])
+    assert output.exists()
+    assert json.loads(capsys.readouterr().out)['bake_device'] == 'cpu'
+    (root / 'CURRENT').write_text(json.dumps({'run_id': '..'}))
+    with pytest.raises(ValueError):
+        current_generation(root)
+
+
 def test_scene_default_two_encoder_output(bundle, tmp_path, fake_baker):
     from src.surfel_glb import export_scene_glb
 
@@ -466,8 +509,9 @@ def test_parallel_atlas_fifo_is_bounded_and_byte_identical(
 
 
 @pytest.mark.parametrize("stage", ["produce", "encode", "geometry", "image", "write"])
+@pytest.mark.parametrize("encoder_workers", [1, 2])
 def test_parallel_atlas_failure_propagates_and_drains(
-    three_page_bundle, tmp_path, monkeypatch, stage
+    three_page_bundle, tmp_path, monkeypatch, stage, encoder_workers
 ):
     from src import surfel_glb_texture, surfel_mesh
     from src.surfel_glb import export_scene_glb
@@ -476,7 +520,7 @@ def test_parallel_atlas_failure_propagates_and_drains(
     bundle, state = three_page_bundle
     original_bake = surfel_mesh.bake_surfel_pages
     original_encode = surfel_glb_texture.encode_atlas
-    started, finished = [], []
+    started, finished, producer_closed = [], [], []
     failure = RuntimeError("atlas " + stage + " failed")
 
     def encode(rgba, colors):
@@ -490,10 +534,13 @@ def test_parallel_atlas_failure_propagates_and_drains(
             finished.append(index)
 
     def bake(**kwargs):
-        for index, page in enumerate(original_bake(**kwargs)):
-            if stage == "produce" and index == 1:
-                raise failure
-            yield page
+        try:
+            for index, page in enumerate(original_bake(**kwargs)):
+                if stage == "produce" and index == 1:
+                    raise failure
+                yield page
+        finally:
+            producer_closed.append(True)
 
     def fail(*args, **kwargs):
         if stage == "write":
@@ -508,8 +555,10 @@ def test_parallel_atlas_failure_propagates_and_drains(
         monkeypatch.setattr("src.surfel_glb_compact.shutil.copyfileobj", fail)
     output = tmp_path / "delivery" / "scene.glb"
     with pytest.raises(RuntimeError) as caught:
-        export_scene_glb(bundle, output, lod=False, encoder_workers=2)
+        export_scene_glb(bundle, output, lod=False, encoder_workers=encoder_workers)
     assert caught.value is failure
+    assert caught.value.__traceback__ is not None  # Keep the failed export alive.
+    assert producer_closed == [True]  # Cleanup cannot depend on traceback GC.
     assert sorted(started) == sorted(finished)  # No worker survives the failing export.
     assert list(output.parent.iterdir()) == []
     if stage != "write":

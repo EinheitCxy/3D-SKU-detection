@@ -177,7 +177,12 @@ def export_surfel_glb(source, output, *, global_id=None, tile_size=8,
 def _atlas_encoding(pages, image_encoder, workers):
     """Keep at most workers pages (including running encodes), consumed FIFO."""
     if workers == 1:
-        yield ((page, None) for page in pages)
+        iterator = ((page, None) for page in pages)
+        try:
+            yield iterator
+        finally:
+            iterator.close()
+            pages.close()
         return
     pending = deque()
     executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="surfel-atlas")
@@ -219,10 +224,12 @@ def _atlas_encoding(pages, image_encoder, workers):
 
 def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
                        atlas_size=2048, radius=2.0, lod=False, image_encoder=None,
-                       encoder_workers=1, projection_mode='source_world'):
-    from src.surfel_mesh import bake_surfel_pages
+                       encoder_workers=1, projection_mode='source_world',
+                       bake_device='cpu', bake_fixed_shape=False):
+    from src.surfel_mesh import bake_surfel_pages, _validate_bake_options
     from src.surfel_glb_compact import _CompactWriter, _write_glb
 
+    _validate_bake_options(bake_device, tile_size, 1024, projection_mode, bake_fixed_shape)
     started = time.monotonic()
     output = Path(output)
     if output.exists():
@@ -297,6 +304,7 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
         page_options = {"image_format": "rgba"} if compact is not None else {}
         pages = bake_surfel_pages(**inputs, radius=radius, tile_size=tile_size,
                                   atlas_size=atlas_size, projection_mode=projection_mode,
+                                  bake_device=bake_device, bake_fixed_shape=bake_fixed_shape,
                                   **page_options)
         with _atlas_encoding(pages, image_encoder, encoder_workers) as encoded_pages:
             for page, encoded in encoded_pages:
@@ -344,6 +352,7 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             compact_report.update(
                 source_bytes=None, elapsed_seconds=compact_seconds,
                 encoder_workers=encoder_workers,
+                bake_device=bake_device, bake_fixed_shape=bake_fixed_shape,
                 encoder_queue_pages=encoder_workers,
                 projection_mode=projection_mode,
                 encoding_join_seconds=encoding_join_seconds,
@@ -361,6 +370,8 @@ def _export_surfel_glb(source, output, *, global_id=None, tile_size=8,
             "skipped_surfel_count": selected_count - baked_count,
             "triangle_count": triangle_count,
             "atlas_pages": page_count, "glb_bytes": length,
+            "bake_device": bake_device, "bake_fixed_shape": bake_fixed_shape,
+            "bake_batch_limit": 1024,
             "elapsed_seconds": time.monotonic() - started - compact_seconds,
             "timing_definition": "Export wall time excluding disjoint main-thread compact/write/join intervals; includes baking overlapped by encoding workers",
             "tile_size": tile_size, "atlas_size": atlas_size, "radius": radius,
@@ -379,8 +390,15 @@ def export_scene_glb(
     palette_colors: int | None = 128,
     encoder_workers: int = 2,
     projection_mode: str = 'source_world',
+    bake_device: str = 'cpu',
+    bake_fixed_shape: bool = False,
 ):
-    """Build the compact LOD delivery file from existing Viewer assets on CPU.
+    """Build the compact LOD delivery file from existing Viewer assets.
+
+    CPU is the default and never imports the Torch baker or initializes CUDA.
+    Explicit cuda:N uses bounded
+    Torch sampling with source_world CPU projection; tile_size must remain 8.
+    bake_fixed_shape selects the experimental non-compacting device path.
 
     Atlas pages are quantized and encoded once, directly into the final BIN
     stream. No full-precision GLB or intermediate PNG is generated.
@@ -393,6 +411,9 @@ def export_scene_glb(
     'camera_basis' is experimental and may change boundary alpha/RGB rounding.
     """
     from src.surfel_glb_texture import encode_atlas
+    from src.surfel_mesh import _validate_bake_options
+
+    _validate_bake_options(bake_device, tile_size, 1024, projection_mode, bake_fixed_shape)
 
     if projection_mode not in ('source_world', 'camera_basis'):
         raise ValueError('projection_mode must be source_world or camera_basis')
@@ -405,12 +426,14 @@ def export_scene_glb(
         source, output, radius=radius, tile_size=tile_size, lod=lod,
         image_encoder=partial(encode_atlas, colors=palette_colors),
         encoder_workers=encoder_workers, projection_mode=projection_mode,
+        bake_device=bake_device, bake_fixed_shape=bake_fixed_shape,
     )
     bake.pop("output")
     return {"output": str(output), "glb_bytes": output.stat().st_size,
             "elapsed_seconds": time.monotonic() - started,
             "radius": radius, "tile_size": tile_size, "lod": lod,
             "palette_colors": palette_colors,
+            "bake_device": bake_device, "bake_fixed_shape": bake_fixed_shape,
             "encoder_workers": encoder_workers,
             "projection_mode": projection_mode,
             "delivery_mode": "streamed",
