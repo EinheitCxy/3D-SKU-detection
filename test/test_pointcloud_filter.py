@@ -245,13 +245,14 @@ def test_prepared_raw_sor_matches_original_float64_base_order(monkeypatch):
     assert calls["sor"] == 1
 
 
-def test_prepared_raw_sor_matches_open3d_base_cloud():
+@pytest.mark.parametrize("shared_neighbors", [False, True])
+def test_prepared_raw_sor_matches_open3d_base_cloud(shared_neighbors):
     import open3d as o3d
 
     points = np.random.default_rng(901).normal(size=(128, 3)).astype(np.float32)
     points = np.vstack([points, [0, 0, 0], [np.nan, 0, 0]])
     config = PointCloudFilterConfig(min_points=10, remove_ground=False)
-    prepared = prepare_scene_filter(points, config)
+    prepared = prepare_scene_filter(points, config, shared_neighbors=shared_neighbors)
     cloud = o3d.geometry.PointCloud()
     base = np.isfinite(points).all(axis=1) & np.any(points != 0, axis=1)
     cloud.points = o3d.utility.Vector3dVector(points[base].astype(np.float64))
@@ -261,6 +262,32 @@ def test_prepared_raw_sor_matches_open3d_base_cloud():
     assert np.array_equal(prepared.base_mask, base)
     assert np.array_equal(prepared.sor_mask, expected)
     assert prepared.median_nn == np.median(cloud.compute_nearest_neighbor_distance())
+    assert not prepared.points.flags.writeable
+    assert not prepared.base_mask.flags.writeable
+    assert not prepared.sor_mask.flags.writeable
+    assert np.array_equal(np.asarray(prepared.pcd.points), points[base])
+
+
+@pytest.mark.parametrize("points, config, has_cloud", [
+    (np.asarray([[1., 1., 1.], [2., 1., 1.]]),
+     PointCloudFilterConfig(enabled=False), False),
+    (np.asarray([[1., 1., 1.], [2., 1., 1.]]),
+     PointCloudFilterConfig(min_points=3), False),
+    (np.ones((4, 3)), PointCloudFilterConfig(min_points=1), True),
+    (np.asarray([[1., 1., 1.], [2., 1., 1.], [4., 1., 1.]]),
+     PointCloudFilterConfig(min_points=1), True),
+])
+def test_shared_prepared_preserves_original_sor_skip_contract(points, config, has_cloud):
+    original = prepare_scene_filter(points, config)
+    shared = prepare_scene_filter(points, config, shared_neighbors=True)
+    assert (original.pcd is not None) == (shared.pcd is not None) == has_cloud
+    assert original.sor_mask is shared.sor_mask is None
+    assert original.median_nn == shared.median_nn
+    np.testing.assert_array_equal(original.base_mask, shared.base_mask)
+    np.testing.assert_array_equal(
+        filter_scene_points(points, config, prepared=original),
+        filter_scene_points(points, config, prepared=shared),
+    )
 
 
 def test_proxy_cluster_ratio_counts_original_members(monkeypatch):

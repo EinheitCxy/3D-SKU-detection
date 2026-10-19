@@ -77,11 +77,14 @@ class PreparedSceneFilter:
 
 def prepare_scene_filter(
     points: np.ndarray, config: Optional[PointCloudFilterConfig] = None,
+    *, shared_neighbors: bool = False,
 ) -> PreparedSceneFilter:
     """Prepare original float64/base-domain NN and raw SOR, without labels.
 
     No protection, 20% guard, clustering or ground removal runs here. A missing
     SOR mask means that geometry was disabled, degenerate or too small for SOR.
+    ``shared_neighbors=True`` selects the single-index SciPy path used by Viewer
+    preparation. This utility's default retains explicit native Open3D control.
     """
     config = replace(config or PointCloudFilterConfig())
     points = np.array(points, dtype=np.float64, copy=True).reshape(-1, 3)
@@ -94,14 +97,25 @@ def prepare_scene_filter(
             raise ImportError("Open3D required: pip install open3d")
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points[base_mask])
-        median_nn = _median_nn_distance(pcd)
-        if median_nn > 0 and int(base_mask.sum()) > config.sor_nb_neighbors:
-            _, ind = pcd.remove_statistical_outlier(
-                config.sor_nb_neighbors, config.sor_std_ratio
+        if shared_neighbors:
+            from utils.pointcloud_neighbors import prepare_neighbor_statistics
+
+            statistics = prepare_neighbor_statistics(
+                np.asarray(pcd.points), k=config.sor_nb_neighbors,
+                std_ratio=config.sor_std_ratio, workers=4,
             )
-            sor_mask = np.zeros(int(base_mask.sum()), dtype=bool)
-            sor_mask[np.asarray(ind, dtype=np.int64)] = True
-            sor_mask.flags.writeable = False
+            median_nn = statistics.median_nn
+            if median_nn > 0 and int(base_mask.sum()) > config.sor_nb_neighbors:
+                sor_mask = statistics.sor_mask
+        else:
+            median_nn = _median_nn_distance(pcd)
+            if median_nn > 0 and int(base_mask.sum()) > config.sor_nb_neighbors:
+                _, ind = pcd.remove_statistical_outlier(
+                    config.sor_nb_neighbors, config.sor_std_ratio
+                )
+                sor_mask = np.zeros(int(base_mask.sum()), dtype=bool)
+                sor_mask[np.asarray(ind, dtype=np.int64)] = True
+                sor_mask.flags.writeable = False
     points.flags.writeable = False
     base_mask.flags.writeable = False
     return PreparedSceneFilter(points, config, base_mask, median_nn, sor_mask, pcd)

@@ -298,12 +298,16 @@ def _surfel_cache(exporter_inputs):
     np.savez_compressed(path, **cache)
 
 
-def test_prepared_surfel_matches_serial_and_prepares_once(exporter_inputs, monkeypatch):
+@pytest.mark.parametrize("filter_enabled", [False, True])
+def test_prepared_surfel_matches_serial_and_prepares_once(exporter_inputs, monkeypatch, filter_enabled):
     import src.surfel_export as surfels
 
     _surfel_cache(exporter_inputs)
     common = dict(exporter_inputs, surfel_texture_edge=256,
-                  filter_config=PointCloudFilterConfig(enabled=False),
+                  filter_config=PointCloudFilterConfig(
+                      enabled=filter_enabled, min_points=1, sor_nb_neighbors=1,
+                      keep_main_clusters=False, remove_ground=False,
+                  ),
                   tuning=ViewerExportTuning(single_owner=True))
     serial = export_web_viewer_bundle(**common)
     calls = {"grid": 0, "jpeg": 0}

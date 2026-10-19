@@ -118,7 +118,10 @@ def prepare_web_viewer_geometry(
         prepare_filter = False
         logger.info("Viewer early background candidates: deferring scene filter until labels")
     scene_filter = (
-        prepare_scene_filter(cache["points"].reshape(-1, 3)[valid], filter_config)
+        prepare_scene_filter(
+            cache["points"].reshape(-1, 3)[valid], filter_config,
+            shared_neighbors=True,
+        )
         if prepare_filter else None
     )
     textures = prepare_surfel_textures(cache, cache_path, images_dir, surfel_texture_edge)
