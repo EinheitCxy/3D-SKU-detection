@@ -4,7 +4,7 @@
 
 详细的核心契约见 [docs/3d_core.md](docs/3d_core.md)，统一 profiling 口径与阶段细分见 [docs/profiling_breakdown.md](docs/profiling_breakdown.md)。
 
-当前 profiling 使用 GPU2 上六个视频，从帧就绪计到 Viewer ZIP 与 GLB 落盘；具体输入、边界、重叠和显存口径只在统一文档维护。本轮video3优化的实现、对照与推广决定见[优化记录](reports/latency-optimization-20261018/README.md)。`perf/benchmark.py` 可用于其他数据集诊断，其结果不并入该基线。
+当前 profiling 保留 GPU2 六视频均值，并新增video3正式GPU交付的同协议对照；从帧就绪计到 Viewer ZIP 与 GLB 落盘，具体边界、重叠和显存口径只在统一文档维护。最新八项实现、实验及采用决定见[本轮优化记录](reports/gpu-acceleration-20261019/README.md)，上一轮见[历史优化记录](reports/latency-optimization-20261018/README.md)。`perf/benchmark.py` 可用于其他数据集诊断，其结果不并入该基线。
 
 后续[有界Torch烘焙实验](reports/torch-bake-fusion-20261018/README.md)在固定video3 generation上将完整GLB导出从66.589降到44.671秒，交付几何与解码RGBA相等；仅为单次组件对照，生产默认仍为CPU baker。
 
@@ -371,3 +371,13 @@ Docker `run_mapping_request` 继续默认启用此选项。请求的必要临时
 ### DA3 位姿与深度尺度优化（实验）
 
 新增独立命令 `uv run python -m src.da3_geometry_refinement --cache Output/<数据集名>/da3_cache/predictions.npz --output-root runtime/refined-output --mode pose`。`pose-scale` 模式同时优化逐帧正深度尺度。输出根目录必须是新目录；只有留出几何验证通过才发布缓存，之后以同一 `--save_root` 重新运行完整匹配与 Viewer 导出。生产和 Docker 默认不变。参数、验收与限制见 [3D core 文档](docs/3d_core.md#可选的-da3-几何优化模块)。
+
+## 显式 GPU GLB 导出
+
+已有 Viewer generation 可以通过 `uv run python -m src.surfel_glb_delivery --generation <generation目录> --output <新scene.glb> --bake-device cuda:0 --encoder-workers 4 --bake-fixed-shape` 使用 GPU 采样、mask 和 RGB 延展；设备编号按 `CUDA_VISIBLE_DEVICES` 隔离后的逻辑编号解释。CPU 默认路径仍可用，CUDA 故障直接报错，不自动换设备或回退。图像、f16几何、LOD、alpha、palette 和 Surfel 长边规则保持原样。
+
+视频入口 `scripts/3d/pipeline/video_to_viewer.sh` 支持可选 `--glb-output`、`--glb-bake-device cuda:0`、`--glb-encoder-workers 4` 和 `--glb-fixed-shape`；指定输出后才在 Viewer 成功生成后导出 GLB，原调用默认不额外生成文件。GPU预算按任务同时占用与原峰值比较，不要求先降低DA3显存。
+
+默认Viewer准备线程现复用一次SciPy KNN查询，同时得到原始NN间距与SOR mask，商品保护、20% guard、DBSCAN和ground仍由原过滤实现执行。PVS也默认只跳checkpoint完整覆盖的大weight随机初始化。video3/6完整原始点域对照及video3交付输出均通过；GPU GLB仍需显式指定上述参数。
+
+本轮已验证默认与历史实验选项的视觉影响区别，见[发布审查](reports/gpu-acceleration-20261019/RELEASE_REVIEW.md)。较慢的process隔离和未复现原RANSAC的GPU评分保留本地实验，不在本次main发布接口中。

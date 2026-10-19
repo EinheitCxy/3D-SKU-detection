@@ -143,6 +143,10 @@ v2 cache 的每个 payload 是 processed DA3 grid 上 `(object_count, height, wi
 
 PVS 使用现有 SAM3.1 multiplex 权重的 native tracker / interactive neck；整图 encoder 为 1008×1008，固定 batch=4，FP32 weights / BF16 autocast，只支持 CUDA。框为输入 processed 图像空间 XYXY，输出恢复到该图像尺寸并按 round 边界裁框。保留原生 presence/stability selection，不以空 mask 重试或填满 bbox。matching 与 warmup 共用同一 PVS model cache。
 
+PVS loader默认跳过checkpoint将覆盖的、至少1048576元素的Linear/Conv weight随机填充及对应ViT重复trunc-normal；保留token、bias、norm、buffer和普通CUDA位置cache。构造后按真实Parameter身份/别名及key/shape/dtype审核，每个被跳过weight都必须被完整strict load覆盖，否则直接报错。显式`skip_random_init=False`用于原生对照。真实checkpoint与video3完整输出对照见[八项加速记录](../reports/gpu-acceleration-20261019/README.md)；Matching同时复用同一次投影的bbox hit counts，采样RNG、候选顺序和0.4m商品进深判定不变。
+
+Viewer默认准备线程在同一完整float64 base点域建一个SciPy cKDTree，分块查询包含自身的KNN20，同时计算第二邻居距离和SOR均距；保留顺序归约、样本标准差、零距离及严格阈值。原商品保护、20% guard、DBSCAN和ground未改。底层`prepare_scene_filter(..., shared_neighbors=False)`保留原Open3D显式控制。具体范围与两视频对照见同一加速记录。
+
 PVS cache schema 为 `sam31_pvs_processed_mask_cache_v1`，与旧 self-exemplar schema 不兼容；默认新目录保留旧缓存。面积报告同步使用 `da3_pvs_ground_footprint_union` 与 `mask_contract.source=sam3_pvs`，不能把 mask 来源改变当作面积准确率提升。
 
 面积入口使用统一默认目录 `sam3_mask_cache_sam31_pvs/v2`，也接收 `--sam3_mask_cache_root` 指定 matching 实际发布的目录；显式目录不完整时直接拒绝，不尝试默认目录。DA3 输入及报告中的 cache schema 均为 3。

@@ -19,6 +19,18 @@ uv run --no-sync python -m src.surfel_glb \
   path/to/viewer_bundle.zip Output/product-3.glb --global-id 3
 ```
 
+## 显式 CUDA compact 导出
+
+```bash
+CUDA_VISIBLE_DEVICES=2 uv run python -m src.surfel_glb_delivery \
+  --generation path/to/generation --output Output/gpu.glb \
+  --bake-device cuda:0 --encoder-workers 4 --bake-fixed-shape
+```
+
+也可用 `--viewer-root path/to/viewer`，启动时只解析一次 `CURRENT`。这是 compact 交付入口；既有 plain GLB CLI 保留原行为。Python 接口为 `export_scene_glb(..., bake_device='cuda:0', encoder_workers=4, bake_fixed_shape=True)`。默认仍为 CPU、encoder2；CUDA 必须显式选择，错误直接传播。CUDA 路径仅支持 `source_world`、tile8 和至多1024个 Surfel 一批；CPU 投影准备、f16/JPEG 边界、LOD、palette、深度/alpha 判定及长边限制保留。
+
+video3 完整交付及 video6 固定 generation 已验证几何、全部解码 RGBA 一致。GPU producer 变快后，video6 encoder2→4 为71.513→62.283秒，fixed shape 进一步到59.734秒；这是各一次的组件结果，不能承诺任意视频相同收益。视频脚本接收 `--glb-output`、`--glb-bake-device`、`--glb-encoder-workers` 和 `--glb-fixed-shape`，只有指定 GLB 输出才执行。完整数据、采用边界与视觉影响审查见[本轮报告](../reports/gpu-acceleration-20261019/README.md)及[Git审查](../reports/gpu-acceleration-20261019/RELEASE_REVIEW.md)。
+
 ## 文件内容与效果
 
 每个有效 Surfel 展开为两个三角面；原照片投影颜色、圆盘轮廓及来源深度裁剪被烘焙到内嵌 RGBA PNG atlas。材质使用 `alphaMode: MASK`、双面和 `KHR_materials_unlit`，保留照片自身颜色。场景方向来自原 manifest 的 `world_to_view`。

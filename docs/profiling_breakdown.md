@@ -1,6 +1,8 @@
-# 最新 profiling：GPU2 / 多视频 / 2026-10-18
+# 最新 profiling：GPU2 / 多视频与GPU加速对照 / 2026-10-19
 
-本文件是项目唯一当前 profiling 入口。**最新优化前后对照见第12节：GPU2/video3完整253.139→186.894秒，最终GLB内容完全一致。** 第1–11节保留修改前`bf9bde8`的六视频测量：video1/3/4/5/6/7，共161帧/6508检测，完整平均229.251秒、Viewer119.266秒、ZIP127.242秒；该批内部数字均来自各视频同一次完整运行。后续优化已修改本地源码与默认atlas worker数，但没有修改服务或发布。新单视频对照不替换旧六视频均值。
+2026-10-19约束更正：保持原有峰值、效果并缩短实际交付，其他模块可使用GPU；此前14GB总门槛/12GiB allocator是历史实验条件，不再作为前置目标。三位medium agents的剩余热点与具体方案见[下一轮加速调查](../reports/gpu-acceleration-next-20261019.md)。下文所有实测数字保留，不将新候选当作已实现收益。
+
+本文件是项目唯一当前 profiling 入口。**最新同协议video3对照见第16节：帧就绪至GLB从183.533降到137.643秒，显存采样峰同为15132MiB，输出精确一致。** 第12节保留上一轮253.139→186.894秒的不同插桩协议，不能与新数字直接相减。第1–11节保留修改前`bf9bde8`的六视频测量：video1/3/4/5/6/7，共161帧/6508检测，完整平均229.251秒、Viewer119.266秒、ZIP127.242秒；该批内部数字均来自各视频同一次完整运行。后续优化已修改源码与默认atlas worker数，本轮通过项按第16节及发布审查纳入main；服务尚未部署。新单视频对照不替换旧六视频均值。
 
 ## 1. 六项指标的平均值与逐视频结果
 
@@ -454,3 +456,41 @@ GPU任务driver采样峰**476053504bytes＝0.476054GB（454MiB）**，Torch allo
 同轮DA3独立测试保留完整48帧／504／seed42／原精度，native expandable实际启用，在depth head conv2d申请360MiB时触及12GiB allocatorcap而OOM，worker退出1，未产生完整结果／未比较15数组。allocated峰12498550272／reserved12641632256bytes、driver采样峰13021216768bytes＝13.021GB；298组／最大gap55ms，无监测停止线触发。整卡当时仍约6.46GiB空闲，故失败来自本候选cap，不能说video6完整推理符合14GB，也不能据此排除所有其他保质量方案。
 
 两个medium agents独立只读复核输入、监控、DA3失败及最终GLB结果。测试进程全部退出，GPU2只剩原6221／8550resident。生产默认／Docker未改，无全流水线新均值或P95；实验阶段未commit/push，后续本地提交见报告JOURNAL。[实测报告](../reports/gpu-latency-budget-20261018/README.md) · [video6汇总](../reports/gpu-latency-budget-20261018/video6-summary.json) · [GPU完整结果](../reports/gpu-latency-budget-20261018/video6-bake-result.json) · [DA3失败](../reports/gpu-latency-budget-20261018/video6-allocator-result.json)。
+
+## 16. 八项方案实施：正式GPU交付与PVS，2026-10-19
+
+三个medium workers并行实现互不重叠模块，coordinator串行测量。GPU2/RTX4090D、同29帧video3、CPU线程环境4、原精度/LOD/palette/Surfel长边规则；使用同一现有test-env和本地权重，无新DA3 allocator cap。三臂各一个新进程、固定先control、再PVS/GPU、再加共享KNN，主机和OS缓存未隔离，n=1。输入已有检测/分类，范围是**帧就绪后的DA3、Matching、Viewer、ZIP、GLB**，不含检测、分类、COS或浏览器加载。
+
+| 同协议区间 | Control：native PVS、CPU2 | PVS skip、GPU fixed4 | 再加共享KNN，最终采用 |
+|---|---:|---:|---:|
+| 帧就绪至GLB就绪 | 183.533016s | 148.058645s | **137.642563s** |
+| Viewer累计 | 110.842337s | 104.833556s | **93.935496s** |
+| ZIP累计 | 113.674038s | 107.686906s | **96.634042s** |
+| GLB导出自身 | 69.858972s | 40.371731s | 41.008508s |
+| imports/setup | 6.519626s | 6.376391s | 6.196052s |
+| DA3父阶段 | 14.110161s | 14.068722s | 13.831491s |
+| Matching父阶段 | 27.806182s | 22.489850s | **11.986647s** |
+| ↳ PVS load，嵌套且受准备线程调度影响 | 18.532415s | 2.169143s | 2.099707s |
+| Viewer几何准备，并发支线 | 13.874693s | 14.490779s | 10.570518s |
+| Dedup | 0.135418s | 0.135620s | 0.129918s |
+| 最终Viewer export，含方向/过滤等 | 62.250569s | 61.740246s | 61.770907s |
+| ↳ 显示方向 | 3.240858s | 3.197631s | 3.151768s |
+| GLB producer窗口，扣main compact/write/join | 66.642290s | 37.219092s | 37.837625s |
+| GLB main compact/write/join | 3.210189s | 3.145284s | 3.163429s |
+| ↳ encoding join | 0.906234s | 0.749675s | 0.741240s |
+| 任务driver采样峰 | 15132MiB | 15132MiB | 15132MiB |
+| Viewer点 / LOD候选 / baked surfels | 2402589 / 1297686 / 1282759 | 相同 | 相同 |
+
+最终组合节省45.890453秒（25.004%）；Viewer提前16.906841秒，GLB自身节省28.850464秒。共享KNN单变量在中间组基础上又省10.416082秒，Matching从22.490降至11.987秒，收益还包括并发互阻减少。三臂均含已实现的hit-count复用，因此没有给它单独归因提速。PVS load差额不能全当作关键路径节省；几何准备与Matching重叠，子项不能与父项相加。三臂ground仍使用原Open3D完整域，均因support不足不删除；没有据此跳过它。
+
+15项DA3数组、8份Viewer二进制、manifest、objects和global mapping均精确相同；GLB关联、所有accessors、31页128295600个decoded RGBA texels一致，alpha/RGB差异0。正确性比较在GLB就绪后另外花11.438/11.949/11.613秒，不计入上述交付时间。driver对所有本任务GPU PID按同一timestamp合计，100ms采样；峰值均来自DA3子进程，不是瞬时硬保证。已有GPU2 residents单列保留。
+
+正式API为`export_scene_glb(..., bake_device='cuda:0', encoder_workers=4, bake_fixed_shape=True)`，共享原CPU source_world准备和唯一frame/batch/page循环，每frame上传一次RGB/depth，batch≤1024，设备端保留float64双线性与原alpha/延展语义。CLI与可选视频入口已接线，CPU仍显式默认可用，不引入自动设备选择或fallback。PVS候选仅跳已审核覆盖的大weight随机填充，token/bias/norm/buffer/cache和strict load保留。
+
+独立video6新GPU三臂：dynamic2为71.513331秒，dynamic4为62.282952秒，fixed4为59.734091秒；三者与CPU参考完整几何及49页RGBA均exact，driver采样峰各456MiB。本轮未重跑CPU控制，不用旧CPU100.498秒计算新配对收益。
+
+NN/SOR进程隔离在独立同输入重叠实验中，双方就绪从thread14.983108秒变成process20.370611秒，10项输出exact；该pair使用共享KNN接线之前的原Open3D统计，process不作为默认。共享KNN则在video3/6原raw域4092480/6773760点分别9.572414→6.403446、14.961355→10.804380秒，完整NN距离、median及raw SOR mask exact；加上上述完整交付对照后，默认Viewer准备线程显式采用一次cKDTree查询，保护、guard、DBSCAN及ground保持原实现。
+
+DBSCAN原生去progress锁真实域只省0.347496秒，不替换全局Open3D。全域GPU plane scorer固定候选counts/mask/refine通过但RMSE不exact、原RANSAC RNG/早停未复现，保留实验；其Python/NumPy评分控制时间不能冒充原Open3D成本。细节、采用边界与最小测试见[八项实现与验证](../reports/gpu-acceleration-20261019/README.md)及[标量汇总](../reports/gpu-acceleration-20261019/summary.json)。
+
+首个control实验遗漏DA3子进程`--seed42`，虽然父进程已seed，仍出现depth/scale和Viewer差异；失败记录完整保留且排除速度结论。修正研究probe后重新执行上述两臂，未改变生产重建算术或放宽比较。当前仍未测新多视频均值/P95或浏览器人工画质，未部署服务。
