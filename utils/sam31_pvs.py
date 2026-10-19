@@ -1,6 +1,8 @@
 """Native SAM3.1 box-prompt segmentation shared by matching and experiments."""
 
 from pathlib import Path
+from contextlib import nullcontext
+from importlib import import_module
 import time
 
 import numpy as np
@@ -10,16 +12,28 @@ import torch.nn.functional as F
 from torchvision.transforms import v2
 
 from .sam3_utils import clip_mask_to_bbox
+from .sam31_initialization import audit_skipped_weights, skip_large_weight_initialization
 
 
-def load_model(checkpoint: Path, device: str = "cuda"):
-    """Load only the native tracker and its shared vision backbone."""
+def load_model(checkpoint: Path, device: str = "cuda", *, skip_random_init: bool = True):
+    """Load the native tracker with audited selective initialization by default.
+
+    Explicit False retains native random fills for controlled comparisons.
+    """
     if torch.device(device).type != "cuda":
         raise ValueError("SAM3.1 PVS requires a CUDA device")
     from sam3.model_builder import build_sam3_multiplex_video_model
 
     # Position-encoding caches allocate on the current CUDA device during build.
-    with torch.cuda.device(device):
+    if skip_random_init:
+        # ViT binds timm's trunc_normal_ by name and reapplies it after resets.
+        initialization = skip_large_weight_initialization(
+            random_initializer_modules=(import_module("sam3.model.vitdet"),),
+        )
+    else:
+        initialization = nullcontext({})
+    started = time.perf_counter()
+    with initialization as skipped, torch.cuda.device(device):
         model = build_sam3_multiplex_video_model(
             checkpoint_path=None,
             load_from_HF=False,
@@ -28,6 +42,8 @@ def load_model(checkpoint: Path, device: str = "cuda"):
             use_rope_real=False,
             compile=False,
         )
+    construct_s = time.perf_counter() - started
+    started = time.perf_counter()
     state = torch.load(checkpoint, map_location="cpu", weights_only=True, mmap=True)
     if "model" in state:
         state = state["model"]
@@ -45,8 +61,20 @@ def load_model(checkpoint: Path, device: str = "cuda"):
             if key.startswith("detector.backbone.vision_backbone.")
         }
     )
+    checkpoint_s = time.perf_counter() - started
+    started = time.perf_counter()
+    report = audit_skipped_weights(model, weights, skipped)
+    report.update(skip_random_init=skip_random_init, construct_s=construct_s,
+                  checkpoint_s=checkpoint_s, audit_s=time.perf_counter() - started)
+    started = time.perf_counter()
     model.load_state_dict(weights, strict=True)
+    report["strict_load_s"] = time.perf_counter() - started
+    # Do not retain extra Parameter references in the loading report.
+    skipped.clear()
+    started = time.perf_counter()
     model = model.eval().to(device)
+    report["eval_to_device_host_s"] = time.perf_counter() - started
+    model._pvs_loading_report = report
     return model, len(weights)
 
 
