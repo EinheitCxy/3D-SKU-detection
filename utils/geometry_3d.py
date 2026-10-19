@@ -425,10 +425,24 @@ def project_3d_to_2d(points_3d: torch.Tensor, extrinsic: torch.Tensor, intrinsic
     return points_2d
 
 
+def projected_bbox_hit_counts(projected_points: torch.Tensor, bboxes_xyxy: List[List[float]]) -> List[int]:
+    """Count inclusive bbox hits on this exact projected point domain in one batch."""
+    if not bboxes_xyxy:
+        return []
+    boxes = torch.as_tensor(bboxes_xyxy, dtype=projected_points.dtype, device=projected_points.device)
+    x, y = projected_points[:, 0:1], projected_points[:, 1:2]
+    counts = (
+        (x >= boxes[:, 0]) & (x <= boxes[:, 2])
+        & (y >= boxes[:, 1]) & (y <= boxes[:, 3])
+    ).sum(dim=0)
+    return [int(value) for value in counts.tolist()]
+
+
 def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, target_bboxes: List[Dict],
                                              config: SKUMatchingConfig, scene_data: Dict, target_img_idx: int,
                                              target_transform: ImageTransformBase, ref_3d_center: torch.Tensor,
-                                             ref_depth_mean: float, ref_points_3d: Optional[torch.Tensor] = None) -> Optional[Dict]:
+                                             ref_depth_mean: float, ref_points_3d: Optional[torch.Tensor] = None,
+                                             *, hit_counts: Optional[List[int]] = None) -> Optional[Dict]:
     """找到投影点最多落入的检出框，并进行3D几何验证。
 
     验证维度：投影命中率 + 3D质心距离 + 平面共面约束（法向对齐）。
@@ -441,6 +455,12 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
     if len(projected_points) == 0:
         return None
 
+    # Precomputed counts must come from this same point tensor and bbox order.
+    if hit_counts is None:
+        hit_counts = projected_bbox_hit_counts(projected_points, [box['bbox'] for box in target_bboxes])
+    elif len(hit_counts) != len(target_bboxes):
+        raise ValueError("hit_counts must match the target bbox order and length")
+
     # 预拟合参考点平面（每个 ref 物体只拟合一次，候选验证复用）
     ref_normal, ref_residual = (None, None)
     if ref_points_3d is not None and len(ref_points_3d) >= 3:
@@ -450,18 +470,10 @@ def find_best_matching_bbox_with_3d_validation(projected_points: torch.Tensor, t
     best_score = 0.0
     validated_candidates = []
 
-    for bbox_info in target_bboxes:
+    for bbox_info, points_in_bbox in zip(target_bboxes, hit_counts):
         bbox = bbox_info['bbox']
-        x1, y1, x2, y2 = bbox
 
-        # 1. 基础投影匹配
-        points_in_bbox = (
-            (projected_points[:, 0] >= x1) &
-            (projected_points[:, 0] <= x2) &
-            (projected_points[:, 1] >= y1) &
-            (projected_points[:, 1] <= y2)
-        ).sum().item()
-
+        # 1. 基础投影匹配（复用同点域的批量计数）
         match_ratio = points_in_bbox / len(projected_points)
 
         if match_ratio < config.min_hit_ratio:

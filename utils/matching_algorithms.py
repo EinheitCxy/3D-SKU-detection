@@ -21,6 +21,7 @@ from .geometry_3d import (
     find_best_matching_bbox_with_3d_validation,
     apply_uniqueness_constraint,
     transform_world_to_camera,
+    projected_bbox_hit_counts,
 )
 from .transforms import ImageTransformBase, bind_da3_transforms_from_cache
 from .sam3_utils import (
@@ -41,21 +42,7 @@ def rank_projected_bbox_hits(
     projected_points: torch.Tensor, bboxes_xyxy: List[List[float]]
 ) -> Tuple[List[int], List[int]]:
     """Return inclusive 2D hit counts and the legacy-stable ranking for boxes."""
-    if not bboxes_xyxy:
-        return [], []
-
-    bboxes = torch.as_tensor(
-        bboxes_xyxy, dtype=projected_points.dtype, device=projected_points.device
-    )
-    x = projected_points[:, 0:1]
-    y = projected_points[:, 1:2]
-    counts = (
-        (x >= bboxes[:, 0])
-        & (x <= bboxes[:, 2])
-        & (y >= bboxes[:, 1])
-        & (y <= bboxes[:, 3])
-    ).sum(dim=0)
-    hit_counts = [int(value) for value in counts.tolist()]
+    hit_counts = projected_bbox_hit_counts(projected_points, bboxes_xyxy)
     return hit_counts, sorted(
         range(len(hit_counts)), key=lambda index: hit_counts[index], reverse=True
     )
@@ -649,8 +636,10 @@ def find_correspondences_3d_mapping(
                 )
 
                 target_bboxes_for_validation = top_candidates
+                validation_hit_counts = [hit_counts[index] for index in top_indices]
             else:
                 target_bboxes_for_validation = target_bboxes_vggt
+                validation_hit_counts = hit_counts
             StageTimer.record("projection_postprocess", time.perf_counter() - _t_proj_post)
 
             # 找到最匹配的目标框（仅对预筛选后的候选框进行昂贵的3D验证）
@@ -658,7 +647,8 @@ def find_correspondences_3d_mapping(
                 best_match = find_best_matching_bbox_with_3d_validation(
                     projected_points, target_bboxes_for_validation, config,
                     scene_data, target_img_idx, target_transform,
-                    ref_3d_center, ref_depth_mean, ref_points_3d=points_3d
+                    ref_3d_center, ref_depth_mean, ref_points_3d=points_3d,
+                    hit_counts=validation_hit_counts,
                 )
                 
             if best_match:
