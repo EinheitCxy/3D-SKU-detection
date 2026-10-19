@@ -1,0 +1,279 @@
+{
+  "date": "2026-10-19",
+  "capture": "572dd9f6fb",
+  "frame_ids": [
+    0,
+    59,
+    119,
+    179,
+    239,
+    298,
+    358,
+    418,
+    478,
+    538,
+    598,
+    658,
+    718,
+    778
+  ],
+  "rgb_source_width_height": [
+    1920,
+    1440
+  ],
+  "rgb_processed_width_height": [
+    504,
+    378
+  ],
+  "prompt_native_width_height": [
+    256,
+    192
+  ],
+  "environment": {
+    "physical_gpu": 2,
+    "docker_gpu_request": "device=2",
+    "image": "global-id-mapping:cos-background-20261013",
+    "device": "NVIDIA GeForce RTX 4090 D",
+    "device_total_memory_bytes": 25250627584,
+    "python": "3.11.10",
+    "torch": "2.7.1+cu126",
+    "torch_cuda": "12.6",
+    "cpu_threads": 8,
+    "gpu_preexisting_memory_mib": 5044
+  },
+  "protocol": {
+    "processes": "Separate fresh Docker processes, DA3 then PromptDA, never concurrent",
+    "request": "Resident model and prepared PNG paths through CPU dense predictions and RGB packing; includes decode, preprocessing, transfer and model execution",
+    "cold_requests": 1,
+    "warm_requests": 3,
+    "cache": "No external warmup or cache flush; filesystem page cache unknown; allocator retained",
+    "synchronization": "CUDA synchronize before and after predict_candidate",
+    "artifacts": "Only cold output saved once: compressed NPZ and POINTS GLB with one binary readback",
+    "gpu_memory": "Absolute torch allocated/reserved request peaks, including model; reset after recording each request baseline",
+    "host_memory": "Current PID sampled RSS every 100ms, starts before model load; may miss short spikes"
+  },
+  "candidates": {
+    "da3": {
+      "started_utc": "2026-10-19T10:46:21.831426+00:00",
+      "native_precision": "DA3 native BF16 autocast; FP32 parameters; joint multi-view request",
+      "model_load_s": 8.990323608013568,
+      "cold_request_s": 2.2614836459979415,
+      "warm_request_s": [
+        1.4595623079803772,
+        1.3229451020015404,
+        1.340309168008389
+      ],
+      "warm_summary": {
+        "n": 3,
+        "mean_s": 1.3742721926634356,
+        "median_s": 1.340309168008389,
+        "min_s": 1.3229451020015404,
+        "max_s": 1.4595623079803772,
+        "sample_stdev_s": 0.07437190682748063,
+        "scope": "Three complete resident-model requests; no duplicate NPZ or GLB writes; no tail percentile claims"
+      },
+      "npz_save_s": 1.5998799910012167,
+      "glb_export_and_readback_s": 0.84310772101162,
+      "cold_request_to_npz_and_glb_s": 4.708044484985294,
+      "load_plus_cold_request_to_artifacts_s": 13.698368092998862,
+      "request_gpu_memory": [
+        {
+          "baseline_allocated_bytes": 6827321344,
+          "baseline_reserved_bytes": 6847201280,
+          "peak_allocated_bytes": 12172029952,
+          "peak_reserved_bytes": 16238247936,
+          "peak_allocated_increase_bytes": 5344708608,
+          "peak_reserved_increase_bytes": 9391046656
+        },
+        {
+          "baseline_allocated_bytes": 6835868160,
+          "baseline_reserved_bytes": 16238247936,
+          "peak_allocated_bytes": 12171384832,
+          "peak_reserved_bytes": 16238247936,
+          "peak_allocated_increase_bytes": 5335516672,
+          "peak_reserved_increase_bytes": 0
+        },
+        {
+          "baseline_allocated_bytes": 6835868160,
+          "baseline_reserved_bytes": 16238247936,
+          "peak_allocated_bytes": 12171384832,
+          "peak_reserved_bytes": 16238247936,
+          "peak_allocated_increase_bytes": 5335516672,
+          "peak_reserved_increase_bytes": 0
+        },
+        {
+          "baseline_allocated_bytes": 6835868160,
+          "baseline_reserved_bytes": 16238247936,
+          "peak_allocated_bytes": 12171384832,
+          "peak_reserved_bytes": 16238247936,
+          "peak_allocated_increase_bytes": 5335516672,
+          "peak_reserved_increase_bytes": 0
+        }
+      ],
+      "host_sampled_peak_bytes_including_load": 14654074880,
+      "container_wall_including_four_requests_s": 21.083,
+      "points_before_limit": 1600301,
+      "points_exported": 1000000,
+      "glb_readback": "PASS",
+      "npz_field_shapes": {
+        "depth": [
+          14,
+          378,
+          504
+        ],
+        "conf": [
+          14,
+          378,
+          504
+        ],
+        "intrinsics": [
+          14,
+          3,
+          3
+        ],
+        "extrinsics": [
+          14,
+          3,
+          4
+        ],
+        "processed_images": [
+          14,
+          378,
+          504,
+          3
+        ],
+        "frame_ids": [
+          14
+        ],
+        "is_metric": [],
+        "scale_factor": []
+      }
+    },
+    "promptda": {
+      "started_utc": "2026-10-19T10:47:20.325880+00:00",
+      "native_precision": "PromptDA official FP32; sequential per-frame predict; full raw valid LiDAR",
+      "model_load_s": 14.422950929001672,
+      "cold_request_s": 2.2990835240052547,
+      "warm_request_s": [
+        1.6754115179937799,
+        1.6743678630155046,
+        1.671562564006308
+      ],
+      "warm_summary": {
+        "n": 3,
+        "mean_s": 1.673780648338531,
+        "median_s": 1.6743678630155046,
+        "min_s": 1.671562564006308,
+        "max_s": 1.6754115179937799,
+        "sample_stdev_s": 0.0019905344777367464,
+        "scope": "Three complete resident-model requests; no duplicate NPZ or GLB writes; no tail percentile claims"
+      },
+      "npz_save_s": 0.9444003280077595,
+      "glb_export_and_readback_s": 1.2239616480073892,
+      "cold_request_to_npz_and_glb_s": 4.470851357007632,
+      "load_plus_cold_request_to_artifacts_s": 18.893802286009304,
+      "request_gpu_memory": [
+        {
+          "baseline_allocated_bytes": 1361736704,
+          "baseline_reserved_bytes": 1379926016,
+          "peak_allocated_bytes": 1803468288,
+          "peak_reserved_bytes": 2002780160,
+          "peak_allocated_increase_bytes": 441731584,
+          "peak_reserved_increase_bytes": 622854144
+        },
+        {
+          "baseline_allocated_bytes": 1370256384,
+          "baseline_reserved_bytes": 2002780160,
+          "peak_allocated_bytes": 1803468288,
+          "peak_reserved_bytes": 2002780160,
+          "peak_allocated_increase_bytes": 433211904,
+          "peak_reserved_increase_bytes": 0
+        },
+        {
+          "baseline_allocated_bytes": 1370256384,
+          "baseline_reserved_bytes": 2002780160,
+          "peak_allocated_bytes": 1803468288,
+          "peak_reserved_bytes": 2002780160,
+          "peak_allocated_increase_bytes": 433211904,
+          "peak_reserved_increase_bytes": 0
+        },
+        {
+          "baseline_allocated_bytes": 1370256384,
+          "baseline_reserved_bytes": 2002780160,
+          "peak_allocated_bytes": 1803468288,
+          "peak_reserved_bytes": 2002780160,
+          "peak_allocated_increase_bytes": 433211904,
+          "peak_reserved_increase_bytes": 0
+        }
+      ],
+      "host_sampled_peak_bytes_including_load": 3676917760,
+      "container_wall_including_four_requests_s": 27.655,
+      "points_before_limit": 2667168,
+      "points_exported": 1000000,
+      "glb_readback": "PASS",
+      "npz_field_shapes": {
+        "depth": [
+          14,
+          378,
+          504
+        ],
+        "processed_images": [
+          14,
+          378,
+          504,
+          3
+        ],
+        "intrinsics": [
+          14,
+          3,
+          3
+        ],
+        "extrinsics": [
+          14,
+          3,
+          4
+        ],
+        "frame_ids": [
+          14
+        ],
+        "is_metric": []
+      }
+    }
+  },
+  "validation": {
+    "cpu_tests_passed": 7,
+    "new_preparation_matches_old_sensor_arrays_exactly": true,
+    "saved_predictions_match_previously_accepted_candidates": {
+      "da3": {
+        "fields_compared": [
+          "conf",
+          "depth",
+          "extrinsics",
+          "frame_ids",
+          "intrinsics",
+          "is_metric",
+          "processed_images",
+          "scale_factor"
+        ],
+        "all_exact_equal": true,
+        "depth_max_abs_error_m": 0.0
+      },
+      "promptda": {
+        "fields_compared": [
+          "depth",
+          "frame_ids",
+          "processed_images"
+        ],
+        "all_exact_equal": true,
+        "depth_max_abs_error_m": 0.0,
+        "restored_scanner_E_exact": true,
+        "processed_K_half_pixel_exact": true
+      }
+    },
+    "both_actual_profile_containers_exit_code": 0
+  },
+  "observed_ratios": {
+    "promptda_to_da3_warm_median_latency": 1.2492400283313028,
+    "da3_warm_latency_reduction_vs_promptda": 0.19951332224298812
+  }
+}

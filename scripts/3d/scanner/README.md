@@ -93,4 +93,5 @@ uv run python -m unittest discover -s test -p test_scanner_candidates.py -v
 ```
 
 最小 CPU 检查覆盖 timestamp 抽帧、CV 相机约定、metric depth/E 策略、完整 prompt、
-resize K 和真实 POINTS GLB 读写。速度比较入口与实测记录见后续 profiling 文档。
+resize K 和真实 POINTS GLB 读写。速度比较入口为 `profile_candidates.py`，
+计时范围、复现命令和两路实测表见 [profiling.md](profiling.md)。
