@@ -1,6 +1,6 @@
 # Viewer / GLB 当前算法与采样入口
 
-核对：2026-10-18，本地main `bf9bde8`。完整实测已更新为[GPU2 profiling](profiling_breakdown.md)，本文不再复述旧GPU0/旧generation的耗时。完整实现细节见[GPU/matching](../reports/profiling-20261018/algorithms_gpu_matching.md)、[几何与采样](../reports/profiling-20261018/algorithms_geometry.md)、[交付](../reports/profiling-20261018/algorithms_delivery.md)三份源码说明。
+核对：2026-10-19。当前默认使用 proxy DBSCAN scale2；背景平面只从未保护点拟合，已取消全局 8% 支持率门槛。具体循环见第4节。此前完整流水线实测见[GPU2 profiling](profiling_breakdown.md)；历史测量使用当时的过滤策略，不能将其点数或耗时直接当作新策略结果。GPU/matching 与交付的详细实现仍见[GPU/matching](../reports/profiling-20261018/algorithms_gpu_matching.md)、[交付](../reports/profiling-20261018/algorithms_delivery.md)。
 
 ## 1. 当前到底用了多少点
 
@@ -28,7 +28,7 @@ DA3一次处理全部F帧 -> schema-v3 metric NPZ
     |     full-grid depth、U/V
     |     export-valid indices
     |     float64 full-domain point snapshot + Open3D cloud
-    |     初始NN -> median；raw SOR -> bool mask
+    |     共享KNN查询 -> median NN与raw SOR bool mask
     |     source JPEG + 相机/affine metadata
     |     返回PreparedViewerGeometry，不读商品mask、不发布
     |
@@ -49,8 +49,8 @@ DA3一次处理全部F帧 -> schema-v3 metric NPZ
     masks -> observation labels；同gid region
     full-grid断裂/边界特征、权重、caps
     复用raw SOR，合回商品保护和guard
-    DBSCAN -> 保簇 + 商品保护 + guard
-    RANSAC ground -> 双侧/比例判定 + 商品保护 + guard
+    proxy DBSCAN -> 标签映射回原始点 -> 保簇 + 商品保护 + guard
+    背景RANSAC -> 双侧安全检查 + 商品保护 + guard，不设8%支持率门槛
     背景5mm voxel -> 最多500K adaptive选择
     商品按gid公平预算 -> 最多2M adaptive选择
     同步整理source indices、labels、positions、U/V scale
@@ -98,9 +98,40 @@ else:
 
 保护仍受finite/nonzero base validity限制。20%相对每阶段当前域；不是最终至少保留原始20%的保证。初始median NN全程复用，不在每阶段重新估计。
 
-DBSCAN保留≥当前输入1%的簇，无达标簇时有簇则取最大簇。它与footprint中的“相对最大分量20%”是不同规则。ground的dist=clip(3×medianNN,.02,.15)，内点至少8%，非内点两侧质量检查后才删除；商品仍合回。
+### 4.1 默认代理 DBSCAN
 
-`PointCloudFilterConfig(ground_proposal_max_points=50_000)`是显式代理候选实验：均匀抽样生成平面后，在完整当前点域按原threshold严格`<dist`重计内点，再沿用8%、双侧、商品保护和20%guard。默认`0`保留原全量RANSAC及其返回inliers；没有自动重跑或切换。video3组件虽然10.879→0.980秒，但候选近乎垂直于摆正地面，并额外删除51286背景点，因此不默认推广。计数与局限见[ground报告](../reports/latency-optimization-20261018/ground_report.md)。
+`cluster_proxy_voxel_scale=2.0`，体素边长为 `2×medianNN`，邻域半径仍为 `5×medianNN`。每个体素选择最先出现的原始点作为代理，按原始出现顺序排列；在代理上运行 Open3D DBSCAN，再将簇标签映射回每个原始成员。聚类本身不会把导出几何替换成体素中心。
+
+核心点门槛10统计代理邻居，属于近似算法。保簇时统计映射后的原始成员数，保留≥当前输入1%的簇，无达标簇且存在簇时取最大簇；商品保护和20% guard随后照常执行。它与footprint中的“相对最大分量20%”是不同规则。显式`cluster_proxy_voxel_scale=0`仍可运行原始全点DBSCAN；没有自动切换。
+
+### 4.2 背景平面清理：删除什么
+
+`remove_ground`沿用既有参数名，实际操作是清理非商品的平面背景。候选可能是地板、墙面或其他大平面；该步骤不使用语义地面分类，也不以摆正方向约束法向。因此不能把所有被删点称为真实地面。未被SAM标注的商品也可能落在背景域。
+
+记当前经过SOR/聚类/保护的点集为`P`，保护mask为`protected`：
+
+```text
+background_indices = where(~protected)
+B = P[background_indices]
+若len(B) < max(3, min_points)，跳过拟合
+dist = clip(3 × medianNN, 0.02, 0.15) 米
+proposal = B                          # 默认ground_proposal_max_points=0
+plane, local_inliers = RANSAC(proposal, 三点假设, 最多1000轮)
+检查平面系数有限且法向非退化
+将background局部内点索引映射回P
+检查当前P中平面两侧的非内点分布
+raw_keep = ~background_inliers
+应用商品保护与20%最少保留guard
+将工作集索引映射回全域keep
+```
+
+商品点不参与平面拟合，始终不会被该步骤列为删除候选。默认完整背景域沿用Open3D返回的pre-refinement内点索引；归一化后的refined plane用于双侧检查和诊断。`support_ratio=内点数/背景点数`仅记录诊断，不参与接受/拒绝；`ground_min_inlier_ratio`参数已移除，没有换成另一个支持率门槛。
+
+保留的双侧规则是：去掉背景候选内点后，在当前完整P（包括受保护商品）上统计signed distance；若正、负两侧超过dist的点数均超过其余点数的15%，拒绝这个可能穿过主体的平面。随后保留原商品保护及每阶段20% guard。这两项是既有安全规则，本次只取消8%支持率依赖。
+
+显式`ground_proposal_max_points=50_000`只从B均匀无放回抽样提案，使用本地seed42且保留原顺序；返回的refined plane会在完整B上按严格`abs(distance)<dist`重新求内点，不使用样本支持率，也不设完整域支持率门槛。该路径与完整背景域的native内点规则不同，仍不是等价加速，默认不启用。旧全P采样实验及其失败结论保留为[历史记录](../reports/latency-optimization-20261018/ground_report.md)，不能用来推算新背景拟合效果。
+
+最终删除通过同一keep/source_indices选择同步作用于位置、颜色、法线、标签及Surfel来源；它发生在Viewer预算采样之前，不改原始DA3缓存。显示摆正和footprint支撑平面估计继续使用独立的共享方向/面积路径。修改与缓存实景验证见[本轮记录](../reports/viewer-background-cleanup-20261019/README.md)。
 
 ## 5. 预算采样为什么仍要支持完整grid
 
@@ -128,7 +159,7 @@ SOR: 再建树 -> 并行for每点KNN20 -> mean(sqrt(distances))
      -> 全域mu/sigma -> 0<avg<mu+2*sigma -> indices和selected cloud
 ```
 
-DBSCAN先为全部当前点查半径邻居并保留列表，再串行按输入顺序扩展簇。frontier使用unordered_set；曾是noise的点仍可成为边界点。邻居总量取决于所有半径邻居数之和，不仅是点数；本次未采完整邻居列表或拆开内部建树/查询/扩展计时。[DBSCAN源码](https://github.com/isl-org/Open3D/blob/v0.19.0/cpp/open3d/geometry/PointCloudCluster.cpp#L18)
+Open3D DBSCAN先为其输入点查半径邻居并保留列表，再串行按输入顺序扩展簇。当前默认传入代理点；显式scale0传入全部当前点。frontier使用unordered_set；曾是noise的点仍可成为边界点。邻居总量取决于所有半径邻居数之和，不仅是点数。[DBSCAN源码](https://github.com/isl-org/Open3D/blob/v0.19.0/cpp/open3d/geometry/PointCloudCluster.cpp#L18)
 
 ```text
 建树；并行for i: neighbors[i]=SearchRadius(P[i],eps)
@@ -155,6 +186,6 @@ U/V初始footprint限制与乘radius/scale后的最终限制都保留，最长�
 
 ## 8. 当前证据能支持什么
 
-新多视频完整运行支持声明recipe下本机各场景的耗时、内部breakdown、点数和资源峰；每video一次，不代表重复/热服务分布，也不验证原检测对齐。历史PVS初始化重叠复现支持调查GIL机制，不能直接承诺节省全部差额。近似过滤、关闭DBSCAN、背景提前采样及NN/SOR进程隔离均没有本轮画质/全链路收益验收。
+新多视频完整运行支持声明recipe下本机各场景的耗时、内部breakdown、点数和资源峰；每video一次，不代表重复/热服务分布，也不验证原检测对齐。历史PVS初始化重叠复现支持调查GIL机制，不能直接承诺节省全部差额。代理DBSCAN scale2已在后续video1/3/6对照中由Rick进行视觉验收并设为默认，属于近似过滤，不能称逐点等价。关闭DBSCAN、背景提前采样及NN/SOR进程隔离不在本次默认变更范围；新的背景平面策略也不复用历史全链路耗时结论。
 
 10月17日原算法/历史时间说明已由本文替换，原文保留为[本机历史快照](../runtime/profiling-20261018/previous-viewer_export_algorithm.md)，该runtime文件不随Git发布。当前时间统一引用主profiling，避免旧数字继续作为最新事实。

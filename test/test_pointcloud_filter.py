@@ -299,7 +299,7 @@ def test_proxy_cluster_ratio_counts_original_members(monkeypatch):
     )
     config = PointCloudFilterConfig(
         min_points=1, sor_nb_neighbors=1, cluster_min_points=2,
-        cluster_proxy_voxel_scale=1, min_cluster_ratio=.2, remove_ground=False,
+        min_cluster_ratio=.2, remove_ground=False,
     )
     keep = filter_scene_points(points, config)
     assert keep.tolist() == [True] * 9 + [False]
@@ -330,10 +330,10 @@ def _ground_config(**kwargs):
                                  keep_main_clusters=False, **kwargs)
 
 
-def test_ground_proposal_uses_full_support_and_protects_products(monkeypatch, caplog):
+def test_ground_proposal_recounts_background_and_protects_products(monkeypatch, caplog):
     points = _ground_scene([0] * 8 + [.5] * 2)
-    # The proposal's returned inlier count is deliberately zero; only full-domain
-    # re-evaluation may decide whether this normalized plane passes the 8% rule.
+    # The proposal's returned inliers are deliberately empty; sampled proposals
+    # re-evaluate the refined plane on all background, excluding protected rows.
     calls = _fake_open3d(monkeypatch, raw_sor=list(range(10)), median=.001,
                          ground_plane=(0., 2., 0., 0.), ground_inliers=[])
     protected = np.zeros(10, dtype=bool)
@@ -342,7 +342,7 @@ def test_ground_proposal_uses_full_support_and_protects_products(monkeypatch, ca
         keep = filter_scene_points(points, _ground_config(ground_proposal_max_points=3), protected)
     assert keep.tolist() == [True] + [False] * 7 + [True, True]
     sampled, threshold, ransac_n, iterations = calls["planes"][0]
-    expected = np.sort(np.random.default_rng(42).choice(10, size=3, replace=False))
+    expected = 1 + np.sort(np.random.default_rng(42).choice(9, size=3, replace=False))
     np.testing.assert_array_equal(sampled, points[expected])
     assert (threshold, ransac_n, iterations) == (.02, 3, 1000)
     assert len(calls["planes"]) == 1  # no full-cloud retry
@@ -391,7 +391,7 @@ def test_ground_control_keeps_native_pre_refinement_inliers(monkeypatch):
 
 
 @pytest.mark.parametrize("heights, plane, reason", [
-    ([0] + [.5] * 19, (0., 1., 0., 0.), "insufficient_full_support"),
+    ([.5] * 20, (0., 1., 0., 0.), "no_background_inliers"),
     ([0] * 3 + [.5] * 2 + [-.5] * 2, (0., 1., 0., 0.), "plane_slices_subject"),
     ([0] * 9 + [.5], (0., 1., 0., 0.), "min_remaining_guard"),
     ([0] * 8 + [.5] * 2, (0., 0., 0., 0.), "degenerate_plane"),
@@ -411,3 +411,42 @@ def test_ground_candidate_rejections_keep_current_cloud(monkeypatch, caplog, hei
 def test_ground_proposal_default_stays_full_control():
     assert PointCloudFilterConfig().ground_proposal_max_points == 0
     assert PointCloudFilterConfig(ground_proposal_max_points=50_000).ground_proposal_max_points == 50_000
+
+
+@pytest.mark.parametrize("cap", [0, 3])
+def test_background_plane_does_not_require_global_inlier_fraction(monkeypatch, caplog, cap):
+    points = _ground_scene([0] * 3 + [.5] * 97)
+    _fake_open3d(monkeypatch, raw_sor=list(range(100)), median=.001)
+    with caplog.at_level("INFO"):
+        keep = filter_scene_points(points, _ground_config(ground_proposal_max_points=cap))
+    assert keep.tolist() == [False] * 3 + [True] * 97
+    assert "'support_ratio': 0.03" in caplog.text
+    assert "'reason': 'applied'" in caplog.text
+
+
+@pytest.mark.parametrize("cap", [0, 3])
+def test_plane_fit_excludes_protected_majority_and_preserves_source_indices(monkeypatch, caplog, cap):
+    points = _ground_scene([.5, 0] * 5 + [.5] * 90)
+    protected = points[:, 1] > 0
+    calls = _fake_open3d(monkeypatch, raw_sor=list(range(100)), median=.001)
+    with caplog.at_level("INFO"):
+        keep = filter_scene_points(points, _ground_config(ground_proposal_max_points=cap), protected)
+    assert np.array_equal(keep, protected)
+    background = points[~protected]
+    expected = (background[np.sort(np.random.default_rng(42).choice(5, cap, replace=False))]
+                if cap else background)
+    np.testing.assert_array_equal(calls["planes"][0][0], expected)
+    assert "'protected_points': 95" in caplog.text
+    assert "'removed_points': 5" in caplog.text
+
+
+@pytest.mark.parametrize("background_count", [0, 2])
+def test_too_few_background_points_skip_fit(monkeypatch, caplog, background_count):
+    points = _ground_scene([.5] * 10)
+    protected = np.arange(10) >= background_count
+    calls = _fake_open3d(monkeypatch, raw_sor=list(range(10)), median=.001)
+    with caplog.at_level("INFO"):
+        keep = filter_scene_points(points, _ground_config(), protected)
+    assert keep.all()
+    assert calls["planes"] == []
+    assert "'reason': 'insufficient_background_points'" in caplog.text

@@ -293,3 +293,9 @@ uv run python src/da3_runner.py --input_dir <同一组图片> \
 输出缓存用 bool 标量 `use_ray_pose` 标记分支。默认 pipeline 不复用标记为 true 的实验缓存；旧默认缓存缺少该字段仍按原合同处理。实验应保存在独立目录，并显式执行匹配和 Viewer 导出；不要在候选目录运行默认完整 pipeline，否则会按默认分支重新推理。
 
 Ray 分支同时恢复外参和内参；nested 的尺度对齐可能间接改变最终深度。因此对照固定权重、图片、分辨率、参考视图策略与种子，只改变此开关，不同时加入共享内参或几何优化。没有修改生产/Docker 默认。
+
+## Viewer背景清理更新（2026-10-19）
+
+默认`PointCloudFilterConfig.cluster_proxy_voxel_scale=2.0`，在代理上聚类后将标签传回原始点。`remove_ground`实际是平面背景清理：仅未保护背景参与拟合，`ground_min_inlier_ratio`与全局8%门槛已删除；保留商品保护、双侧15%安全检查和每阶段20%guard。该步骤不承诺识别真实地板，未标注商品仍可能被视为背景。
+
+此默认变更不修改共享方向、footprint、Viewer预算或Surfel长边限制。详细循环见[Viewer算法第4节](viewer_export_algorithm.md#4-过滤如何保护商品)，三视频缓存导出与商品保留验证见[profiling第17节](profiling_breakdown.md#17-默认proxy2与背景平面清理2026-10-19)。前述完整端到端计时属于旧过滤策略。
