@@ -215,6 +215,13 @@ uv run python scripts/publish_viewer_masterdata.py \
 
 该命令会复制 `CURRENT` 指向的完整 run，在新 run 写入 `sku_masterdata.json` 后原子更新 `CURRENT`；旧 run 保持不变。
 
+### Stray Scanner 独立点云重建
+
+带 RGB、逐帧 K/E 与 LiDAR depth 的 Stray Scanner capture 可使用
+[Scanner 点云入口](scripts/3d/scanner/README.md)：每秒抽一帧，选择保留原生 metric depth 的
+DA3 + K/E 修复版或完整 LiDAR prompt 的 PromptDA，直接导出 NPZ 和 GLB。
+该入口不运行 SKU matching，也不修改默认 pipeline backend。
+
 ### Pi3X 后端（实验性）
 
 `--recon_backend pi3x --match_backend pi3x` 启用 Pi3X（`yyfz233/Pi3X`，CC BY-NC 4.0）重建与匹配。权重为本地目录 `runtime/models/pi3x/`（model.safetensors + config.json），离线加载。Pi3X 产出与 Pi3 相同的 `pi3x_cache/predictions.npz` schema-v3 契约（sigmoid conf、`local_points` 深度、`camera_poses` 取逆为 w2c extrinsic），匹配侧复用 pi3 图像加载路径；SAM3 v2 mask 缓存需要的 `source_to_processed_affine` 由纯缩放 transform 显式合成。Pi3X 是 approximate metric（尺度逐 batch 估计），不接 `is_metric==1` 硬门，ground-stack-area 等米制计量阶段不对其启用；RoPE2D CUDA kernel 未编译时自动走 PyTorch 慢速路径。fd4–8 与 DA3 1.1 的准确率/性能对比见 [docs/accuracy_da3_vs_pi3x.md](docs/accuracy_da3_vs_pi3x.md)（总 F1 86.8% vs 85.0%）。
