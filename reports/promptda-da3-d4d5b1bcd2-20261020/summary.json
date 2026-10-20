@@ -1,0 +1,2029 @@
+{
+  "date": "2026-10-20",
+  "input": "fd-videos/d4d5b1bcd2",
+  "source_frames": 1175,
+  "selected_frames": 20,
+  "source_rgb_size": [
+    1920,
+    1440
+  ],
+  "frame_ids": [
+    0,
+    60,
+    120,
+    180,
+    240,
+    300,
+    360,
+    420,
+    480,
+    540,
+    600,
+    660,
+    720,
+    780,
+    840,
+    900,
+    958,
+    1014,
+    1069,
+    1123
+  ],
+  "scope": "Scanner raw video to native dense predictions and colored POINTS GLB; no SKU matching, Viewer, Surfel, COS or browser milestone",
+  "physical_gpu": 1,
+  "git_head": "0fb9e0ac9979cec2b8fc02124897276585a3071e",
+  "code_state": "main plus pre-existing dirty/untracked Scanner and PromptDA integration; no production-source edits by this task",
+  "low_overhead_baselines": {
+    "da3": {
+      "status": "complete",
+      "candidate": "da3",
+      "npz_compression": "deflate",
+      "checkpoint": "/opt/models/da3/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7",
+      "promptda_repo": null,
+      "base": "/input",
+      "started_utc": "2026-10-20T07:42:02.384231+00:00",
+      "pid": 54,
+      "seed": 42,
+      "native_precision": "DA3 native BF16 autocast; FP32 parameters; joint multi-view request",
+      "promptda_max_size": null,
+      "promptda_precision": null,
+      "promptda_batch_size": null,
+      "cache_state": "One model load per CLI process; no external warmup; filesystem page cache unknown/unflushed; allocator/model caches retained between requests",
+      "predict_scope": "Resident model + prepared PNG paths and sensor arrays through dense predictions and processed RGB on CPU; caller synchronizes GPU before and after predict_candidate",
+      "gpu_memory_scope": "Per-predict absolute allocated/reserved peaks include model; baseline sampled then peak counters reset before request; no cache emptying",
+      "requests": [
+        {
+          "label": "cold",
+          "predict_wall_s": 2.900522882002406,
+          "gpu_memory": {
+            "baseline_allocated_bytes": 6827321344,
+            "baseline_reserved_bytes": 6847201280,
+            "peak_allocated_bytes": 12787333632,
+            "peak_reserved_bytes": 17005805568,
+            "peak_allocated_increase_bytes": 5960012288,
+            "peak_reserved_increase_bytes": 10158604288
+          },
+          "host_rss": {
+            "baseline_bytes": 1340837888,
+            "observed_peak_bytes": 2934329344,
+            "samples": 31
+          }
+        },
+        {
+          "label": "warm_1",
+          "predict_wall_s": 2.1776409030135255,
+          "gpu_memory": {
+            "baseline_allocated_bytes": 6835868160,
+            "baseline_reserved_bytes": 17005805568,
+            "peak_allocated_bytes": 12784489472,
+            "peak_reserved_bytes": 17005805568,
+            "peak_allocated_increase_bytes": 5948621312,
+            "peak_reserved_increase_bytes": 0
+          },
+          "host_rss": {
+            "baseline_bytes": 3016003584,
+            "observed_peak_bytes": 3291127808,
+            "samples": 24
+          }
+        },
+        {
+          "label": "warm_2",
+          "predict_wall_s": 1.9873553140205331,
+          "gpu_memory": {
+            "baseline_allocated_bytes": 6835868160,
+            "baseline_reserved_bytes": 17005805568,
+            "peak_allocated_bytes": 12784489472,
+            "peak_reserved_bytes": 17005805568,
+            "peak_allocated_increase_bytes": 5948621312,
+            "peak_reserved_increase_bytes": 0
+          },
+          "host_rss": {
+            "baseline_bytes": 3149254656,
+            "observed_peak_bytes": 3577896960,
+            "samples": 22
+          }
+        },
+        {
+          "label": "warm_3",
+          "predict_wall_s": 2.035445434972644,
+          "gpu_memory": {
+            "baseline_allocated_bytes": 6835868160,
+            "baseline_reserved_bytes": 17005805568,
+            "peak_allocated_bytes": 12784489472,
+            "peak_reserved_bytes": 17005805568,
+            "peak_allocated_increase_bytes": 5948621312,
+            "peak_reserved_increase_bytes": 0
+          },
+          "host_rss": {
+            "baseline_bytes": 3385757696,
+            "observed_peak_bytes": 3795136512,
+            "samples": 22
+          }
+        }
+      ],
+      "prepared_input_load_s": 0.010793876979732886,
+      "frame_count": 20,
+      "frame_ids": [
+        0,
+        60,
+        120,
+        180,
+        240,
+        300,
+        360,
+        420,
+        480,
+        540,
+        600,
+        660,
+        720,
+        780,
+        840,
+        900,
+        958,
+        1014,
+        1069,
+        1123
+      ],
+      "cpu_threads": 8,
+      "model_load": {
+        "combined_wall_s": 9.624584217002848,
+        "resident_allocated_bytes": 6827321344,
+        "resident_reserved_bytes": 6847201280,
+        "peak_allocated_bytes_since_cuda_init": 6827321344,
+        "peak_reserved_bytes_since_cuda_init": 6847201280,
+        "host_rss": {
+          "baseline_bytes": 478773248,
+          "observed_peak_bytes": 14446223360,
+          "samples": 90
+        }
+      },
+      "environment": {
+        "platform": "Linux-5.14.0-503.26.1.el9_5.x86_64-x86_64-with-glibc2.35",
+        "python": "3.11.10",
+        "torch": "2.7.1+cu126",
+        "torch_cuda": "12.6",
+        "logical_device": "cuda:0",
+        "device_name": "NVIDIA GeForce RTX 4090 D",
+        "device_total_memory_bytes": 50864390144,
+        "float32_matmul_precision": "highest",
+        "cudnn_allow_tf32": true,
+        "CUDA_VISIBLE_DEVICES": null,
+        "NVIDIA_VISIBLE_DEVICES": "void",
+        "PYTORCH_CUDA_ALLOC_CONF": null
+      },
+      "processed_shape": [
+        20,
+        378,
+        504
+      ],
+      "npz_field_shapes": {
+        "depth": [
+          20,
+          378,
+          504
+        ],
+        "conf": [
+          20,
+          378,
+          504
+        ],
+        "intrinsics": [
+          20,
+          3,
+          3
+        ],
+        "extrinsics": [
+          20,
+          3,
+          4
+        ],
+        "processed_images": [
+          20,
+          378,
+          504,
+          3
+        ],
+        "frame_ids": [
+          20
+        ],
+        "is_metric": [],
+        "scale_factor": []
+      },
+      "cold_artifacts": {
+        "npz_save_s": 2.2758625719870906,
+        "glb_export_and_readback_s": 0.976444862986682,
+        "cold_request_through_artifacts_wall_s": 6.158574890985619,
+        "scope": "One continuous cold predict, output check, NPZ save, GLB export/readback; excludes model load and prepared metadata load",
+        "export": {
+          "file": "scene.glb",
+          "points_before_limit": 2286144,
+          "points": 1000000,
+          "bytes": 16000948,
+          "bounds_m": [
+            [
+              -1.8604251146316528,
+              -2.0005311965942383,
+              -4.301098823547363
+            ],
+            [
+              1.77215576171875,
+              5.90144157409668,
+              3.5982882976531982
+            ]
+          ],
+          "confidence_threshold": 2.1430976867675784,
+          "point_limit": 1000000,
+          "seed": 42,
+          "display_transform": [
+            [
+              0.083079032599926,
+              -0.9954792261123657,
+              0.04603242129087448,
+              0.15907253324985504
+            ],
+            [
+              0.9959017634391785,
+              0.08459370583295822,
+              0.03199310228228569,
+              0.9098991751670837
+            ],
+            [
+              -0.03574252128601074,
+              0.04318581148982048,
+              0.9984274506568909,
+              0.25317662954330444
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "glb_readback": "PASS"
+        }
+      },
+      "warm_summary": {
+        "n": 3,
+        "mean_s": 2.0668138840022343,
+        "median_s": 2.035445434972644,
+        "min_s": 1.9873553140205331,
+        "max_s": 2.1776409030135255,
+        "sample_stdev_s": 0.098945116304414,
+        "scope": "Three complete resident-model requests; no duplicate NPZ or GLB writes; no tail percentile claims"
+      },
+      "host_rss": {
+        "scope": "This PID only, after sampler startup; no child-process RSS or pre-sampler import peak",
+        "sampling_interval_s": 0.1,
+        "boundary_samples": true,
+        "observed_peak_bytes": 14446223360,
+        "phases": {
+          "setup": {
+            "baseline_bytes": 472547328,
+            "observed_peak_bytes": 478773248,
+            "samples": 2
+          },
+          "model_load": {
+            "baseline_bytes": 478773248,
+            "observed_peak_bytes": 14446223360,
+            "samples": 91
+          },
+          "cold": {
+            "baseline_bytes": 1340837888,
+            "observed_peak_bytes": 2934329344,
+            "samples": 32
+          },
+          "cold_output_check": {
+            "baseline_bytes": 2776563712,
+            "observed_peak_bytes": 2776563712,
+            "samples": 2
+          },
+          "cold_npz_save": {
+            "baseline_bytes": 2776563712,
+            "observed_peak_bytes": 2776563712,
+            "samples": 24
+          },
+          "cold_glb_export": {
+            "baseline_bytes": 2776563712,
+            "observed_peak_bytes": 3081261056,
+            "samples": 10
+          },
+          "between_requests": {
+            "baseline_bytes": 3016003584,
+            "observed_peak_bytes": 3593781248,
+            "samples": 8
+          },
+          "warm_1": {
+            "baseline_bytes": 3016003584,
+            "observed_peak_bytes": 3291127808,
+            "samples": 25
+          },
+          "warm_2": {
+            "baseline_bytes": 3149254656,
+            "observed_peak_bytes": 3577896960,
+            "samples": 23
+          },
+          "warm_3": {
+            "baseline_bytes": 3385757696,
+            "observed_peak_bytes": 3795136512,
+            "samples": 23
+          }
+        },
+        "limitation": "Observed sampled peaks can miss brief allocation spikes"
+      },
+      "script_wall_before_final_report_s": 23.666713498008903
+    },
+    "promptda": {
+      "status": "complete",
+      "candidate": "promptda",
+      "npz_compression": "stored",
+      "checkpoint": "/workspace/runtime/models/promptda/vitl/model.ckpt",
+      "promptda_repo": "/workspace/runtime/promptda-counterpart-20261019/PromptDA",
+      "base": "/input",
+      "started_utc": "2026-10-20T07:42:29.354774+00:00",
+      "pid": 54,
+      "seed": 42,
+      "native_precision": "PromptDA FP32 parameters, fp16 compute; matmul precision=highest; batch=2; RGB max_size=1008; full raw valid LiDAR",
+      "promptda_max_size": 1008,
+      "promptda_precision": "fp16",
+      "promptda_batch_size": 2,
+      "cache_state": "One model load per CLI process; no external warmup; filesystem page cache unknown/unflushed; allocator/model caches retained between requests",
+      "predict_scope": "Resident model + prepared PNG paths and sensor arrays through dense predictions and processed RGB on CPU; caller synchronizes GPU before and after predict_candidate",
+      "gpu_memory_scope": "Per-predict absolute allocated/reserved peaks include model; baseline sampled then peak counters reset before request; no cache emptying",
+      "requests": [
+        {
+          "label": "cold",
+          "predict_wall_s": 3.2476471069967374,
+          "gpu_memory": {
+            "baseline_allocated_bytes": 1361736704,
+            "baseline_reserved_bytes": 1379926016,
+            "peak_allocated_bytes": 4147829760,
+            "peak_reserved_bytes": 4796186624,
+            "peak_allocated_increase_bytes": 2786093056,
+            "peak_reserved_increase_bytes": 3416260608
+          },
+          "host_rss": {
+            "baseline_bytes": 785649664,
+            "observed_peak_bytes": 1823625216,
+            "samples": 35
+          }
+        },
+        {
+          "label": "warm_1",
+          "predict_wall_s": 2.5776144420087803,
+          "gpu_memory": {
+            "baseline_allocated_bytes": 1370256384,
+            "baseline_reserved_bytes": 4796186624,
+            "peak_allocated_bytes": 4147829760,
+            "peak_reserved_bytes": 4796186624,
+            "peak_allocated_increase_bytes": 2777573376,
+            "peak_reserved_increase_bytes": 0
+          },
+          "host_rss": {
+            "baseline_bytes": 1934479360,
+            "observed_peak_bytes": 2065784832,
+            "samples": 28
+          }
+        },
+        {
+          "label": "warm_2",
+          "predict_wall_s": 2.6026242199877743,
+          "gpu_memory": {
+            "baseline_allocated_bytes": 1370256384,
+            "baseline_reserved_bytes": 4796186624,
+            "peak_allocated_bytes": 4147829760,
+            "peak_reserved_bytes": 4796186624,
+            "peak_allocated_increase_bytes": 2777573376,
+            "peak_reserved_increase_bytes": 0
+          },
+          "host_rss": {
+            "baseline_bytes": 1908826112,
+            "observed_peak_bytes": 2137616384,
+            "samples": 28
+          }
+        },
+        {
+          "label": "warm_3",
+          "predict_wall_s": 2.662421348009957,
+          "gpu_memory": {
+            "baseline_allocated_bytes": 1370256384,
+            "baseline_reserved_bytes": 4796186624,
+            "peak_allocated_bytes": 4147829760,
+            "peak_reserved_bytes": 4796186624,
+            "peak_allocated_increase_bytes": 2777573376,
+            "peak_reserved_increase_bytes": 0
+          },
+          "host_rss": {
+            "baseline_bytes": 2031165440,
+            "observed_peak_bytes": 2156048384,
+            "samples": 29
+          }
+        }
+      ],
+      "prepared_input_load_s": 0.011027763015590608,
+      "frame_count": 20,
+      "frame_ids": [
+        0,
+        60,
+        120,
+        180,
+        240,
+        300,
+        360,
+        420,
+        480,
+        540,
+        600,
+        660,
+        720,
+        780,
+        840,
+        900,
+        958,
+        1014,
+        1069,
+        1123
+      ],
+      "cpu_threads": 8,
+      "model_load": {
+        "combined_wall_s": 8.463265083992155,
+        "resident_allocated_bytes": 1361736704,
+        "resident_reserved_bytes": 1379926016,
+        "peak_allocated_bytes_since_cuda_init": 1361736704,
+        "peak_reserved_bytes_since_cuda_init": 1379926016,
+        "host_rss": {
+          "baseline_bytes": 478347264,
+          "observed_peak_bytes": 3402305536,
+          "samples": 82
+        }
+      },
+      "environment": {
+        "platform": "Linux-5.14.0-503.26.1.el9_5.x86_64-x86_64-with-glibc2.35",
+        "python": "3.11.10",
+        "torch": "2.7.1+cu126",
+        "torch_cuda": "12.6",
+        "logical_device": "cuda:0",
+        "device_name": "NVIDIA GeForce RTX 4090 D",
+        "device_total_memory_bytes": 50864390144,
+        "float32_matmul_precision": "highest",
+        "cudnn_allow_tf32": true,
+        "CUDA_VISIBLE_DEVICES": null,
+        "NVIDIA_VISIBLE_DEVICES": "void",
+        "PYTORCH_CUDA_ALLOC_CONF": null
+      },
+      "processed_shape": [
+        20,
+        756,
+        1008
+      ],
+      "npz_field_shapes": {
+        "depth": [
+          20,
+          756,
+          1008
+        ],
+        "processed_images": [
+          20,
+          756,
+          1008,
+          3
+        ],
+        "intrinsics": [
+          20,
+          3,
+          3
+        ],
+        "extrinsics": [
+          20,
+          3,
+          4
+        ],
+        "frame_ids": [
+          20
+        ],
+        "is_metric": [],
+        "preprocess_method": [],
+        "preprocess_resolution": [],
+        "network_image_sizes": [
+          20,
+          2
+        ]
+      },
+      "cold_artifacts": {
+        "npz_save_s": 0.13905423998949118,
+        "glb_export_and_readback_s": 2.612859484012006,
+        "cold_request_through_artifacts_wall_s": 6.021034317003796,
+        "scope": "One continuous cold predict, output check, NPZ save, GLB export/readback; excludes model load and prepared metadata load",
+        "export": {
+          "file": "scene.glb",
+          "points_before_limit": 15240960,
+          "points": 1000000,
+          "bytes": 16000952,
+          "bounds_m": [
+            [
+              -1.7003873586654663,
+              -1.5672314167022705,
+              -5.726489543914795
+            ],
+            [
+              1.9061694145202637,
+              7.779031276702881,
+              12.640971183776855
+            ]
+          ],
+          "confidence_threshold": null,
+          "point_limit": 1000000,
+          "seed": 42,
+          "display_transform": [
+            [
+              0.083079032599926,
+              -0.9954792261123657,
+              0.04603242129087448,
+              0.15907253324985504
+            ],
+            [
+              0.9959017634391785,
+              0.08459370583295822,
+              0.03199310228228569,
+              0.9098991751670837
+            ],
+            [
+              -0.03574252128601074,
+              0.04318581148982048,
+              0.9984274506568909,
+              0.25317662954330444
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "glb_readback": "PASS"
+        }
+      },
+      "warm_summary": {
+        "n": 3,
+        "mean_s": 2.614220003335504,
+        "median_s": 2.6026242199877743,
+        "min_s": 2.5776144420087803,
+        "max_s": 2.662421348009957,
+        "sample_stdev_s": 0.04357636366149333,
+        "scope": "Three complete resident-model requests; no duplicate NPZ or GLB writes; no tail percentile claims"
+      },
+      "host_rss": {
+        "scope": "This PID only, after sampler startup; no child-process RSS or pre-sampler import peak",
+        "sampling_interval_s": 0.1,
+        "boundary_samples": true,
+        "observed_peak_bytes": 3402305536,
+        "phases": {
+          "setup": {
+            "baseline_bytes": 472166400,
+            "observed_peak_bytes": 478347264,
+            "samples": 2
+          },
+          "model_load": {
+            "baseline_bytes": 478347264,
+            "observed_peak_bytes": 3402305536,
+            "samples": 83
+          },
+          "cold": {
+            "baseline_bytes": 785649664,
+            "observed_peak_bytes": 1823625216,
+            "samples": 36
+          },
+          "cold_output_check": {
+            "baseline_bytes": 1823625216,
+            "observed_peak_bytes": 1823625216,
+            "samples": 2
+          },
+          "cold_npz_save": {
+            "baseline_bytes": 1823625216,
+            "observed_peak_bytes": 1823625216,
+            "samples": 3
+          },
+          "cold_glb_export": {
+            "baseline_bytes": 1823625216,
+            "observed_peak_bytes": 2247286784,
+            "samples": 25
+          },
+          "between_requests": {
+            "baseline_bytes": 1934479360,
+            "observed_peak_bytes": 2049597440,
+            "samples": 8
+          },
+          "warm_1": {
+            "baseline_bytes": 1934479360,
+            "observed_peak_bytes": 2065784832,
+            "samples": 29
+          },
+          "warm_2": {
+            "baseline_bytes": 1908826112,
+            "observed_peak_bytes": 2137616384,
+            "samples": 29
+          },
+          "warm_3": {
+            "baseline_bytes": 2031165440,
+            "observed_peak_bytes": 2156048384,
+            "samples": 30
+          }
+        },
+        "limitation": "Observed sampled peaks can miss brief allocation spikes"
+      },
+      "script_wall_before_final_report_s": 24.02791931500542
+    }
+  },
+  "native_prepared_delivery": {
+    "da3": {
+      "candidate": "da3",
+      "promptda_max_size": null,
+      "npz_compression": "deflate",
+      "frames": 20,
+      "device": "NVIDIA GeForce RTX 4090 D",
+      "processed_shape": [
+        20,
+        378,
+        504
+      ],
+      "promptda_batch_size": null,
+      "float32_matmul_precision": "highest",
+      "promptda_precision": null,
+      "input_and_model_load_s": 9.274024334998103,
+      "request_s": 2.9472187659994233,
+      "npz_save_s": 2.4885410889983177,
+      "cloud_export_s": 0.9765135410125367,
+      "total_after_imports_s": 15.68629773100838,
+      "export": {
+        "file": "cloud.glb",
+        "points_before_limit": 2286144,
+        "points": 1000000,
+        "bytes": 16000948,
+        "bounds_m": [
+          [
+            -1.8604251146316528,
+            -2.0005311965942383,
+            -4.301098823547363
+          ],
+          [
+            1.77215576171875,
+            5.90144157409668,
+            3.5982882976531982
+          ]
+        ],
+        "confidence_threshold": 2.1430976867675784,
+        "point_limit": 1000000,
+        "seed": 42,
+        "display_transform": [
+          [
+            0.083079032599926,
+            -0.9954792261123657,
+            0.04603242129087448,
+            0.15907253324985504
+          ],
+          [
+            0.9959017634391785,
+            0.08459370583295822,
+            0.03199310228228569,
+            0.9098991751670837
+          ],
+          [
+            -0.03574252128601074,
+            0.04318581148982048,
+            0.9984274506568909,
+            0.25317662954330444
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "glb_readback": "PASS"
+      }
+    },
+    "promptda": {
+      "candidate": "promptda",
+      "promptda_max_size": 1008,
+      "npz_compression": "stored",
+      "frames": 20,
+      "device": "NVIDIA GeForce RTX 4090 D",
+      "processed_shape": [
+        20,
+        756,
+        1008
+      ],
+      "promptda_batch_size": 2,
+      "float32_matmul_precision": "highest",
+      "promptda_precision": "fp16",
+      "input_and_model_load_s": 8.316727936995449,
+      "request_s": 3.3358752930071205,
+      "npz_save_s": 0.15350014698924497,
+      "cloud_export_s": 2.7160464829939883,
+      "total_after_imports_s": 14.522149859985802,
+      "export": {
+        "file": "cloud.glb",
+        "points_before_limit": 15240960,
+        "points": 1000000,
+        "bytes": 16000952,
+        "bounds_m": [
+          [
+            -1.7003873586654663,
+            -1.5672314167022705,
+            -5.726489543914795
+          ],
+          [
+            1.9061694145202637,
+            7.779031276702881,
+            12.640971183776855
+          ]
+        ],
+        "confidence_threshold": null,
+        "point_limit": 1000000,
+        "seed": 42,
+        "display_transform": [
+          [
+            0.083079032599926,
+            -0.9954792261123657,
+            0.04603242129087448,
+            0.15907253324985504
+          ],
+          [
+            0.9959017634391785,
+            0.08459370583295822,
+            0.03199310228228569,
+            0.9098991751670837
+          ],
+          [
+            -0.03574252128601074,
+            0.04318581148982048,
+            0.9984274506568909,
+            0.25317662954330444
+          ],
+          [
+            0.0,
+            0.0,
+            0.0,
+            1.0
+          ]
+        ],
+        "glb_readback": "PASS"
+      }
+    }
+  },
+  "continuous_raw_delivery": {
+    "da3": {
+      "measurement": {
+        "candidate": "da3",
+        "argv": [
+          "docker",
+          "run",
+          "--rm",
+          "--name",
+          "codex-d4d5-profile-da3-full-2828947",
+          "--network",
+          "none",
+          "--gpus",
+          "device=1",
+          "--shm-size",
+          "1g",
+          "--user",
+          "1006:1006",
+          "-v",
+          "/home/xingyu/.local/bin/uv:/usr/local/bin/uv:ro",
+          "-v",
+          "/home/xingyu/3D_Recognization:/workspace:ro",
+          "-v",
+          "/home/xingyu/3D_Recognization/Output/promptda-da3-d4d5b1bcd2-20261020/da3-full/prepared:/input:ro",
+          "-v",
+          "/home/xingyu/3D_Recognization/Output/promptda-da3-d4d5b1bcd2-20261020/da3-full:/profile:rw",
+          "-w",
+          "/workspace",
+          "-e",
+          "UV_CACHE_DIR=/tmp/uv",
+          "-e",
+          "PYTHONDONTWRITEBYTECODE=1",
+          "-e",
+          "PYTHONUNBUFFERED=1",
+          "-e",
+          "OMP_NUM_THREADS=8",
+          "-e",
+          "OPENBLAS_NUM_THREADS=8",
+          "-e",
+          "MKL_NUM_THREADS=8",
+          "-e",
+          "MPLCONFIGDIR=/tmp/mpl",
+          "--entrypoint",
+          "/usr/local/bin/uv",
+          "global-id-mapping:cos-background-20261013",
+          "run",
+          "--no-project",
+          "--offline",
+          "--python",
+          "/app/.venv/bin/python",
+          "python",
+          "/workspace/scripts/3d/scanner/reconstruct.py",
+          "--base",
+          "/input",
+          "--candidate",
+          "da3",
+          "--output",
+          "/profile/artifacts",
+          "--device",
+          "cuda:0",
+          "--checkpoint",
+          "/opt/models/da3/snapshots/b2359bdf726fb44ef62acca04d629dcf158053e7"
+        ],
+        "before": {
+          "devices_csv": "0, GPU-3fca60cd-8d87-3f5b-140c-494a55ed2857, 42737, 5772, 0\n1, GPU-2f435ae9-398e-4bc1-ded3-ddb0e360ff0c, 8177, 40332, 0\n2, GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 12205, 11877, 85",
+          "apps_csv": "GPU-3fca60cd-8d87-3f5b-140c-494a55ed2857, 17108, 42728\nGPU-2f435ae9-398e-4bc1-ded3-ddb0e360ff0c, 7262, 8168\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 6221, 1580\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 8550, 3450\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 2424652, 5834\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 2425077, 1316"
+        },
+        "sampling_errors": [],
+        "container_name": "codex-d4d5-profile-da3-full-2828947",
+        "preparation_process_wall_s": 4.501203126972541,
+        "exit_code": 0,
+        "container_wall_s": 18.41209474898642,
+        "raw_scan_to_process_exit_wall_s": 22.91366865299642,
+        "owned_pids": [
+          2829280,
+          2829351,
+          2829354
+        ],
+        "task_gpu_sampled_peak_mib": 16642,
+        "tree_rss_sampled_peak_bytes": 12202504192,
+        "after": {
+          "devices_csv": "0, GPU-3fca60cd-8d87-3f5b-140c-494a55ed2857, 42737, 5772, 0\n1, GPU-2f435ae9-398e-4bc1-ded3-ddb0e360ff0c, 8177, 40332, 100\n2, GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 12205, 11877, 87",
+          "apps_csv": "GPU-3fca60cd-8d87-3f5b-140c-494a55ed2857, 17108, 42728\nGPU-2f435ae9-398e-4bc1-ded3-ddb0e360ff0c, 7262, 8168\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 6221, 1580\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 8550, 3450\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 2424652, 5834\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 2425077, 1316"
+        }
+      },
+      "native": {
+        "candidate": "da3",
+        "promptda_max_size": null,
+        "npz_compression": "deflate",
+        "frames": 20,
+        "device": "NVIDIA GeForce RTX 4090 D",
+        "processed_shape": [
+          20,
+          378,
+          504
+        ],
+        "promptda_batch_size": null,
+        "float32_matmul_precision": "highest",
+        "promptda_precision": null,
+        "input_and_model_load_s": 8.824958062992664,
+        "request_s": 2.848450674995547,
+        "npz_save_s": 2.2860152820067015,
+        "cloud_export_s": 0.9645076750020962,
+        "total_after_imports_s": 14.923931694997009,
+        "export": {
+          "file": "cloud.glb",
+          "points_before_limit": 2286144,
+          "points": 1000000,
+          "bytes": 16000948,
+          "bounds_m": [
+            [
+              -1.8604251146316528,
+              -2.0005311965942383,
+              -4.301098823547363
+            ],
+            [
+              1.77215576171875,
+              5.90144157409668,
+              3.5982882976531982
+            ]
+          ],
+          "confidence_threshold": 2.1430976867675784,
+          "point_limit": 1000000,
+          "seed": 42,
+          "display_transform": [
+            [
+              0.083079032599926,
+              -0.9954792261123657,
+              0.04603242129087448,
+              0.15907253324985504
+            ],
+            [
+              0.9959017634391785,
+              0.08459370583295822,
+              0.03199310228228569,
+              0.9098991751670837
+            ],
+            [
+              -0.03574252128601074,
+              0.04318581148982048,
+              0.9984274506568909,
+              0.25317662954330444
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "glb_readback": "PASS"
+        }
+      },
+      "preparation": {
+        "source": "/home/xingyu/3D_Recognization/fd-videos/d4d5b1bcd2",
+        "output": "/home/xingyu/3D_Recognization/Output/promptda-da3-d4d5b1bcd2-20261020/da3-full/prepared",
+        "source_frame_count": 1175,
+        "selected_frame_count": 20,
+        "frame_ids": [
+          0,
+          60,
+          120,
+          180,
+          240,
+          300,
+          360,
+          420,
+          480,
+          540,
+          600,
+          660,
+          720,
+          780,
+          840,
+          900,
+          958,
+          1014,
+          1069,
+          1123
+        ],
+        "imports_s": 0.11220626498106867,
+        "total_after_script_imports_s": 4.418683618976502,
+        "events": [
+          {
+            "name": "odometry_parse_and_1hz_selection",
+            "start": 260567.541830813,
+            "end": 260567.553984693
+          },
+          {
+            "name": "ffmpeg_decode_select_png_and_rename",
+            "start": 260567.553987137,
+            "end": 260570.95450457
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260570.956480284,
+            "end": 260571.005487099
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.005532699,
+            "end": 260571.006776761
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.006789873,
+            "end": 260571.007118033
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.007624114,
+            "end": 260571.007723774
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.007862238,
+            "end": 260571.054019835
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.054224248,
+            "end": 260571.055379015
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.055393636,
+            "end": 260571.05574043
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.056181779,
+            "end": 260571.056261456
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.056339851,
+            "end": 260571.10124862
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.101296611,
+            "end": 260571.102498575
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.102513681,
+            "end": 260571.102850365
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.103264514,
+            "end": 260571.10334211
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.103436442,
+            "end": 260571.141912545
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.1419499,
+            "end": 260571.143216605
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.143230502,
+            "end": 260571.143564958
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.143988144,
+            "end": 260571.144075726
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.144160713,
+            "end": 260571.187816274
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.187846163,
+            "end": 260571.189186456
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.189201087,
+            "end": 260571.189516197
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.189911248,
+            "end": 260571.189981356
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.190088237,
+            "end": 260571.232408863
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.232436776,
+            "end": 260571.233765502
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.233779762,
+            "end": 260571.234109195
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.234488752,
+            "end": 260571.234554793
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.234631972,
+            "end": 260571.279092951
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.279123188,
+            "end": 260571.280353301
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.280366076,
+            "end": 260571.280678837
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.281084113,
+            "end": 260571.281152209
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.28124829,
+            "end": 260571.327280525
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.327308225,
+            "end": 260571.32846274
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.328475017,
+            "end": 260571.328771349
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.329180133,
+            "end": 260571.329261761
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.329345708,
+            "end": 260571.372944681
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.3729721,
+            "end": 260571.374196168
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.374209633,
+            "end": 260571.374549534
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.374927453,
+            "end": 260571.374993533
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.375094419,
+            "end": 260571.415094819
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.41511953,
+            "end": 260571.416420107
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.41643336,
+            "end": 260571.416759016
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.41715721,
+            "end": 260571.417236857
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.417314968,
+            "end": 260571.459542863
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.45956705,
+            "end": 260571.460776202
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.460790209,
+            "end": 260571.461096541
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.461484617,
+            "end": 260571.461556896
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.461640366,
+            "end": 260571.505670383
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.505702393,
+            "end": 260571.506834388
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.506846367,
+            "end": 260571.50714549
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.507507963,
+            "end": 260571.507571349
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.507646271,
+            "end": 260571.55557221
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.555628895,
+            "end": 260571.55698374
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.55700674,
+            "end": 260571.557359199
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.557849555,
+            "end": 260571.557937469
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.558064211,
+            "end": 260571.603241404
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.603293738,
+            "end": 260571.604560095
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.604577973,
+            "end": 260571.604898026
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.605389835,
+            "end": 260571.605477004
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.605573092,
+            "end": 260571.645704532
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.645744977,
+            "end": 260571.646820053
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.646835658,
+            "end": 260571.647106588
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.647550085,
+            "end": 260571.647633015
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.647734311,
+            "end": 260571.681791391
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.681823217,
+            "end": 260571.682784263
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.682797361,
+            "end": 260571.683028195
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.683406628,
+            "end": 260571.683478306
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.683553399,
+            "end": 260571.720189316
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.720219046,
+            "end": 260571.721113554
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.721126127,
+            "end": 260571.721339064
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.721711316,
+            "end": 260571.721775465
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.721874587,
+            "end": 260571.756694795
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.756722674,
+            "end": 260571.757590687
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.757602238,
+            "end": 260571.757818006
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.758182533,
+            "end": 260571.758246082
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.758319863,
+            "end": 260571.792645846
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.792672441,
+            "end": 260571.793607233
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.793622151,
+            "end": 260571.793842269
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.794222488,
+            "end": 260571.794284959
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.794366733,
+            "end": 260571.827806474
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.827945639,
+            "end": 260571.828607678
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260571.828623475,
+            "end": 260571.828854239
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260571.829500121,
+            "end": 260571.829655735
+          },
+          {
+            "name": "camera_npz_write",
+            "start": 260571.8323741,
+            "end": 260571.84708579
+          },
+          {
+            "name": "metadata_total",
+            "start": 260570.954507537,
+            "end": 260571.848293215
+          }
+        ],
+        "output_bytes": 59330800,
+        "scope": "Existing prepare_scanner functions; full decode to original-ID PNGs and camera_inputs.npz; no cache clearing or fsync"
+      }
+    },
+    "promptda": {
+      "measurement": {
+        "candidate": "promptda",
+        "argv": [
+          "docker",
+          "run",
+          "--rm",
+          "--name",
+          "codex-d4d5-profile-promptda-full-2838542",
+          "--network",
+          "none",
+          "--gpus",
+          "device=1",
+          "--shm-size",
+          "1g",
+          "--user",
+          "1006:1006",
+          "-v",
+          "/home/xingyu/.local/bin/uv:/usr/local/bin/uv:ro",
+          "-v",
+          "/home/xingyu/3D_Recognization:/workspace:ro",
+          "-v",
+          "/home/xingyu/3D_Recognization/Output/promptda-da3-d4d5b1bcd2-20261020/promptda-full-ready/prepared:/input:ro",
+          "-v",
+          "/home/xingyu/3D_Recognization/Output/promptda-da3-d4d5b1bcd2-20261020/promptda-full-ready:/profile:rw",
+          "-w",
+          "/workspace",
+          "-e",
+          "UV_CACHE_DIR=/tmp/uv",
+          "-e",
+          "PYTHONDONTWRITEBYTECODE=1",
+          "-e",
+          "PYTHONUNBUFFERED=1",
+          "-e",
+          "OMP_NUM_THREADS=8",
+          "-e",
+          "OPENBLAS_NUM_THREADS=8",
+          "-e",
+          "MKL_NUM_THREADS=8",
+          "-e",
+          "MPLCONFIGDIR=/tmp/mpl",
+          "--entrypoint",
+          "/usr/local/bin/uv",
+          "global-id-mapping:cos-background-20261013",
+          "run",
+          "--no-project",
+          "--offline",
+          "--python",
+          "/app/.venv/bin/python",
+          "python",
+          "/workspace/scripts/3d/scanner/reconstruct.py",
+          "--base",
+          "/input",
+          "--candidate",
+          "promptda",
+          "--output",
+          "/profile/artifacts",
+          "--device",
+          "cuda:0",
+          "--checkpoint",
+          "/workspace/runtime/models/promptda/vitl/model.ckpt",
+          "--promptda-repo",
+          "/workspace/runtime/promptda-counterpart-20261019/PromptDA",
+          "--promptda-batch-size",
+          "2",
+          "--promptda-max-size",
+          "1008",
+          "--promptda-precision",
+          "fp16"
+        ],
+        "before": {
+          "devices_csv": "0, GPU-3fca60cd-8d87-3f5b-140c-494a55ed2857, 42737, 5772, 0\n1, GPU-2f435ae9-398e-4bc1-ded3-ddb0e360ff0c, 8177, 40332, 0\n2, GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 12205, 11877, 94",
+          "apps_csv": "GPU-3fca60cd-8d87-3f5b-140c-494a55ed2857, 17108, 42728\nGPU-2f435ae9-398e-4bc1-ded3-ddb0e360ff0c, 7262, 8168\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 6221, 1580\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 8550, 3450\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 2424652, 5834\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 2425077, 1316"
+        },
+        "sampling_errors": [],
+        "container_name": "codex-d4d5-profile-promptda-full-2838542",
+        "preparation_process_wall_s": 4.311923100991407,
+        "readiness_wait_observations": [],
+        "exit_code": 0,
+        "container_wall_s": 18.81214413701673,
+        "raw_scan_to_process_exit_wall_s": 23.124452363990713,
+        "owned_pids": [
+          2838890,
+          2838970
+        ],
+        "task_gpu_sampled_peak_mib": 4996,
+        "tree_rss_sampled_peak_bytes": 3406446592,
+        "after": {
+          "devices_csv": "0, GPU-3fca60cd-8d87-3f5b-140c-494a55ed2857, 42737, 5772, 0\n1, GPU-2f435ae9-398e-4bc1-ded3-ddb0e360ff0c, 8177, 40332, 0\n2, GPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 12205, 11877, 74",
+          "apps_csv": "GPU-3fca60cd-8d87-3f5b-140c-494a55ed2857, 17108, 42728\nGPU-2f435ae9-398e-4bc1-ded3-ddb0e360ff0c, 7262, 8168\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 6221, 1580\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 8550, 3450\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 2424652, 5834\nGPU-d8012344-c2b6-f54b-7edc-9df3acda6fa7, 2425077, 1316"
+        }
+      },
+      "native": {
+        "candidate": "promptda",
+        "promptda_max_size": 1008,
+        "npz_compression": "stored",
+        "frames": 20,
+        "device": "NVIDIA GeForce RTX 4090 D",
+        "processed_shape": [
+          20,
+          756,
+          1008
+        ],
+        "promptda_batch_size": 2,
+        "float32_matmul_precision": "highest",
+        "promptda_precision": "fp16",
+        "input_and_model_load_s": 9.194604004005669,
+        "request_s": 3.2865327499748673,
+        "npz_save_s": 0.14152238401584327,
+        "cloud_export_s": 2.772496814985061,
+        "total_after_imports_s": 15.39515595298144,
+        "export": {
+          "file": "cloud.glb",
+          "points_before_limit": 15240960,
+          "points": 1000000,
+          "bytes": 16000952,
+          "bounds_m": [
+            [
+              -1.7003873586654663,
+              -1.5672314167022705,
+              -5.726489543914795
+            ],
+            [
+              1.9061694145202637,
+              7.779031276702881,
+              12.640971183776855
+            ]
+          ],
+          "confidence_threshold": null,
+          "point_limit": 1000000,
+          "seed": 42,
+          "display_transform": [
+            [
+              0.083079032599926,
+              -0.9954792261123657,
+              0.04603242129087448,
+              0.15907253324985504
+            ],
+            [
+              0.9959017634391785,
+              0.08459370583295822,
+              0.03199310228228569,
+              0.9098991751670837
+            ],
+            [
+              -0.03574252128601074,
+              0.04318581148982048,
+              0.9984274506568909,
+              0.25317662954330444
+            ],
+            [
+              0.0,
+              0.0,
+              0.0,
+              1.0
+            ]
+          ],
+          "glb_readback": "PASS"
+        }
+      },
+      "preparation": {
+        "source": "/home/xingyu/3D_Recognization/fd-videos/d4d5b1bcd2",
+        "output": "/home/xingyu/3D_Recognization/Output/promptda-da3-d4d5b1bcd2-20261020/promptda-full-ready/prepared",
+        "source_frame_count": 1175,
+        "selected_frame_count": 20,
+        "frame_ids": [
+          0,
+          60,
+          120,
+          180,
+          240,
+          300,
+          360,
+          420,
+          480,
+          540,
+          600,
+          660,
+          720,
+          780,
+          840,
+          900,
+          958,
+          1014,
+          1069,
+          1123
+        ],
+        "imports_s": 0.11123958401731215,
+        "total_after_script_imports_s": 4.226006442011567,
+        "events": [
+          {
+            "name": "odometry_parse_and_1hz_selection",
+            "start": 260656.285853265,
+            "end": 260656.298056875
+          },
+          {
+            "name": "ffmpeg_decode_select_png_and_rename",
+            "start": 260656.29805914,
+            "end": 260659.505810388
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.508482406,
+            "end": 260659.561229356
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.561282764,
+            "end": 260659.562567441
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.562581762,
+            "end": 260659.562940469
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.563504366,
+            "end": 260659.563616017
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.563809756,
+            "end": 260659.612976778
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.613318389,
+            "end": 260659.61460798
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.614624044,
+            "end": 260659.614986745
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.615421413,
+            "end": 260659.615501679
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.615593227,
+            "end": 260659.661335853
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.661392855,
+            "end": 260659.662733111
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.662752766,
+            "end": 260659.663136143
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.663595621,
+            "end": 260659.663680586
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.663790797,
+            "end": 260659.705128481
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.705185025,
+            "end": 260659.706454143
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.706470313,
+            "end": 260659.706805406
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.707242258,
+            "end": 260659.707325429
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.707433096,
+            "end": 260659.750772146
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.750809122,
+            "end": 260659.752094984
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.752109249,
+            "end": 260659.752405412
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.752789982,
+            "end": 260659.752861423
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.752976114,
+            "end": 260659.795609399
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.79564203,
+            "end": 260659.796887803
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.796902044,
+            "end": 260659.797249974
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.797645756,
+            "end": 260659.797715507
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.797809195,
+            "end": 260659.841897107
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.841928001,
+            "end": 260659.84321019
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.843224038,
+            "end": 260659.843561223
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.843923588,
+            "end": 260659.843985289
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.844104457,
+            "end": 260659.894472563
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.894530702,
+            "end": 260659.895802076
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.895819658,
+            "end": 260659.896144414
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.896586414,
+            "end": 260659.89669855
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.896802675,
+            "end": 260659.940996141
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.941042095,
+            "end": 260659.942384797
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.942399478,
+            "end": 260659.942745221
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.943200466,
+            "end": 260659.943276849
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.943375744,
+            "end": 260659.98352443
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.983555521,
+            "end": 260659.9848644
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.984879076,
+            "end": 260659.985199428
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260659.985566367,
+            "end": 260659.985651234
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260659.985759865,
+            "end": 260660.026765148
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.026795048,
+            "end": 260660.02796423
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.027976324,
+            "end": 260660.028294819
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.028658243,
+            "end": 260660.028718018
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.028798798,
+            "end": 260660.071569448
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.071596659,
+            "end": 260660.072747678
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.072760686,
+            "end": 260660.073083565
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.073499203,
+            "end": 260660.073568502
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.073659754,
+            "end": 260660.119617641
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.119645249,
+            "end": 260660.120758032
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.120771434,
+            "end": 260660.121066438
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.121411504,
+            "end": 260660.121467925
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.121544213,
+            "end": 260660.162243473
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.162271251,
+            "end": 260660.163347315
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.163360533,
+            "end": 260660.163625328
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.163969406,
+            "end": 260660.16403266
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.164106927,
+            "end": 260660.199851813
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.199876801,
+            "end": 260660.200850813
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.200863413,
+            "end": 260660.201117857
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.20147482,
+            "end": 260660.201531856
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.201615265,
+            "end": 260660.234264144
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.234288731,
+            "end": 260660.235269297
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.235282095,
+            "end": 260660.235504654
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.235859458,
+            "end": 260660.23591789
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.23598663,
+            "end": 260660.272217099
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.272244675,
+            "end": 260660.273113181
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.273125017,
+            "end": 260660.27333553
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.273678221,
+            "end": 260660.273735238
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.273805305,
+            "end": 260660.307957391
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.307982207,
+            "end": 260660.308832413
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.308844201,
+            "end": 260660.309051194
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.309387692,
+            "end": 260660.309442129
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.309509019,
+            "end": 260660.343923967
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.343948917,
+            "end": 260660.344805789
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.344817557,
+            "end": 260660.345022734
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.345364926,
+            "end": 260660.345421963
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.345491193,
+            "end": 260660.37971509
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.379875408,
+            "end": 260660.380607407
+          },
+          {
+            "name": "png_read_decode",
+            "start": 260660.38062511,
+            "end": 260660.380878423
+          },
+          {
+            "name": "camera_from_csv_row",
+            "start": 260660.381562137,
+            "end": 260660.381721408
+          },
+          {
+            "name": "camera_npz_write",
+            "start": 260660.384869925,
+            "end": 260660.399463582
+          },
+          {
+            "name": "metadata_total",
+            "start": 260659.505813498,
+            "end": 260660.400608034
+          }
+        ],
+        "output_bytes": 59330800,
+        "scope": "Existing prepare_scanner functions; full decode to original-ID PNGs and camera_inputs.npz; no cache clearing or fsync"
+      }
+    }
+  },
+  "diagnostic": {
+    "da3": {
+      "status": "complete",
+      "instrumented_model_load_wall_s": 4.852587410015985,
+      "instrumented_request_wall_s": 2.151630563021172,
+      "operator_profile_wall_s": 2.484758064005291,
+      "instrumented_points_export_wall_s": 1.0130727229989134,
+      "parameter_count": 1689845519,
+      "parameter_bytes": 6759382076
+    },
+    "promptda": {
+      "status": "complete",
+      "instrumented_model_load_wall_s": 9.078574539977126,
+      "instrumented_request_wall_s": 2.675653433019761,
+      "operator_profile_wall_s": 3.323738910985412,
+      "instrumented_points_export_wall_s": 2.480081173009239,
+      "parameter_count": 340046529,
+      "parameter_bytes": 1360186116
+    }
+  },
+  "limitations": [
+    "Current production configurations are not equal-resolution or equal-input comparisons.",
+    "Cold is a fresh model/process; filesystem page cache is not flushed.",
+    "One full raw run and three resident warm requests per candidate; no tail-latency or multi-scene inference.",
+    "Driver/RSS peaks are sampled; CPU tree RSS sums can double-count shared pages.",
+    "Fine-grained diagnostic and operator-profile requests are distinct from the baseline.",
+    "No independent geometric accuracy, product matching, footprint or visual-quality acceptance.",
+    "One orchestration stopped at a transient post-exit GPU utilization preflight; retained and completed via explicit new PromptDA attempt."
+  ]
+}

@@ -1,0 +1,22 @@
+# Findings
+
+- Current Scanner defaults have changed since early integration: PromptDA uses RGB long side 1008, FP16 autocast with FP32 weights, batch 2; DA3 uses joint 504/BF16 inference and trusted Scanner K/E. Checked in `scripts/3d/scanner/candidates.py`.
+- Source MP4: 1920×1440, nominal 60 Hz, 1175 frames, 19.85 seconds (`ffprobe`). Synchronized 1 Hz selection must come from odometry, without truncating the scan.
+- Raw directory contains RGB, odometry, depth, confidence, camera matrix and IMU; the Scanner entry point needs no detections. Product matching and area cannot be inferred from this point-cloud path.
+- Reuse the existing local `global-id-mapping:cos-background-20261013` image and local model files; no model downloads or image pulls.
+- Available host RAM about 421 GiB; root disk about 6.25 GiB. GPU1 is idle apart from an existing 8168 MiB model service, GPU2 is busy with unrelated users' jobs.
+- Full selection is 20 frames, original IDs `[0,60,120,180,240,300,360,420,480,540,600,660,720,780,840,900,958,1014,1069,1123]`. Shared preparation measured 4.620223 seconds, 59,330,800 output bytes.
+- Low-overhead warm medians: DA3 2.035445 s; PromptDA 2.602624 s. Output depth shapes `[20,378,504]` versus `[20,756,1008]`; 3,810,240 versus 15,240,960 depth pixels.
+- Cold request through NPZ and POINTS GLB: DA3 6.158575 s, PromptDA 6.021034 s, excluding model load and process startup. DA3 retains DEFLATE NPZ; PromptDA uses stored NPZ. Both GLBs contain 1,000,000 points, while pre-limit counts are 2,286,144 and 15,240,960.
+- Independent diagnostic: PromptDA PNG RGB conversion/decode 1.02264 s inclusive inside 1.03039 s Image.open context; do not add those parents/children. DINOv2 construction 7.37658 s. Native GLB code backprojects all valid points before limiting the output.
+- GPU1 baseline driver sampled task peaks: DA3 16642 MiB, PromptDA 4996 MiB. These are new 20-frame runs and should not be conflated with historical 14-frame/GPU2 peaks.
+- Low-overhead baseline and separate CUDA-event/source/cProfile/operator diagnostic runs all exited 0; no algorithm or production-source edits.
+- Continuous raw-video→GLB completed: DA3 22.913669s; PromptDA 23.124452s. Native body totals 14.923932/15.395156s, with preparation process 4.501203/4.311923s and container lifecycle residual 3.488163/3.416988s.
+- Driver task sampled peaks also match in the native delivery/full runs: 16642/4996 MiB. Torch request allocator peaks 11.909/3.863 GiB allocated and 15.838/4.467 GiB reserved; these are different memory definitions and are not additive.
+- PromptDA D2H host wall 0.532768s includes waiting for queued network work; CUDA transfer stream interval 0.016220s. Do not attribute all host wait to transfer.
+- PromptDA model-load cProfile measured uniform_ self 4.120032s over 379 calls; proposed selective skip-init remains unimplemented and needs checkpoint coverage review first. Point backprojection precedes the million-point output limit; proposed index selection before projection remains unimplemented.
+- Completed 8 GPU model processes with exit 0. One outer full-run orchestration stopped before launching PromptDA due to stale high-utilization preflight; explicit recovered run completed, original evidence preserved.
+- Final host GPU1: 8177MiB total device usage, only original PID7262/8168MiB service, utilization0%; no owned profiling containers left. GPU2 other-user jobs preserved. Software metadata: NumPy1.26.4/OpenCV4.11.0/Pillow12.3.0/psutil7.2.2/cuDNN90501.
+- Follow-up three-medium-agent review: torch.hub DINO interval7.377s contains constructor4.069739s and first vision_transformer import3.301674s (cpu_profiles.csv312/319). Selective skip-init must handle both Kaiming and final Linear trunc_normal_ while retaining tokens/norm/buffers; DA3 safetensors coverage audit cannot be reused unchanged for PromptDA.ckpt.
+- Same-index preprojection sampling can cut point-level output work from15.24M to1M, but original full-domain finite validation and possible BLAS shape-dependent coordinate roundoff remain equivalence boundaries. Current pixels construction has a float64 temporary; the actual matmuls already usefloat32.
+- Bounded CPU prefetch is the highest priority warm-request candidate; delayedD2H is related and gains cannot be added. GPU resize/batch/compile and mmap/assign remain lower priority. Existing DA3 standby is CPU-loaded/one-shot, offering an alternative service lifecycle to GPU residency; PromptDA rootmatching still consumes explicitcache.

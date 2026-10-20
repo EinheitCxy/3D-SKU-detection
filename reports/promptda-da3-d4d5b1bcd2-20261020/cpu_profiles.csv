@@ -1,0 +1,601 @@
+candidate,phase,file,line,function,primitive_calls,calls,self_s,cumulative_s
+da3,cpu_model_load_top,/workspace/scripts/3d/scanner/candidates.py,29,load_candidate,1,1,9.738100000000001e-05,4.852347761
+da3,cpu_model_load_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,68,measured,4,6,0.108834657,4.808587901
+da3,cpu_model_load_top,/workspace/src/da3_model_loading.py,141,load_da3_model,1,1,5.0364e-05,2.8385309810000003
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/huggingface_hub/utils/_validators.py,78,_inner_fn,1,1,5.445e-05,2.837619382
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/huggingface_hub/hub_mixin.py,460,from_pretrained,1,1,7.325e-05,2.837559269
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/huggingface_hub/hub_mixin.py,758,_from_pretrained,1,1,2.7797e-05,2.837079166
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1228,to,1,1,3.4374e-05,1.972117512
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,912,_apply,1,1634,0.080112098,1.9720183390000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1332,convert,1384,1384,0.001792729,1.866201124
+da3,cpu_model_load_top,~,0,<method 'to' of 'torch._C.TensorBase' objects>,1384,1384,1.863568367,1.863568367
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,75,__init__,1,1,5.8336000000000005e-05,1.562545698
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/cfg.py,108,create_object,1,11,0.00029844100000000004,1.424444931
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/da3.py,324,__init__,1,1,1.5436000000000003e-05,1.4057709930000002
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/da3.py,66,__init__,2,2,6.7129e-05,1.38112495
+da3,cpu_model_load_top,/workspace/src/da3_model_loading.py,153,_load_as_safetensor,1,1,1.6408e-05,1.273937909
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/cfg.py,101,import_item,11,11,3.387e-05,1.190542175
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/importlib/__init__.py,108,import_module,11,11,3.4925e-05,1.190500114
+da3,cpu_model_load_top,<frozen importlib._bootstrap>,1192,_gcd_import,11,12,3.2215e-05,1.1904495780000002
+da3,cpu_model_load_top,<frozen importlib._bootstrap>,1165,_find_and_load,11,129,0.000949535,1.1904051370000002
+da3,cpu_model_load_top,<frozen importlib._bootstrap>,1120,_find_and_load_unlocked,6,124,0.000890109,1.1901564040000001
+da3,cpu_model_load_top,<frozen importlib._bootstrap>,666,_load_unlocked,7,124,0.0006444980000000001,1.189065805
+da3,cpu_model_load_top,<frozen importlib._bootstrap_external>,934,exec_module,6,122,0.00034927300000000004,1.188715006
+da3,cpu_model_load_top,<frozen importlib._bootstrap>,233,_call_with_frames_removed,13,375,0.000375905,1.18807619
+da3,cpu_model_load_top,~,0,<built-in method builtins.exec>,6,270,0.013592386000000001,1.187677091
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/dinov2.py,1,<module>,1,1,1.9129000000000003e-05,1.062697067
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/vision_transformer.py,1,<module>,1,1,4.8031e-05,1.062218232
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/__init__.py,1,<module>,1,1,3.0440000000000003e-05,1.0599681410000001
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/swiglu_ffn.py,1,<module>,1,1,1.3713e-05,1.057175028
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/__init__.py,1,<module>,1,1,7.3805e-05,1.044577236
+da3,cpu_model_load_top,<frozen importlib._bootstrap>,1207,_handle_fromlist,7653,7678,0.006293892000000001,0.966148938
+da3,cpu_model_load_top,~,0,<built-in method builtins.__import__>,19,31,0.00023751000000000002,0.9630271260000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/huggingface_hub/hub_mixin.py,809,_load_as_safetensor,1,1,2.0698e-05,0.956507642
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/__init__.py,1,<module>,1,1,0.000125749,0.924536338
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/safetensors/torch.py,190,load_model,1,1,0.002436136,0.8478818690000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/triton_splitk.py,1,<module>,1,1,0.00012607000000000002,0.792893984
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/_triton/splitk_kernels.py,1,<module>,1,1,0.000133463,0.7488668420000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,2485,load_state_dict,1,1,0.000347319,0.682358546
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,2540,load,1,1634,0.011440307,0.682003918
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/_triton/splitk_kernels.py,607,_get_splitk_kernel,4,4,0.0015873410000000001,0.6545103200000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/triton/vararg_kernel.py,183,unroll_varargs,4,4,0.000283771,0.6528990370000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,2304,_load_from_state_dict,1634,1634,0.039788267,0.634818317
+da3,cpu_model_load_top,~,0,<method 'copy_' of 'torch._C.TensorBase' objects>,1377,1377,0.567873964,0.567873964
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/triton/runtime/jit.py,599,__init__,21,21,0.002141553,0.433826062
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/inspect.py,1231,getsourcelines,46,46,0.000471162,0.41668237900000005
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/inspect.py,1220,getblock,46,46,0.049011341,0.412052232
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/tokenize.py,433,_tokenize,72484,72484,0.188829233,0.32232230500000003
+da3,cpu_model_load_top,/workspace/src/da3_model_loading.py,77,audit_checkpoint,1,1,0.00989913,0.31707138300000004
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/triton/runtime/jit.py,759,jit,17,17,3.1694000000000005e-05,0.269158759
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/triton/runtime/jit.py,788,decorator,17,17,0.00011745700000000001,0.269127065
+da3,cpu_model_load_top,~,0,<method 'get_slice' of 'builtins.safe_open' objects>,1377,1377,0.265402277,0.265402277
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,414,visit,8,22752,0.020189854,0.244478252
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/inspect.py,1252,getsource,21,21,4.1684e-05,0.20528822000000002
+da3,cpu_model_load_top,~,0,<built-in method builtins.compile>,115,115,0.19152623300000002,0.19152623300000002
+da3,cpu_model_load_top,<frozen importlib._bootstrap_external>,1007,get_code,122,122,0.001165694,0.176252328
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,488,generic_visit,4,13833,0.029510852,0.169113133
+da3,cpu_model_load_top,<frozen importlib._bootstrap_external>,999,source_to_code,94,94,0.000172286,0.165282912
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/copy.py,128,deepcopy,231,40556,0.06829048700000001,0.16358271100000002
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/omegaconf/dictconfig.py,306,__setitem__,155,324,0.000272875,0.145252623
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/omegaconf/dictconfig.py,316,__set_impl,155,324,0.000560764,0.145110343
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/omegaconf/basecontainer.py,524,_set_item_impl,155,384,0.0041351800000000005,0.144564867
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/triton/vararg_kernel.py,91,visit_For,16,28,0.000984688,0.13959660200000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/safetensors/torch.py,355,load_file,1,1,0.002987621,0.125776678
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/copy.py,259,_reconstruct,739,3503,0.011519243,0.12462223300000001
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/gs_adapter.py,1,<module>,1,1,2.4276000000000003e-05,0.123009506
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/cfg.py,31,load_config,1,3,7.128700000000001e-05,0.122651876
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/sh_helpers.py,1,<module>,1,1,1.271e-05,0.122646158
+da3,cpu_model_load_top,~,0,<method 'get_tensor' of 'builtins.safe_open' objects>,1377,1377,0.10735510300000001,0.122355298
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/e3nn/o3/__init__.py,1,<module>,1,1,8.8199e-05,0.12057244800000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_library/custom_ops.py,145,inner,14,14,0.000154856,0.119814999
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/copy.py,227,_deepcopy_dict,788,3552,0.01948255,0.116517485
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/cfg.py,56,resolve_recursive,1,52,0.000443939,0.114569349
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_library/custom_ops.py,186,__init__,14,14,0.000176109,0.114502482
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_library/custom_ops.py,589,_register_to_dispatcher,14,14,0.000333887,0.112444949
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/dinov2.py,23,__init__,2,2,3.4112e-05,0.10260889200000001
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/vision_transformer.py,84,__init__,2,2,0.00019591400000000002,0.102374642
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/vision_transformer.py,199,<listcomp>,2,2,0.000370546,0.096787943
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/block.py,27,__init__,64,64,0.00152027,0.09637925
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/omegaconf/dictconfig.py,62,__init__,95,171,0.001178505,0.09590095300000001
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/omegaconf/dictconfig.py,641,_set_value,95,171,0.00022049700000000003,0.090649065
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/omegaconf/dictconfig.py,649,_set_value_impl,95,171,0.001238078,0.090516309
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/library.py,187,_register_fake,14,14,0.00018015900000000002,0.086305397
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/inspect.py,1051,findsource,60,60,0.0006572860000000001,0.083821936
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_library/utils.py,45,get_source,14,14,7.1557e-05,0.08245597
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/inspect.py,1658,getframeinfo,14,14,0.00026505400000000003,0.082378854
+da3,cpu_model_load_top,~,0,<method 'match' of 're.Pattern' objects>,69540,69540,0.081779428,0.081779428
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/inspect.py,969,getmodule,82,82,0.024226014,0.07847401400000001
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,1722,unparse,4,4,2.4222000000000003e-05,0.075608678
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,814,visit,4,20,2.8457000000000002e-05,0.075573045
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,804,traverse,4,8326,0.008825122000000001,0.075358806
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,828,visit_Module,4,4,2.1342e-05,0.075323016
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,821,_write_docstring_and_traverse_body,4,8,3.1151e-05,0.075298903
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,1031,visit_FunctionDef,4,4,1.1705e-05,0.075251474
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,1037,_function_helper,4,4,5.4044000000000006e-05,0.075239769
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/cfg.py,74,resolve_inheritance,27,52,8.2039e-05,0.072376586
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,197,fix_missing_locations,124,124,0.00014836500000000002,0.07128393200000001
+da3,cpu_model_load_top,/opt/conda/lib/python3.11/ast.py,205,_fix,124,15288,0.028911905,0.07113556700000001
+da3,cpu_model_load_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/vision_transformer.py,443,vit_giant2,1,1,2.0007e-05,0.068168095
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1944,__setattr__,10433,10433,0.025186945000000002,0.06702796600000001
+da3,cpu_model_load_top,~,0,<built-in method builtins.isinstance>,225024,241875,0.040531525000000006,0.06640076
+da3,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/triton/vararg_kernel.py,101,<listcomp>,4,4,4.7745000000000005e-05,0.063488769
+da3,cpu_request_top,/workspace/scripts/3d/scanner/candidates.py,214,predict_candidate,1,1,0.004954633,2.151454681
+da3,cpu_request_top,/workspace/scripts/3d/scanner/candidates.py,76,predict_da3,1,1,0.000401359,2.145580447
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,133,inference,1,1,5.4854e-05,2.14514784
+da3,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,68,measured,7,10,0.000167328,2.145053266
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,367,_run_model_forward,1,1,5.4717000000000005e-05,1.534285863
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/utils/_contextlib.py,113,decorate_context,1,1,2.7733e-05,1.534045571
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,99,forward,1,1,6.4101e-05,1.5339652140000002
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1747,_wrapped_call_impl,1,1760,0.0030630360000000003,1.5329554490000001
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1755,_call_impl,1,1760,0.005435039,1.532939258
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1767,inner,1,201,0.0031746450000000002,1.532904673
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/da3.py,336,forward,1,1,5.8153000000000004e-05,1.532712743
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/da3.py,100,forward,2,2,0.00019061000000000002,1.52840182
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/dinov2.py,59,forward,2,2,2.9798e-05,0.8342499210000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/vision_transformer.py,372,get_intermediate_layers,2,2,0.00010030400000000001,0.8342165130000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/vision_transformer.py,300,_get_intermediate_layers_not_chunked,2,2,0.0007369560000000001,0.8335728170000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/vision_transformer.py,351,process_attention,64,64,0.000574341,0.818279792
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/block.py,77,forward,64,64,0.001958858,0.8057729210000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/block.py,78,attn_residual_func,64,64,0.0007675080000000001,0.7612214
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/attention.py,47,forward,64,64,0.002710428,0.742155925
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/rope.py,158,forward,54,54,0.698913101,0.7168251400000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,275,_preprocess_inputs,1,1,7.709100000000001e-05,0.414357179
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/io/input_processor.py,65,__call__,1,1,5.2971000000000005e-05,0.41420407000000004
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/io/input_processor.py,134,_run_parallel,1,1,0.000213341,0.40398564000000003
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/parallel_utils.py,64,parallel_execution,1,1,0.00016919,0.40350092400000004
+da3,cpu_request_top,~,0,<method 'acquire' of '_thread.lock' objects>,87,87,0.399034441,0.399034441
+da3,cpu_request_top,/opt/conda/lib/python3.11/threading.py,611,wait,31,31,0.00011865700000000001,0.398301915
+da3,cpu_request_top,/opt/conda/lib/python3.11/threading.py,295,wait,19,19,0.000162602,0.39811856100000004
+da3,cpu_request_top,/opt/conda/lib/python3.11/multiprocessing/pool.py,767,get,20,20,5.6968e-05,0.39743893100000005
+da3,cpu_request_top,/opt/conda/lib/python3.11/multiprocessing/pool.py,764,wait,20,20,2.8528000000000002e-05,0.397346906
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/da3.py,211,_process_camera_estimation,2,2,0.312280706,0.31905441700000003
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/da3.py,155,_process_mono_sky_estimation,2,2,0.21413305500000002,0.21499901400000002
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,399,_add_processed_images,1,1,0.100694635,0.156389891
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/da3.py,205,_process_depth_head,2,2,2.7616e-05,0.154931061
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dualdpt.py,156,forward,1,1,0.00011419300000000001,0.14211717000000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dualdpt.py,208,_forward_impl,3,3,0.00068946,0.14177607
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dualdpt.py,270,_fuse,3,3,0.000300707,0.11412084900000001
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/conv.py,553,forward,308,308,0.0008101470000000001,0.105894768
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/conv.py,536,_conv_forward,308,308,0.000607173,0.10474306200000001
+da3,cpu_request_top,~,0,<built-in method torch.conv2d>,308,308,0.10413588900000001,0.10413588900000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dpt.py,436,forward,36,36,0.000648489,0.069105526
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dpt.py,393,forward,63,63,0.001109469,0.058216046
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/container.py,238,forward,27,27,0.000298139,0.053148961
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dualdpt.py,309,<listcomp>,3,3,7.636600000000001e-05,0.048541555
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/block.py,81,ffn_residual_func,64,64,0.000685253,0.042592663
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,2100,clip,1,1,1.6531e-05,0.039601631000000005
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,53,_wrapfunc,1,1,1.2395e-05,0.039585100000000005
+da3,cpu_request_top,~,0,<method 'clip' of 'numpy.ndarray' objects>,1,1,8.786e-06,0.039569599000000004
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/core/_methods.py,90,_clip,1,1,0.039560813,0.039560813
+da3,cpu_request_top,~,0,<built-in method builtins.next>,495,495,0.000385615,0.025978837
+da3,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,38,span,422,422,0.004051269000000001,0.025466429000000002
+da3,cpu_request_top,~,0,<method 'to' of 'torch._C.TensorBase' objects>,9,9,0.023248339,0.023248339
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/swiglu_op.py,474,forward,40,40,0.00040100000000000004,0.020988456000000003
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/cuda/streams.py,179,record,416,416,0.0008318850000000001,0.020040035
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,341,_align_to_input_extrinsics_intrinsics,1,1,2.5551000000000003e-05,0.018202700000000002
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/pose_align.py,158,align_poses_umeyama,1,1,3.2949e-05,0.018139330000000002
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/pose_align.py,111,_ransac_align_sim3,1,1,0.00047541,0.017728691
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/swiglu_op.py,316,swiglu,40,40,0.0007026970000000001,0.016463714
+da3,cpu_request_top,~,0,<method 'astype' of 'numpy.ndarray' objects>,37,37,0.01606695,0.01606695
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/cuda/__init__.py,1056,current_stream,416,416,0.001692902,0.015872308
+da3,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,89,before,201,201,0.0007293,0.015864197
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dualdpt.py,313,_add_pos_embed,18,18,0.0013814480000000002,0.015599227
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/linear.py,124,forward,199,199,0.000606113,0.015429164
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/rope.py,134,_apply_1d_rope,108,108,0.006211802000000001,0.015278901000000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/pose_align.py,84,_umeyama_sim3_from_paths,12,12,0.00017628400000000002,0.014909029
+da3,cpu_request_top,~,0,<built-in method torch._C._nn.linear>,199,199,0.014563891,0.014563891
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/evo/core/trajectory.py,232,align,12,12,0.00040826400000000003,0.013984361
+da3,cpu_request_top,~,0,<built-in method torch.stack>,26,26,0.013918065,0.013918065
+da3,cpu_request_top,/opt/conda/lib/python3.11/contextlib.py,141,__exit__,235,235,0.00044282900000000005,0.013626371000000002
+da3,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,94,after,201,201,0.00037837200000000003,0.01335532
+da3,cpu_request_top,/opt/conda/lib/python3.11/contextlib.py,132,__enter__,235,235,0.00023405800000000001,0.012970925000000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/vision_transformer.py,282,_prepare_rope,2,2,7.1232e-05,0.01263594
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dpt.py,159,forward,1,1,9.9209e-05,0.01223811
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/cuda/_utils.py,9,_get_device_index,461,461,0.001524842,0.012146530000000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dpt.py,207,_forward_impl,3,3,0.000471327,0.011963911
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,301,_prepare_model_inputs,1,1,6.5312e-05,0.010862864
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_utils.py,812,_get_device_index,459,459,0.0011292890000000001,0.010266723
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/utils/head_utils.py,96,position_grid_to_embed,18,18,0.000589759,0.010066014
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/io/input_processor.py,213,_stack_batch,1,1,6.3420000000000004e-06,0.010049780000000001
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/normalization.py,216,forward,215,215,0.000677438,0.009460275
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/utils/head_utils.py,123,make_sincos_pos_embed,36,36,0.001273547,0.009150694000000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/api.py,391,_convert_to_prediction,1,1,3.4983e-05,0.009128315000000001
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/ao/nn/quantized/modules/functional_modules.py,50,add,90,90,0.000280147,0.009076975000000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/utils/io/output_processor.py,42,__call__,1,1,5.4198000000000005e-05,0.009057543000000001
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_utils.py,786,_get_current_device_index,416,416,0.00040693200000000004,0.008940009
+da3,cpu_request_top,~,0,<method 'cpu' of 'torch._C.TensorBase' objects>,5,5,0.008848441,0.008848441
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/functional.py,2889,layer_norm,215,215,0.000735404,0.008538721
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_utils.py,770,_get_device_attr,416,416,0.000788637,0.008533077
+da3,cpu_request_top,~,0,<built-in method torch.add>,90,90,0.008247326000000001,0.008247326000000001
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/autograd/function.py,559,apply,200,200,0.0006923340000000001,0.007835595
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dpt.py,268,_fuse,3,3,0.000144262,0.007518899000000001
+da3,cpu_request_top,~,0,<built-in method torch.layer_norm>,215,215,0.007453025,0.007453025
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/swiglu_op.py,201,__call__,40,40,9.0297e-05,0.007447214000000001
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_ops.py,1147,__call__,40,40,8.2296e-05,0.007356917
+da3,cpu_request_top,~,0,<built-in method torch._ops.xformers.swiglu_packedw>,40,40,0.007274621,0.007274621
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_utils.py,753,_get_available_device_type,416,416,0.000300738,0.006054202000000001
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/utils/transform.py,41,pose_encoding_to_extri_intri,1,1,0.000253635,0.006041556
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/core/arrayprint.py,1595,_array_str_implementation,24,24,7.605200000000001e-05,0.005994761
+da3,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/core/arrayprint.py,561,array2string,24,24,0.000152169,0.005918709
+da3,cpu_request_top,~,0,<built-in method apply>,200,200,0.0018586280000000002,0.005847713
+da3,cpu_request_top,/workspace/Depth-Anything-3/src/depth_anything_3/model/dinov2/layers/mlp.py,34,forward,24,24,0.00040762100000000005,0.005798154000000001
+da3,cpu_export_top,/workspace/scripts/3d/scanner/scanner_io.py,92,export_prediction,1,1,0.11699669300000001,1.012930872
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/scene/scene.py,1029,export,1,1,3.684e-05,0.47007390000000004
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/export.py,224,export_scene,1,1,9.3647e-05,0.47003706
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,167,export_glb,1,1,8.829500000000001e-05,0.461212487
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,605,_create_gltf_structure,1,1,0.017307783,0.454127987
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,1169,_append_point,1,1,0.00012010900000000001,0.43643264000000004
+da3,cpu_export_top,~,0,<method 'reduce' of 'numpy.ufunc' objects>,19,19,0.20354465200000002,0.203658584
+da3,cpu_export_top,/workspace/scripts/3d/scanner/scanner_io.py,79,backproject,1,1,0.137546621,0.20260945300000002
+da3,cpu_export_top,~,0,<built-in method numpy.array>,69,69,0.200029237,0.200029237
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,513,_data_append,2,2,0.00017678100000000001,0.161745112
+da3,cpu_export_top,~,0,<method 'min' of 'numpy.ndarray' objects>,3,3,1.6878e-05,0.101765171
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/_methods.py,43,_amin,3,3,8.963e-06,0.101748293
+da3,cpu_export_top,~,0,<method 'max' of 'numpy.ndarray' objects>,3,3,3.2651e-05,0.10057239500000001
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/_methods.py,39,_amax,3,3,7.666e-06,0.100539744
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/points.py,554,bounds,1,1,1.2436000000000001e-05,0.073493036
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/rendering.py,202,points_to_vertexlist,1,1,4.9225000000000004e-05,0.06612261500000001
+da3,cpu_export_top,~,0,<method 'tolist' of 'numpy.ndarray' objects>,8,8,0.06478908400000001,0.06478908400000001
+da3,cpu_export_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,68,measured,1,1,2.9261000000000003e-05,0.055747549
+da3,cpu_export_top,/workspace/scripts/3d/scanner/scanner_io.py,64,prediction_mask,1,1,0.017318742,0.055677939
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/shape_base.py,612,column_stack,21,21,0.042091430000000006,0.042184150000000004
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/points.py,404,__init__,2,2,0.000106841,0.041949521000000004
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/function_base.py,3992,percentile,1,1,5.3797e-05,0.038228039000000005
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/function_base.py,4547,_quantile_unchecked,1,1,7.566e-06,0.038162108
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/function_base.py,3763,_ureduce,1,1,1.3064e-05,0.038154542
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/function_base.py,4697,_quantile_ureduce_func,1,1,2.4838000000000002e-05,0.038140494000000004
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/rendering.py,241,colors_to_gl,1,1,2.7763e-05,0.036505156000000004
+da3,cpu_export_top,~,0,<method 'astype' of 'numpy.ndarray' objects>,55,55,0.032724903,0.032733655
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/function_base.py,4765,_quantile,1,1,0.000149342,0.032426946000000005
+da3,cpu_export_top,~,0,<method 'partition' of 'numpy.ndarray' objects>,1,1,0.031931268,0.031931268
+da3,cpu_export_top,~,0,<method 'choice' of 'numpy.random._generator.Generator' objects>,1,1,0.031708265,0.031739533
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/color.py,503,__init__,2,2,1.2074e-05,0.029397721
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/color.py,525,vertex_colors,2,2,0.000315268,0.029385647
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/color.py,564,to_rgba,3,3,0.0013280750000000002,0.029153847
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/caching.py,48,hash_fallback,2,2,0.02674819,0.026754484000000002
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,73,load,1,1,3.8168000000000005e-05,0.023474347000000003
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,157,load_scene,1,1,0.00010086900000000001,0.023428825
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,1881,nonzero,20,20,4.804e-05,0.022095175
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,53,_wrapfunc,21,21,6.0915e-05,0.022063511
+da3,cpu_export_top,~,0,<method 'nonzero' of 'numpy.ndarray' objects>,20,20,0.021973799000000002,0.021973799000000002
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,341,load_glb,1,1,0.00024323000000000001,0.013899439000000001
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/points.py,639,vertices,2,2,2.9681000000000003e-05,0.01242552
+da3,cpu_export_top,~,0,<built-in method numpy.asanyarray>,98,98,0.012361436,0.012361436
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,396,_load_kwargs,1,2,5.8918e-05,0.009159224
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,401,handle_scene,1,1,2.6830000000000002e-05,0.009109058
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,411,<dictcomp>,1,1,6.662000000000001e-06,0.009011177
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,489,handle_pointcloud,1,1,7.483e-06,0.008980463000000001
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,2069,write_encoded,1,1,1.9575e-05,0.008458359
+da3,cpu_export_top,~,0,<method 'write' of '_io.BufferedWriter' objects>,1,1,0.008434804,0.008434804
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,1358,_read_buffers,1,1,0.006036302,0.0074134710000000005
+da3,cpu_export_top,~,0,<method 'join' of 'bytes' objects>,2,2,0.006704253,0.006704253
+da3,cpu_export_top,~,0,<method 'read' of '_io.BufferedReader' objects>,5,5,0.006141585000000001,0.006141585000000001
+da3,cpu_export_top,~,0,<method 'tobytes' of 'numpy.ndarray' objects>,4,4,0.005815952,0.005815952
+da3,cpu_export_top,~,0,<method 'flatten' of 'numpy.ndarray' objects>,2,2,0.005689782,0.005689782
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/numeric.py,136,ones,21,21,0.0035943600000000004,0.0036627350000000003
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/linalg/linalg.py,492,inv,21,21,0.002073117,0.002524479
+da3,cpu_export_top,~,0,<method 'all' of 'numpy.ndarray' objects>,3,3,1.8185e-05,0.0012052760000000001
+da3,cpu_export_top,~,0,<built-in method numpy.arange>,1,1,0.001193087,0.001193087
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/_methods.py,61,_all,3,3,1.3208000000000001e-05,0.0011870910000000001
+da3,cpu_export_top,~,0,<built-in method builtins.next>,236,236,0.000167772,0.0010811730000000002
+da3,cpu_export_top,/opt/conda/lib/python3.11/contextlib.py,141,__exit__,118,118,0.000308946,0.001020745
+da3,cpu_export_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,38,span,236,236,0.000741268,0.0009134010000000001
+da3,cpu_export_top,~,0,<method 'copy' of 'numpy.ndarray' objects>,1,1,0.000874993,0.000874993
+da3,cpu_export_top,/opt/conda/lib/python3.11/contextlib.py,299,helper,118,118,0.000155782,0.000539613
+da3,cpu_export_top,/opt/conda/lib/python3.11/contextlib.py,132,__enter__,118,118,9.084800000000001e-05,0.00046022200000000004
+da3,cpu_export_top,/opt/conda/lib/python3.11/contextlib.py,104,__init__,118,118,0.000322447,0.000383831
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,1279,_parse_materials,1,1,5.9811e-05,0.000304097
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,1648,jsonify,1,1,3.2857e-05,0.000251845
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,71,_wrapreduction,5,5,4.8483e-05,0.000234502
+da3,cpu_export_top,~,0,<built-in method io.open>,2,2,0.00022047800000000003,0.00022047800000000003
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/material.py,312,__init__,1,1,5.0963000000000007e-05,0.000202171
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,518,_parse_file_args,1,1,6.4651e-05,0.00020091
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/linalg/linalg.py,159,_commonType,21,21,0.000130967,0.00019515300000000002
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,1319,is_instance_named,4,4,1.0755000000000001e-05,0.000187874
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/scene/transforms.py,231,to_gltf,1,1,6.7982e-05,0.00018709800000000002
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/scene/scene.py,122,add_geometry,1,1,4.096e-05,0.000179953
+da3,cpu_export_top,/opt/conda/lib/python3.11/json/__init__.py,183,dumps,1,1,1.9766e-05,0.00017784000000000002
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,1360,type_named,4,4,1.5806e-05,0.00017615
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,2322,any,2,2,1.0159e-05,0.00017024500000000002
+da3,cpu_export_top,~,0,<numpy.random._generator.default_rng>,1,1,6.896800000000001e-05,0.000169153
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,1346,type_bases,2,2,4.4332e-05,0.000160344
+da3,cpu_export_top,/opt/conda/lib/python3.11/json/encoder.py,183,encode,1,1,1.501e-05,0.00015164800000000002
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,231,is_shape,13,13,7.3179e-05,0.000143125
+da3,cpu_export_top,/opt/conda/lib/python3.11/json/encoder.py,205,iterencode,1,1,0.00013464300000000002,0.00013464300000000002
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/material.py,519,baseColorFactor,1,1,8.591000000000001e-06,0.00013078000000000002
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/caching.py,189,__array_wrap__,6,6,7.504400000000001e-05,0.000126988
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/shape_base.py,608,_column_stack_dispatcher,21,21,4.2203e-05,0.000114523
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/caching.py,630,__setitem__,2,2,3.8332000000000005e-05,0.00011195000000000001
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,199,is_sequence,17,17,5.0428000000000006e-05,0.000106322
+da3,cpu_export_top,~,0,<built-in method builtins.getattr>,167,167,0.000101082,0.000101082
+da3,cpu_export_top,~,0,<built-in method builtins.hasattr>,125,125,7.5868e-05,0.00010000300000000001
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/caching.py,73,tracked_array,4,4,3.9785e-05,9.9411e-05
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/scene/scene.py,47,__init__,2,2,4.8610000000000004e-05,9.838200000000001e-05
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/function_base.py,4730,_get_indexes,1,1,4.4554e-05,9.1323e-05
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/scene/transforms.py,51,update,3,3,3.9989e-05,9.0779e-05
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,2208,allclose,1,1,3.084e-05,9.0189e-05
+da3,cpu_export_top,/opt/conda/lib/python3.11/contextlib.py,78,inner,1,1,1.6697e-05,8.966300000000001e-05
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,2979,prod,3,3,1.1987e-05,8.6403e-05
+da3,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/shape_base.py,292,hstack,2,2,2.7400000000000002e-05,8.049600000000001e-05
+da3,cpu_export_top,~,0,<built-in method time.perf_counter>,236,236,8.0114e-05,8.0114e-05
+da3,cpu_export_top,/opt/conda/lib/python3.11/pathlib.py,765,__truediv__,1,1,9.642e-06,7.8424e-05
+promptda,cpu_model_load_top,/workspace/scripts/3d/scanner/candidates.py,29,load_candidate,1,1,0.00011871300000000001,9.078234151
+promptda,cpu_model_load_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,68,measured,2,7,0.015719963,9.059645614
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/promptda.py,49,from_pretrained,1,1,2.8142000000000003e-05,8.542221713
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/promptda.py,17,__init__,1,1,0.000250554,8.54209361
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/hub.py,549,load,1,1,0.000179414,7.376541354
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/hub.py,651,_load_local,1,1,5.1491000000000006e-05,7.37636158
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/hubconf.py,84,dinov2_vitl14,1,1,2.023e-05,7.374603796000001
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/hubconf.py,24,_make_dinov2_model,1,1,3.9118e-05,7.374583566
+promptda,cpu_model_load_top,~,0,<method 'uniform_' of 'torch._C.TensorBase' objects>,379,379,4.120031926,4.120031926
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,367,vit_large,1,1,4.9161000000000006e-05,4.069787719000001
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,45,__init__,1,1,0.000239871,4.069738558
+promptda,cpu_model_load_top,<frozen importlib._bootstrap>,233,_call_with_frames_removed,9,3677,0.002733862,3.3087932180000004
+promptda,cpu_model_load_top,<frozen importlib._bootstrap_external>,934,exec_module,3,1526,0.004158326,3.3084847660000003
+promptda,cpu_model_load_top,<frozen importlib._bootstrap>,1165,_find_and_load,3,4304,0.014911239000000001,3.308439127
+promptda,cpu_model_load_top,<frozen importlib._bootstrap>,1120,_find_and_load_unlocked,3,1631,0.010110441000000001,3.308273788
+promptda,cpu_model_load_top,<frozen importlib._bootstrap>,666,_load_unlocked,2,1579,0.008311782,3.307202744
+promptda,cpu_model_load_top,~,0,<built-in method builtins.exec>,3,2961,0.23466408300000002,3.304642809
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,1,<module>,1,1,4.9514e-05,3.301674177
+promptda,cpu_model_load_top,~,0,<built-in method builtins.__import__>,35,378,0.0011543570000000002,2.833790661
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/__init__.py,1,<module>,1,1,3.3222e-05,2.731430752
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py,1,<module>,1,1,1.7026000000000003e-05,2.7236646330000003
+promptda,cpu_model_load_top,<frozen importlib._bootstrap>,1207,_handle_fromlist,803,1616,0.004325781,2.36637072
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/init.py,456,kaiming_uniform_,143,143,0.0022887930000000003,2.284859743
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,137,<listcomp>,1,1,0.000280125,2.075450876
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/block.py,37,__init__,24,24,0.001187186,2.075170751
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/linear.py,93,__init__,96,96,0.0013692580000000002,2.046596176
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/linear.py,114,reset_parameters,96,96,0.0023015320000000002,2.03499638
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,172,init_weights,1,1,4.4772000000000004e-05,1.985094206
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,26,named_apply,1,415,0.002097887,1.9752585530000002
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/init.py,196,trunc_normal_,97,97,0.00034724,1.9745688920000002
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/init.py,25,_no_grad_trunc_normal_,97,97,0.0024641290000000002,1.9742216520000002
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,331,init_weights_vit_timm,414,414,0.0018826340000000002,1.9711454370000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/__init__.py,1,<module>,1,1,3.7802e-05,1.684248602
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/checkpoint.py,1,<module>,1,1,0.000122156,1.677397591
+promptda,cpu_model_load_top,~,0,<built-in method builtins.__build_class__>,1430,2701,0.055197523000000005,1.493620933
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/mlp.py,18,__init__,24,24,0.0007089350000000001,1.3533500680000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/checkpoint.py,475,SelectiveCheckpointWrapper,1,1,2.1193000000000002e-05,1.31727334
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/compiler/__init__.py,231,disable,1,1,1.0584e-05,1.317252147
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/__init__.py,1,<module>,1,1,0.00012518000000000002,1.3167473900000002
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/__init__.py,1,<module>,1,1,7.942000000000001e-05,1.038007677
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py,1,<module>,1,1,0.00027249500000000004,0.938998002
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py,1,<module>,1,1,0.00031491600000000005,0.935673704
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/__init__.py,1,<module>,1,1,0.000135104,0.919482408
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/promptda.py,80,load_checkpoint,1,1,6.3244e-05,0.8794682650000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/serialization.py,1269,load,1,1,0.00040546600000000005,0.778362483
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/serialization.py,1884,_load,1,1,0.00020038100000000002,0.7743641870000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_weights_only_unpickler.py,313,load,1,1,0.065865982,0.773890462
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/triton_splitk.py,1,<module>,1,1,0.00013686700000000002,0.7712586520000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/_triton/splitk_kernels.py,1,<module>,1,1,0.00015939,0.7279279780000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/trace_rules.py,1,<module>,1,1,0.00034262400000000003,0.7122413120000001
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/attention.py,30,__init__,24,24,0.0007271230000000001,0.7027664770000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/serialization.py,2060,persistent_load,433,433,0.0024544270000000003,0.6803977710000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/serialization.py,1997,load_tensor,433,433,0.005613768000000001,0.676222415
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/variables/__init__.py,1,<module>,1,1,0.00012297800000000001,0.6757851840000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/variables/base.py,1,<module>,1,1,6.721e-05,0.675149757
+promptda,cpu_model_load_top,/opt/conda/lib/python3.11/importlib/__init__.py,108,import_module,21,2687,0.00233641,0.6618074420000001
+promptda,cpu_model_load_top,<frozen importlib._bootstrap>,1192,_gcd_import,21,2687,0.00208903,0.661722782
+promptda,cpu_model_load_top,~,0,<built-in method torch._C.get_storage_from_record>,433,433,0.647965892,0.647965892
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/_triton/splitk_kernels.py,607,_get_splitk_kernel,4,4,0.001536788,0.637706344
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/xformers/triton/vararg_kernel.py,183,unroll_varargs,4,4,0.00030092300000000003,0.636123321
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/variables/builder.py,1,<module>,1,1,0.00038558900000000004,0.616136937
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/utils/checkpoint.py,1,<module>,1,1,0.000169275,0.5685273240000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_functorch/_aot_autograd/functional_utils.py,1,<module>,1,1,8.2731e-05,0.565620078
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/fx/experimental/symbolic_shapes.py,1,<module>,1,1,0.00036319300000000004,0.5607369320000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1228,to,1,1,5.0281e-05,0.5174221990000001
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,912,_apply,1,522,0.023410185,0.5173305
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/triton/runtime/jit.py,599,__init__,63,63,0.003247474,0.49262424600000004
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1332,convert,433,433,0.000579445,0.485893051
+promptda,cpu_model_load_top,~,0,<method 'to' of 'torch._C.TensorBase' objects>,433,433,0.48508769700000004,0.48508769700000004
+promptda,cpu_model_load_top,/opt/conda/lib/python3.11/inspect.py,1231,getsourcelines,130,130,0.001041655,0.46308091300000004
+promptda,cpu_model_load_top,/opt/conda/lib/python3.11/inspect.py,1220,getblock,126,126,0.056079802000000005,0.45133939700000003
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/utils/_sympy/functions.py,1,<module>,1,1,0.00013017400000000002,0.43936074300000005
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/sympy/__init__.py,1,<module>,1,1,0.00025483200000000003,0.424136371
+promptda,cpu_model_load_top,<frozen importlib._bootstrap_external>,1007,get_code,1526,1526,0.013674764,0.422228965
+promptda,cpu_model_load_top,/opt/conda/lib/python3.11/tokenize.py,433,_tokenize,88092,88092,0.225567642,0.39001929500000004
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/polyfills/loader.py,1,<module>,1,1,5.2163e-05,0.36134164
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/polyfills/loader.py,25,<genexpr>,9,9,1.9525e-05,0.360938696
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/decorators.py,354,wrapper,21,21,0.000649059,0.357558602
+promptda,cpu_model_load_top,/opt/conda/lib/python3.11/dataclasses.py,1221,wrap,374,374,0.0009215390000000001,0.357279263
+promptda,cpu_model_load_top,/opt/conda/lib/python3.11/dataclasses.py,884,_process_class,374,374,0.018774894,0.35635772400000004
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/polyfills/builtins.py,1,<module>,1,1,7.658300000000001e-05,0.35311595500000004
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/trace_rules.py,2864,get_torch_obj_rule_map,1,1,0.002180149,0.349850053
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/trace_rules.py,2893,load_object,2665,2665,0.004240305000000001,0.34745642200000004
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/scipy/optimize/__init__.py,1,<module>,1,1,0.00017982800000000001,0.343738076
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/triton/runtime/jit.py,759,jit,59,59,9.294e-05,0.32745581
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/triton/runtime/jit.py,788,decorator,59,59,0.000304992,0.32736287000000003
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/side_effects.py,1,<module>,1,1,8.228900000000001e-05,0.312257872
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/codegen.py,1,<module>,1,1,8.893200000000001e-05,0.31128183600000003
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/trace_rules.py,2883,_load_obj_from_str,2665,2665,0.002891504,0.30520815300000004
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_higher_order_ops/map.py,1,<module>,1,1,0.00011179400000000001,0.28705673000000004
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_functorch/aot_autograd.py,1,<module>,1,1,0.00021163100000000002,0.28580130400000003
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/variables/functions.py,1,<module>,1,1,0.00011700600000000001,0.26966374400000004
+promptda,cpu_model_load_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/model/dpt.py,10,__init__,1,1,0.00016548500000000002,0.269614169
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/conv.py,86,__init__,47,47,0.001025772,0.26925503100000003
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/variables/torch.py,1,<module>,1,1,0.000240408,0.268149805
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/__init__.py,2672,__getattr__,9,9,4.9711000000000006e-05,0.26787224200000004
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/onnx/__init__.py,1,<module>,1,1,9.588500000000001e-05,0.266843816
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/distributed/fsdp/__init__.py,1,<module>,1,1,3.8298000000000005e-05,0.261476454
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/conv.py,178,reset_parameters,47,47,0.000485981,0.261297111
+promptda,cpu_model_load_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/conv.py,502,__init__,45,45,0.000358711,0.255449042
+promptda,cpu_request_top,/workspace/scripts/3d/scanner/candidates.py,214,predict_candidate,1,1,0.019758727,2.675511915
+promptda,cpu_request_top,/workspace/scripts/3d/scanner/candidates.py,106,predict_promptda,1,1,0.169323044,2.6534626
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/Image.py,1017,convert,20,20,0.000164112,0.9299075120000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/ImageFile.py,291,load,40,40,0.020508283000000002,0.8834348230000001
+promptda,cpu_request_top,~,0,<method 'decode' of 'ImagingDecoder' objects>,13255,13255,0.721678401,0.721678401
+promptda,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,61,call,30,30,0.00021417000000000002,0.585772481
+promptda,cpu_request_top,~,0,<method 'cpu' of 'torch._C.TensorBase' objects>,10,10,0.532659305,0.532659305
+promptda,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,68,measured,10,40,0.000263534,0.494837558
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/utils/_contextlib.py,113,decorate_context,10,10,7.069e-05,0.493881277
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/promptda.py,101,predict,10,10,0.000193928,0.49351669800000003
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/promptda.py,89,forward,10,10,0.000747913,0.49332277
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1747,_wrapped_call_impl,300,4670,0.008415191,0.48102095100000003
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1755,_call_impl,300,4670,0.014530402000000001,0.48035188900000003
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1767,inner,250,910,0.012116966000000002,0.47454295900000004
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,297,get_intermediate_layers,10,10,0.00018489100000000002,0.390604903
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/vision_transformer.py,271,_get_intermediate_layers_not_chunked,10,10,0.0011295530000000002,0.388289253
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/block.py,245,forward,240,240,0.000586239,0.34928321300000004
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/block.py,82,forward,240,240,0.007886039000000001,0.348659064
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/block.py,83,attn_residual_func,240,240,0.0026545870000000004,0.21974531100000003
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/attention.py,66,forward,240,240,0.00551013,0.16111977700000002
+promptda,cpu_request_top,~,0,<method 'astype' of 'numpy.ndarray' objects>,61,61,0.13145239,0.13145239
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/block.py,86,ffn_residual_func,240,240,0.0026683690000000003,0.12102771400000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/PngImagePlugin.py,992,load_read,13255,13255,0.025632871,0.105066059
+promptda,cpu_request_top,~,0,<built-in method builtins.next>,2472,2472,0.0018213160000000001,0.101848374
+promptda,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,38,span,2472,2472,0.011567571,0.100027058
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/model/dpt.py,107,forward,10,10,0.001503711,0.094077486
+promptda,cpu_request_top,~,0,<built-in method numpy.asarray>,66,66,0.0007047160000000001,0.092521853
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/Image.py,804,__array_interface__,20,20,0.000381617,0.09181713700000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/Image.py,842,tobytes,20,20,0.002040496,0.091099209
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/linear.py,124,forward,960,960,0.002782475,0.090585314
+promptda,cpu_request_top,~,0,<built-in method torch._C._nn.linear>,960,960,0.086598439,0.086598439
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/__init__.py,195,memory_efficient_attention,240,240,0.000998079,0.08475437000000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/__init__.py,463,_memory_efficient_attention,240,240,0.0008632850000000001,0.083489427
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/cuda/streams.py,179,record,1960,1960,0.0036540110000000004,0.08217742800000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/__init__.py,481,_memory_efficient_attention_forward,240,240,0.002294412,0.081876031
+promptda,cpu_request_top,~,0,<resize>,20,20,0.06595351,0.06595351
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/cuda/__init__.py,1056,current_stream,1960,1960,0.007274455000000001,0.064664363
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/mlp.py,35,forward,240,240,0.004271962000000001,0.062835521
+promptda,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,89,before,910,910,0.002964191,0.059826996
+promptda,cpu_request_top,/opt/conda/lib/python3.11/contextlib.py,141,__exit__,1236,1236,0.002275701,0.055601766000000004
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/flash3.py,661,apply,240,240,0.004672521000000001,0.055252979
+promptda,cpu_request_top,~,0,<method 'encode' of 'ImagingEncoder' objects>,2620,2620,0.051731415,0.051731415
+promptda,cpu_request_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,94,after,910,910,0.001435302,0.050624270000000006
+promptda,cpu_request_top,/opt/conda/lib/python3.11/contextlib.py,132,__enter__,1236,1236,0.0011083240000000002,0.049630633
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/cuda/_utils.py,9,_get_device_index,2201,2201,0.006442193000000001,0.048269284
+promptda,cpu_request_top,~,0,<method 'to' of 'torch._C.TensorBase' objects>,30,30,0.047811727000000005,0.047811727000000005
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/model/blocks.py,270,forward,40,40,0.0012673460000000001,0.04678115
+promptda,cpu_request_top,~,0,<method 'clip' of 'numpy.ndarray' objects>,20,20,0.000114449,0.046582133000000005
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/core/_methods.py,90,_clip,20,20,0.046467684,0.046467684
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/Image.py,1356,copy,20,20,0.000119877,0.046387426
+promptda,cpu_request_top,~,0,<method 'copy' of 'ImagingCore' objects>,20,20,0.045822091,0.045822091
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/PngImagePlugin.py,167,read,13375,13375,0.020089402000000003,0.045098145000000006
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/conv.py,553,forward,430,430,0.001277478,0.044819475000000004
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_ops.py,1147,__call__,240,480,0.0006837610000000001,0.043641804
+promptda,cpu_request_top,~,0,<built-in method torch._ops.xformers_flash3.flash_fwd>,240,240,0.006140256,0.043287646000000006
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/conv.py,536,_conv_forward,430,430,0.000859136,0.042977505000000006
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/core/shape_base.py,372,stack,2,2,0.042192573000000004,0.042258907000000005
+promptda,cpu_request_top,~,0,<built-in method torch.conv2d>,430,430,0.042118369,0.042118369
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_utils.py,812,_get_device_index,2201,2201,0.004972958,0.040108500000000005
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/arraypad.py,533,pad,20,20,0.0008050830000000001,0.039429395
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_library/autograd.py,107,autograd_impl,240,240,0.001006563,0.03714739
+promptda,cpu_request_top,~,0,<method 'join' of 'bytes' objects>,20,20,0.036245481,0.036245481
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_library/autograd.py,33,forward_no_grad,240,240,0.0031479000000000004,0.035900036
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/arraypad.py,86,_pad_simple,20,20,0.03532656,0.035568421
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_utils.py,786,_get_current_device_index,1960,1960,0.001742828,0.034199756000000005
+promptda,cpu_request_top,~,0,<method 'read' of '_io.BufferedReader' objects>,40125,40125,0.03323628,0.03323628
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/PngImagePlugin.py,983,load_prepare,20,20,5.135e-05,0.032926079000000004
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/ImageFile.py,435,load_prepare,20,20,9.7378e-05,0.032868122
+promptda,cpu_request_top,~,0,<built-in method PIL._imaging.new>,20,20,0.032752216,0.032752216
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_ops.py,760,redispatch,240,240,0.003241008,0.032752136
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_utils.py,770,_get_device_attr,1960,1960,0.003385026,0.032456928
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_library/custom_ops.py,334,backend_impl,240,240,0.0008756730000000001,0.029401705
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_utils.py,753,_get_available_device_type,1960,1960,0.001340262,0.021618727
+promptda,cpu_request_top,~,0,<built-in method torch.stack>,10,10,0.021318324,0.021318324
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/promptda/model/blocks.py,86,forward,70,70,0.001372223,0.020927503
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/cuda/__init__.py,161,is_available,1970,1970,0.002993578,0.020627516000000002
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/normalization.py,216,forward,520,520,0.0016750570000000002,0.020468553
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_compile.py,41,inner,241,241,0.00041658600000000004,0.019128334
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py,829,_fn,241,241,0.001303155,0.018595044
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/functional.py,2889,layer_norm,520,520,0.001800092,0.018171431000000002
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/container.py,238,forward,50,50,0.0006904210000000001,0.016990847
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/dispatch.py,133,_dispatch_fw,240,240,0.000559772,0.016158513
+promptda,cpu_request_top,~,0,<built-in method torch.layer_norm>,520,520,0.015501217000000001,0.015501217000000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_library/custom_ops.py,362,wrapped_fn,240,240,0.0005594920000000001,0.015463256000000002
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/cuda/__init__.py,157,_nvml_based_avail,1970,1970,0.0018743560000000002,0.015106519
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/flash3.py,220,mha_fwd,240,240,0.002696369,0.014903764000000002
+promptda,cpu_request_top,~,0,<function Event.record at 0x7fd30db89da0>,1960,1960,0.013859054,0.013859054
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/dispatch.py,62,_run_priority_list,240,240,0.00041420300000000003,0.013835939
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/flash3.py,643,not_supported_reasons,240,240,0.0013528330000000001,0.013421736
+promptda,cpu_request_top,<frozen os>,773,getenv,1970,1970,0.001396658,0.013232163000000002
+promptda,cpu_request_top,~,0,<method 'copy' of 'numpy.ndarray' objects>,12,12,0.013154995000000001,0.013154995000000001
+promptda,cpu_request_top,/workspace/runtime/promptda-counterpart-20261019/PromptDA/torchhub/facebookresearch_dinov2_main/dinov2/layers/layer_scale.py,27,forward,480,480,0.012329485000000001,0.012776602000000001
+promptda,cpu_request_top,<frozen _collections_abc>,771,get,1970,1970,0.0033130480000000003,0.011835505000000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/unbind.py,115,unbind,240,240,0.00047329800000000003,0.011231870000000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/autograd/function.py,559,apply,240,240,0.0014266650000000001,0.010758572000000001
+promptda,cpu_request_top,~,0,<built-in method torch._ops.flash_attn_3.fwd>,240,240,0.010285912000000001,0.010285912000000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/_library/utils.py,350,check_aliasing_constraint,240,240,0.001572786,0.00995239
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/xformers/ops/fmha/common.py,434,not_supported_reasons,240,240,0.003460926,0.009233640000000001
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/torch/nn/modules/module.py,1927,__getattr__,8850,8850,0.008848168,0.008848168
+promptda,cpu_request_top,/app/.venv/lib/python3.11/site-packages/PIL/_binary.py,95,i32be,13575,13575,0.005122675,0.008754669000000001
+promptda,cpu_export_top,/workspace/scripts/3d/scanner/scanner_io.py,92,export_prediction,1,1,0.17121602300000002,2.479987383
+promptda,cpu_export_top,/workspace/scripts/3d/scanner/scanner_io.py,79,backproject,1,1,0.881006457,1.3100600040000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/scene/scene.py,1029,export,1,1,2.1996e-05,0.41510125600000003
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/export.py,224,export_scene,1,1,5.8711e-05,0.41507926
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,167,export_glb,1,1,5.6178e-05,0.40726417600000003
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,605,_create_gltf_structure,1,1,0.017588617,0.400408478
+promptda,cpu_export_top,<frozen importlib._bootstrap>,1165,_find_and_load,1,209,0.001299211,0.394772096
+promptda,cpu_export_top,<frozen importlib._bootstrap>,1120,_find_and_load_unlocked,1,209,0.0011504870000000002,0.394725288
+promptda,cpu_export_top,<frozen importlib._bootstrap>,666,_load_unlocked,1,186,0.000902076,0.394185938
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,934,exec_module,1,171,0.000409372,0.39412778200000004
+promptda,cpu_export_top,<frozen importlib._bootstrap>,233,_call_with_frames_removed,3,668,0.000547897,0.394050322
+promptda,cpu_export_top,~,0,<built-in method builtins.exec>,1,192,0.003434471,0.393757167
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/__init__.py,1,<module>,1,1,3.7166e-05,0.39375036500000005
+promptda,cpu_export_top,<frozen importlib._bootstrap>,1207,_handle_fromlist,12,242,0.000591013,0.383094464
+promptda,cpu_export_top,~,0,<built-in method builtins.__import__>,9,94,0.000334732,0.382997927
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,1169,_append_point,1,1,7.842000000000001e-05,0.38251743800000004
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,1007,get_code,171,171,0.001516924,0.29716795500000004
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,999,source_to_code,167,167,0.00030282700000000003,0.28461661800000004
+promptda,cpu_export_top,~,0,<built-in method builtins.compile>,181,181,0.28427974500000003,0.28427974500000003
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/creation.py,1,<module>,1,1,8.196000000000001e-05,0.208204029
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/lib/shape_base.py,612,column_stack,21,21,0.20209143300000001,0.20220062900000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/base.py,1,<module>,1,1,7.674300000000001e-05,0.19697355300000002
+promptda,cpu_export_top,~,0,<method 'reduce' of 'numpy.ufunc' objects>,14,14,0.18228809,0.182344004
+promptda,cpu_export_top,~,0,<built-in method numpy.array>,76,76,0.169094614,0.169094614
+promptda,cpu_export_top,~,0,<method 'astype' of 'numpy.ndarray' objects>,53,53,0.143696462,0.143702977
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,513,_data_append,2,2,0.000115488,0.14242162900000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/repair.py,1,<module>,1,1,2.4711e-05,0.114847979
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/path/__init__.py,1,<module>,1,1,9.626e-06,0.113239979
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/path/path.py,1,<module>,1,1,7.269600000000001e-05,0.10712218100000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,1881,nonzero,20,20,6.119900000000001e-05,0.09291756100000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/fromnumeric.py,53,_wrapfunc,21,21,8.380900000000001e-05,0.092870305
+promptda,cpu_export_top,~,0,<method 'nonzero' of 'numpy.ndarray' objects>,20,20,0.092754683,0.092754683
+promptda,cpu_export_top,~,0,<method 'min' of 'numpy.ndarray' objects>,3,3,1.0478e-05,0.090359335
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/_methods.py,43,_amin,3,3,4.935e-06,0.090348857
+promptda,cpu_export_top,~,0,<method 'max' of 'numpy.ndarray' objects>,3,3,2.2742e-05,0.086761296
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/_methods.py,39,_amax,3,3,6.505e-06,0.08673855400000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/bounds.py,1,<module>,1,1,4.5297000000000004e-05,0.08490144200000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/points.py,554,bounds,1,1,2.0608e-05,0.06342036000000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/rendering.py,202,points_to_vertexlist,1,1,4.0763e-05,0.062279208
+promptda,cpu_export_top,~,0,<method 'tolist' of 'numpy.ndarray' objects>,8,8,0.060787765,0.060787765
+promptda,cpu_export_top,~,0,<method 'choice' of 'numpy.random._generator.Generator' objects>,1,1,0.053616676,0.053646767000000005
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/voxel/__init__.py,1,<module>,1,1,6.815000000000001e-06,0.050285128000000005
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/voxel/creation.py,1,<module>,1,1,2.3434000000000003e-05,0.048910654000000005
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/path/polygons.py,1,<module>,1,1,8.0115e-05,0.048298650000000005
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/voxel/base.py,1,<module>,1,1,2.7385000000000003e-05,0.047217462
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/convex.py,1,<module>,1,1,3.2822000000000005e-05,0.045338809
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/voxel/morphology.py,1,<module>,1,1,2.956e-05,0.045119346000000005
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/shapely/__init__.py,1,<module>,1,1,0.000114461,0.043350048
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/export.py,1,<module>,1,1,5.6555e-05,0.042953685000000005
+promptda,cpu_export_top,~,0,<built-in method builtins.hasattr>,1775,1912,0.0008170260000000001,0.041045467
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/triangles.py,1,<module>,1,1,3.4591e-05,0.040968631000000005
+promptda,cpu_export_top,/opt/conda/lib/python3.11/importlib/__init__.py,108,import_module,2,2,6.943e-06,0.040170971
+promptda,cpu_export_top,<frozen importlib._bootstrap>,1192,_gcd_import,2,2,4.542e-06,0.040162989
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/points.py,1,<module>,1,1,4.5227000000000006e-05,0.037402891
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/nsphere.py,1,<module>,1,1,1.9656000000000003e-05,0.037124135
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/scipy/__init__.py,129,__getattr__,1,1,8.015e-06,0.034002961000000005
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/scipy/ndimage/__init__.py,1,<module>,1,1,3.3229e-05,0.033586210000000005
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/rendering.py,241,colors_to_gl,1,1,2.2694e-05,0.032745136
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/points.py,404,__init__,2,2,4.9143e-05,0.032050056
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/scipy/ndimage/_support_alternative_backends.py,1,<module>,1,1,9.773500000000001e-05,0.030921215000000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/path/exchange/export.py,1,<module>,1,1,1.3815e-05,0.030361705000000003
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/scipy/ndimage/_ndimage_api.py,1,<module>,1,1,4.9787e-05,0.028669840000000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/psutil/__init__.py,1,<module>,1,1,0.00021037,0.028516482000000003
+promptda,cpu_export_top,<frozen importlib._bootstrap>,1054,_find_spec,206,206,0.002302722,0.025492602000000003
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/caching.py,48,hash_fallback,2,2,0.025188733,0.02519605
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/color.py,564,to_rgba,3,3,0.0012990380000000002,0.023599161
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/color.py,503,__init__,2,2,1.0379e-05,0.023579283000000003
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/color.py,525,vertex_colors,2,2,4.6334e-05,0.023568904
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,1499,find_spec,206,206,0.000210389,0.020985585
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,1467,_get_spec,206,206,0.001000887,0.020775196000000003
+promptda,cpu_export_top,/workspace/reports/promptda-da3-d4d5b1bcd2-20261020/diagnostic.py,68,measured,1,1,1.6723000000000002e-05,0.019587587
+promptda,cpu_export_top,/workspace/scripts/3d/scanner/scanner_io.py,64,prediction_mask,1,1,0.019546946000000003,0.019546946000000003
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/numpy/core/numeric.py,136,ones,21,21,0.019242576,0.019419347
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,1607,find_spec,456,456,0.004128912,0.018564754000000003
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/boolean.py,1,<module>,1,1,4.5522e-05,0.018178503000000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,1,<module>,1,1,6.7593e-05,0.017711488
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/interfaces/__init__.py,1,<module>,1,1,3.287e-06,0.017065913000000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/interfaces/blender.py,1,<module>,1,1,5.7025000000000004e-05,0.016139147
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,73,load,1,1,1.9939e-05,0.014715544
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,157,load_scene,1,1,6.224e-05,0.014686033000000001
+promptda,cpu_export_top,~,0,<built-in method builtins.__build_class__>,142,142,0.001701582,0.013965459000000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/shapely/strtree.py,1,<module>,1,1,2.0147000000000002e-05,0.013656125000000002
+promptda,cpu_export_top,<frozen importlib._bootstrap>,566,module_from_spec,186,186,0.00043543300000000004,0.013346004000000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/scene/__init__.py,1,<module>,1,1,1.1835000000000001e-05,0.013189912000000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/shapely/geometry/__init__.py,1,<module>,1,1,1.7903e-05,0.012846030000000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/ply.py,1,<module>,1,1,4.6872e-05,0.012365146
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/visual/__init__.py,1,<module>,1,1,2.4808e-05,0.011706721000000002
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/load.py,1,<module>,1,1,0.00010369800000000001,0.009615753000000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/exchange/gltf.py,341,load_glb,1,1,0.000170788,0.009109253000000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/points.py,639,vertices,2,2,2.4747000000000002e-05,0.008412729
+promptda,cpu_export_top,~,0,<built-in method numpy.asanyarray>,87,87,0.008381504,0.008381504
+promptda,cpu_export_top,~,0,<built-in method posix.stat>,951,951,0.008221831,0.008225694
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,140,_path_stat,891,891,0.00042926600000000003,0.008112543
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/trimesh/util.py,2069,write_encoded,1,1,1.5214e-05,0.007584261
+promptda,cpu_export_top,~,0,<method 'write' of '_io.BufferedWriter' objects>,1,1,0.00756593,0.00756593
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,1231,create_module,15,15,4.3230000000000005e-05,0.007484976000000001
+promptda,cpu_export_top,~,0,<built-in method _imp.create_dynamic>,15,15,0.007395637,0.007414634000000001
+promptda,cpu_export_top,<frozen importlib._bootstrap_external>,1127,get_data,338,338,0.000797195,0.007148672
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/shapely/creation.py,1,<module>,1,1,3.9335e-05,0.006714225000000001
+promptda,cpu_export_top,/app/.venv/lib/python3.11/site-packages/scipy/ndimage/_filters.py,1,<module>,1,1,6.2451e-05,0.006668711000000001

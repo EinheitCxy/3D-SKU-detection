@@ -1,4 +1,6 @@
-# 最新 profiling：GPU2 / 多视频与GPU加速对照 / 2026-10-19
+# Profiling：SKU 完整流程与 Scanner 重建 / 2026-10-20
+
+2026-10-20新增[PromptDA / DA3 Scanner专项详细profiling](../reports/promptda-da3-d4d5b1bcd2-20261020/README.md)：使用`fd-videos/d4d5b1bcd2`完整1Hz选择的20帧，在物理GPU1串行测量。原视频到dense NPZ/彩色POINTS GLB并进程退出为DA3 **22.914秒**、PromptDA **23.124秒**；warm请求均值为**2.067/2.614秒**（各n=3）。附392类内部区间、逐帧/逐batch、CUDA网络层、算子和内存明细。两者实际默认分辨率为504×378/1008×756；本专项没有运行商品matching、Viewer或纹理Surfel，不能替换下文完整SKU流水线的耗时口径。
 
 2026-10-19约束更正：保持原有峰值、效果并缩短实际交付，其他模块可使用GPU；此前14GB总门槛/12GiB allocator是历史实验条件，不再作为前置目标。三位medium agents的剩余热点与具体方案见[下一轮加速调查](../reports/gpu-acceleration-next-20261019.md)。下文所有实测数字保留，不将新候选当作已实现收益。
 

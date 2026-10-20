@@ -1,0 +1,10 @@
+{
+  "status": "pass",
+  "checks": [
+    "All 5 report-local Python scripts parse",
+    "da3: full/baseline/diagnostic complete; 20 frames; native GLB readback PASS; continuous-stage closure residual 0.000371s",
+    "promptda: full/baseline/diagnostic complete; 20 frames; native GLB readback PASS; continuous-stage closure residual 0.000385s",
+    "392 timing groups, 20 frame rows, 10 batch rows present"
+  ],
+  "scope": "Focused report consistency and retained native boundary checks; no repeated GLB readback or numerical/quality regression test"
+}
