@@ -1,0 +1,413 @@
+{
+  "date": "2026-10-20",
+  "status": "experiments_complete_production_unchanged",
+  "input": "fd-videos/d4d5b1bcd2",
+  "frames": 20,
+  "scope": "Scanner raw-video preparation through dense NPZ and colored POINTS GLB; excludes SKU matching, Viewer filtering, textured Surfel, COS and browser",
+  "configuration": {
+    "network_hw": [
+      756,
+      1008
+    ],
+    "weight_dtype": "float32",
+    "autocast": "fp16",
+    "batch_size": 2,
+    "point_limit": 1000000,
+    "seed": 42,
+    "cpu_threads": 8,
+    "torch": "2.7.1+cu126",
+    "numpy": "1.26.4"
+  },
+  "loader_cpu_import_warmed": {
+    "native_s": 5.227054685499752,
+    "candidate_s": 0.8109446179878432,
+    "saved_s": 4.416110067511909,
+    "latency_reduction_percent": 84.48562973260132,
+    "speedup": 6.445637062700267,
+    "n_per_arm": 2,
+    "scope": "CPU construction + checkpoint read + strict copy; skip includes coverage audit; comparisons excluded",
+    "state_comparisons": [
+      {
+        "repeat": 1,
+        "state_equal_count": 433,
+        "buffers_equal_count": 2,
+        "nonpersistent_buffers": [],
+        "comparison_s": 0.07679683598689735
+      },
+      {
+        "repeat": 2,
+        "state_equal_count": 433,
+        "buffers_equal_count": 2,
+        "nonpersistent_buffers": [],
+        "comparison_s": 0.08597512799315155
+      }
+    ],
+    "dependency_prewarm_s": 1.5345558660337701,
+    "preliminary_excluded_receipt": "Output/promptda-acceleration-validation-20261020/load/result.json"
+  },
+  "resident_request": {
+    "native_s": 2.9767817719839513,
+    "candidate_s": 1.8221562819671817,
+    "saved_s": 1.1546254900167696,
+    "latency_reduction_percent": 38.78771030122374,
+    "speedup": 1.6336588696828174,
+    "n_timed_per_variant": 3,
+    "scope": "resident model + original PNG paths through all CPU depth/RGB/metadata; includes RNG reset, validity checks, decode, worker lifecycle and copies; CUDA sync before/after",
+    "request_count": 25,
+    "comparison_count": 24,
+    "all_variants_exact_fields": {
+      "native": true,
+      "prefetch": true,
+      "reduced_serial": true,
+      "reduced_prefetch": true,
+      "delayed_d2h": true,
+      "combined_delayed": true,
+      "skip_loader": true
+    },
+    "variants": {
+      "native": {
+        "n": 3,
+        "mean_s": 2.9861059060009816,
+        "median_s": 2.9767817719839513,
+        "min_s": 2.913723511970602,
+        "max_s": 3.067812434048392,
+        "sample_sd_s": 0.07746646747560818,
+        "allocated_peak_bytes": 4147829760,
+        "reserved_peak_bytes": 4796186624
+      },
+      "prefetch": {
+        "n": 3,
+        "mean_s": 1.81097968632821,
+        "median_s": 1.8221562819671817,
+        "min_s": 1.7602855790173635,
+        "max_s": 1.8504971980000846,
+        "sample_sd_s": 0.04613264860626067,
+        "allocated_peak_bytes": 4139752448,
+        "reserved_peak_bytes": 4796186624
+      },
+      "reduced_serial": {
+        "n": 3,
+        "mean_s": 3.0959473933520107,
+        "median_s": 3.093466922000516,
+        "min_s": 3.092141771048773,
+        "max_s": 3.1022334870067425,
+        "sample_sd_s": 0.005484089380952138,
+        "allocated_peak_bytes": 4139752448,
+        "reserved_peak_bytes": 4796186624
+      },
+      "reduced_prefetch": {
+        "n": 3,
+        "mean_s": 1.8390201263246126,
+        "median_s": 1.8077200139523484,
+        "min_s": 1.801061500038486,
+        "max_s": 1.9082788649830036,
+        "sample_sd_s": 0.06007215338489828,
+        "allocated_peak_bytes": 4139752448,
+        "reserved_peak_bytes": 4796186624
+      },
+      "delayed_d2h": {
+        "n": 3,
+        "mean_s": 2.0096581060206518,
+        "median_s": 2.0123165860422887,
+        "min_s": 2.001945754978806,
+        "max_s": 2.014711977040861,
+        "sample_sd_s": 0.006785627712563306,
+        "allocated_peak_bytes": 4199311360,
+        "reserved_peak_bytes": 4796186624
+      },
+      "combined_delayed": {
+        "n": 3,
+        "mean_s": 1.7807698560063727,
+        "median_s": 1.7996471310034394,
+        "min_s": 1.7383790059830062,
+        "max_s": 1.8042834310326725,
+        "sample_sd_s": 0.036784669955946744,
+        "allocated_peak_bytes": 4199311360,
+        "reserved_peak_bytes": 4796186624
+      }
+    }
+  },
+  "cached_sampling_component": {
+    "native_s": 1.6914655709988438,
+    "candidate_s": 0.48242375504923984,
+    "saved_s": 1.209041815949604,
+    "latency_reduction_percent": 71.47894918343746,
+    "speedup": 3.5061821755153826,
+    "n_per_arm": 3,
+    "scope": "arrays already read; validity mask through world selection and source-ID mapping; excludes display, GLB, comparisons",
+    "checks": [
+      {
+        "source_indices_and_order_equal": true,
+        "rgb_and_order_equal": true,
+        "world_coordinates": {
+          "bitwise_equal": true,
+          "numeric_differing_components": 0,
+          "bitwise_differing_components": 0,
+          "max_abs_m": 0.0,
+          "dtype_a": "float32",
+          "dtype_b": "float32"
+        },
+        "display_coordinates": {
+          "bitwise_equal": true,
+          "numeric_differing_components": 0,
+          "bitwise_differing_components": 0,
+          "max_abs_m": 0.0,
+          "dtype_a": "float32",
+          "dtype_b": "float32"
+        }
+      },
+      {
+        "source_indices_and_order_equal": true,
+        "rgb_and_order_equal": true,
+        "world_coordinates": {
+          "bitwise_equal": true,
+          "numeric_differing_components": 0,
+          "bitwise_differing_components": 0,
+          "max_abs_m": 0.0,
+          "dtype_a": "float32",
+          "dtype_b": "float32"
+        },
+        "display_coordinates": {
+          "bitwise_equal": true,
+          "numeric_differing_components": 0,
+          "bitwise_differing_components": 0,
+          "max_abs_m": 0.0,
+          "dtype_a": "float32",
+          "dtype_b": "float32"
+        }
+      },
+      {
+        "source_indices_and_order_equal": true,
+        "rgb_and_order_equal": true,
+        "world_coordinates": {
+          "bitwise_equal": true,
+          "numeric_differing_components": 0,
+          "bitwise_differing_components": 0,
+          "max_abs_m": 0.0,
+          "dtype_a": "float32",
+          "dtype_b": "float32"
+        },
+        "display_coordinates": {
+          "bitwise_equal": true,
+          "numeric_differing_components": 0,
+          "bitwise_differing_components": 0,
+          "max_abs_m": 0.0,
+          "dtype_a": "float32",
+          "dtype_b": "float32"
+        }
+      }
+    ],
+    "finite_certificate_outside_component_timing": {
+      "status": "true",
+      "valid_points": 15240960,
+      "max_camera_intermediate_abs_bound": 396.39205731361903,
+      "max_world_intermediate_abs_bound": 6673.397856467549,
+      "conservative_acceptance_limit": 3.3230697913918834e+35,
+      "reason": "absolute bounds dominate every three-term dot partial sum, depth product, world sum and final float32 cast",
+      "scope": "world coordinates only; runtime candidate still checks selected points only"
+    },
+    "generic_failure_semantics": {
+      "selected_source": 0,
+      "unselected_abnormal_source": 1,
+      "depth_finite_positive": true,
+      "outcomes": {
+        "reference": "rejected: Cannot export an empty or nonfinite point cloud",
+        "candidate": "accepted"
+      },
+      "semantic_equivalence": false
+    },
+    "default_replacement_eligible": false
+  },
+  "continuous_raw_delivery": {
+    "native_s": 23.778658724972047,
+    "candidate_s": 17.679595838009845,
+    "saved_s": 6.0990628869622014,
+    "latency_reduction_percent": 25.649314191792673,
+    "speedup": 1.3449775064342624,
+    "n_per_arm": 1,
+    "variants": {
+      "native": {
+        "raw_to_process_exit_wall_s": 23.778658724972047,
+        "preparation_process_wall_s": 4.766596361005213,
+        "container_wall_s": 19.01159762701718,
+        "script_to_glb_s": 17.166972831997555,
+        "stages": {
+          "prepared_load_s": 0.010565044009126723,
+          "model_load_s": 8.667946305999067,
+          "predict_s": 3.961996686994098,
+          "npz_save_s": 0.14521613100077957,
+          "glb_export_s": 2.693636130017694
+        },
+        "sampled_task_gpu_peak_mib": 4996,
+        "sampled_tree_rss_peak_bytes": 3442941952,
+        "glb": "Output/promptda-acceleration-validation-20261020/delivery-native-raw/cloud.glb",
+        "exit_code": 0
+      },
+      "optimized": {
+        "raw_to_process_exit_wall_s": 17.679595838009845,
+        "preparation_process_wall_s": 4.8712055660435,
+        "container_wall_s": 12.807843876013067,
+        "script_to_glb_s": 10.817728247959167,
+        "stages": {
+          "prepared_load_s": 0.011913545953575522,
+          "model_load_s": 4.448177222977392,
+          "predict_s": 2.7273334999918006,
+          "npz_save_s": 0.14505387301323935,
+          "glb_export_s": 1.7665928180213086
+        },
+        "sampled_task_gpu_peak_mib": 4996,
+        "sampled_tree_rss_peak_bytes": 2867318784,
+        "glb": "Output/promptda-acceleration-validation-20261020/delivery-optimized-raw/cloud.glb",
+        "exit_code": 0
+      }
+    },
+    "finite_certificate_cost_included_s": 0.06183280295226723,
+    "output_comparison": {
+      "status": "PASS",
+      "scope": "Direct comparison of the two new cold-delivery NPZ arrays and GLB geometry/color/node transforms; not image-based visual or independent accuracy evaluation",
+      "npz_fields": [
+        {
+          "field": "depth",
+          "dtype": "float32",
+          "shape": [
+            20,
+            756,
+            1008
+          ],
+          "array_equal": true,
+          "max_abs": 0.0
+        },
+        {
+          "field": "processed_images",
+          "dtype": "uint8",
+          "shape": [
+            20,
+            756,
+            1008,
+            3
+          ],
+          "array_equal": true
+        },
+        {
+          "field": "intrinsics",
+          "dtype": "float32",
+          "shape": [
+            20,
+            3,
+            3
+          ],
+          "array_equal": true,
+          "max_abs": 0.0
+        },
+        {
+          "field": "extrinsics",
+          "dtype": "float32",
+          "shape": [
+            20,
+            3,
+            4
+          ],
+          "array_equal": true,
+          "max_abs": 0.0
+        },
+        {
+          "field": "frame_ids",
+          "dtype": "int64",
+          "shape": [
+            20
+          ],
+          "array_equal": true
+        },
+        {
+          "field": "is_metric",
+          "dtype": "int64",
+          "shape": [],
+          "array_equal": true
+        },
+        {
+          "field": "preprocess_method",
+          "dtype": "<U15",
+          "shape": [],
+          "array_equal": true
+        },
+        {
+          "field": "preprocess_resolution",
+          "dtype": "int64",
+          "shape": [],
+          "array_equal": true
+        },
+        {
+          "field": "network_image_sizes",
+          "dtype": "int64",
+          "shape": [
+            20,
+            2
+          ],
+          "array_equal": true
+        }
+      ],
+      "glb_geometries": [
+        {
+          "name": "cloud",
+          "points": 1000000,
+          "positions_equal": true,
+          "colors_equal": true,
+          "max_position_abs_m": 0.0
+        }
+      ],
+      "glb_node_transforms_equal": true,
+      "comparison_wall_s": 0.43697366502601653
+    },
+    "qualification": "Observed single ordered pair on shared GPU; an unrelated GPU workload started during native execution. Not a controlled service speedup estimate or a cross-scene result."
+  },
+  "fault_checks": {
+    "status": "PASS",
+    "checks": [
+      {
+        "case": "consumer",
+        "exception": "RuntimeError",
+        "no_producer_thread_remaining": true
+      },
+      {
+        "case": "producer",
+        "exception": "FileNotFoundError",
+        "no_producer_thread_remaining": true
+      }
+    ],
+    "cuda_initialized": false
+  },
+  "input_checks": {
+    "status": "PASS",
+    "frames": 20,
+    "batch_sizes": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ],
+    "variants": [
+      "prefetch",
+      "reduced_serial",
+      "reduced_prefetch"
+    ],
+    "check_wall_s": 6.443605366977863,
+    "cuda_initialized": false
+  },
+  "recommended_first_production_candidates": [
+    "selective_checkpoint_covered_initialization",
+    "one_batch_cpu_prefetch"
+  ],
+  "not_promoted": {
+    "copy_reduction_alone": "slower than native in this run",
+    "more_complex_prefetch_combinations": "small n=3 differences do not establish a useful gain over pure prefetch",
+    "selected_projection_default": "unselected-overflow counterexample changes generic failure semantics; only certified current input was tested",
+    "resident_service_compile_batch_precision_writer_changes": "not implemented or measured; larger scope or lower evidence-based priority"
+  },
+  "production_changes": false
+}

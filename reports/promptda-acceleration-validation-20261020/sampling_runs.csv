@@ -1,0 +1,7 @@
+variant,pair,order,reference_s,candidate_s
+select_before,1,"reference,candidate",1.7076622609747574,0.48242375504923984
+select_before,2,"candidate,reference",1.6525405240245163,0.4716727990307845
+select_before,3,"reference,candidate",1.6914655709988438,0.4930050590191968
+select_before_float32_pixels,1,"reference,candidate",1.6993209010106511,0.4859108179807663
+select_before_float32_pixels,2,"candidate,reference",1.6789220559876412,0.4822998120216653
+select_before_float32_pixels,3,"reference,candidate",1.639481927966699,0.4623635499738157
