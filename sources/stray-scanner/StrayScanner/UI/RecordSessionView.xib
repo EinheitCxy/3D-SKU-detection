@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.XIB" version="3.0" toolsVersion="18122" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES">
+    <device id="retina6_0" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="18093"/>
+        <capability name="Named colors" minToolsVersion="9.0"/>
+        <capability name="Safe area layout guides" minToolsVersion="9.0"/>
+        <capability name="System colors in document resources" minToolsVersion="11.0"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <objects>
+        <placeholder placeholderIdentifier="IBFilesOwner" id="-1" userLabel="File's Owner" customClass="RecordSessionViewController" customModule="StrayScanner" customModuleProvider="target">
+            <connections>
+                <outlet property="depthView" destination="hCd-f8-w77" id="DPh-hN-bvs"/>
+                <outlet property="fpsButton" destination="Fgc-yD-8VQ" id="Fat-e7-tV3"/>
+                <outlet property="recordButton" destination="Iec-uU-r0Y" id="AS7-DH-SKh"/>
+                <outlet property="rgbView" destination="qwG-2k-qYO" id="hBM-7j-ffe"/>
+                <outlet property="timeLabel" destination="CWu-F8-lfZ" id="mat-Xv-0eG"/>
+                <outlet property="view" destination="iN0-l3-epB" id="NOF-IO-uOa"/>
+            </connections>
+        </placeholder>
+        <placeholder placeholderIdentifier="IBFirstResponder" id="-2" customClass="UIResponder"/>
+        <view contentMode="scaleToFill" interfaceStyle="light" id="iN0-l3-epB">
+            <rect key="frame" x="0.0" y="0.0" width="390" height="844"/>
+            <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
+            <subviews>
+                <view contentMode="top" translatesAutoresizingMaskIntoConstraints="NO" id="hCd-f8-w77" userLabel="DepthView" customClass="MetalView" customModule="StrayScanner" customModuleProvider="target">
+                    <rect key="frame" x="-25.666666666666657" y="44" width="441.33333333333326" height="588"/>
+                    <color key="backgroundColor" name="MediumGrey"/>
+                    <constraints>
+                        <constraint firstAttribute="width" secondItem="hCd-f8-w77" secondAttribute="height" multiplier="1440:1920" id="ki7-KE-kpm"/>
+                    </constraints>
+                </view>
+                <view hidden="YES" tag="1" contentMode="top" translatesAutoresizingMaskIntoConstraints="NO" id="qwG-2k-qYO" userLabel="RGBView" customClass="MetalView" customModule="StrayScanner" customModuleProvider="target">
+                    <rect key="frame" x="-25.666666666666657" y="44" width="441.33333333333326" height="588"/>
+                    <color key="backgroundColor" name="MediumGrey"/>
+                    <constraints>
+                        <constraint firstAttribute="width" secondItem="qwG-2k-qYO" secondAttribute="height" multiplier="1440:1920" id="SmV-5Z-Xkh"/>
+                    </constraints>
+                </view>
+                <view tag="2" contentMode="scaleToFill" insetsLayoutMarginsFromSafeArea="NO" translatesAutoresizingMaskIntoConstraints="NO" id="Iec-uU-r0Y" customClass="RecordButton" customModule="StrayScanner" customModuleProvider="target">
+                    <rect key="frame" x="150" y="680" width="90" height="90"/>
+                    <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                    <constraints>
+                        <constraint firstAttribute="height" constant="90" id="MxO-He-EDM"/>
+                        <constraint firstAttribute="width" constant="90" id="ocE-Ha-4ce"/>
+                    </constraints>
+                </view>
+                <label opaque="NO" userInteractionEnabled="NO" tag="3" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="00:00:00" textAlignment="right" lineBreakMode="tailTruncation" numberOfLines="3" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="CWu-F8-lfZ">
+                    <rect key="frame" x="174" y="637" width="200" height="27.333333333333371"/>
+                    <constraints>
+                        <constraint firstAttribute="width" constant="200" id="KhQ-eW-fvg"/>
+                    </constraints>
+                    <fontDescription key="fontDescription" name="CourierNewPSMT" family="Courier New" pointSize="24"/>
+                    <color key="textColor" name="TextColor"/>
+                    <nil key="highlightedColor"/>
+                </label>
+                <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="PMf-7V-nwy" userLabel="TopSpacing">
+                    <rect key="frame" x="0.0" y="632" width="390" height="40"/>
+                    <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                </view>
+                <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="N8t-XW-UtR" userLabel="BottomSpacing">
+                    <rect key="frame" x="0.0" y="770" width="390" height="40"/>
+                    <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+                </view>
+                <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="system" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="Fgc-yD-8VQ" userLabel="FPS Button">
+                    <rect key="frame" x="16" y="637" width="101" height="30"/>
+                    <color key="backgroundColor" name="DarkColor"/>
+                    <fontDescription key="fontDescription" name="CourierNewPSMT" family="Courier New" pointSize="19"/>
+                    <inset key="contentEdgeInsets" minX="16" minY="0.0" maxX="16" maxY="0.0"/>
+                    <state key="normal" title="60 fps">
+                        <color key="titleColor" name="LightColor"/>
+                    </state>
+                    <connections>
+                        <action selector="fpsButtonTapped" destination="-1" eventType="touchUpInside" id="RIf-pf-tfn"/>
+                    </connections>
+                </button>
+            </subviews>
+            <viewLayoutGuide key="safeArea" id="vUN-kp-3ea"/>
+            <color key="backgroundColor" name="BackgroundColor"/>
+            <constraints>
+                <constraint firstItem="vUN-kp-3ea" firstAttribute="trailing" secondItem="N8t-XW-UtR" secondAttribute="trailing" id="2ov-EJ-OE1"/>
+                <constraint firstItem="vUN-kp-3ea" firstAttribute="trailing" secondItem="PMf-7V-nwy" secondAttribute="trailing" id="7Xr-tK-wxU"/>
+                <constraint firstItem="qwG-2k-qYO" firstAttribute="centerX" secondItem="vUN-kp-3ea" secondAttribute="centerX" id="BvV-ec-7bs"/>
+                <constraint firstItem="Fgc-yD-8VQ" firstAttribute="top" secondItem="hCd-f8-w77" secondAttribute="bottom" constant="5" id="E0E-dU-hpZ"/>
+                <constraint firstItem="Iec-uU-r0Y" firstAttribute="centerX" secondItem="vUN-kp-3ea" secondAttribute="centerX" id="Eqh-5z-eap"/>
+                <constraint firstItem="qwG-2k-qYO" firstAttribute="bottom" secondItem="PMf-7V-nwy" secondAttribute="top" id="Itw-S2-pGu"/>
+                <constraint firstItem="hCd-f8-w77" firstAttribute="centerX" secondItem="vUN-kp-3ea" secondAttribute="centerX" id="Kzi-R7-Laf"/>
+                <constraint firstItem="N8t-XW-UtR" firstAttribute="bottom" secondItem="vUN-kp-3ea" secondAttribute="bottom" id="MUu-US-HWS"/>
+                <constraint firstItem="hCd-f8-w77" firstAttribute="bottom" secondItem="PMf-7V-nwy" secondAttribute="top" id="NAe-3X-jzc"/>
+                <constraint firstItem="N8t-XW-UtR" firstAttribute="height" secondItem="PMf-7V-nwy" secondAttribute="height" id="PNK-BQ-K9M"/>
+                <constraint firstItem="N8t-XW-UtR" firstAttribute="leading" secondItem="vUN-kp-3ea" secondAttribute="leading" id="Pxg-lf-8RA"/>
+                <constraint firstItem="Iec-uU-r0Y" firstAttribute="top" secondItem="PMf-7V-nwy" secondAttribute="bottom" constant="8" symbolic="YES" id="UEC-gc-HHN"/>
+                <constraint firstItem="Fgc-yD-8VQ" firstAttribute="leading" secondItem="vUN-kp-3ea" secondAttribute="leading" constant="16" id="Y8p-JD-8yb"/>
+                <constraint firstItem="hCd-f8-w77" firstAttribute="top" secondItem="vUN-kp-3ea" secondAttribute="top" id="chD-rb-Y6W"/>
+                <constraint firstItem="vUN-kp-3ea" firstAttribute="trailing" secondItem="CWu-F8-lfZ" secondAttribute="trailing" constant="16" id="dtg-A8-f3I"/>
+                <constraint firstItem="vUN-kp-3ea" firstAttribute="bottom" secondItem="Iec-uU-r0Y" secondAttribute="bottom" constant="40" id="i7b-jn-cjD"/>
+                <constraint firstItem="qwG-2k-qYO" firstAttribute="top" secondItem="vUN-kp-3ea" secondAttribute="top" id="lRr-Dq-BkR"/>
+                <constraint firstItem="PMf-7V-nwy" firstAttribute="leading" secondItem="vUN-kp-3ea" secondAttribute="leading" id="mpo-hc-Srs"/>
+                <constraint firstItem="CWu-F8-lfZ" firstAttribute="top" secondItem="hCd-f8-w77" secondAttribute="bottom" constant="5" id="r65-yx-mgG"/>
+                <constraint firstItem="Fgc-yD-8VQ" firstAttribute="height" secondItem="CWu-F8-lfZ" secondAttribute="height" multiplier="1.09756" id="rbf-bg-rDi"/>
+                <constraint firstItem="N8t-XW-UtR" firstAttribute="top" secondItem="Iec-uU-r0Y" secondAttribute="bottom" id="wwt-3U-WJX"/>
+            </constraints>
+            <point key="canvasLocation" x="141.53846153846155" y="77.488151658767762"/>
+        </view>
+    </objects>
+    <resources>
+        <namedColor name="BackgroundColor">
+            <color red="0.96470588235294119" green="0.94117647058823528" blue="0.89803921568627454" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+        <namedColor name="DarkColor">
+            <color red="0.10000000149011612" green="0.10000000149011612" blue="0.10000000149011612" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+        <namedColor name="LightColor">
+            <color red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+        <namedColor name="MediumGrey">
+            <color red="0.40000000596046448" green="0.40000000596046448" blue="0.40000000596046448" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+        <namedColor name="TextColor">
+            <color red="0.10000000149011612" green="0.10000000149011612" blue="0.10000000149011612" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
+        </namedColor>
+        <systemColor name="systemBackgroundColor">
+            <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
+        </systemColor>
+    </resources>
+</document>

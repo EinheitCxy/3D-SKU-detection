@@ -6,6 +6,13 @@
 
 ## 输入文件与帧身份
 
+项目版 [SKU Scanner](../sources/stray-scanner/README.md) 在采集端按真实时间1Hz保存同步 bundle，
+格式与相机轴见 [sku_bundle.md](../sources/stray-scanner/docs/sku_bundle.md)。
+使用 [prepare_bundle.py](../scripts/3d/scanner/prepare_bundle.py) 直接生成下文相同的 prepared 输入；
+逐帧 K/c2w 保留，只求逆得到 w2c，并将毫米转米。原图与 LiDAR 都不在手机端缩放。
+它选择每个经过秒内第一组完整且 tracking normal 的帧；历史 MP4 则使用整数秒最近帧。
+以下 MP4/CSV/ffmpeg 说明继续适用于旧录制数据。新采集端尚待 Mac SDK 构建和 LiDAR 真机验证。
+
 | 文件 | 数据含义 | 当前准备程序的用途 |
 |---|---|---|
 | `rgb.mp4` | 相机原始 RGB 视频，可能携带显示旋转与 MP4 edit list | 解码原始方向的 PNG，保留录制帧编号 |

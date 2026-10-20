@@ -40,6 +40,22 @@ uv run hf download depth-anything/prompt-depth-anything-vitl model.ckpt \
 
 ## 准备 Scanner 数据
 
+项目采集 App 源码在 [sources/stray-scanner](../../../sources/stray-scanner/README.md)。
+新版本直接保存每秒一组的同步原图 RGB、原生 LiDAR/confidence、逐帧 K 和 OpenCV c2w，
+使用 [SKU RGB-D bundle v1](../../../sources/stray-scanner/docs/sku_bundle.md)。
+将导出的 ZIP 解压后，指向包含 scan_bundle.json 的 .rgbd 目录：
+
+```bash
+uv run python scripts/3d/scanner/prepare_bundle.py \
+  /path/to/sku-scan.rgbd Output/scanner_bundle_prepared
+```
+
+该入口不再抽帧或调用 ffmpeg；只接受 ready 包，保留原图、原始 frame ID、K/c2w 和原生深度，
+生成与下述历史格式相同的 prepared 输入。后续重建把 --base 指向 Output/scanner_bundle_prepared，
+PromptDA 默认仍为1008/FP16/batch2。手机端与 SDK 的验证边界见 App README。
+
+### 历史 Stray Scanner MP4 目录
+
 输入目录包含 `rgb.mp4`、`odometry.csv`、`depth/*.png`、`confidence/*.png`。
 
 ```bash
