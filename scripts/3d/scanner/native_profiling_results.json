@@ -1,0 +1,179 @@
+{
+  "scope": "14 prepared frames, one cold plus three warm complete prediction requests; matching excluded",
+  "arms": {
+    "da3_ke": {
+      "model_load_s": 9.303919230005704,
+      "cold_request_s": 2.470559373992728,
+      "warm_median_s": 1.3401118770125322,
+      "warm_min_s": 1.332506178994663,
+      "warm_max_s": 1.4782258909835946,
+      "warm_fps": 10.446888980052728,
+      "allocated_peak_gib": 11.33608627319336,
+      "reserved_peak_gib": 15.123046875,
+      "rss_peak_gib": 12.734989166259766,
+      "shape": [
+        14,
+        378,
+        504
+      ],
+      "npz_save_s": 1.789677794004092,
+      "npz_bytes": 21550105,
+      "npz_zip_compression_types": [
+        8
+      ],
+      "glb_export_s": 0.9084015490079764,
+      "cold_request_through_artifacts_s": 5.172500004991889,
+      "glb_readback": "PASS",
+      "glb_points": 1000000
+    },
+    "promptda_native_b1": {
+      "model_load_s": 8.36131116800243,
+      "cold_request_s": 21.48158429400064,
+      "warm_median_s": 21.326057498023147,
+      "warm_min_s": 21.213086404983187,
+      "warm_max_s": 21.400847582001006,
+      "warm_fps": 0.656473893559452,
+      "allocated_peak_gib": 7.145780086517334,
+      "reserved_peak_gib": 9.380859375,
+      "rss_peak_gib": 3.164581298828125,
+      "shape": [
+        14,
+        1440,
+        1920
+      ],
+      "npz_save_s": 13.045480009983294,
+      "npz_bytes": 165168076,
+      "npz_zip_compression_types": [
+        8
+      ],
+      "glb_export_s": 5.002391553018242,
+      "cold_request_through_artifacts_s": 39.58495732099982,
+      "glb_readback": "PASS",
+      "glb_points": 1000000
+    },
+    "promptda_native_b2": {
+      "model_load_s": 8.010442923987284,
+      "cold_request_s": 21.568626462016255,
+      "warm_median_s": 21.168571563001024,
+      "warm_min_s": 21.10449961599079,
+      "warm_max_s": 21.17519767599879,
+      "warm_fps": 0.6613578038713562,
+      "allocated_peak_gib": 13.679450035095215,
+      "reserved_peak_gib": 17.908203125,
+      "rss_peak_gib": 3.1681747436523438,
+      "shape": [
+        14,
+        1440,
+        1920
+      ],
+      "npz_save_s": 12.384369890991366,
+      "npz_bytes": 165169885,
+      "npz_zip_compression_types": [
+        8
+      ],
+      "glb_export_s": 4.79025560800801,
+      "cold_request_through_artifacts_s": 38.796284985000966,
+      "glb_readback": "PASS",
+      "glb_points": 1000000
+    },
+    "promptda_native_tf32_b2": {
+      "model_load_s": 7.901232033997076,
+      "cold_request_s": 19.825198195001576,
+      "warm_median_s": 19.434175859001698,
+      "warm_min_s": 19.327282848011237,
+      "warm_max_s": 19.443353658978594,
+      "warm_fps": 0.7203804319551504,
+      "allocated_peak_gib": 13.679450035095215,
+      "reserved_peak_gib": 17.908203125,
+      "rss_peak_gib": 3.1669769287109375,
+      "shape": [
+        14,
+        1440,
+        1920
+      ],
+      "npz_save_s": 12.475731490005273,
+      "npz_bytes": 165168981,
+      "npz_zip_compression_types": [
+        8
+      ],
+      "glb_export_s": 4.8627992600086145,
+      "cold_request_through_artifacts_s": 37.21767577700666,
+      "glb_readback": "PASS",
+      "glb_points": 1000000
+    },
+    "promptda_native_fp16_b2": {
+      "model_load_s": 7.934630312025547,
+      "cold_request_s": 5.846988689008867,
+      "warm_median_s": 5.267958197015105,
+      "warm_min_s": 5.261416575987823,
+      "warm_max_s": 5.2717571850225795,
+      "warm_fps": 2.657576137929983,
+      "allocated_peak_gib": 9.06416130065918,
+      "reserved_peak_gib": 11.2265625,
+      "rss_peak_gib": 3.1641006469726562,
+      "shape": [
+        14,
+        1440,
+        1920
+      ],
+      "npz_save_s": 0.36194050300400704,
+      "npz_bytes": 270954072,
+      "npz_zip_compression_types": [
+        0
+      ],
+      "glb_export_s": 4.89610043700668,
+      "cold_request_through_artifacts_s": 11.161287149006967,
+      "glb_readback": "PASS",
+      "glb_points": 1000000
+    }
+  },
+  "numerical_comparisons": {
+    "promptda_native_b2": {
+      "reference": "native FP32 highest batch1",
+      "mean_absolute_depth_difference_m": 1.8807288758614084e-05,
+      "root_mean_square_depth_difference_m": 6.020705995306169e-05,
+      "max_absolute_depth_difference_m": 0.02309894561767578,
+      "p99_absolute_depth_difference_m": 0.000186920166015625,
+      "fraction_above_1cm": 1.4209242724867725e-06,
+      "fraction_above_5cm": 0.0,
+      "meaning": "numerical agreement with the FP32 prediction, not independent depth accuracy"
+    },
+    "promptda_native_tf32_b2": {
+      "reference": "native FP32 highest batch1",
+      "mean_absolute_depth_difference_m": 3.472421141225067e-05,
+      "root_mean_square_depth_difference_m": 0.00013450869318605408,
+      "max_absolute_depth_difference_m": 0.04021024703979492,
+      "p99_absolute_depth_difference_m": 0.0004405975341796875,
+      "fraction_above_1cm": 9.946469907407408e-06,
+      "fraction_above_5cm": 0.0,
+      "meaning": "numerical agreement with the FP32 prediction, not independent depth accuracy"
+    },
+    "promptda_native_fp16_b2": {
+      "reference": "native FP32 highest batch1",
+      "mean_absolute_depth_difference_m": 0.00035000072764088775,
+      "root_mean_square_depth_difference_m": 0.0006482641831519896,
+      "max_absolute_depth_difference_m": 0.12508225440979004,
+      "p99_absolute_depth_difference_m": 0.002071380615234375,
+      "fraction_above_1cm": 0.00020084118716931216,
+      "fraction_above_5cm": 3.823578042328042e-06,
+      "meaning": "numerical agreement with the FP32 prediction, not independent depth accuracy"
+    }
+  },
+  "native_geometry": {
+    "rgb_exact": true,
+    "K_E_frame_ids_exact": true,
+    "output_wh": [
+      1920,
+      1440
+    ],
+    "network_wh": [
+      1932,
+      1442
+    ]
+  },
+  "fp32_uncompressed_save_component": {
+    "wall_s": 0.46521407199907117,
+    "bytes": 270954072,
+    "scope": "resident CPU arrays to np.savez, filesystem writes buffered; excludes reading the baseline archive; not a continuous cold-to-GLB measurement"
+  }
+}

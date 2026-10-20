@@ -48,6 +48,19 @@ def resize_intrinsics(source_k: np.ndarray, source_size, target_size) -> np.ndar
     return affine @ source_k
 
 
+def promptda_grid_size(source_size, max_size: int = 1008) -> tuple[int, int]:
+    """Official longest-side AREA resize dimensions; 0 retains native RGB."""
+    if max_size not in (0, 504, 1008):
+        raise ValueError("PromptDA max_size must be 0 (native), 504 or 1008")
+    width, height = map(int, source_size)
+    if min(width, height) <= 0:
+        raise ValueError("PromptDA source dimensions must be positive")
+    if max_size == 0 or max(width, height) <= max_size:
+        return width, height
+    scale = max_size / max(width, height)
+    return int(width * scale // 14 * 14), int(height * scale // 14 * 14)
+
+
 def prediction_mask(prediction: dict) -> tuple[np.ndarray, float | None]:
     depth = prediction["depth"]
     valid = np.isfinite(depth) & (depth > 0)

@@ -92,6 +92,12 @@ def write_json(path, value):
 
 
 def parse_args():
+    from candidates import (
+        DEFAULT_PROMPTDA_BATCH_SIZE,
+        DEFAULT_PROMPTDA_MAX_SIZE,
+        DEFAULT_PROMPTDA_PRECISION,
+    )
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--base",
@@ -106,6 +112,28 @@ def parse_args():
         "--output", required=True, type=Path, help="Per-candidate profiling directory"
     )
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--promptda-batch-size", type=int, default=DEFAULT_PROMPTDA_BATCH_SIZE
+    )
+    parser.add_argument(
+        "--promptda-max-size",
+        type=int,
+        choices=(0, 504, 1008),
+        default=DEFAULT_PROMPTDA_MAX_SIZE,
+    )
+    parser.add_argument(
+        "--promptda-precision",
+        choices=("fp32", "fp16"),
+        default=DEFAULT_PROMPTDA_PRECISION,
+    )
+    parser.add_argument(
+        "--promptda-matmul-precision", choices=("highest", "high"), default="highest"
+    )
+    parser.add_argument(
+        "--compress-prediction",
+        action="store_true",
+        help="Compress PromptDA NPZ; DA3 retains compression",
+    )
     return parser.parse_args()
 
 
@@ -141,7 +169,7 @@ def render_report(report):
         f"min/max={warm['min_s']:.4f}/{warm['max_s']:.4f} s，sample SD={warm['sample_stdev_s']:.4f} s。"
         "三个样本不用于推断尾延迟。",
         "",
-        f"Cold NPZ 压缩保存：{artifacts['npz_save_s']:.4f} s；"
+        f"Cold NPZ 保存（{report['npz_compression']}）：{artifacts['npz_save_s']:.4f} s；"
         f"GLB 反投影、候选筛选、预算采样、写入及一次回读：{artifacts['glb_export_and_readback_s']:.4f} s。",
         "",
         f"一次 cold predict → NPZ 保存 → GLB 就绪的实际连续墙钟："
@@ -171,7 +199,7 @@ def main():
 
     sys.path.insert(1, str(Path(__file__).resolve().parents[3]))
     from candidates import load_candidate, predict_candidate
-    from scanner_io import export_prediction, load_prepared
+    from scanner_io import export_prediction, load_prepared, promptda_grid_size
 
     device = torch.device(args.device)
     if device.type != "cuda" or not torch.cuda.is_available():
@@ -190,6 +218,9 @@ def main():
     report = {
         "status": "running",
         "candidate": args.candidate,
+        "npz_compression": "deflate"
+        if args.candidate == "da3" or args.compress_prediction
+        else "stored",
         "checkpoint": str(args.checkpoint),
         "promptda_repo": None
         if args.promptda_repo is None
@@ -200,7 +231,16 @@ def main():
         "seed": SEED,
         "native_precision": "DA3 native BF16 autocast; FP32 parameters; joint multi-view request"
         if args.candidate == "da3"
-        else "PromptDA official FP32; sequential per-frame predict; full raw valid LiDAR",
+        else f"PromptDA FP32 parameters, {args.promptda_precision} compute; matmul precision={args.promptda_matmul_precision}; batch={args.promptda_batch_size}; RGB max_size={args.promptda_max_size}; full raw valid LiDAR",
+        "promptda_max_size": args.promptda_max_size
+        if args.candidate == "promptda"
+        else None,
+        "promptda_precision": args.promptda_precision
+        if args.candidate == "promptda"
+        else None,
+        "promptda_batch_size": args.promptda_batch_size
+        if args.candidate == "promptda"
+        else None,
         "cache_state": "One model load per CLI process; no external warmup; filesystem page cache unknown/unflushed; allocator/model caches retained between requests",
         "predict_scope": "Resident model + prepared PNG paths and sensor arrays through dense predictions and processed RGB on CPU; caller synchronizes GPU before and after predict_candidate",
         "gpu_memory_scope": "Per-predict absolute allocated/reserved peaks include model; baseline sampled then peak counters reset before request; no cache emptying",
@@ -216,6 +256,11 @@ def main():
         report["frame_count"] = len(images)
         report["frame_ids"] = np.asarray(sensor["frame_ids"]).tolist()
         report["cpu_threads"] = torch.get_num_threads()
+        expected_width, expected_height = (
+            (504, 378)
+            if args.candidate == "da3"
+            else promptda_grid_size(sensor["image_size"], args.promptda_max_size)
+        )
 
         random.seed(SEED)
         np.random.seed(SEED)
@@ -229,6 +274,7 @@ def main():
             promptda_repo=None
             if args.promptda_repo is None
             else str(args.promptda_repo),
+            promptda_matmul_precision=args.promptda_matmul_precision,
         )
         torch.cuda.synchronize(device)
         loaded_at = time.perf_counter()
@@ -254,8 +300,11 @@ def main():
             "logical_device": str(device),
             "device_name": properties.name,
             "device_total_memory_bytes": properties.total_memory,
+            "float32_matmul_precision": torch.get_float32_matmul_precision(),
+            "cudnn_allow_tf32": torch.backends.cudnn.allow_tf32,
             "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
             "NVIDIA_VISIBLE_DEVICES": os.environ.get("NVIDIA_VISIBLE_DEVICES"),
+            "PYTORCH_CUDA_ALLOC_CONF": os.environ.get("PYTORCH_CUDA_ALLOC_CONF"),
         }
         print(
             f"{args.candidate}: model loaded in {report['model_load']['combined_wall_s']:.3f}s",
@@ -275,7 +324,14 @@ def main():
             sampler.set_phase(label)
             started = time.perf_counter()
             prediction = predict_candidate(
-                args.candidate, model, images, sensor, str(device)
+                args.candidate,
+                model,
+                images,
+                sensor,
+                str(device),
+                promptda_batch_size=args.promptda_batch_size,
+                promptda_precision=args.promptda_precision,
+                promptda_max_size=args.promptda_max_size,
             )
             torch.cuda.synchronize(device)
             predicted_at = time.perf_counter()
@@ -306,10 +362,10 @@ def main():
                 if (
                     not isinstance(depth, np.ndarray)
                     or depth.dtype != np.float32
-                    or depth.shape != (14, 378, 504)
+                    or depth.shape != (14, expected_height, expected_width)
                 ):
                     raise ValueError(
-                        "Expected CPU float32 depth with shape (14,378,504)"
+                        "Expected CPU float32 depth on the candidate's actual RGB grid"
                     )
                 if not np.all(np.isfinite(depth) & (depth > 0)):
                     raise ValueError("Cold prediction depth is not finite and positive")
@@ -323,7 +379,12 @@ def main():
                 }
                 sampler.set_phase("cold_npz_save")
                 save_started = time.perf_counter()
-                np.savez_compressed(args.output / "predictions.npz", **prediction)
+                save = (
+                    np.savez_compressed
+                    if report["npz_compression"] == "deflate"
+                    else np.savez
+                )
+                save(args.output / "predictions.npz", **prediction)
                 npz_save_s = time.perf_counter() - save_started
                 sampler.set_phase("cold_glb_export")
                 export_started = time.perf_counter()

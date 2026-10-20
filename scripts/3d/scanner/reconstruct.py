@@ -9,7 +9,13 @@ from pathlib import Path
 
 import numpy as np
 
-from candidates import load_candidate, predict_candidate
+from candidates import (
+    DEFAULT_PROMPTDA_BATCH_SIZE,
+    DEFAULT_PROMPTDA_MAX_SIZE,
+    DEFAULT_PROMPTDA_PRECISION,
+    load_candidate,
+    predict_candidate,
+)
 from scanner_io import export_prediction, load_prepared, save_json
 
 
@@ -25,6 +31,29 @@ def main():
         "--output", type=Path, required=True, help="New output directory"
     )
     parser.add_argument("--device", default="cuda:0")
+    parser.add_argument(
+        "--promptda-batch-size", type=int, default=DEFAULT_PROMPTDA_BATCH_SIZE
+    )
+    parser.add_argument(
+        "--promptda-max-size",
+        type=int,
+        choices=(0, 504, 1008),
+        default=DEFAULT_PROMPTDA_MAX_SIZE,
+        help="RGB longest side; 0 preserves native resolution",
+    )
+    parser.add_argument(
+        "--promptda-precision",
+        choices=("fp32", "fp16"),
+        default=DEFAULT_PROMPTDA_PRECISION,
+    )
+    parser.add_argument(
+        "--promptda-matmul-precision", choices=("highest", "high"), default="highest"
+    )
+    parser.add_argument(
+        "--compress-prediction",
+        action="store_true",
+        help="Compress PromptDA NPZ to reduce disk usage; DA3 retains compression",
+    )
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
 
@@ -34,14 +63,29 @@ def main():
     started = time.perf_counter()
     images, sensor = load_prepared(args.base)
     model = load_candidate(
-        args.candidate, args.checkpoint, args.device, args.promptda_repo
+        args.candidate,
+        args.checkpoint,
+        args.device,
+        args.promptda_repo,
+        promptda_matmul_precision=args.promptda_matmul_precision,
     )
     torch.cuda.synchronize(args.device)
     loaded = time.perf_counter()
-    prediction = predict_candidate(args.candidate, model, images, sensor, args.device)
+    prediction = predict_candidate(
+        args.candidate,
+        model,
+        images,
+        sensor,
+        args.device,
+        promptda_batch_size=args.promptda_batch_size,
+        promptda_precision=args.promptda_precision,
+        promptda_max_size=args.promptda_max_size,
+    )
     torch.cuda.synchronize(args.device)
     predicted = time.perf_counter()
-    np.savez_compressed(args.output / "predictions.npz", **prediction)
+    compress = args.candidate == "da3" or args.compress_prediction
+    save = np.savez_compressed if compress else np.savez
+    save(args.output / "predictions.npz", **prediction)
     saved = time.perf_counter()
     cloud = export_prediction(prediction, sensor, args.output / "cloud.glb")
     finished = time.perf_counter()
@@ -49,8 +93,20 @@ def main():
         args.output / "run.json",
         {
             "candidate": args.candidate,
+            "promptda_max_size": args.promptda_max_size
+            if args.candidate == "promptda"
+            else None,
+            "npz_compression": "deflate" if compress else "stored",
             "frames": len(images),
             "device": torch.cuda.get_device_name(args.device),
+            "processed_shape": list(prediction["depth"].shape),
+            "promptda_batch_size": args.promptda_batch_size
+            if args.candidate == "promptda"
+            else None,
+            "float32_matmul_precision": torch.get_float32_matmul_precision(),
+            "promptda_precision": args.promptda_precision
+            if args.candidate == "promptda"
+            else None,
             "input_and_model_load_s": loaded - started,
             "request_s": predicted - loaded,
             "npz_save_s": saved - predicted,

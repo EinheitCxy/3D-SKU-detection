@@ -1,0 +1,608 @@
+{
+  "scope": "1008 PromptDA batch sweep, one cold plus three warm per fresh process; matching excluded",
+  "arms": {
+    "da3_ke": {
+      "status": "complete",
+      "model_load_s": 9.013949524989584,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 2.2366309560020454,
+      "allocated_peak_gib_of_completed_requests": 11.33608627319336,
+      "reserved_peak_gib_of_completed_requests": 15.123046875,
+      "shape": [
+        14,
+        378,
+        504
+      ],
+      "rss_peak_gib": 13.775798797607422,
+      "npz_save_s": 1.7619622880010866,
+      "glb_export_s": 0.888568780006608,
+      "cold_request_through_artifacts_s": 4.891661592002492,
+      "glb_readback": "PASS",
+      "warm_median_s": 1.3337995679758023,
+      "warm_min_s": 1.3333705939876381,
+      "warm_max_s": 1.4893129509873688,
+      "warm_request_s": [
+        1.4893129509873688,
+        1.3337995679758023,
+        1.3333705939876381
+      ],
+      "warm_fps": 10.496329685611345
+    },
+    "promptda_1008_fp32_b1": {
+      "status": "complete",
+      "model_load_s": 8.431044336990453,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 4.141466983011924,
+      "allocated_peak_gib_of_completed_requests": 2.8809781074523926,
+      "reserved_peak_gib_of_completed_requests": 3.517578125,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.1621131896972656,
+      "npz_save_s": 0.10123391202068888,
+      "glb_export_s": 2.1472793119901326,
+      "cold_request_through_artifacts_s": 6.40406595901004,
+      "glb_readback": "PASS",
+      "warm_median_s": 3.6183101609931327,
+      "warm_min_s": 3.6136390210012905,
+      "warm_max_s": 3.6293138199835084,
+      "warm_request_s": [
+        3.6136390210012905,
+        3.6293138199835084,
+        3.6183101609931327
+      ],
+      "warm_fps": 3.8692094864961386
+    },
+    "promptda_1008_fp32_b4": {
+      "status": "complete",
+      "model_load_s": 8.181701396999415,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 3.9652837789908517,
+      "allocated_peak_gib_of_completed_requests": 7.315515995025635,
+      "reserved_peak_gib_of_completed_requests": 9.7265625,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.1669883728027344,
+      "npz_save_s": 0.10280048698768951,
+      "glb_export_s": 2.2003281340003014,
+      "cold_request_through_artifacts_s": 6.283031216007657,
+      "glb_readback": "PASS",
+      "warm_median_s": 3.5486780639912467,
+      "warm_min_s": 3.5230379110143986,
+      "warm_max_s": 3.5728918869863264,
+      "warm_request_s": [
+        3.5230379110143986,
+        3.5486780639912467,
+        3.5728918869863264
+      ],
+      "warm_fps": 3.945131045292401
+    },
+    "promptda_1008_fp32_b8": {
+      "status": "complete",
+      "model_load_s": 7.971375844004797,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 4.006855926010758,
+      "allocated_peak_gib_of_completed_requests": 14.05482292175293,
+      "reserved_peak_gib_of_completed_requests": 16.681640625,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.167980194091797,
+      "npz_save_s": 0.1010309119883459,
+      "glb_export_s": 2.1974878720066044,
+      "cold_request_through_artifacts_s": 6.3200671870145015,
+      "glb_readback": "PASS",
+      "warm_median_s": 3.574541117006447,
+      "warm_min_s": 3.527259826019872,
+      "warm_max_s": 3.585848179005552,
+      "warm_request_s": [
+        3.527259826019872,
+        3.585848179005552,
+        3.574541117006447
+      ],
+      "warm_fps": 3.916586644756379
+    },
+    "promptda_1008_fp16_b1": {
+      "status": "complete",
+      "model_load_s": 7.978627069009235,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 2.569986798975151,
+      "allocated_peak_gib_of_completed_requests": 3.1233115196228027,
+      "reserved_peak_gib_of_completed_requests": 3.470703125,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.168529510498047,
+      "npz_save_s": 0.09911832000943832,
+      "glb_export_s": 2.18032553899684,
+      "cold_request_through_artifacts_s": 4.864201881980989,
+      "glb_readback": "PASS",
+      "warm_median_s": 1.905514561018208,
+      "warm_min_s": 1.9020688380114734,
+      "warm_max_s": 1.9295045699982438,
+      "warm_request_s": [
+        1.905514561018208,
+        1.9020688380114734,
+        1.9295045699982438
+      ],
+      "warm_fps": 7.347096834840835
+    },
+    "promptda_1008_fp16_b2": {
+      "status": "complete",
+      "model_load_s": 8.219077008019667,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 2.4818186390039045,
+      "allocated_peak_gib_of_completed_requests": 3.8629674911499023,
+      "reserved_peak_gib_of_completed_requests": 4.466796875,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.168163299560547,
+      "npz_save_s": 0.10107881299336441,
+      "glb_export_s": 2.1556796730146743,
+      "cold_request_through_artifacts_s": 4.7533473540097475,
+      "glb_readback": "PASS",
+      "warm_median_s": 1.7916022530116607,
+      "warm_min_s": 1.7913343000109307,
+      "warm_max_s": 1.8023715449962765,
+      "warm_request_s": [
+        1.8023715449962765,
+        1.7916022530116607,
+        1.7913343000109307
+      ],
+      "warm_fps": 7.814234424223445
+    },
+    "promptda_1008_fp16_b4": {
+      "status": "complete",
+      "model_load_s": 8.320632379996823,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 2.4668697169981897,
+      "allocated_peak_gib_of_completed_requests": 5.802481651306152,
+      "reserved_peak_gib_of_completed_requests": 6.998046875,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.1635818481445312,
+      "npz_save_s": 0.09931571199558675,
+      "glb_export_s": 2.209391621989198,
+      "cold_request_through_artifacts_s": 4.789760562998708,
+      "glb_readback": "PASS",
+      "warm_median_s": 1.8437303329992574,
+      "warm_min_s": 1.841074040014064,
+      "warm_max_s": 1.870024449977791,
+      "warm_request_s": [
+        1.870024449977791,
+        1.8437303329992574,
+        1.841074040014064
+      ],
+      "warm_fps": 7.593301335573155
+    },
+    "promptda_1008_fp16_b8": {
+      "status": "complete",
+      "model_load_s": 8.200908190017799,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 2.3986997789761517,
+      "allocated_peak_gib_of_completed_requests": 9.666682243347168,
+      "reserved_peak_gib_of_completed_requests": 12.1328125,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.1672439575195312,
+      "npz_save_s": 0.10591249301796779,
+      "glb_export_s": 2.1786798049870413,
+      "cold_request_through_artifacts_s": 4.698079831985524,
+      "glb_readback": "PASS",
+      "warm_median_s": 1.7866927629802376,
+      "warm_min_s": 1.7857023430115078,
+      "warm_max_s": 1.7956690810096916,
+      "warm_request_s": [
+        1.7956690810096916,
+        1.7866927629802376,
+        1.7857023430115078
+      ],
+      "warm_fps": 7.835706446052725
+    },
+    "promptda_1008_fp16_b14": {
+      "status": "failed",
+      "model_load_s": 8.049177385983057,
+      "completed_request_labels": [
+        "cold"
+      ],
+      "cold_request_s": 2.4752364740124904,
+      "allocated_peak_gib_of_completed_requests": 15.477141380310059,
+      "reserved_peak_gib_of_completed_requests": 17.08984375,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.1666183471679688,
+      "npz_save_s": 0.10277530900202692,
+      "glb_export_s": 2.158530560991494,
+      "cold_request_through_artifacts_s": 4.751296280999668,
+      "glb_readback": "PASS",
+      "error": {
+        "type": "OutOfMemoryError",
+        "message": "CUDA out of memory. Tried to allocate 5.09 GiB. GPU 0 has a total capacity of 23.52 GiB of which 4.04 GiB is free. Including non-PyTorch memory, this process has 14.54 GiB memory in use. Of the allocated memory 8.87 GiB is allocated by PyTorch, and 5.26 GiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)"
+      }
+    },
+    "promptda_1008_fp16_b14_expandable": {
+      "status": "complete",
+      "model_load_s": 7.967857543000719,
+      "completed_request_labels": [
+        "cold",
+        "warm_1",
+        "warm_2",
+        "warm_3"
+      ],
+      "cold_request_s": 2.4254563709837385,
+      "allocated_peak_gib_of_completed_requests": 15.465948581695557,
+      "reserved_peak_gib_of_completed_requests": 18.1328125,
+      "shape": [
+        14,
+        756,
+        1008
+      ],
+      "rss_peak_gib": 3.164905548095703,
+      "npz_save_s": 0.09770684901741333,
+      "glb_export_s": 2.166225092019886,
+      "cold_request_through_artifacts_s": 4.70316249600728,
+      "glb_readback": "PASS",
+      "warm_median_s": 1.892490045982413,
+      "warm_min_s": 1.7563012889877427,
+      "warm_max_s": 1.9187394470209256,
+      "warm_request_s": [
+        1.892490045982413,
+        1.9187394470209256,
+        1.7563012889877427
+      ],
+      "warm_fps": 7.397661102482809
+    }
+  },
+  "numerical_comparisons": {
+    "promptda_1008_fp32_b4": {
+      "reference": "1008 FP32 batch1",
+      "mean_abs_m": 1.7358541516771842e-05,
+      "p99_abs_m": 0.00017309188842773438,
+      "max_abs_m": 0.024689197540283203,
+      "fraction_above_1cm": 6.561266481901402e-07,
+      "meaning": "numerical difference from FP32, not independent depth accuracy"
+    },
+    "promptda_1008_fp32_b8": {
+      "reference": "1008 FP32 batch1",
+      "mean_abs_m": 1.744578305475354e-05,
+      "p99_abs_m": 0.00017452239990234375,
+      "max_abs_m": 0.018684864044189453,
+      "fraction_above_1cm": 6.561266481901402e-07,
+      "meaning": "numerical difference from FP32, not independent depth accuracy"
+    },
+    "promptda_1008_fp16_b1": {
+      "reference": "1008 FP32 batch1",
+      "mean_abs_m": 0.00036326358319669597,
+      "p99_abs_m": 0.002251148223876953,
+      "max_abs_m": 0.09366941452026367,
+      "fraction_above_1cm": 9.307625166468704e-05,
+      "meaning": "numerical difference from FP32, not independent depth accuracy"
+    },
+    "promptda_1008_fp16_b2": {
+      "reference": "1008 FP32 batch1",
+      "mean_abs_m": 0.0003653670907375213,
+      "p99_abs_m": 0.0023097991943359375,
+      "max_abs_m": 0.1032099723815918,
+      "fraction_above_1cm": 0.00013263131531272122,
+      "meaning": "numerical difference from FP32, not independent depth accuracy"
+    },
+    "promptda_1008_fp16_b4": {
+      "reference": "1008 FP32 batch1",
+      "mean_abs_m": 0.0003605336702343357,
+      "p99_abs_m": 0.0022192001342773438,
+      "max_abs_m": 0.07652950286865234,
+      "fraction_above_1cm": 9.607568777069911e-05,
+      "meaning": "numerical difference from FP32, not independent depth accuracy"
+    },
+    "promptda_1008_fp16_b8": {
+      "reference": "1008 FP32 batch1",
+      "mean_abs_m": 0.0003608230627396208,
+      "p99_abs_m": 0.0022280216217041016,
+      "max_abs_m": 0.08046936988830566,
+      "fraction_above_1cm": 9.673181441888925e-05,
+      "meaning": "numerical difference from FP32, not independent depth accuracy"
+    },
+    "promptda_1008_fp16_b14": {
+      "reference": "1008 FP32 batch1",
+      "mean_abs_m": 0.00036068638469405513,
+      "p99_abs_m": 0.0022096633911132812,
+      "max_abs_m": 0.06455683708190918,
+      "fraction_above_1cm": 0.00010544892560198683,
+      "meaning": "numerical difference from FP32, not independent depth accuracy"
+    },
+    "promptda_1008_fp16_b14_expandable": {
+      "reference": "1008 FP32 batch1",
+      "mean_abs_m": 0.00036068638469405513,
+      "p99_abs_m": 0.0022096633911132812,
+      "max_abs_m": 0.06455683708190918,
+      "fraction_above_1cm": 0.00010544892560198683,
+      "meaning": "numerical difference from FP32, not independent depth accuracy"
+    }
+  },
+  "geometry": {
+    "frames": 14,
+    "output_wh": [
+      1008,
+      756
+    ],
+    "network_wh": [
+      1008,
+      756
+    ],
+    "K_half_pixel_affine_exact": true,
+    "E_frame_ids_exact": true,
+    "source_to_processed_affine": [
+      [
+        0.525,
+        0,
+        -0.2375
+      ],
+      [
+        0,
+        0.525,
+        -0.2375
+      ]
+    ]
+  },
+  "batch_confirmation": {
+    "allocator": "expandable_segments:True",
+    "scope": "Same resident model, 1008 FP16 full 14-frame requests, shared allocator; three prewarm cycles then five interleaved measured requests per batch",
+    "prewarm": [
+      {
+        "batch": 14,
+        "label": "prewarm_0",
+        "wall_s": 2.5763748610042967,
+        "allocated_peak_bytes": 16606435840,
+        "reserved_peak_bytes": 16743661568
+      },
+      {
+        "batch": 8,
+        "label": "prewarm_0",
+        "wall_s": 1.8589898850186728,
+        "allocated_peak_bytes": 10365137920,
+        "reserved_peak_bytes": 16743661568
+      },
+      {
+        "batch": 2,
+        "label": "prewarm_0",
+        "wall_s": 1.8783334799809381,
+        "allocated_peak_bytes": 4129936384,
+        "reserved_peak_bytes": 16747855872
+      },
+      {
+        "batch": 14,
+        "label": "prewarm_1",
+        "wall_s": 1.9835243500128854,
+        "allocated_peak_bytes": 16606435840,
+        "reserved_peak_bytes": 17876123648
+      },
+      {
+        "batch": 8,
+        "label": "prewarm_1",
+        "wall_s": 1.817212791997008,
+        "allocated_peak_bytes": 10365137920,
+        "reserved_peak_bytes": 17876123648
+      },
+      {
+        "batch": 2,
+        "label": "prewarm_1",
+        "wall_s": 1.8329165010072757,
+        "allocated_peak_bytes": 4129936384,
+        "reserved_peak_bytes": 17880317952
+      },
+      {
+        "batch": 14,
+        "label": "prewarm_2",
+        "wall_s": 2.0055248260032386,
+        "allocated_peak_bytes": 16606435840,
+        "reserved_peak_bytes": 18299748352
+      },
+      {
+        "batch": 8,
+        "label": "prewarm_2",
+        "wall_s": 1.815958970983047,
+        "allocated_peak_bytes": 10365137920,
+        "reserved_peak_bytes": 17393778688
+      },
+      {
+        "batch": 2,
+        "label": "prewarm_2",
+        "wall_s": 1.8613920350035187,
+        "allocated_peak_bytes": 4129936384,
+        "reserved_peak_bytes": 17397972992
+      }
+    ],
+    "requests": [
+      {
+        "batch": 2,
+        "label": "measured_0",
+        "wall_s": 1.851172285998473,
+        "allocated_peak_bytes": 4129936384,
+        "reserved_peak_bytes": 17397972992
+      },
+      {
+        "batch": 8,
+        "label": "measured_0",
+        "wall_s": 1.8388944620091934,
+        "allocated_peak_bytes": 10365137920,
+        "reserved_peak_bytes": 17397972992
+      },
+      {
+        "batch": 14,
+        "label": "measured_0",
+        "wall_s": 1.8106353059993125,
+        "allocated_peak_bytes": 16606435840,
+        "reserved_peak_bytes": 19474153472
+      },
+      {
+        "batch": 14,
+        "label": "measured_1",
+        "wall_s": 2.0226150729868095,
+        "allocated_peak_bytes": 16606435840,
+        "reserved_peak_bytes": 19474153472
+      },
+      {
+        "batch": 8,
+        "label": "measured_1",
+        "wall_s": 1.810209519986529,
+        "allocated_peak_bytes": 10365137920,
+        "reserved_peak_bytes": 16764633088
+      },
+      {
+        "batch": 2,
+        "label": "measured_1",
+        "wall_s": 1.83495154598495,
+        "allocated_peak_bytes": 4129936384,
+        "reserved_peak_bytes": 16768827392
+      },
+      {
+        "batch": 8,
+        "label": "measured_2",
+        "wall_s": 1.8548207829880994,
+        "allocated_peak_bytes": 10365137920,
+        "reserved_peak_bytes": 16768827392
+      },
+      {
+        "batch": 2,
+        "label": "measured_2",
+        "wall_s": 1.8695011789968703,
+        "allocated_peak_bytes": 4129936384,
+        "reserved_peak_bytes": 16768827392
+      },
+      {
+        "batch": 14,
+        "label": "measured_2",
+        "wall_s": 1.986620249983389,
+        "allocated_peak_bytes": 16606435840,
+        "reserved_peak_bytes": 18907922432
+      },
+      {
+        "batch": 14,
+        "label": "measured_3",
+        "wall_s": 1.9521773210144602,
+        "allocated_peak_bytes": 16606435840,
+        "reserved_peak_bytes": 17184063488
+      },
+      {
+        "batch": 2,
+        "label": "measured_3",
+        "wall_s": 1.8702597090159543,
+        "allocated_peak_bytes": 4129936384,
+        "reserved_peak_bytes": 16747855872
+      },
+      {
+        "batch": 8,
+        "label": "measured_3",
+        "wall_s": 1.8605044760042801,
+        "allocated_peak_bytes": 10365137920,
+        "reserved_peak_bytes": 16747855872
+      },
+      {
+        "batch": 8,
+        "label": "measured_4",
+        "wall_s": 1.8518995199992787,
+        "allocated_peak_bytes": 10365137920,
+        "reserved_peak_bytes": 16747855872
+      },
+      {
+        "batch": 14,
+        "label": "measured_4",
+        "wall_s": 1.8330730329907965,
+        "allocated_peak_bytes": 16606435840,
+        "reserved_peak_bytes": 19180552192
+      },
+      {
+        "batch": 2,
+        "label": "measured_4",
+        "wall_s": 1.8554911969986279,
+        "allocated_peak_bytes": 4129936384,
+        "reserved_peak_bytes": 19180552192
+      }
+    ],
+    "batch_summary": {
+      "2": {
+        "n": 5,
+        "median_s": 1.8554911969986279,
+        "mean_s": 1.856275183398975,
+        "min_s": 1.83495154598495,
+        "max_s": 1.8702597090159543
+      },
+      "8": {
+        "n": 5,
+        "median_s": 1.8518995199992787,
+        "mean_s": 1.843265752197476,
+        "min_s": 1.810209519986529,
+        "max_s": 1.8605044760042801
+      },
+      "14": {
+        "n": 5,
+        "median_s": 1.9521773210144602,
+        "mean_s": 1.9210241965949535,
+        "min_s": 1.8106353059993125,
+        "max_s": 2.0226150729868095
+      }
+    }
+  },
+  "selected_fp16_batch_by_confirmation_median": "8"
+}
