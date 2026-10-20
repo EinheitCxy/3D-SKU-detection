@@ -331,6 +331,24 @@ def build_da3_transforms(
     return transforms
 
 
+def build_promptda_transforms(image_paths: List[str]) -> List[DA3ImageTransform]:
+    """Build cache-bound transforms using PromptDA's selected official RGB grid."""
+    from utils.scene_backend import promptda_processed_size
+
+    transforms = []
+    for image_path in image_paths:
+        with Image.open(image_path) as image:
+            width, height = image.size
+        target_width, target_height = promptda_processed_size(width, height)
+        transform = DA3ImageTransform(width, height, target_width, target_height)
+        transform.image_id = int(Path(image_path).stem)
+        transform.rgb_interpolation = "area"
+        transforms.append(transform)
+    if len({(item.target_width, item.target_height) for item in transforms}) > 1:
+        raise ValueError("PromptDA matching requires one common processed frame grid")
+    return transforms
+
+
 # ========== MapAnything fixed_mapping 几何（与 map-anything vendored 源逐像素一致） ==========
 
 # 源: map-anything/mapanything/utils/image.py RESOLUTION_MAPPINGS[518]（patch=14 整除桶）
@@ -689,9 +707,11 @@ def build_transforms(
         return build_da3_transforms(image_paths, process_res=process_res)
     elif model_type == "mapanything":
         return build_mapanything_transforms(image_paths)
+    elif model_type == "promptda":
+        return build_promptda_transforms(image_paths)
     else:
         raise ValueError(
-            f"不支持的模型类型: {model_type}。" f"支持的类型: 'vggt', 'pi3', 'da3', 'mapanything'"
+            f"不支持的模型类型: {model_type}。" f"支持的类型: 'vggt', 'pi3', 'da3', 'mapanything', 'promptda'"
         )
 
 

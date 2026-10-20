@@ -36,8 +36,9 @@ def test_ground_stack_area_cli_calls_da3_footprint_stage(
     cache_root = str(tmp_path / "custom_masks" / "v2") if explicit_root else None
 
     def run_da3_footprint(
-        dataset: str, save_root: Path, *, sam3_mask_cache_root=None
+        dataset: str, save_root: Path, *, sam3_mask_cache_root=None, backend="da3"
     ) -> dict[str, object]:
+        assert backend == "da3"
         calls.append((dataset, save_root, sam3_mask_cache_root))
         return {
             "success": True,
@@ -256,10 +257,10 @@ def masks_with_one_empty(
     return masks
 
 
-def _publish_v2_masks(dataset: Path, save_root: Path, mask_factory) -> None:
+def _publish_v2_masks(dataset: Path, save_root: Path, mask_factory, backend="da3") -> None:
     output = save_root / dataset.name
     with np.load(
-        output / "da3_cache" / "predictions.npz", allow_pickle=False
+        output / f"{backend}_cache" / "predictions.npz", allow_pickle=False
     ) as loaded:
         image_ids = loaded["image_ids"].copy()
         source_sizes = loaded["source_image_sizes"].copy()
@@ -267,7 +268,7 @@ def _publish_v2_masks(dataset: Path, save_root: Path, mask_factory) -> None:
         processed_shape = tuple(
             int(value) for value in loaded["world_points"].shape[1:3]
         )
-    cache_root = default_sam3_mask_cache_root(output)
+    cache_root = default_sam3_mask_cache_root(output, backend=backend)
     for frame_index, raw_image_id in enumerate(image_ids):
         image_id = int(raw_image_id)
         image_path = dataset / "images" / f"{image_id}.png"
@@ -621,6 +622,81 @@ def test_stage_fuses_global_id_views_and_uses_polygon_union(monkeypatch, tmp_pat
         "footprints_geojson": "footprints.geojson",
         "top_down_footprint_png": "top_down_footprint.png",
     }
+
+
+def _make_promptda_fixture(tmp_path):
+    dataset, save_root, _ = make_metric_fixture(tmp_path)
+    output = save_root / dataset.name
+    original = output / "da3_cache/predictions.npz"
+    cache = stage._load_cache(original)
+    cache.update(source_model=np.array("promptda/vitl"),
+                 confidence_kind=np.array("validity"),
+                 preprocess_resolution=np.array(504),
+                 preprocess_method=np.array("promptda_resize"))
+    target = output / "promptda_cache/predictions.npz"
+    target.parent.mkdir()
+    np.savez(target, **cache)
+    original.unlink()  # Only this test's fixture; prove no DA3-cache fallback.
+    _publish_v2_masks(dataset, save_root, exact_bbox_masks, backend="promptda")
+    return dataset, save_root, target
+
+
+@pytest.mark.parametrize("explicit_cache", [False, True])
+def test_promptda_footprint_uses_selected_cache_masks_and_real_metric_identity(tmp_path, explicit_cache):
+    dataset, save_root, cache_path = _make_promptda_fixture(tmp_path)
+    options = {}
+    if explicit_cache:
+        selected = tmp_path / "external-promptda.npz"
+        cache_path.rename(selected)
+        options["cache_path"] = selected
+    result = stage.run_da3_footprint(str(dataset), save_root, backend="promptda", **options)
+    report = json.loads(Path(result["report_path"]).read_text())
+    assert result["success"] is True, report.get("rejection_reason")
+    assert report["metric"] == "promptda_pvs_ground_footprint_union"
+    assert report["mask_contract"]["coordinate_space"] == "promptda_processed_pixels"
+    assert report["sam3_mask_cache"]["cache_root"] == str(default_sam3_mask_cache_root(save_root / dataset.name, "promptda"))
+    assert report["value_m2"] == pytest.approx(1.5, abs=.03)
+
+
+def test_promptda_footprint_accepts_native_cropped_grid_with_identity_affine(tmp_path):
+    dataset, save_root, cache_path = _make_promptda_fixture(tmp_path)
+    cache = stage._load_cache(cache_path, backend="promptda")
+    cache.update(
+        preprocess_method=np.array("promptda_native_pad14"),
+        preprocess_resolution=np.array(126),
+        network_image_sizes=np.tile(np.array([126, 126], dtype=np.int64), (len(cache["image_ids"]), 1)),
+    )
+    np.savez(cache_path, **cache)
+    result = stage.run_da3_footprint(str(dataset), save_root, backend="promptda")
+    report = json.loads(Path(result["report_path"]).read_text())
+    assert result["success"] is True, report.get("rejection_reason")
+    assert report["cache"]["preprocess_method"] == "promptda_native_pad14"
+    assert report["cache"]["processed_size"] == [126, 126]
+    assert report["value_m2"] == pytest.approx(1.5, abs=.03)
+
+
+@pytest.mark.parametrize("mutation, message", [
+    (lambda cache: cache.update(is_metric=np.array(0)), "is_metric"),
+    (lambda cache: cache.update(preprocess_method=np.array("upper_bound_resize")), "preprocess_method"),
+    (lambda cache: cache.update(source_to_processed_affine=cache["source_to_processed_affine"] + np.array([[[0., 0., .25], [0., 0., 0.]]])), "affine"),
+])
+def test_promptda_footprint_rejects_mismatched_units_or_preprocessing(tmp_path, mutation, message):
+    dataset, save_root, cache_path = _make_promptda_fixture(tmp_path)
+    cache = stage._load_cache(cache_path, backend="promptda")
+    mutation(cache)
+    with pytest.raises(stage.FootprintStageError, match=message):
+        stage._validate_cache(cache, stage._image_paths(dataset / "images"), backend="promptda")
+
+
+def test_promptda_footprint_rejects_a_grid_from_a_different_resize(tmp_path):
+    dataset, _save_root, cache_path = _make_promptda_fixture(tmp_path)
+    cache = stage._load_cache(cache_path, backend="promptda")
+    path = dataset / "images/0.png"
+    Image.new("RGB", (1008, 1008), "white").save(path)
+    cache["source_image_sizes"][0] = [1008, 1008]
+    cache["source_image_sha256"][0] = _sha256(path)
+    with pytest.raises(stage.FootprintStageError, match="processed grid"):
+        stage._validate_cache(cache, stage._image_paths(dataset / "images"), backend="promptda")
 
 
 def test_stage_records_digest_of_exact_raw_mapping_bytes(monkeypatch, tmp_path):

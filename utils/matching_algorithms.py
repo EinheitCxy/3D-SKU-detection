@@ -348,7 +348,7 @@ def find_correspondences_3d_mapping(
     # 1. 全局3D场景重建（根据backend选择数据源）
     logger.info(f"使用 {config.backend} 后端进行3D场景重建...")
 
-    if config.backend in ("pi3", "pi3x", "da3", "mapanything"):
+    if config.backend in ("pi3", "pi3x", "da3", "mapanything", "promptda"):
         # 从缓存加载预先重建的数据
         # 路径: Output/<dataset>/<backend>_cache/predictions.npz
         # output_dir格式: Output/<dataset>/output_3dmapping_<backend>/<ref_idx>
@@ -366,11 +366,15 @@ def find_correspondences_3d_mapping(
 
         if scene_data is None:
             with StageTimer("cache_npz_load"):
-                data = np.load(cache_path, allow_pickle=True)
+                data = np.load(cache_path, allow_pickle=config.backend != "promptda")
+                if config.backend == "promptda":
+                    from utils.scene_backend import validate_scene_cache_metadata
+
+                    validate_scene_cache_metadata(data, config.backend)
 
             # 验证必需字段
             required_keys = ["depth", "depth_conf", "world_points", "world_points_conf", "extrinsic", "intrinsic", "image_ids"]
-            if config.backend in ("da3", "mapanything"):
+            if config.backend in ("da3", "mapanything", "promptda"):
                 required_keys.extend(
                     [
                         "source_image_sizes",
@@ -383,6 +387,8 @@ def find_correspondences_3d_mapping(
 
             # 提取数据
             depth_np = data["depth"]
+            if config.backend == "promptda" and (depth_np.ndim != 4 or depth_np.shape[-1] != 1):
+                raise ValueError("PromptDA scene depth must be (frames,height,width,1); convert the native prediction first")
             world_np = data["world_points"]
             extr_np = data["extrinsic"]
             intr_np = data["intrinsic"]
@@ -400,7 +406,7 @@ def find_correspondences_3d_mapping(
             depth_np, depth_conf_np = depth_np[index_map], depth_conf_np[index_map]
             world_np, world_conf_np = world_np[index_map], world_conf_np[index_map]
             extr_np, intr_np = extr_np[index_map], intr_np[index_map]
-            if config.backend in ("da3", "mapanything"):
+            if config.backend in ("da3", "mapanything", "promptda"):
                 source_sizes_np = data["source_image_sizes"][index_map]
                 affine_np = data["source_to_processed_affine"][index_map]
                 image_ids_np = data["image_ids"][index_map]
@@ -415,7 +421,7 @@ def find_correspondences_3d_mapping(
                 "extrinsic": torch.from_numpy(extr_np).to(device),
                 "intrinsic": torch.from_numpy(intr_np).to(device),
             }
-            if config.backend in ("da3", "mapanything"):
+            if config.backend in ("da3", "mapanything", "promptda"):
                 scene_data.update(
                     {
                         "source_image_sizes": source_sizes_np,
@@ -430,7 +436,7 @@ def find_correspondences_3d_mapping(
         else:
             logger.info(f"复用 {config.backend.upper()} 场景缓存: {cache_path}")
 
-        if config.backend in ("da3", "mapanything"):
+        if config.backend in ("da3", "mapanything", "promptda"):
             if transforms_info is None:
                 raise ValueError("DA3 matching requires transforms")
             bind_da3_transforms_from_cache(

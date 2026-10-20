@@ -97,7 +97,7 @@ def create_config_from_args(args, algorithm_type: str = "point_tracking") -> SKU
         "sam3_mask_cache_root": str(
             Path(args.sam3_mask_cache_root)
             if args.sam3_mask_cache_root
-            else default_sam3_mask_cache_root(args.output_dir)
+            else default_sam3_mask_cache_root(args.output_dir, backend=args.backend)
         ),
     }
     if args.quiet_outputs is not None:
@@ -126,7 +126,7 @@ def _create_config_from_yaml(args, algorithm_type: str) -> SKUMatchingConfig:
     cfg.sam3_mask_cache_root = str(
         Path(args.sam3_mask_cache_root)
         if args.sam3_mask_cache_root
-        else default_sam3_mask_cache_root(args.output_dir)
+        else default_sam3_mask_cache_root(args.output_dir, backend=args.backend)
     )
     # Override a few runtime knobs from CLI
     cfg.device = args.device
@@ -337,8 +337,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     # 算法选择
     parser.add_argument("--algorithm", type=str, choices=["point_tracking", "3d", "both"], default="3d",
                        help="选择匹配算法: point_tracking(点追踪), 3d(3D投影), both(两种都运行)")
-    parser.add_argument("--backend", type=str, choices=["vggt", "pi3", "pi3x", "da3", "mapanything"], default="da3",
-                       help="3D重建模型后端 (vggt/pi3/pi3x/da3/mapanything)，用于3D算法时选择数据源")
+    parser.add_argument("--backend", type=str, choices=["vggt", "pi3", "pi3x", "da3", "mapanything", "promptda"], default="da3",
+                       help="3D场景后端 (vggt/pi3/pi3x/da3/mapanything/promptda)，用于3D算法时选择数据源")
     # 系统参数
     parser.add_argument("--device", type=str, default="cuda", help="计算设备 (cuda/cpu)")
     parser.add_argument("--seed", type=int, default=42, help="随机种子")

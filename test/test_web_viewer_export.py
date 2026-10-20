@@ -299,11 +299,19 @@ def _surfel_cache(exporter_inputs):
 
 
 @pytest.mark.parametrize("filter_enabled", [False, True])
-def test_prepared_surfel_matches_serial_and_prepares_once(exporter_inputs, monkeypatch, filter_enabled):
+@pytest.mark.parametrize("backend", ["DA3", "PromptDA"])
+def test_prepared_surfel_matches_serial_and_prepares_once(exporter_inputs, monkeypatch, filter_enabled, backend):
     import src.surfel_export as surfels
 
     _surfel_cache(exporter_inputs)
-    common = dict(exporter_inputs, surfel_texture_edge=256,
+    if backend == "PromptDA":
+        path = exporter_inputs["da3_cache_path"]
+        with np.load(path) as archive:
+            cache = {key: archive[key] for key in archive.files}
+        cache.update(source_model=np.array("promptda/vitl"), confidence_kind=np.array("validity"),
+                     preprocess_resolution=np.array(504), preprocess_method=np.array("promptda_resize"))
+        np.savez(path, **cache)
+    common = dict(exporter_inputs, surfel_texture_edge=256, backend=backend,
                   filter_config=PointCloudFilterConfig(
                       enabled=filter_enabled, min_points=1, sor_nb_neighbors=1,
                       keep_main_clusters=False, remove_ground=False,
@@ -327,10 +335,12 @@ def test_prepared_surfel_matches_serial_and_prepares_once(exporter_inputs, monke
     prepared = exporter.prepare_web_viewer_geometry(
         da3_cache_path=common["da3_cache_path"], source_images_dir=common["source_images_dir"],
         surfel_texture_edge=256, tuning=common["tuning"], filter_config=common["filter_config"],
+        backend=backend,
     )
     common["output_dir"] = common["output_dir"].with_name("prepared")
     assert not common["output_dir"].exists()
     result = export_web_viewer_bundle(**common, prepared=prepared)
+    assert json.loads(Path(result["manifest_path"]).read_text())["backend"] == backend
     assert calls == {"grid": 1, "jpeg": 1}
 
     def contents(result):
@@ -352,7 +362,7 @@ def test_prepared_surfel_matches_serial_and_prepares_once(exporter_inputs, monke
 
 
 @pytest.mark.parametrize("changes", [
-    {"backend": "Pi3X"}, {"surfel_texture_edge": None}, {"surfel_texture_edge": 512},
+    {"backend": "Pi3X"}, {"backend": "PromptDA"}, {"surfel_texture_edge": None}, {"surfel_texture_edge": 512},
     {"tuning": ViewerExportTuning(quality_filter=True)},
     {"da3_cache_path": Path("other.npz")}, {"source_images_dir": Path("other")},
     {"filter_config": PointCloudFilterConfig(enabled=False)},
@@ -368,6 +378,17 @@ def test_prepared_surfel_rejects_mismatched_inputs(exporter_inputs, changes):
     with pytest.raises(WebViewerExportError, match="prepared geometry"):
         export_web_viewer_bundle(**common, prepared=prepared)
     assert not exporter_inputs["output_dir"].exists()
+
+
+def test_promptda_viewer_rejects_a_cache_without_the_adapter_metadata(exporter_inputs):
+    with pytest.raises(WebViewerExportError, match="PromptDA"):
+        export_web_viewer_bundle(**exporter_inputs, backend="PromptDA")
+    assert not exporter_inputs["output_dir"].exists()
+
+
+def test_unknown_viewer_backend_is_rejected(exporter_inputs):
+    with pytest.raises(WebViewerExportError, match="Unsupported viewer backend"):
+        export_web_viewer_bundle(**exporter_inputs, backend="unknown")
 
 
 def test_prepared_surfel_rejects_changed_cache(exporter_inputs):

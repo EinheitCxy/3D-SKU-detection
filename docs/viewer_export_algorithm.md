@@ -1,5 +1,7 @@
 # Viewer / GLB 当前算法与采样入口
 
+场景入口现通过显式 backend 接受 DA3 和已适配的 PromptDA 逐帧米制网格；提前准备、过滤、采样及 GLB bake 共用下述循环，输出保留真实 backend。PromptDA 的原始字段、缓存转换、无 confidence 的有效性语义和 PVS 隔离见 [接入说明](promptda_integration.md)。这里的历史 DA3 计时不作为 PromptDA 实测。
+
 核对：2026-10-19。当前默认使用 proxy DBSCAN scale2；背景平面只从未保护点拟合，已取消全局 8% 支持率门槛。具体循环见第4节。此前完整流水线实测见[GPU2 profiling](profiling_breakdown.md)；历史测量使用当时的过滤策略，不能将其点数或耗时直接当作新策略结果。GPU/matching 与交付的详细实现仍见[GPU/matching](../reports/profiling-20261018/algorithms_gpu_matching.md)、[交付](../reports/profiling-20261018/algorithms_delivery.md)。
 
 ## 1. 当前到底用了多少点

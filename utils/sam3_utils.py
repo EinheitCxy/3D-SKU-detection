@@ -773,6 +773,11 @@ def _prepare_sam3_input_image(
     backend, out_size = _infer_transform_output_size(transform)
 
     if backend == "pi3" and out_size is not None:
+        if getattr(transform, "rgb_interpolation", None) == "area":
+            from utils.scene_backend import prepare_promptda_rgb
+
+            # Match the official PromptDA RGB loader and saved uint8 packing.
+            return Image.fromarray(prepare_promptda_rgb(np.asarray(img), out_size)), True
         resized = img.resize(out_size, Image.Resampling.LANCZOS)
         return resized, True
 
@@ -819,6 +824,7 @@ def _prepare_sam3_input_image(
 # Every transform attribute `_prepare_sam3_input_image` (and
 # `_infer_transform_output_size`) reads.
 _SAM3_INPUT_TRANSFORM_FIELDS = (
+    "rgb_interpolation",
     "target_width",
     "target_height",
     "padded_width",

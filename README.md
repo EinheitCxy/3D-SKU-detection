@@ -4,6 +4,8 @@
 
 详细的核心契约见 [docs/3d_core.md](docs/3d_core.md)，统一 profiling 口径与阶段细分见 [docs/profiling_breakdown.md](docs/profiling_breakdown.md)。
 
+PromptDA 使用 Stray Scanner 的 RGB＋完整米制 LiDAR depth 预测，默认FP16 autocast、batch=2，RGB长边1008，本扫描得到1008×756，K 按实际像素变换对齐，E 用于反投影；支持每秒抽一帧的独立点云导出，也可通过显式缓存转换接入 `--match_backend promptda` 的 matching、提前 Surfel 准备、Viewer/纹理 GLB 和 footprint。默认 DA3 不变，根 pipeline 消费已有 PromptDA 缓存，不自动运行 PromptDA 模型。数据流、命令、缓存字段和 profiling 边界见 [PromptDA 接入说明](docs/promptda_integration.md)；时间同步、LiDAR 单位、相机约定和尺度修复见 [Stray Scanner 与 LiDAR](docs/stray_scanner_lidar.md)。
+
 当前 profiling 保留 GPU2 六视频均值，并新增video3正式GPU交付的同协议对照；从帧就绪计到 Viewer ZIP 与 GLB 落盘，具体边界、重叠和显存口径只在统一文档维护。最新八项实现、实验及采用决定见[本轮优化记录](reports/gpu-acceleration-20261019/README.md)，上一轮见[历史优化记录](reports/latency-optimization-20261018/README.md)。`perf/benchmark.py` 可用于其他数据集诊断，其结果不并入该基线。
 
 后续[有界Torch烘焙实验](reports/torch-bake-fusion-20261018/README.md)在固定video3 generation上将完整GLB导出从66.589降到44.671秒，交付几何与解码RGBA相等；仅为单次组件对照，生产默认仍为CPU baker。
@@ -57,7 +59,7 @@
 │   ├── personalcare_classifier/                   # source/ + canonical model.bin
 │   ├── viewer_web/                                # TypeScript / Three.js 前端
 │   └── video_to_dedup/                            # 视频到 DA3 去重入口
-├── scripts/3d/{pipeline,evaluation,tuning,ops}/   # 端到端 pipeline 与维护工具
+├── scripts/3d/{pipeline,evaluation,tuning,ops,scanner}/ # 视频、维护与 Scanner 点云入口
 ├── Output/                                        # 忽略的用户可见 pipeline 产物
 ├── runtime/                                       # 忽略的迁移环境与工具 cache
 │   ├── sku_detector/.venv/                     # detector 独立运行环境
@@ -68,7 +70,7 @@
 
 `Output/` 与 `runtime/` 都不是源码，也不应提交。根 `.venv` 是 core、DA3 和 SAM3 的统一环境；`runtime/sku_detector/.venv` 仅供独立 detector 使用。
 
-当前重建后端为 `da3`、`pi3`、`pi3x`、`mapanything`；VGGT 源码继续用于 point tracking。
+当前 `--recon_backend` 为 `da3`、`pi3`、`pi3x`、`mapanything`；PromptDA 使用独立 Scanner 推理入口及 `--match_backend promptda` 的场景缓存路径，不属于根重建器列表。VGGT 源码继续用于 point tracking。
 2026-10-09 收尾清理已移除旧实验产物、浏览器基准工具环境及上游 demo 资源，详见 [清理记录](docs/project_cleanup_2026-10-09.md)。
 
 ## 环境
@@ -245,15 +247,15 @@ DA3 + K/E 修复版或完整 LiDAR prompt 的 PromptDA，直接导出 NPZ 和 GL
 
 matching 是唯一的 SAM3 producer。默认 `enable_sam3_mask_sampling: true` 时，使用 SAM3.1 框提示实例分割（PVS）：整图编码一次，以检测框作为 corner prompts，按固定 batch=4 返回一框一个 bool mask，裁到对应 bbox；空 mask 原样保留，不做中心点重试。模型要求 CUDA，使用现有 `sam31/checkpoints/sam3.1_multiplex.pt`，只加载 tracker 与共享 vision backbone。
 
-每个 detection frame 一次性发布完整的 DA3 processed-space masks，默认目录为 `sam3_mask_cache_sam31_pvs/v2`，manifest schema 为 `sam31_pvs_processed_mask_cache_v1`，payload 使用 little-endian `np.packbits`。旧 `sam3_mask_cache_sam31/v2` 的 self-exemplar masks 不被默认读取；即使显式指定旧目录，旧 schema 也不能命中。`sam3_max_batch_size` 必须为 4，encoder 固定 1008×1008；PVS 不使用 self-exemplar 的 confidence threshold。`enable_sam3_mask_sampling: false` 保留 bbox sampling 且不发布 cache，footprint 与 Viewer export 缺少 cache 时会报错。
+每个 detection frame 一次性发布完整的当前 backend processed-space masks。DA3 默认目录为 `sam3_mask_cache_sam31_pvs/v2`，PromptDA 为 `sam3_mask_cache_promptda_sam31_pvs/v2`；manifest schema 为 `sam31_pvs_processed_mask_cache_v1`，payload 使用 little-endian `np.packbits`。旧 `sam3_mask_cache_sam31/v2` 的 self-exemplar masks 不被默认读取；即使显式指定旧目录，旧 schema 也不能命中。`sam3_max_batch_size` 必须为 4，encoder 固定 1008×1008；PVS 不使用 self-exemplar 的 confidence threshold。`enable_sam3_mask_sampling: false` 保留 bbox sampling 且不发布 cache，footprint 与 Viewer export 缺少 cache 时会报错。
 
-独立可视化和同条件 benchmark 见 [PVS 试验说明](scripts/3d/evaluation/README.md)。独立试验输出在等比缩小图像空间；matching 输出在 DA3 processed space，两者不能混用。
+独立可视化和同条件 benchmark 见 [PVS 试验说明](scripts/3d/evaluation/README.md)。独立试验输出在等比缩小图像空间；matching 输出在选定 backend 的 processed space，两者不能混用。PromptDA 使用自身的 AREA resize 与 affine，不复用 DA3 masks。
 
 运行顺序是硬约束：先完成 **完整 batch-all-refs matching**；`ground-stack-area` 是独立的后端计量阶段，`viewer-web` 可在 dedup 后直接发布产品 bundle。Viewer exporter 不导入、加载或推理 SAM3；matching 的 processed-mask cache 仍是点标签发布的输入，cache miss 会 fail closed。
 
-`sam3_mask_cache/v1` 与 v2 不兼容：v1 从不被读取、迁移、复制或删除。v2 的 formal metric 是 `da3_pvs_ground_footprint_union`，viewer bundle schema 是 `3.0.0`；它们与旧面积输出和 bundle `1.0.0`、`2.0.0` 不可数值比较，旧 bundle 必须按上述顺序重新生成。
+`sam3_mask_cache/v1` 与 v2 不兼容：v1 从不被读取、迁移、复制或删除。v2 的 formal metric 保留 backend 身份：`da3_pvs_ground_footprint_union` 或 `promptda_pvs_ground_footprint_union`；viewer bundle schema 是 `3.0.0`。旧面积输出和 bundle `1.0.0`、`2.0.0` 不沿用，旧 bundle 必须按上述顺序重新生成。
 
-DA3 bbox 的 source→processed 映射唯一权威是 `predictions.npz` 中每帧完整的 `source_to_processed_affine`（2×3）及其 processed grid。该 affine 可能同时编码 resize、pixel-center、patch rounding 与 crop offset；`x'=sx*x+(sx-1)/2`、`y'=sy*y+(sy-1)/2` 仅是没有额外 crop 的 simple-resize 例子，绝不能据此重算或替代 cache。matching 缺少显式 cache affine/shape 会 fail closed；旧 scale-only 或含 raw out-of-grid bbox 的 v2 entries 均不能命中，须完整重跑 matching → footprint → export。
+DA3 / PromptDA bbox 的 source→processed 映射唯一权威是各自 `predictions.npz` 中每帧完整的 `source_to_processed_affine`（2×3）及其 processed grid。该 affine 可能同时编码 resize、pixel-center、patch rounding 与 crop offset；`x'=sx*x+(sx-1)/2`、`y'=sy*y+(sy-1)/2` 仅是没有额外 crop 的 simple-resize 例子，绝不能据此重算或替代 cache。matching 缺少显式 cache affine/shape 会 fail closed；旧 scale-only 或含 raw out-of-grid bbox 的 v2 entries 均不能命中，须完整重跑 matching → footprint → export。
 
 ## Minimal Viewer 与点云策略
 
@@ -261,9 +263,9 @@ DA3 bbox 的 source→processed 映射唯一权威是 `predictions.npz` 中每�
 
 Docker 服务端调用 `run_complete_pipeline(..., evaluate_accuracy=False)`，线上请求完成计数后直接导出 Surfel，不依赖人工 benchmark；本地流水线默认仍执行准确率评估。未运行的评估步骤不会在摘要中标为成功。
 
-Surfel 使用已有 DA3 缓存、原图和同网格 SAM3 mask 导出独立纹理表面数据；浏览器通过 `/?data=/data-surfel/&render=surfel` 显式启用，默认 points 入口保持独立。后端导出、Float16 sidecar、逐片元投影与深度融合、商品交互和按需重绘的代码说明见 [Surfel 集成说明](docs/surfel_implementation.md)，命令与限制见 [Viewer README](modules/viewer_web/README.md#深度约束-surfel)。Docker 服务端已启用 Surfel 导出和 COS ZIP 打包；`docker/viewer` 默认以 Surfel 加载新任务。
+Surfel 使用已有 DA3 / PromptDA 场景缓存、原图和同网格 SAM3 mask 导出独立纹理表面数据；浏览器通过 `/?data=/data-surfel/&render=surfel` 显式启用，默认 points 入口保持独立。后端导出、Float16 sidecar、逐片元投影与深度融合、商品交互和按需重绘的代码说明见 [Surfel 集成说明](docs/surfel_implementation.md)，命令与限制见 [Viewer README](modules/viewer_web/README.md#深度约束-surfel)。Docker 服务端已启用 Surfel 导出和 COS ZIP 打包；`docker/viewer` 默认以 Surfel 加载新任务。这里的 PromptDA 接入限根工作区，尚未完成 Docker 服务接入验收。
 
-需要通用 GLB 网页直接打开时，可运行 `uv run --no-sync python -m src.surfel_glb <viewer_bundle.zip或generation目录> <输出.glb>`，将 DA3 Surfel 烘焙成带内嵌纹理的标准三角面 GLB，无需重跑推理。它保留来源纹理和深度裁剪的静态近似，不能复现视角相关的重叠混合；参数、体积取舍与对照方法见 [通用 Surfel GLB 导出](docs/surfel_glb.md)。
+需要通用 GLB 网页直接打开时，可运行 `uv run --no-sync python -m src.surfel_glb <viewer_bundle.zip或generation目录> <输出.glb>`，将 DA3 / PromptDA Surfel 烘焙成带内嵌纹理的标准三角面 GLB，无需重跑推理。它保留来源纹理和深度裁剪的静态近似，不能复现视角相关的重叠混合；参数、体积取舍与对照方法见 [通用 Surfel GLB 导出](docs/surfel_glb.md)。
 
 下载交付前，可再运行 `uv run --no-sync python -m src.surfel_glb_compact <输入.glb> <精简.glb>`，保留三角面数量并缩小几何和纹理存储；精简版需要加载器支持标准 `KHR_mesh_quantization`。
 
@@ -273,7 +275,7 @@ Docker 的 GLB 输出接入复用同一次 Viewer 导出的数据，自动执行
 
 点云导出默认使用 **5 mm 背景体素、最多 50 万背景点**；商品点最多 200 万。商品点先由 SAM mask 过滤保护，避免有效实例点被几何过滤误删，再按非空 `global_id` 均分商品预算；小组实际点数不足时回收未用配额并分配给其他组。背景上限为固定导出预算，`--viewer-web-voxel-size` 仍可调整背景体素尺寸。分辨率对照固定这两项预算；预算只影响可视化导出点数，不改变 mapping 匹配输入。已有 bundle 需要重新导出才能改变点数。
 
-Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。`CURRENT` 只包含 `run_id`；run 内的 `manifest.json` 固定为 schema `3.0.0`，包含轻量 `backend: "DA3"`、真实 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不携带 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。导出器从 dataset `images/` 中按数字文件名解析原图，为每个 active 与 removed observation 按 bbox（保留 10% padding）写入 `thumbs/*.jpg`：JPEG 始终为精确 `128×128`，crop 等比缩放并居中补深色背景，不拉伸或中心裁掉商品；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
+Web bundle 使用不可变 `CURRENT -> runs/<run_id>/` 发布。`CURRENT` 只包含 `run_id`；run 内的 `manifest.json` 固定为 schema `3.0.0`，包含轻量 `backend`（保留 `DA3` / `PromptDA` 真实名称）、真实 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不携带 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。导出器从 dataset `images/` 中按数字文件名解析原图，为每个 active 与 removed observation 按 bbox（保留 10% padding）写入 `thumbs/*.jpg`：JPEG 始终为精确 `128×128`，crop 等比缩放并居中补深色背景，不拉伸或中心裁掉商品；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
 
 canonical “其他品类”是 `sku_id=56642`、`sku_name=其他品类`。只要存在任一具体 SKU，具体 SKU 按既有 confidence/support 顺序排在 56642 之前；只有全部有效观测都是其他品类时，56642 才能排在首位。Viewer 只消费已排序的 SKU ID/名称，不接收或显示 confidence。
 
@@ -303,9 +305,9 @@ CUDA_VISIBLE_DEVICES=2 uv run --project modules/personalcare_classifier python \
 
 ## Ground footprint
 
-`ground-stack-area` 从 matching 发布的 processed-space PVS masks 为每个去重 `global_id` 取多视图 metric 点云，投影到推断支撑平面后以 OBB polygon union 计算 `da3_pvs_ground_footprint_union`（m²）。它不是包装表面积、正面面积、SAM3 mask 面积或 bbox 面积。任何对象缺少足够几何时整次结果为 `rejected` 与 `value_m2: null`，不会发布部分总量；本指标是新 baseline，不可与旧 `da3_ground_footprint_union` 面积直接比较。
+`ground-stack-area` 从 matching 发布的 processed-space PVS masks 为每个去重 `global_id` 取多视图 metric 点云，投影到推断支撑平面后以 OBB polygon union 计算 `{backend}_pvs_ground_footprint_union`（m²），backend 为 `da3` 或 `promptda`。它不是包装表面积、正面面积、SAM3 mask 面积或 bbox 面积。任何对象缺少足够几何时整次结果为 `rejected` 与 `value_m2: null`，不会发布部分总量；DA3 的 PVS baseline 不可与旧 `da3_ground_footprint_union` 面积直接比较，PromptDA 也尚无独立面积精度结论。
 
-面积阶段默认读取 `sam3_mask_cache_sam31_pvs/v2`；matching 使用自定义缓存目录时，面积命令也必须传入相同的 `--sam3_mask_cache_root`，不会搜索其他目录或重新运行分割。
+面积阶段默认读取对应 backend 的 PVS 目录：DA3 为 `sam3_mask_cache_sam31_pvs/v2`，PromptDA 为 `sam3_mask_cache_promptda_sam31_pvs/v2`；matching 使用自定义缓存目录时，面积命令也必须传入相同的 `--sam3_mask_cache_root`，不会搜索其他目录或重新运行分割。
 
 面积与 DA3 Viewer 共享 `da3_cache/scene_orientation.json`：已有有效方向直接复用，缺失或重建文件变化时才运行现有 Viewer 摆正算法。方向与同一份 `predictions.npz` 关联，保存法向、参考平面高度和拟合状态；不把 Viewer 的居中原点当地面。面积固定该方向，用 Surfel 的网格切线验证背景局部水平性，再选择有多帧支持的最低可见水平面；不再要求其占全部背景 10%、商品距平面不超过 80 mm，或可见地面 hull 覆盖商品。点数、跨帧、二维宽度和商品位于平面上方的检查仍保留。报告记录方向缓存命中情况；命中时不重新拟合方向。
 

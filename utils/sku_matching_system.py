@@ -74,7 +74,7 @@ class SKUMatchingSystem:
                 self._set_random_seeds()
 
             # 根据 backend 条件加载模型
-            if self.config.backend in ("pi3", "pi3x", "da3", "mapanything"):
+            if self.config.backend in ("pi3", "pi3x", "da3", "mapanything", "promptda"):
                 # Pi3/Pi3X/DA3/MapAnything 后端：不需要加载 VGGT 模型（直接从缓存加载 3D 数据）
                 logger.info(f"{self.config.backend.upper()} 后端：跳过 VGGT 模型加载，将从 {self.config.backend}_cache 加载预重建数据")
                 self.vggt_model = None
@@ -169,7 +169,7 @@ class SKUMatchingSystem:
                     f"Pi3 加载图像: {len(image_paths)} 张, 尺寸: "
                     f"({transforms_info[0].target_width}, {transforms_info[0].target_height})"
                 )
-            elif self.config.model_type in ("da3", "mapanything"):
+            elif self.config.model_type in ("da3", "mapanything", "promptda"):
                 # DA3/MapAnything: transforms 从图像尺寸派生（DA3 upper_bound_resize /
                 # MapAnything fixed_mapping 518 桶），目标尺寸与各自 cache 一致，
                 # 确保投影点与 cache/world_points 同坐标系。

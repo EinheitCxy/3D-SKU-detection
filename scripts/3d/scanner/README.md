@@ -4,6 +4,8 @@
 目前保留 **DA3 + K/E metric 修复版**和 **PromptDA full**。它们不修改 `main.py` 的默认 backend。
 
 完整的单位、帧同步、相机约定和尺度修复见 [Stray Scanner 与 LiDAR 数据流](../../../docs/stray_scanner_lidar.md)。
+需要将 PromptDA dense 预测接入 SKU matching、Viewer/纹理 GLB 或 footprint 时，
+使用 [PromptDA 场景缓存接入](../../../docs/promptda_integration.md)；独立点云入口本身不运行这些阶段。
 
 | 候选 | 网络输入 | 深度与相机策略 | 导出筛选 |
 |---|---|---|---|

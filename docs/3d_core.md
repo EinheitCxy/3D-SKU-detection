@@ -1,6 +1,6 @@
-# DA3 Core Contract
+# 3D Core Contract
 
-本文件描述当前根目录 DA3 核心的运行边界。历史设计和实验记录保留在 `docs/superpowers/`，其中的 `code/` 路径仅代表当时布局，不是当前命令。
+本文件描述当前根目录三维核心的运行边界，默认 backend 为 DA3。PromptDA 使用 Scanner 的 RGB＋LiDAR 推理，通过显式场景缓存转换接入 matching、并行 Surfel、Viewer/GLB 与 footprint；字段、命令及限制见 [PromptDA 接入说明](promptda_integration.md)，采样、传感器单位和相机约定见 [Stray Scanner 与 LiDAR](stray_scanner_lidar.md)。历史设计和实验记录保留在 `docs/superpowers/`，其中的 `code/` 路径仅代表当时布局，不是当前命令。
 
 ## 责任边界
 
@@ -31,6 +31,8 @@ Apache-2.0；权重 `facebook/map-anything` 为 CC-BY-NC 4.0，
 - 默认 dataset：`imdata/floor_display2`。
 - 默认重建/匹配 backend：`da3`。
 - 重建后端：`da3`、`pi3`、`pi3x`、`mapanything`；VGGT 保留用于 point tracking。
+- PromptDA 的模型推理使用独立 Scanner 工具；`--match_backend promptda` 消费显式转换的场景缓存，
+  不属于 `--recon_backend` 列表，cache miss 直接停止，不自动加载 DA3 或 PromptDA。
 - 默认输出：根 `Output/`。
 - 默认 viewer bundle：`modules/viewer_web/public/data`。
 - 所有相对 `--save_root` 值按仓库根解析，而非调用终端的当前目录。
@@ -133,23 +135,42 @@ Docker BSON 服务通过 Starlette thread pool 执行同步处理：解码、处
 继续接收请求、等待工作线程或响应 `/openapi.json`。等待协程的取消不会释放正在执行的
 线程所持有的锁。成功 BSON 和 HTTP 500 traceback 的接口约定保持一致。
 
+## PromptDA 与 LiDAR 场景输入
+
+1. `scripts/3d/scanner/prepare_scanner.py` 按 odometry 时间每秒取最近帧，输出原始 frame IDs、
+   未自动旋转的 PNG、逐帧 K、可信 Scanner c2w/w2c 和原生米制 LiDAR depth。
+2. `scripts/3d/scanner/reconstruct.py --candidate promptda` 将 RGB 和全部有效 LiDAR depth 输入
+   PromptDA Large，默认FP16 autocast、batch=2，模型权重保留FP32。RGB默认长边1008，本扫描为1008×756；
+   K/affine 按实际resize的半像素映射变换，LiDAR保留原生网格。K/E只用于反投影，无事后深度尺度拟合或传感器点替换。
+3. `uv run python -m src.promptda_cache` 将 dense 预测和同组原图转为
+   `<save_root>/<dataset>/promptda_cache/predictions.npz`。保持深度、K/E、frame IDs 和 RGB，
+   补齐完整世界点网格、原图尺寸与 half-pixel affine，`is_metric=1`、schema=3。
+4. 主 pipeline 以 `--match_backend promptda` 消费该缓存，沿用 PVS、matching、dedup 和 Viewer，
+   几何准备与 matching 并行；footprint 独立执行。默认 PVS 根目录为
+   `sam3_mask_cache_promptda_sam31_pvs/v2`，与 DA3 隔离，bundle 保留 `backend: "PromptDA"`。
+
+PromptDA 没有原生 confidence head。共享缓存的 `depth_conf` / `world_points_conf` 表示有效性，
+以 `confidence_kind=validity` 明示，matching 默认采用 `>0` 判断，不套用 DA3 confidence 阈值。
+原始 Scanner `cloud.glb` 是已限点的显示产物；下游使用转换前后的 dense NPZ，不从 GLB 恢复场景。
+完整运行命令、字段映射和验证范围见 [接入说明](promptda_integration.md)。
+
 ## Footprint 与 SAM3 cache
 
 运行顺序是 canonical contract：matching 必须完成 **全部** `batch_all_refs` references；`--mode ground-stack-area` 是独立的后端计量阶段，`--mode viewer-web` 可在 dedup 后直接发布产品 bundle。matching 是唯一的 SAM3 producer；它在默认 `enable_sam3_mask_sampling: true` 下以 SAM3.1 PVS 生成每个 frame 的完整 processed-space masks。master gate 为 false 时 matching 走既有 bbox sampling 且不发布 cache，任何需要实例点标签的 export 必须 fail closed。
 
-v2 cache 的每个 payload 是 processed DA3 grid 上 `(object_count, height, width)` bool masks，以 little-endian `np.packbits` 无损打包到 `masks.npz`；manifest 以 `object_id` 绑定 mask，而非依赖数组位置。partial、mismatched 或 corrupt frame 不能命中。`sam3_mask_cache/v1` 与 v2 不兼容，v1 从不读取、迁移、复制、fallback 或自动删除。
+v2 cache 的每个 payload 是选定 backend 的 processed grid 上 `(object_count, height, width)` bool masks，以 little-endian `np.packbits` 无损打包到 `masks.npz`；manifest 以 `object_id` 绑定 mask，而非依赖数组位置。DA3 与 PromptDA 的 RGB resize/affine 各自保留，不能交叉复用 masks。partial、mismatched 或 corrupt frame 不能命中。`sam3_mask_cache/v1` 与 v2 不兼容，v1 从不读取、迁移、复制、fallback 或自动删除。
 
-`--mode ground-stack-area` 只读取 matching 已发布的 v2 cache、metric DA3 cache 与去重映射，不导入、加载或推理 SAM3，也不会因 cache miss 重算。它为每个 `global_id` 从全部有效观测重建 OBB，并在支撑平面上取 polygon union，得到 `da3_pvs_ground_footprint_union`（m²）。缺少任何 canonical mask 或必要几何会发布 `rejected`/`null`，不会伪造部分结果。该 metric 是新 baseline，不能与旧 `da3_ground_footprint_union` 面积比较。
+`--mode ground-stack-area` 只读取 matching 已发布的 v2 cache、选定 backend 的 metric 场景缓存与去重映射，不导入、加载或推理 SAM3，也不会因 cache miss 重算。它为每个 `global_id` 从全部有效观测重建 OBB，并在支撑平面上取 polygon union，得到 `da3_pvs_ground_footprint_union` 或 `promptda_pvs_ground_footprint_union`（m²）。缺少任何 canonical mask 或必要几何会发布 `rejected`/`null`，不会伪造部分结果。DA3 的 PVS metric 不与旧 `da3_ground_footprint_union` 面积比较；PromptDA 接线也不构成独立面积准确率证据。
 
 PVS 使用现有 SAM3.1 multiplex 权重的 native tracker / interactive neck；整图 encoder 为 1008×1008，固定 batch=4，FP32 weights / BF16 autocast，只支持 CUDA。框为输入 processed 图像空间 XYXY，输出恢复到该图像尺寸并按 round 边界裁框。保留原生 presence/stability selection，不以空 mask 重试或填满 bbox。matching 与 warmup 共用同一 PVS model cache。
 
 PVS loader默认跳过checkpoint将覆盖的、至少1048576元素的Linear/Conv weight随机填充及对应ViT重复trunc-normal；保留token、bias、norm、buffer和普通CUDA位置cache。构造后按真实Parameter身份/别名及key/shape/dtype审核，每个被跳过weight都必须被完整strict load覆盖，否则直接报错。显式`skip_random_init=False`用于原生对照。真实checkpoint与video3完整输出对照见[八项加速记录](../reports/gpu-acceleration-20261019/README.md)；Matching同时复用同一次投影的bbox hit counts，采样RNG、候选顺序和0.4m商品进深判定不变。
 
-Viewer默认准备线程在同一完整float64 base点域建一个SciPy cKDTree，分块查询包含自身的KNN20，同时计算第二邻居距离和SOR均距；保留顺序归约、样本标准差、零距离及严格阈值。原商品保护、20% guard、DBSCAN和ground未改。底层`prepare_scene_filter(..., shared_neighbors=False)`保留原Open3D显式控制。具体范围与两视频对照见同一加速记录。
+Viewer默认准备线程在同一完整float64 base点域建一个SciPy cKDTree，分块查询包含自身的KNN20，同时计算第二邻居距离和SOR均距；保留顺序归约、样本标准差、零距离及严格阈值。原商品保护、20% guard、DBSCAN和ground未改。底层`prepare_scene_filter(..., shared_neighbors=False)`保留原Open3D显式控制；实验进程隔离路径也保持原生统计，因启动与IPC反而更慢，不作为推荐路径。具体范围与两视频对照见同一加速记录。
 
-PVS cache schema 为 `sam31_pvs_processed_mask_cache_v1`，与旧 self-exemplar schema 不兼容；默认新目录保留旧缓存。面积报告同步使用 `da3_pvs_ground_footprint_union` 与 `mask_contract.source=sam3_pvs`，不能把 mask 来源改变当作面积准确率提升。
+PVS cache schema 为 `sam31_pvs_processed_mask_cache_v1`，与旧 self-exemplar schema 不兼容；默认新目录保留旧缓存。面积报告按真实 backend 使用 `{backend}_pvs_ground_footprint_union`，`mask_contract.source=sam3_pvs`，不能把 mask 来源改变当作面积准确率提升。
 
-面积入口使用统一默认目录 `sam3_mask_cache_sam31_pvs/v2`，也接收 `--sam3_mask_cache_root` 指定 matching 实际发布的目录；显式目录不完整时直接拒绝，不尝试默认目录。DA3 输入及报告中的 cache schema 均为 3。
+面积入口使用 backend 对应的默认目录：DA3 为 `sam3_mask_cache_sam31_pvs/v2`，PromptDA 为 `sam3_mask_cache_promptda_sam31_pvs/v2`；也接收 `--sam3_mask_cache_root` 指定 matching 实际发布的目录。显式目录不完整时直接拒绝，不尝试默认目录。两者输入及报告中的场景 cache schema 均为 3。
 
 DA3 Viewer 和面积阶段共用 `utils/scene_orientation.py`，在实际 `predictions.npz` 旁保存 `scene_orientation.json`。方向命中直接复用；文件重建后失效重算，格式错误则报错。方向读取与 NPZ 文件状态绑定，避免跨重建坐标复用；不扫描其他 Viewer bundle，也不以 Viewer 的居中平移定义地面。面积用这个方向约束水平面高度搜索，并复用 Surfel 网格切线排除墙面。报告分别记录 `orientation.cache_event` 和 `plane.method`；没有可靠拟合方向时拒绝计量。最低可见水平面不等于已识别真实地板。规则与限制见 [面积算法说明](ground_stack_footprint_algorithm.md)。
 
@@ -165,7 +186,7 @@ uv run python main.py --mode viewer-web \
 npm --prefix modules/viewer_web run dev
 ```
 
-exporter 消费已发布的 DA3、去重和 matching 点标签输入，并从 dataset `images/` 按数字 stem 解析原图，写入不可变 `CURRENT -> runs/<run_id>/` minimal schema `3.0.0` bundle。`CURRENT` 只包含 `run_id`；manifest 必须包含轻量固定 `backend: "DA3"`、由 dataset path basename 提供的 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不包含 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。每个 run 的 `thumbs/` 包含 active 与 removed observation 的 bbox crop，编码为最长边 256px 的 JPEG；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
+exporter 消费已发布的场景缓存、去重和 matching 点标签输入，并从 dataset `images/` 按数字 stem 解析原图，写入不可变 `CURRENT -> runs/<run_id>/` minimal schema `3.0.0` bundle。`CURRENT` 只包含 `run_id`；manifest 必须包含轻量 `backend`（DA3 / PromptDA 保留真实名称）、由 dataset path basename 提供的 `dataset_name`、`frame_count`、六维 `display_bounds` 和 16 维 `world_to_view`，不包含 source model 或 provenance。固定二进制文件为 `positions.f32.bin`、`colors.u8.bin`、`normals.i8.bin`，`point_count` 由 positions 长度推导。每个 run 的 `thumbs/` 包含 active 与 removed observation 的 bbox crop，编码为最长边 256px 的 JPEG；`objects.json` 只包含每个 global ID 的 `ordered_skus`、`point_ranges` 和 observations 的 `image_id`、`object_id`、`removed`、`thumbnail`。
 
 canonical “其他品类”是 `sku_id=56642`、`sku_name=其他品类`。只要存在任一具体 SKU，具体 SKU 按既有 confidence/support 顺序排在 56642 之前；只有全部有效观测都是其他品类时，56642 才能排在首位。Viewer 只消费排序后的 SKU ID/名称，不接收或验证 confidence。
 
@@ -224,6 +245,8 @@ bash -n modules/video_to_dedup/*.sh scripts/3d/{evaluation,ops,pipeline,tuning}/
 需要恢复辅助输出时显式传 `--no-quiet_outputs`；正向 `--quiet_outputs` 仍可使用。主入口优先级是 CLI、YAML `main.quiet_outputs`、`inference.quiet_outputs`、默认 True；直接 inference 入口也允许 CLI 覆盖 YAML 的 True/False。可选 correspondences JSON 还需要 `--save_json`。Docker `run_mapping_request` 继续默认启用静默输出。请求的必要临时数据仍由原有 `TemporaryDirectory` 在结束时清理；不删除已有历史图片。
 
 ## 完整 Surfel 提前准备（2026-10-16）
+
+PromptDA 转换后的场景缓存同样复用下述准备流程，prepared 结果额外校验其真实 backend，不能与 DA3 交叉使用。
 
 `run_complete_pipeline(..., surfel_output_dir=...)` 在 DA3 缓存就绪后启动单个 CPU worker：加载缓存、计算原始 U/V 和深度、编码 JPEG 与相机元数据。2026-10-17 的源码扩展还会在同一个有效点域提前计算 NN 中位数和 SOR 原始保留 mask；这两项不依赖商品标签。matching/dedup 继续运行；dedup 完成后才合并最终 labels、应用 SOR 商品保护与保留比例 guard、执行聚类和地面过滤、预算采样、生成 point ranges 并发布 `CURRENT`。缓存复用也走同一路径；准备结果绑定同一缓存、源图目录、纹理尺寸、tuning、有效点顺序和过滤配置，错配直接报错。
 

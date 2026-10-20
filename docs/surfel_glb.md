@@ -2,7 +2,7 @@
 
 性能计时统一见[GPU2 profiling](profiling_breakdown.md)；本轮改动与对照见[video3优化记录](../reports/latency-optimization-20261018/README.md)。逐步骤实现见[LOD、烘焙与编码说明](../reports/profiling-20261018/algorithms_delivery.md)，旧计时摘录已退役。
 
-将现有 **DA3 Surfel bundle** 导出为自包含的标准纹理 GLB。普通 glTF 2.0 加载器只需支持 Khronos `KHR_materials_unlit`，不需要本项目的 renderer、shader 或外部纹理文件。
+将已接入的 **DA3 / PromptDA Surfel bundle** 导出为自包含的标准纹理 GLB。两者共用相机投影、LOD、CPU/GPU bake 和有界编码；PromptDA 原始预测须先完成[场景缓存适配](promptda_integration.md)。普通 glTF 2.0 加载器只需支持 Khronos `KHR_materials_unlit`，不需要本项目的 renderer、shader 或外部纹理文件。
 
 ```bash
 uv run --no-sync python -m src.surfel_glb \

@@ -545,7 +545,7 @@ class SKUDetectionMain:
             "--output_dir",
             str(output_dir),
             "--sam3_mask_cache_root",
-            str(sam3_mask_cache_root or default_sam3_mask_cache_root(output_dir)),
+            str(sam3_mask_cache_root or default_sam3_mask_cache_root(output_dir, backend=backend)),
             "--algorithm",
             algorithm,
             "--reference_idx",
@@ -994,12 +994,15 @@ class SKUDetectionMain:
         surfel_output_dir: Path | None = None,
         surfel_texture_edge: int = 1920,
         surfel_sku_masterdata_csv: Path | None = None,
+        sam3_mask_cache_root: Path | str | None = None,
     ) -> Dict[str, bool]:
         """运行 SKU 计数流水线；无人工标注的服务请求可显式关闭准确率评估。"""
-        if surfel_output_dir is not None and (
-            algorithm != "3d" or self.match_backend != "da3"
-        ):
-            raise ValueError("提前生成 Surfel 需要 algorithm='3d' 和 match_backend='da3'")
+        from utils.scene_backend import SCENE_BACKENDS, get_scene_backend, validate_scene_cache_metadata
+
+        if surfel_output_dir is not None:
+            if algorithm != "3d":
+                raise ValueError("提前生成 Surfel 需要 algorithm='3d'")
+            get_scene_backend(self.match_backend)
         if surfel_output_dir is not None and not 256 <= surfel_texture_edge <= 1920:
             raise ValueError("Surfel texture longest edge must be in [256, 1920]")
         logger.info("开始完整的SKU计数流水线（包含3D重建）")
@@ -1047,7 +1050,7 @@ class SKUDetectionMain:
                 match_backend = (
                     self.match_backend if hasattr(self, "match_backend") else "da3"
                 )
-                # DA3 的 canonical 产物是 schema-v3 metric predictions.npz；其他后端用 GLB。
+                # Metric-grid backends publish predictions.npz, not a lossy GLB.
                 dataset = Path(dataset_path)
                 output_dir = (
                     (self.save_root / dataset.name)
@@ -1059,6 +1062,18 @@ class SKUDetectionMain:
                     expected_result = cache_dir / "predictions.npz"
                     reusable = _is_reusable_da3_cache(expected_result)
                     _check_geometry_refinement_report(output_dir, reusable)
+                elif match_backend in SCENE_BACKENDS:
+                    expected_result = cache_dir / "predictions.npz"
+                    if not expected_result.is_file():
+                        raise FileNotFoundError(
+                            f"Missing {match_backend} scene cache: {expected_result}. "
+                            "Run the existing Scanner PromptDA reconstruction, then "
+                            "uv run python -m src.promptda_cache --prediction RAW_NPZ "
+                            "--source-images-dir DATASET/images --output CACHE_PATH."
+                        )
+                    with np.load(expected_result, allow_pickle=False) as cache:
+                        validate_scene_cache_metadata(cache, match_backend)
+                    reusable = True
                 else:
                     base_output = Path("reconstruction.glb")
                     if match_backend not in base_output.stem:
@@ -1096,6 +1111,7 @@ class SKUDetectionMain:
                     da3_cache_path=expected_result,
                     source_images_dir=Path(dataset_path) / "images",
                     surfel_texture_edge=surfel_texture_edge,
+                    backend=get_scene_backend(match_backend).label,
                 )
 
             if not quiet_outputs:
@@ -1103,9 +1119,14 @@ class SKUDetectionMain:
                 summary["visualization"] = True
 
             match_backend = self.match_backend if "3d" in algorithm else "vggt"
+            matching_options = (
+                {"sam3_mask_cache_root": str(sam3_mask_cache_root)}
+                if sam3_mask_cache_root is not None else {}
+            )
             self.run_sku_matching(
                 dataset_path, algorithm, batch_all_refs=True, backend=match_backend,
                 quiet_outputs=quiet_outputs,
+                **matching_options,
             )
             summary["matching"] = True
             if not quiet_outputs:
@@ -1133,7 +1154,11 @@ class SKUDetectionMain:
                     global_mapping_path=output_dir / "dedup_detections" / "global_mapping.json",
                     output_dir=Path(surfel_output_dir),
                     source_images_dir=Path(dataset_path) / "images",
-                    sam3_mask_cache_root=default_sam3_mask_cache_root(output_dir),
+                    sam3_mask_cache_root=(
+                        Path(sam3_mask_cache_root) if sam3_mask_cache_root is not None
+                        else default_sam3_mask_cache_root(output_dir, backend=match_backend)
+                    ),
+                    backend=get_scene_backend(match_backend).label,
                     sku_masterdata_csv=surfel_sku_masterdata_csv,
                     surfel_texture_edge=surfel_texture_edge,
                     prepared=surfel_future.result(),
@@ -1303,7 +1328,7 @@ class SKUDetectionMain:
 
 
 # 匹配保留 VGGT；重建菜单和 CLI 仅提供当前已注册的重建器。
-BACKEND_CHOICES = ["vggt", "pi3", "pi3x", "da3", "mapanything"]
+BACKEND_CHOICES = ["vggt", "pi3", "pi3x", "da3", "mapanything", "promptda"]
 RECONSTRUCTION_BACKEND_CHOICES = ["pi3", "pi3x", "da3", "mapanything"]
 
 
@@ -1390,7 +1415,7 @@ def main() -> None:
             "reconstruct",
             "viewer-web",
         ],
-        help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), ground-stack-area(DA3地堆footprint并集面积), reconstruct(3D重建), viewer-web(静态bundle导出)",
+        help="运行模式: interactive(交互), pipeline(完整), concise(匹配), analyzer(仅分析), dedup(去重), ground-stack-area(米制场景footprint并集面积), reconstruct(3D重建), viewer-web(静态bundle导出)",
     )
     parser.add_argument(
         "--algorithm",
@@ -1598,6 +1623,7 @@ def main() -> None:
         app.run_complete_pipeline(
             args.dataset, args.algorithm, model_path=args.recon_model_path,
             quiet_outputs=args.quiet_outputs,
+            sam3_mask_cache_root=args.sam3_mask_cache_root,
             **surfel_options,
         )
     elif args.mode == "concise":
@@ -1652,6 +1678,7 @@ def main() -> None:
             args.dataset,
             app.save_root,
             sam3_mask_cache_root=args.sam3_mask_cache_root,
+            backend=args.match_backend,
         )
         if not result["success"]:
             logger.error(
@@ -1676,6 +1703,7 @@ def main() -> None:
         )
     elif args.mode == "viewer-web":
         from utils.config import default_sam3_mask_cache_root
+        from utils.scene_backend import get_scene_backend
 
         dataset = Path(args.dataset)
         dataset_output = app.save_root / dataset.name
@@ -1692,13 +1720,17 @@ def main() -> None:
 
         result = export_web_viewer_bundle(
             dataset_name=dataset.name,
-            da3_cache_path=dataset_output / "da3_cache" / "predictions.npz",
+            da3_cache_path=dataset_output / f"{args.match_backend}_cache" / "predictions.npz",
             global_mapping_path=dataset_output
             / "dedup_detections"
             / "global_mapping.json",
             output_dir=viewer_web_output,
             source_images_dir=dataset / "images",
-            sam3_mask_cache_root=default_sam3_mask_cache_root(dataset_output),
+            sam3_mask_cache_root=(
+                Path(args.sam3_mask_cache_root) if args.sam3_mask_cache_root
+                else default_sam3_mask_cache_root(dataset_output, backend=args.match_backend)
+            ),
+            backend="Pi3X" if args.match_backend == "pi3x" else get_scene_backend(args.match_backend).label,
             sku_masterdata_csv=sku_masterdata_csv,
             voxel_size_m=float(args.viewer_web_voxel_size),
         )

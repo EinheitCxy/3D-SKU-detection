@@ -36,6 +36,12 @@ from utils.da3_cache_validation import (
     validate_affine_linear_parts,
 )
 from utils.config import default_sam3_mask_cache_root
+from utils.scene_backend import (
+    get_scene_backend,
+    promptda_processed_size,
+    resize_pixel_center_affine,
+    validate_scene_cache_metadata,
+)
 from utils.detection_objects import flatten_detection_objects
 from utils.footprint_evidence import (
     EvidenceObservation,
@@ -80,7 +86,6 @@ _CACHE_FIELDS = {
 }
 _MODEL_ID = re.compile(r"^[A-Za-z0-9._/-]+$")
 _PATCH_SIZE = 14
-_PREPROCESS_METHOD = "upper_bound_resize"
 _GENERATION_ARTIFACTS = {
     "measurement_report": "measurement_report.json",
     "footprints_geojson": "footprints.geojson",
@@ -99,20 +104,24 @@ def run_da3_footprint(
     save_root: Path,
     *,
     sam3_mask_cache_root: Path | str | None = None,
+    backend: str = "da3",
+    cache_path: Path | str | None = None,
 ) -> dict[str, object]:
     """Measure the union of every mapped carton's support-plane OBB footprint."""
     measurement_started_at = time.monotonic()
+    backend_spec = get_scene_backend(backend)
+    backend = backend_spec.name
     dataset = Path(dataset_path)
     output_dir = Path(save_root) / dataset.name / "ground_stack_footprint"
     output_dir.mkdir(parents=True, exist_ok=True)
     mask_cache_root = (
         Path(sam3_mask_cache_root)
         if sam3_mask_cache_root is not None
-        else default_sam3_mask_cache_root(Path(save_root) / dataset.name)
+        else default_sam3_mask_cache_root(Path(save_root) / dataset.name, backend=backend)
     )
     report: dict[str, Any] = {
         "schema_version": "2.0.0",
-        "metric": "da3_pvs_ground_footprint_union",
+        "metric": f"{backend}_pvs_ground_footprint_union",
         "unit": "m2",
         "status": "rejected",
         "value_m2": None,
@@ -120,7 +129,7 @@ def run_da3_footprint(
         "cache": {},
         "mask_contract": {
             "source": "sam3_pvs",
-            "coordinate_space": "da3_processed_pixels",
+            "coordinate_space": f"{backend}_processed_pixels",
             "cache_schema": SAM3_MASK_CACHE_SCHEMA,
         },
         "sam3_mask_cache": {
@@ -151,7 +160,10 @@ def run_da3_footprint(
     polygons: dict[str, Any] = {}
     union = None
     plane = None
-    cache_path = Path(save_root) / dataset.name / "da3_cache" / "predictions.npz"
+    cache_path = (
+        Path(cache_path) if cache_path is not None
+        else Path(save_root) / dataset.name / f"{backend}_cache" / "predictions.npz"
+    )
     cache_frame_ids = np.empty(0, dtype=np.int64)
     evidence_observations: tuple[EvidenceObservation, ...] = ()
     stages_seconds = report["performance"]["stages_seconds"]
@@ -162,12 +174,12 @@ def run_da3_footprint(
             Path(save_root) / dataset.name / "dedup_detections" / "global_mapping.json"
         )
         cache_stat = cache_path.stat()
-        cache = _load_cache(cache_path)
+        cache = _load_cache(cache_path, backend=backend)
         cache_frame_ids = cache["image_ids"]
         image_paths = _image_paths(dataset / "images")
         detection_paths = _detection_paths(dataset / "detections_results")
         _validate_complete_source_ids(cache["image_ids"], image_paths, detection_paths)
-        report["cache"] = _validate_cache(cache, image_paths)
+        report["cache"] = _validate_cache(cache, image_paths, backend=backend)
         detections = _load_detections(detection_paths)
         global_mapping, global_mapping_sha256 = _load_mapping(mapping_path, detections)
         report["global_mapping_sha256"] = global_mapping_sha256
@@ -364,21 +376,28 @@ def run_da3_footprint(
     }
 
 
-def _load_cache(path: Path) -> dict[str, np.ndarray]:
+def _load_cache(path: Path, *, backend: str = "da3") -> dict[str, np.ndarray]:
+    spec = get_scene_backend(backend)
     if not path.is_file():
-        raise FootprintStageError(f"DA3 cache is missing: {path}")
+        raise FootprintStageError(f"{spec.label} cache is missing: {path}")
     with np.load(path, allow_pickle=False) as loaded:
-        missing = sorted(_CACHE_FIELDS - set(loaded.files))
+        fields = _CACHE_FIELDS | ({"confidence_kind"} if spec.name == "promptda" else set())
+        if spec.name == "promptda" and "network_image_sizes" in loaded.files:
+            fields |= {"network_image_sizes"}
+        missing = sorted(fields - set(loaded.files))
         if missing:
             raise FootprintStageError(
-                "DA3 cache missing required schema-v3 fields: " + ", ".join(missing)
+                f"{spec.label} cache missing required schema-v3 fields: " + ", ".join(missing)
             )
-        return {key: loaded[key].copy() for key in _CACHE_FIELDS}
+        return {key: loaded[key].copy() for key in fields}
 
 
 def _validate_cache(
-    cache: dict[str, np.ndarray], images: dict[int, Path]
+    cache: dict[str, np.ndarray], images: dict[int, Path], *, backend: str = "da3",
 ) -> dict[str, object]:
+    spec = get_scene_backend(backend)
+    if spec.name == "promptda":
+        validate_scene_cache_metadata(cache, backend, error=FootprintStageError)
     schema = cache["cache_schema_version"]
     if schema.shape != () or int(schema) != 3:
         raise FootprintStageError("DA3 cache schema version must be exactly 3")
@@ -414,8 +433,8 @@ def _validate_cache(
         raise FootprintStageError("DA3 cache affine convention must be pixel_center_v1")
     if preprocess_resolution <= 0:
         raise FootprintStageError("DA3 cache preprocess_resolution must be positive")
-    if preprocess_method != _PREPROCESS_METHOD:
-        raise FootprintStageError("DA3 cache preprocess_method is unsupported")
+    if spec.name != "promptda" and preprocess_method != spec.preprocess_method:
+        raise FootprintStageError(f"{spec.label} cache preprocess_method is unsupported")
     points = cache["world_points"]
     confidence = cache["world_points_conf"]
     image_ids = cache["image_ids"]
@@ -467,12 +486,21 @@ def _validate_cache(
             raise FootprintStageError(
                 f"source image SHA256 mismatch for image {image_id}"
             )
-        expected_affine = _expected_pixel_center_affine(
-            image.width, image.height, preprocess_resolution, height, width
-        )
+        if spec.name == "promptda":
+            expected_size = (
+                image.size if preprocess_method == "promptda_native_pad14"
+                else promptda_processed_size(image.width, image.height, preprocess_resolution)
+            )
+            if expected_size != (width, height):
+                raise FootprintStageError("PromptDA cache processed grid differs from the selected RGB policy")
+            expected_affine = resize_pixel_center_affine(image.width, image.height, width, height)
+        else:
+            expected_affine = _expected_pixel_center_affine(
+                image.width, image.height, preprocess_resolution, height, width
+            )
         if not np.allclose(affine[index], expected_affine, rtol=0.0, atol=1e-6):
             raise FootprintStageError(
-                f"DA3 cache affine provenance mismatch for image {image_id}"
+                f"{spec.label} cache affine provenance mismatch for image {image_id}"
             )
     return {
         "schema_version": int(schema.item()),

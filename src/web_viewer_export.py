@@ -78,7 +78,7 @@ def _cache_identity(path: Path) -> tuple[int, ...]:
 
 @dataclass(frozen=True)
 class PreparedViewerGeometry:
-    """Task-local DA3 data prepared before matching; never publishes a bundle."""
+    """Task-local metric grid prepared before matching; never publishes a bundle."""
 
     cache_path: Path
     cache_identity: tuple[int, ...]
@@ -92,6 +92,7 @@ class PreparedViewerGeometry:
     filter_config: PointCloudFilterConfig
     valid_indices: np.ndarray
     scene_filter: PreparedSceneFilter | None
+    backend: str = "DA3"
 
 
 def prepare_web_viewer_geometry(
@@ -99,16 +100,20 @@ def prepare_web_viewer_geometry(
     surfel_texture_edge: int = 1920, tuning: ViewerExportTuning | None = None,
     filter_config: PointCloudFilterConfig | None = None,
     prepare_filter: bool = True,
+    backend: str = "DA3",
 ) -> PreparedViewerGeometry:
-    """Prepare full native grids and textures without masks, labels or orientation."""
+    """Prepare full grids/textures; the thread path shares one NN/SOR query."""
     from src.surfel_export import grid_tangents, prepare_surfel_textures
+    from utils.scene_backend import get_scene_backend
+
+    backend = get_scene_backend(backend).label
 
     tuning = tuning or ViewerExportTuning()
     filter_config = replace(filter_config or PointCloudFilterConfig())
     cache_path = Path(da3_cache_path).resolve()
     images_dir = Path(source_images_dir).resolve()
     identity = _cache_identity(cache_path)
-    cache = _load_da3_cache(cache_path)
+    cache = _load_da3_cache(cache_path, backend=backend)
     geometry = grid_tangents(cache["points"], cache["extrinsic"])
     valid = _viewer_valid_mask(cache, geometry[2])
     valid_indices = np.flatnonzero(valid)
@@ -135,7 +140,7 @@ def prepare_web_viewer_geometry(
         raise WebViewerExportError("DA3 cache changed while preparing viewer geometry")
     return PreparedViewerGeometry(
         cache_path, identity, images_dir, surfel_texture_edge, tuning,
-        cache, geometry, textures, sharpness, filter_config, valid_indices, scene_filter,
+        cache, geometry, textures, sharpness, filter_config, valid_indices, scene_filter, backend,
     )
 
 
@@ -158,11 +163,20 @@ def export_web_viewer_bundle(
     """Publish up to 2M product points, balanced by global ID, plus 500K background."""
     tuning = tuning or ViewerExportTuning()
     filter_config = filter_config or PointCloudFilterConfig()
+    if backend != "Pi3X":
+        from utils.scene_backend import get_scene_backend
+
+        try:
+            backend = get_scene_backend(backend).label
+        except ValueError as error:
+            raise WebViewerExportError(f"Unsupported viewer backend: {backend}") from error
     if prepared is not None:
         if not isinstance(prepared, PreparedViewerGeometry):
             raise WebViewerExportError("prepared must be PreparedViewerGeometry")
-        if backend != "DA3" or surfel_texture_edge is None:
-            raise WebViewerExportError("prepared geometry requires DA3 Surfel export")
+        if backend == "Pi3X" or surfel_texture_edge is None:
+            raise WebViewerExportError("prepared geometry requires metric-grid Surfel export")
+        if prepared.backend != backend:
+            raise WebViewerExportError("prepared geometry backend differs from export backend")
         if (prepared.cache_path != Path(da3_cache_path).resolve()
                 or prepared.source_images_dir != Path(source_images_dir).resolve()
                 or prepared.texture_edge != surfel_texture_edge or prepared.tuning != tuning
@@ -175,14 +189,12 @@ def export_web_viewer_bundle(
     if not isinstance(dataset_name, str) or not dataset_name.strip():
         raise WebViewerExportError("dataset_name must be a non-empty string")
     voxel_size = _validate_export_options(voxel_size_m)
-    if backend not in {"DA3", "Pi3X"}:
-        raise WebViewerExportError(f"Unsupported viewer backend: {backend}")
     cache_identity = (
         prepared.cache_identity if prepared is not None else _cache_identity(Path(da3_cache_path))
-    ) if backend == "DA3" else None
+    ) if backend != "Pi3X" else None
     cache = prepared.cache if prepared is not None else (
         _load_pi3x_cache(Path(da3_cache_path), Path(source_images_dir))
-        if backend == "Pi3X" else _load_da3_cache(Path(da3_cache_path))
+        if backend == "Pi3X" else _load_da3_cache(Path(da3_cache_path), backend=backend)
     )
     objects = build_global_object_index(GlobalIDMapper(str(Path(global_mapping_path))))
     source_images = _resolve_source_images(Path(source_images_dir))
@@ -195,7 +207,7 @@ def export_web_viewer_bundle(
             [source_images[int(image_id)] for image_id in cache["image_ids"]]
         )
     level_rotation = None
-    if backend == "DA3":
+    if backend != "Pi3X":
         orientation, _cache_event = get_scene_orientation(Path(da3_cache_path))
         if cache_identity != _cache_identity(Path(da3_cache_path)):
             raise WebViewerExportError("DA3 cache changed while preparing viewer geometry")
@@ -229,7 +241,7 @@ def export_web_viewer_bundle(
         "dataset_name": dataset_name,
         "frame_count": int(len(cache["image_ids"])),
         "measurement": {
-            "coordinate_unit": cache.get("coordinate_unit", "unknown") if backend == "DA3" else "unknown",
+            "coordinate_unit": cache.get("coordinate_unit", "unknown") if backend != "Pi3X" else "unknown",
             "horizontal_plane": "viewer_xz",
             "orientation_status": "fitted" if sampled["level_rotation"][1] else "not_found",
         },
@@ -359,9 +371,13 @@ def _load_pi3x_cache(path: Path, source_images_dir: Path) -> dict[str, Any]:
     }
 
 
-def _load_da3_cache(path: Path) -> dict[str, Any]:
+def _load_da3_cache(path: Path, *, backend: str = "DA3") -> dict[str, Any]:
     try:
         with np.load(path, allow_pickle=False) as loaded:
+            if backend == "PromptDA":
+                from utils.scene_backend import validate_scene_cache_metadata
+
+                validate_scene_cache_metadata(loaded, backend, error=WebViewerExportError)
             missing = sorted(_REQUIRED_CACHE_FIELDS - set(loaded.files))
             if missing:
                 raise WebViewerExportError(

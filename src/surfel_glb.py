@@ -1,6 +1,6 @@
-"""Bake an existing DA3 Viewer Surfel bundle into a portable textured GLB.
+"""Bake a metric-grid Viewer Surfel bundle into a portable textured GLB.
 
-Only DA3 source projection is supported; other backends are rejected explicitly.
+Source projections require an explicitly registered scene backend.
 """
 from __future__ import annotations
 
@@ -84,8 +84,12 @@ def _array(read, name, dtype, shape):
 
 def _load(read, global_id):
     manifest = _json(read, "manifest.json")
-    if manifest.get("backend") != "DA3":
-        raise ValueError("Portable Surfel GLB export supports only backend DA3")
+    from utils.scene_backend import get_scene_backend
+
+    try:
+        get_scene_backend(manifest.get("backend"))
+    except ValueError as error:
+        raise ValueError("Portable Surfel GLB export supports only backend DA3 or PromptDA") from error
     if manifest.get("schema_version") != "3.0.0":
         raise ValueError("Expected Viewer schema 3.0.0")
     matrix = _finite(manifest.get("world_to_view"), (16,), "world_to_view").reshape(4, 4)

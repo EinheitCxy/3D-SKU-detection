@@ -1,4 +1,8 @@
-# DA3 地堆 Footprint 并集面积算法
+# 米制场景地堆 Footprint 并集面积算法
+
+默认读取 DA3；`--match_backend promptda` 读取已适配的 PromptDA 米制网格与独立 PVS cache。
+两种 backend 共用下述面积算法，分别验证各自的预处理/affine，不强套 DA3 resize。
+字段、转换和运行方式见 [PromptDA 接入说明](promptda_integration.md)；历史 DA3 验证结果不代表 PromptDA 面积精度。
 
 ## 目标与物理定义
 

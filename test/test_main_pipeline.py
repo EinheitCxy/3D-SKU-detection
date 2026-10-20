@@ -203,6 +203,92 @@ def _pipeline_fixture(
     return app, dataset
 
 
+@pytest.mark.parametrize("custom_mask_root", [False, True])
+def test_promptda_pipeline_reuses_scene_prepares_in_parallel_and_keeps_backend_identity(monkeypatch, tmp_path, custom_mask_root):
+    from src import web_viewer_export
+    from utils.config import default_sam3_mask_cache_root
+
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    app.match_backend = "promptda"
+    app.classifier_enabled = False
+    _write_enriched_detections(dataset)
+    cache_path = app.save_root / dataset.name / "promptda_cache/predictions.npz"
+    cache_path.parent.mkdir(parents=True)
+    np.savez(cache_path, cache_schema_version=np.array(3), is_metric=np.array(1),
+             preprocess_method=np.array("promptda_resize"), preprocess_resolution=np.array(504),
+             source_model=np.array("promptda/vitl"), confidence_kind=np.array("validity"))
+    preparing, matched = threading.Event(), threading.Event()
+    calls, prepared = [], object()
+    mask_root = tmp_path / "custom-masks" if custom_mask_root else None
+
+    def prepare(**kwargs):
+        assert kwargs["backend"] == "PromptDA"
+        assert kwargs["da3_cache_path"] == cache_path
+        preparing.set()
+        assert matched.wait(timeout=5)
+        return prepared
+
+    def match(*_args, **kwargs):
+        assert kwargs["backend"] == "promptda"
+        assert kwargs.get("sam3_mask_cache_root") == (str(mask_root) if mask_root else None)
+        assert preparing.wait(timeout=5)
+        matched.set()
+        calls.append("matching")
+
+    def publish(**kwargs):
+        assert calls[-1] == "dedup"
+        assert kwargs["prepared"] is prepared
+        assert kwargs["backend"] == "PromptDA"
+        assert kwargs["sam3_mask_cache_root"] == (mask_root or default_sam3_mask_cache_root(cache_path.parent.parent, "promptda"))
+        calls.append("publish")
+
+    monkeypatch.setattr(app, "run_reconstruction", lambda *_a, **_k: pytest.fail("PromptDA cache must not run DA3"))
+    monkeypatch.setattr(app, "run_sku_matching", match)
+    monkeypatch.setattr(app, "run_dedup_sequence", lambda *_a, **_k: calls.append("dedup"))
+    monkeypatch.setattr(web_viewer_export, "prepare_web_viewer_geometry", prepare)
+    monkeypatch.setattr(web_viewer_export, "export_web_viewer_bundle", publish)
+    summary = app.run_complete_pipeline(str(dataset), "3d", surfel_output_dir=tmp_path / "viewer", sam3_mask_cache_root=mask_root)
+    assert calls == ["matching", "dedup", "publish"]
+    assert summary["surfel"] is True
+
+
+def test_promptda_pipeline_missing_scene_cache_is_an_explicit_error(monkeypatch, tmp_path):
+    app, dataset = _pipeline_fixture(monkeypatch, tmp_path)
+    app.match_backend, app.classifier_enabled = "promptda", False
+    _write_enriched_detections(dataset)
+    monkeypatch.setattr(app, "run_reconstruction", lambda *_a, **_k: pytest.fail("No reconstruction fallback"))
+    with pytest.raises(FileNotFoundError, match="src.promptda_cache"):
+        app.run_complete_pipeline(str(dataset), "3d")
+
+
+@pytest.mark.parametrize("mode", ["viewer-web", "ground-stack-area"])
+def test_promptda_standalone_cli_forwards_backend_and_cache_selection(monkeypatch, tmp_path, mode):
+    from src import da3_footprint_stage, web_viewer_export
+
+    config = tmp_path / "config.yaml"
+    config.write_text("{}\n")
+    seen = {}
+
+    def run(*_args, **kwargs):
+        seen.update(kwargs)
+        return dict(success=True, status="accepted", report_path="unused", value_m2=1.,
+                    output_dir="unused", manifest_path="unused", point_count=1, thumbnail_count=0)
+
+    monkeypatch.setattr(main, "_configure_logging_to_save_root", lambda _path: None)
+    monkeypatch.setattr(web_viewer_export, "export_web_viewer_bundle", run)
+    monkeypatch.setattr(da3_footprint_stage, "run_da3_footprint", run)
+    monkeypatch.setattr(main.sys, "argv", ["main.py", "--config", str(config), "--mode", mode,
+                        "--dataset", str(tmp_path / "scan"), "--save_root", str(tmp_path / "out"),
+                        "--match_backend", "promptda", "--viewer-web-output", str(tmp_path / "viewer")])
+    main.main()
+    if mode == "viewer-web":
+        assert seen["backend"] == "PromptDA"
+        assert seen["da3_cache_path"] == tmp_path / "out/scan/promptda_cache/predictions.npz"
+        assert seen["sam3_mask_cache_root"] == tmp_path / "out/scan/sam3_mask_cache_promptda_sam31_pvs/v2"
+    else:
+        assert seen["backend"] == "promptda"
+
+
 def _resolved_classification(sku_id: str) -> dict[str, object]:
     return {
         "schema_version": "1.0.0",

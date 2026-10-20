@@ -283,9 +283,15 @@ def test_unsupported_backend_rejected(bundle, tmp_path, fake_baker):
     assert not fake_baker
 
 
-def test_scene_delivery_bakes_and_compacts_existing_assets(bundle, tmp_path):
+@pytest.mark.parametrize("backend", ["DA3", "PromptDA"])
+def test_scene_delivery_bakes_and_compacts_existing_assets(bundle, tmp_path, backend):
     from src.surfel_glb import export_scene_glb
 
+    if backend != "DA3":
+        path = bundle / "manifest.json"
+        manifest = json.loads(path.read_text())
+        manifest["backend"] = backend
+        path.write_text(json.dumps(manifest))
     output = tmp_path / "delivery" / "scene.glb"
     report = export_scene_glb(bundle, output)
     doc, binary = parse(output)

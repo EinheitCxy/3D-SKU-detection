@@ -2,7 +2,7 @@
 
 本文说明 [Scanner 独立入口](../scripts/3d/scanner/README.md) 当前采用的数据与几何约定，适用于 **DA3 + K/E metric 修复版**和 **PromptDA full**。准备、推理和导出分别由 [prepare_scanner.py](../scripts/3d/scanner/prepare_scanner.py)、[candidates.py](../scripts/3d/scanner/candidates.py) 与 [scanner_io.py](../scripts/3d/scanner/scanner_io.py) 实现。
 
-运行与模型准备见入口 README；独立入口完成 RGB-D 准备、深度预测和彩色 POINTS GLB 导出，主流水线的后续处理有各自的入口和验证范围。
+运行与模型准备见入口 README；接入共享 matching、footprint 和 Viewer 缓存见 [PromptDA 接入说明](promptda_integration.md)。独立入口完成 RGB-D 准备、深度预测和彩色 POINTS GLB 导出，主流水线的后续处理有各自的入口和验证范围。
 
 ## 输入文件与帧身份
 

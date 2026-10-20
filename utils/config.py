@@ -41,8 +41,10 @@ def get_optimal_device_config(verbose: bool = True):
     return device, dtype
 
 
-def default_sam3_mask_cache_root(output_dir: Path | str) -> Path:
+def default_sam3_mask_cache_root(output_dir: Path | str, backend: str = "da3") -> Path:
     """PVS 专用 processed-mask 根目录；保留既有 self-exemplar 缓存。"""
+    if backend.lower() == "promptda":
+        return Path(output_dir) / "sam3_mask_cache_promptda_sam31_pvs" / "v2"
     return Path(output_dir) / "sam3_mask_cache_sam31_pvs" / "v2"
 
 
@@ -326,6 +328,8 @@ class SKUMatchingConfig:
             return "pi3"
         if self.backend == "mapanything":
             return "mapanything"
+        if self.backend == "promptda":
+            return "promptda"
         return "vggt"
 
     @property
@@ -344,6 +348,8 @@ class SKUMatchingConfig:
             return {"pixel_limit": 255000}
         if self.backend == "mapanything":
             return {}
+        if self.backend == "promptda":
+            return {}
         return {"target_size": 518}
 
     @property
@@ -354,12 +360,12 @@ class SKUMatchingConfig:
             Pi3/DA3: "resize" (等比例缩放)
             VGGT: "crop" (裁剪+填充)
         """
-        return "resize" if self.backend in ("pi3", "pi3x", "da3", "mapanything") else "crop"
+        return "resize" if self.backend in ("pi3", "pi3x", "da3", "mapanything", "promptda") else "crop"
 
     def _validate_config(self):
         # Backend验证
-        if self.backend not in ("vggt", "pi3", "pi3x", "da3", "mapanything"):
-            raise ValueError(f"backend must be 'vggt', 'pi3', 'pi3x', 'da3', or 'mapanything', got {self.backend}")
+        if self.backend not in ("vggt", "pi3", "pi3x", "da3", "mapanything", "promptda"):
+            raise ValueError(f"Unsupported matching backend: {self.backend}")
 
         if self.max_points_per_bbox <= 0:
             raise ValueError(f"max_points_per_bbox must be positive, got {self.max_points_per_bbox}")
@@ -472,6 +478,17 @@ class SKUMatchingConfig:
             # DA3 的 world_points 由同一 depth 反投影 (src/da3_runner.py:306)，深度自洽检查恒通过；
             # world_points_conf 与 depth_conf 是同一数组 (src/da3_runner.py:336-338)，两道 conf 门等价。
             # 字段保留：对其他后端仍有意义。
+        elif backend == "promptda":
+            # PromptDA supplies native metric Z, without a learned confidence
+            # head. The adapter's 0/1 fields denote validity, not uncertainty.
+            algorithm_specific.update({
+                "min_depth": 0.3,
+                "max_depth": 8.0,
+                "depth_confidence_threshold": 0.0,
+                "point_3d_confidence_threshold": 0.0,
+                "max_3d_distance": 0.5,
+                "depth_consistency_threshold": 0.3,
+            })
         elif backend == "mapanything":
             # mapanything: metric 米制深度（几何阈值同 da3）+ 原样 conf（未激活，越高越好）。
             # conf 阈值于 2026-09-16 冒烟一次定档: conf∈[1,24], 有效中位≈5.0,
